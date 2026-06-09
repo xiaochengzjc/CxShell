@@ -1,0 +1,197 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:vm="using:ChiXueSsh.ViewModels"
+             xmlns:models="using:ChiXueSsh.Models"
+             x:Class="ChiXueSsh.Views.SftpPanelView"
+             x:DataType="vm:SftpViewModel">
+
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" Background="#0D0D0D">
+
+        <!-- 头部 -->
+        <Border Grid.Row="0" Background="#111111" Padding="10,8">
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
+                    <TextBlock Text="📁" FontSize="14" VerticalAlignment="Center" Foreground="White"/>
+                    <TextBlock Text="SFTP" FontSize="13" FontWeight="Bold"
+                               Foreground="White" VerticalAlignment="Center"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                    <TextBlock Text="{Binding HostLabel}" FontSize="11"
+                               Foreground="#888888" VerticalAlignment="Center"/>
+                    <Ellipse Width="8" Height="8" VerticalAlignment="Center"
+                             Fill="{Binding IsConnected, Converter={x:Static vm:SftpStatusColorConverter.Instance}}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 路径面包屑 -->
+        <Border Grid.Row="1" Background="#0A0A0A" Padding="6,4"
+                BorderBrush="#222222" BorderThickness="0,0,0,1">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Disabled">
+                <ItemsControl ItemsSource="{Binding PathSegments}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="vm:PathSegment">
+                            <StackPanel Orientation="Horizontal">
+                                <Button Background="Transparent" BorderThickness="0"
+                                        Padding="3,2"
+                                        Command="{Binding $parent[UserControl].DataContext.NavigateToPathCommand, x:CompileBindings=False}"
+                                        CommandParameter="{Binding FullPath}">
+                                    <TextBlock Text="{Binding Label}" FontSize="11"
+                                               Foreground="#4EC994"
+                                               TextDecorations="Underline"/>
+                                </Button>
+                                <TextBlock Text="›" Foreground="#444444"
+                                           VerticalAlignment="Center" Margin="0,0,2,0"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Border>
+
+        <!-- 工具栏 -->
+        <Border Grid.Row="2" Background="#111111" Padding="6,4"
+                BorderBrush="#222222" BorderThickness="0,0,0,1">
+            <StackPanel Orientation="Horizontal" Spacing="2">
+                <Button Background="#1A1A1A" BorderThickness="0" Padding="8,5"
+                        Command="{Binding NavigateHomeCommand}"
+                        CornerRadius="4">
+                    <TextBlock Text="🏠" FontSize="14" Foreground="#AAAAAA"/>
+                </Button>
+                <Button Background="#1A1A1A" BorderThickness="0" Padding="8,5"
+                        Command="{Binding NavigateUpCommand}"
+                        CornerRadius="4">
+                    <TextBlock Text="↑" FontSize="14" Foreground="#AAAAAA" FontWeight="Bold"/>
+                </Button>
+                <Button Background="#1A1A1A" BorderThickness="0" Padding="8,5"
+                        Command="{Binding RefreshCommand}"
+                        CornerRadius="4">
+                    <TextBlock Text="↻" FontSize="14" Foreground="#AAAAAA" FontWeight="Bold"/>
+                </Button>
+                <Border Width="1" Background="#333333" Margin="4,4"/>
+                <Button Background="#1A2A1A" BorderThickness="0" Padding="8,5"
+                        Command="{Binding UploadCommand}"
+                        IsEnabled="{Binding IsConnected}" CornerRadius="4">
+                    <TextBlock Text="↑ 上传" FontSize="12" Foreground="#4EC994" FontWeight="Bold"/>
+                </Button>
+                <Button Background="#1A1A2A" BorderThickness="0" Padding="8,5"
+                        Command="{Binding DownloadCommand}"
+                        IsEnabled="{Binding IsConnected}" CornerRadius="4">
+                    <TextBlock Text="↓ 下载" FontSize="12" Foreground="#6FA8DC" FontWeight="Bold"/>
+                </Button>
+                <Button Background="#2A1A2A" BorderThickness="0" Padding="8,5"
+                        Command="{Binding CreateDirectoryCommand}"
+                        IsEnabled="{Binding IsConnected}" CornerRadius="4">
+                    <TextBlock Text="+ 目录" FontSize="12" Foreground="#C08EC0" FontWeight="Bold"/>
+                </Button>
+            </StackPanel>
+        </Border>
+
+        <!-- 错误提示 -->
+        <Border Grid.Row="3" Background="#2D1515" Padding="8,4"
+                IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+            <TextBlock Text="{Binding ErrorMessage}" Foreground="#FF6B6B"
+                       FontSize="11" TextWrapping="Wrap"/>
+        </Border>
+
+        <!-- 文件列表：ScrollViewer + ItemsControl 绕开 AtomUI ListBox 样式覆盖问题 -->
+        <Grid Grid.Row="4">
+            <!-- 未连接提示 -->
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Spacing="8" IsVisible="{Binding !IsConnected}">
+                <TextBlock Text="📁" FontSize="32" HorizontalAlignment="Center" Opacity="0.3"/>
+                <TextBlock Text="连接 SSH 会话后自动打开" FontSize="12"
+                           Foreground="#606080" HorizontalAlignment="Center"/>
+            </StackPanel>
+
+            <!-- 加载中 -->
+            <TextBlock Text="正在加载..." Foreground="#A0A0C0" FontSize="12"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       IsVisible="{Binding IsLoading}"/>
+
+            <!-- 文件列表 -->
+            <ScrollViewer IsVisible="{Binding IsConnected}"
+                          HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <!-- 内联新建目录输入行 -->
+                    <Border IsVisible="{Binding IsCreatingDirectory}"
+                            Padding="8,5" Background="#1A2A1A"
+                            BorderBrush="#2A3A2A" BorderThickness="0,0,0,1">
+                        <Grid ColumnDefinitions="Auto,*">
+                            <TextBlock Grid.Column="0" Text="📁" FontSize="13"
+                                       VerticalAlignment="Center" Foreground="#FFD066"
+                                       Margin="0,0,6,0"/>
+                            <atom:TextBox Grid.Column="1"
+                                     x:Name="NewDirInput"
+                                     Text="{Binding NewDirectoryName, Mode=TwoWay}"
+                                     FontSize="12"
+                                     BorderThickness="0,0,0,1" BorderBrush="#6FB0DF"
+                                     Padding="2,1"
+                                     VerticalAlignment="Center"
+                                     KeyDown="OnNewDirInputKeyDown"
+                                     LostFocus="OnNewDirInputLostFocus"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- 文件条目列表 -->
+                    <ItemsControl ItemsSource="{Binding Files}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="models:SftpFileItem">
+                                <Border Padding="8,5"
+                                        BorderBrush="#1A1A1A" BorderThickness="0,0,0,1"
+                                        Cursor="Hand"
+                                        Background="{Binding IsSelected, Converter={x:Static vm:SftpSelectedColorConverter.Instance}}"
+                                        PointerPressed="OnFileItemPressed"
+                                        PointerReleased="OnFileItemReleased">
+                                    <Border.Styles>
+                                        <Style Selector="Border:pointerover">
+                                            <Setter Property="Background" Value="#1E1E1E"/>
+                                        </Style>
+                                    </Border.Styles>
+                                    <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                                        <TextBlock Grid.Column="0" Text="{Binding Icon}"
+                                                   FontSize="13" VerticalAlignment="Center"
+                                                   Foreground="#D0D0E8" Margin="0,0,6,0"/>
+                                        <!-- 正常显示名称 -->
+                                        <TextBlock Grid.Column="1" Text="{Binding DisplayName}"
+                                                   FontSize="12" VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   IsVisible="{Binding !IsRenaming}"
+                                                   Foreground="{Binding IsDirectory, Converter={x:Static vm:SftpDirColorConverter.Instance}}"/>
+                                        <!-- 内联重命名输入框 -->
+                                        <atom:TextBox Grid.Column="1"
+                                                      Text="{Binding RenamingText, Mode=TwoWay}"
+                                                      FontSize="12"
+                                                      BorderThickness="0,0,0,1"
+                                                      Padding="2,1"
+                                                      VerticalAlignment="Center"
+                                                      IsVisible="{Binding IsRenaming}"
+                                                      Tag="{Binding}"
+                                                      KeyDown="OnRenameInputKeyDown"
+                                                      LostFocus="OnRenameInputLostFocus"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding SizeDisplay}"
+                                                   FontSize="10" Foreground="#808090"
+                                                   VerticalAlignment="Center" Margin="8,0"
+                                                   MinWidth="44" TextAlignment="Right"/>
+                                        <TextBlock Grid.Column="3" Text="{Binding DateDisplay}"
+                                                   FontSize="10" Foreground="#707080"
+                                                   VerticalAlignment="Center"/>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+    </Grid>
+</UserControl>

@@ -1,0 +1,17 @@
+# 编译输出
+bin/
+obj/
+
+# 第三方源码（AtomUI NuGet 包的本地源码参考）
+AtomUI/
+
+# IDE 配置
+.vs/
+*.user
+*.DotSettings.user
+.idea/
+.qoder/
+
+# OS 文件
+Thumbs.db
+.DS_Store

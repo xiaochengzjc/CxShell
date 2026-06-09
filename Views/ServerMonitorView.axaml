@@ -1,0 +1,251 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ChiXueSsh.ViewModels"
+             xmlns:models="using:ChiXueSsh.Models"
+             xmlns:controls="using:ChiXueSsh.Controls"
+             x:Class="ChiXueSsh.Views.ServerMonitorView"
+             x:DataType="vm:ServerMonitorViewModel"
+             Background="#0D0D0D"
+             Width="280">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Spacing="0">
+
+            <!-- 头部：主机名 + 状态 -->
+            <Border Padding="12,10" Background="#111111">
+                <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Grid.Column="0" Spacing="2">
+                        <TextBlock Text="服务器监控"
+                                   FontSize="11" Foreground="#888888"
+                                   FontWeight="Bold"/>
+                        <TextBlock Text="{Binding HostLabel}"
+                                   FontSize="12" Foreground="#E0E0E0"
+                                   TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                Spacing="4" VerticalAlignment="Center">
+                        <Ellipse Width="8" Height="8">
+                            <Ellipse.Fill>
+                                <SolidColorBrush Color="{Binding IsMonitoring, Converter={x:Static controls:MonitorColorConverter.Instance}}"/>
+                            </Ellipse.Fill>
+                        </Ellipse>
+                        <TextBlock Text="{Binding IsMonitoring, Converter={x:Static controls:MonitorStatusConverter.Instance}}"
+                                   FontSize="11" Foreground="#888888"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- 错误提示 -->
+            <Border Padding="12,8" Background="#2D1515"
+                    IsVisible="{Binding ErrorMessage, Converter={x:Static controls:NullToBoolConverter.Instance}}">
+                <TextBlock Text="{Binding ErrorMessage}"
+                           FontSize="11" Foreground="#FF7875"
+                           TextWrapping="Wrap"/>
+            </Border>
+
+            <!-- CPU 区域 -->
+            <Border Padding="12,10,12,6">
+                <StackPanel Spacing="6">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="CPU" FontSize="11"
+                                   Foreground="#888888" FontWeight="Bold"/>
+                        <TextBlock FontSize="11" Foreground="#52C41A">
+                            <TextBlock.Text>
+                                <Binding Path="CpuTotalUsage" StringFormat="{}{0:F1}%"/>
+                            </TextBlock.Text>
+                        </TextBlock>
+                    </StackPanel>
+                    <ItemsControl ItemsSource="{Binding CpuCores}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="models:CpuCoreInfo">
+                                <Grid ColumnDefinitions="52,*,36" Margin="0,2">
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding Label}"
+                                               FontSize="10" Foreground="#AAAAAA"
+                                               VerticalAlignment="Center"/>
+                                    <ProgressBar Grid.Column="1"
+                                                 Value="{Binding UsagePercent}"
+                                                 Minimum="0" Maximum="100"
+                                                 Height="6"
+                                                 VerticalAlignment="Center"
+                                                 Margin="4,0">
+                                        <ProgressBar.Foreground>
+                                            <SolidColorBrush Color="{Binding UsagePercent, Converter={x:Static controls:CpuColorConverter.Instance}}"/>
+                                        </ProgressBar.Foreground>
+                                    </ProgressBar>
+                                    <TextBlock Grid.Column="2"
+                                               FontSize="10" Foreground="#CCCCCC"
+                                               VerticalAlignment="Center"
+                                               HorizontalAlignment="Right">
+                                        <TextBlock.Text>
+                                            <Binding Path="UsagePercent" StringFormat="{}{0:F1}%"/>
+                                        </TextBlock.Text>
+                                    </TextBlock>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <Border Height="1" Background="#222222" Margin="12,0"/>
+
+            <!-- 内存区域 -->
+            <Border Padding="12,10,12,6"
+                    IsVisible="{Binding Memory, Converter={x:Static controls:NullToBoolConverter.Instance}}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="内存" FontSize="11"
+                               Foreground="#888888" FontWeight="Bold"/>
+                    <Grid ColumnDefinitions="120,*">
+                        <!-- 饼图 -->
+                        <controls:PieChartControl Grid.Column="0"
+                                                   Width="100" Height="100"
+                                                   Segments="{Binding Memory, Converter={x:Static controls:MemoryToPieConverter.Instance}}"/>
+                        <!-- 数值说明 -->
+                        <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Ellipse Width="8" Height="8" Fill="#FF7875"/>
+                                <TextBlock FontSize="10" Foreground="#CCCCCC">
+                                    <TextBlock.Text>
+                                        <MultiBinding StringFormat="已用 {0}">
+                                            <Binding Path="Memory.UsedFormatted"/>
+                                        </MultiBinding>
+                                    </TextBlock.Text>
+                                </TextBlock>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Ellipse Width="8" Height="8" Fill="#69B1FF"/>
+                                <TextBlock FontSize="10" Foreground="#CCCCCC">
+                                    <TextBlock.Text>
+                                        <MultiBinding StringFormat="缓存 {0}">
+                                            <Binding Path="Memory.CachedFormatted"/>
+                                        </MultiBinding>
+                                    </TextBlock.Text>
+                                </TextBlock>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Ellipse Width="8" Height="8" Fill="#95DE64"/>
+                                <TextBlock FontSize="10" Foreground="#CCCCCC">
+                                    <TextBlock.Text>
+                                        <MultiBinding StringFormat="空闲 {0}">
+                                            <Binding Path="Memory.FreeFormatted"/>
+                                        </MultiBinding>
+                                    </TextBlock.Text>
+                                </TextBlock>
+                            </StackPanel>
+                            <TextBlock FontSize="10" Foreground="#888888">
+                                <TextBlock.Text>
+                                    <MultiBinding StringFormat="共 {0}">
+                                        <Binding Path="Memory.TotalFormatted"/>
+                                    </MultiBinding>
+                                </TextBlock.Text>
+                            </TextBlock>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <Border Height="1" Background="#222222" Margin="12,0"/>
+
+            <!-- 网络区域 -->
+            <Border Padding="12,10,12,6">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="网络" FontSize="11"
+                               Foreground="#888888" FontWeight="Bold"/>
+                    <!-- 当前速度 -->
+                    <Grid ColumnDefinitions="*,*">
+                        <StackPanel Grid.Column="0" Spacing="2">
+                            <TextBlock Text="↓ 下载" FontSize="10" Foreground="#69B1FF"/>
+                            <TextBlock FontSize="11" Foreground="#E0E0E0"
+                                       Text="{Binding CurrentNetworkSpeed.RxFormatted, FallbackValue='0 B/s'}"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="↑ 上传" FontSize="10" Foreground="#95DE64"/>
+                            <TextBlock FontSize="11" Foreground="#E0E0E0"
+                                       Text="{Binding CurrentNetworkSpeed.TxFormatted, FallbackValue='0 B/s'}"/>
+                        </StackPanel>
+                    </Grid>
+                    <!-- 折线图 -->
+                    <controls:LineChartControl
+                        Series1="{Binding RxHistory}"
+                        Series2="{Binding TxHistory}"
+                        Height="80"
+                        HorizontalAlignment="Stretch"/>
+                </StackPanel>
+            </Border>
+
+            <Border Height="1" Background="#222222" Margin="12,0"/>
+
+            <!-- 磁盘分区 -->
+            <Border Padding="12,10,12,6"
+                    IsVisible="{Binding DiskPartitions.Count, Converter={x:Static controls:CountToBoolConverter.Instance}}">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="磁盘" FontSize="11"
+                               Foreground="#888888" FontWeight="Bold"/>
+                    <ItemsControl ItemsSource="{Binding DiskPartitions}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="models:DiskPartitionInfo">
+                                <StackPanel Spacing="2" Margin="0,3">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0"
+                                                   Text="{Binding MountPoint}"
+                                                   FontSize="10" Foreground="#AAAAAA"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="1" FontSize="10" Foreground="#888888">
+                                            <TextBlock.Text>
+                                                <MultiBinding StringFormat="{}{0}/{1}">
+                                                    <Binding Path="UsedFormatted"/>
+                                                    <Binding Path="TotalFormatted"/>
+                                                </MultiBinding>
+                                            </TextBlock.Text>
+                                        </TextBlock>
+                                    </Grid>
+                                    <ProgressBar Value="{Binding UsagePercent}"
+                                                 Minimum="0" Maximum="100"
+                                                 Height="4">
+                                        <ProgressBar.Foreground>
+                                            <SolidColorBrush Color="{Binding UsagePercent, Converter={x:Static controls:DiskColorConverter.Instance}}"/>
+                                        </ProgressBar.Foreground>
+                                    </ProgressBar>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <!-- 磁盘 IO -->
+            <Border Padding="12,6,12,10"
+                    IsVisible="{Binding DiskIo.Count, Converter={x:Static controls:CountToBoolConverter.Instance}}">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="磁盘 I/O" FontSize="11"
+                               Foreground="#888888" FontWeight="Bold"/>
+                    <ItemsControl ItemsSource="{Binding DiskIo}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="models:DiskIoInfo">
+                                <Grid ColumnDefinitions="50,*,*" Margin="0,2">
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding Device}"
+                                               FontSize="10" Foreground="#AAAAAA"
+                                               VerticalAlignment="Center"/>
+                                    <StackPanel Grid.Column="1" Spacing="1">
+                                        <TextBlock Text="读" FontSize="9" Foreground="#69B1FF"/>
+                                        <TextBlock FontSize="10" Foreground="#CCCCCC"
+                                                   Text="{Binding ReadFormatted}"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Spacing="1">
+                                        <TextBlock Text="写" FontSize="9" Foreground="#95DE64"/>
+                                        <TextBlock FontSize="10" Foreground="#CCCCCC"
+                                                   Text="{Binding WriteFormatted}"/>
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

@@ -1,0 +1,19 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:vm="using:ChiXueSsh.ViewModels"
+             xmlns:controls="using:ChiXueSsh.Controls"
+             x:Class="ChiXueSsh.Views.TerminalView"
+             x:DataType="vm:TerminalViewModel">
+    <Grid>
+        <!-- 连接中提示 -->
+        <atom:TextBlock Text="正在连接..."
+                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Opacity="0.5" FontSize="16"
+                        IsVisible="{Binding !IsConnected}"/>
+
+        <!-- 终端控件 -->
+        <controls:TerminalControl x:Name="Terminal"
+                                  TerminalBuffer="{Binding Buffer}"/>
+    </Grid>
+</UserControl>

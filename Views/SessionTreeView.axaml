@@ -1,0 +1,60 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:vm="using:ChiXueSsh.ViewModels"
+             x:Class="ChiXueSsh.Views.SessionTreeView"
+             x:DataType="vm:SessionTreeViewModel"
+             Background="#0D0D0D">
+    <DockPanel>
+
+        <!-- 会话树 -->
+        <atom:TreeView x:Name="SessionTree"
+                       Background="#0D0D0D"
+                       ItemsSource="{Binding SessionNodes}"
+                       SelectedItem="{Binding SelectedNode, Mode=TwoWay}">
+            <atom:TreeView.ItemTemplate>
+                <TreeDataTemplate DataType="vm:SessionNodeViewModel"
+                                  ItemsSource="{Binding Children}">
+                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="2,2">
+                        <TextBlock Text="{Binding Icon}" FontSize="13" Foreground="#888888"/>
+                        <TextBlock Text="{Binding Name}" Foreground="#D0D0D0" FontSize="13"/>
+                    </StackPanel>
+                </TreeDataTemplate>
+            </atom:TreeView.ItemTemplate>
+        </atom:TreeView>
+
+        <!-- 右键弹出菜单 -->
+        <Popup x:Name="ContextMenuPopup"
+               Placement="Pointer"
+               IsLightDismissEnabled="True">
+            <Border Background="#1A1A1A"
+                    BorderBrush="#333333"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Padding="0,4"
+                    MinWidth="120">
+                <StackPanel Spacing="0">
+                    <atom:Button x:Name="MenuEditBtn" Content="属性"
+                                 Background="Transparent" BorderThickness="0"
+                                 HorizontalAlignment="Stretch"
+                                 HorizontalContentAlignment="Left"
+                                 Padding="16,6" FontSize="13"
+                                 Foreground="#D0D0D0"/>
+                    <atom:Button x:Name="MenuConnectBtn" Content="连接"
+                                 Background="Transparent" BorderThickness="0"
+                                 HorizontalAlignment="Stretch"
+                                 HorizontalContentAlignment="Left"
+                                 Padding="16,6" FontSize="13"
+                                 Foreground="#D0D0D0"/>
+                    <Border Height="1" Background="#2A2A2A" Margin="8,4"/>
+                    <atom:Button x:Name="MenuDeleteBtn" Content="删除"
+                                 Background="Transparent" BorderThickness="0"
+                                 HorizontalAlignment="Stretch"
+                                 HorizontalContentAlignment="Left"
+                                 Padding="16,6" FontSize="13"
+                                 Foreground="#FF4D4F"/>
+                </StackPanel>
+            </Border>
+        </Popup>
+    </DockPanel>
+</UserControl>
