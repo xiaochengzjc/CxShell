@@ -12,21 +12,7 @@
              MinHeight="300"
              WindowStartupLocation="CenterOwner"
              ShowInTaskbar="False"
-             Background="#0D0D0D">
-
-    <!-- AtomUI Token 覆盖（解决闪白 + 标题栏图标颜色） -->
-    <atom:Window.Resources>
-        <!-- 窗口初始背景 & 系统栏颜色，防止打开时闪白 -->
-        <SolidColorBrush x:Key="{x:Static atom:WindowTokenKind.DefaultBackground}"
-                         Color="#0D0D0D"/>
-        <SolidColorBrush x:Key="{x:Static atom:WindowTokenKind.SystemBarColor}"
-                         Color="#0D0D0D"/>
-        <!-- 标题栏按钮图标颜色 -->
-        <SolidColorBrush x:Key="{x:Static atom:WindowTitleBarTokenKind.ActiveColor}"
-                         Color="#E0E0E0"/>
-        <SolidColorBrush x:Key="{x:Static atom:WindowTitleBarTokenKind.InactiveColor}"
-                         Color="#555555"/>
-    </atom:Window.Resources>
+             Background="{atom:SharedTokenResource ColorBgLayout}">
 
     <views:SessionTreeView DataContext="{Binding}"/>
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using Avalonia.Media;
 
 namespace ChiXueSsh.Terminal;
@@ -42,25 +43,107 @@ public class TerminalBuffer
         return _cells[row, col];
     }
 
+    public TerminalCell GetViewportCell(int row, int col, int scrollOffset)
+    {
+        if (row < 0 || row >= Rows || col < 0 || col >= Columns)
+            return TerminalCell.Default;
+
+        scrollOffset = Math.Clamp(scrollOffset, 0, _scrollback.Count);
+        var combinedRow = _scrollback.Count - scrollOffset + row;
+        if (combinedRow < 0)
+            return TerminalCell.Default;
+
+        if (combinedRow < _scrollback.Count)
+            return _scrollback[combinedRow][col];
+
+        var screenRow = combinedRow - _scrollback.Count;
+        return screenRow >= 0 && screenRow < Rows
+            ? _cells[screenRow, col]
+            : TerminalCell.Default;
+    }
+
     public void PutChar(char c)
     {
         if (CursorRow >= Rows) return;
+        var width = GetDisplayWidth(c);
+        if (width == 0) return;
+
         if (CursorCol >= Columns)
         {
             CursorCol = 0;
             LineFeed();
         }
+        if (width == 2 && CursorCol == Columns - 1)
+        {
+            CursorCol = 0;
+            LineFeed();
+        }
 
+        ClearWideContext(CursorRow, CursorCol);
         _cells[CursorRow, CursorCol] = new TerminalCell
         {
             Character = c,
             Foreground = CurrentForeground,
             Background = CurrentBackground,
             Bold = CurrentBold,
-            Underline = CurrentUnderline
+            Underline = CurrentUnderline,
+            IsWideContinuation = false
         };
+        if (width == 2 && CursorCol + 1 < Columns)
+        {
+            ClearWideContext(CursorRow, CursorCol + 1);
+            _cells[CursorRow, CursorCol + 1] = new TerminalCell
+            {
+                Character = ' ',
+                Foreground = CurrentForeground,
+                Background = CurrentBackground,
+                Bold = CurrentBold,
+                Underline = CurrentUnderline,
+                IsWideContinuation = true
+            };
+        }
+
         DirtyRows.Add(CursorRow);
-        CursorCol++;
+        CursorCol += width;
+    }
+
+    private void ClearWideContext(int row, int col)
+    {
+        if (row < 0 || row >= Rows || col < 0 || col >= Columns)
+            return;
+
+        if (_cells[row, col].IsWideContinuation && col > 0)
+            _cells[row, col - 1] = TerminalCell.Default;
+
+        if (col + 1 < Columns && _cells[row, col + 1].IsWideContinuation)
+            _cells[row, col + 1] = TerminalCell.Default;
+
+        _cells[row, col] = TerminalCell.Default;
+    }
+
+    private static int GetDisplayWidth(char c)
+    {
+        var category = CharUnicodeInfo.GetUnicodeCategory(c);
+        if (category is UnicodeCategory.NonSpacingMark
+            or UnicodeCategory.EnclosingMark
+            or UnicodeCategory.Format)
+            return 0;
+
+        return IsWideCharacter(c) ? 2 : 1;
+    }
+
+    private static bool IsWideCharacter(char c)
+    {
+        var code = c;
+        return code >= 0x1100 && code <= 0x115F
+            || code >= 0x2329 && code <= 0x232A
+            || code >= 0x2E80 && code <= 0xA4CF
+            || code >= 0xAC00 && code <= 0xD7A3
+            || code >= 0xF900 && code <= 0xFAFF
+            || code >= 0xFE10 && code <= 0xFE19
+            || code >= 0xFE30 && code <= 0xFE6F
+            || code >= 0xFF00 && code <= 0xFF60
+            || code >= 0xFFE0 && code <= 0xFFE6;
     }
 
     public void LineFeed()
@@ -177,11 +260,99 @@ public class TerminalBuffer
     {
         if (CursorRow >= 0 && CursorRow < Rows)
         {
-            for (int c = CursorCol; c < Columns; c++)
+            var startCol = CursorCol;
+            if (startCol > 0 && startCol < Columns && _cells[CursorRow, startCol].IsWideContinuation)
+                startCol--;
+
+            for (int c = startCol; c < Columns; c++)
             {
                 _cells[CursorRow, c] = TerminalCell.Default;
             }
             DirtyRows.Add(CursorRow);
+        }
+    }
+
+    public void EraseCharacters(int count)
+    {
+        if (CursorRow < 0 || CursorRow >= Rows)
+            return;
+
+        var startCol = GetWideSafeStartColumn(CursorRow, CursorCol);
+        var endCol = Math.Min(Columns, CursorCol + Math.Max(1, count));
+        if (endCol < Columns && _cells[CursorRow, endCol].IsWideContinuation)
+            endCol++;
+
+        for (int c = startCol; c < endCol; c++)
+            _cells[CursorRow, c] = TerminalCell.Default;
+
+        DirtyRows.Add(CursorRow);
+    }
+
+    public void InsertBlankCharacters(int count)
+    {
+        if (CursorRow < 0 || CursorRow >= Rows)
+            return;
+
+        count = Math.Clamp(count, 1, Columns);
+        var startCol = GetWideSafeStartColumn(CursorRow, CursorCol);
+        for (int c = Columns - 1; c >= startCol + count; c--)
+            _cells[CursorRow, c] = _cells[CursorRow, c - count];
+
+        for (int c = startCol; c < Math.Min(Columns, startCol + count); c++)
+            _cells[CursorRow, c] = TerminalCell.Default;
+
+        RepairWideBoundaries(CursorRow);
+        DirtyRows.Add(CursorRow);
+    }
+
+    public void DeleteCharacters(int count)
+    {
+        if (CursorRow < 0 || CursorRow >= Rows)
+            return;
+
+        count = Math.Clamp(count, 1, Columns);
+        var startCol = GetWideSafeStartColumn(CursorRow, CursorCol);
+        var sourceCol = Math.Min(Columns, startCol + count);
+        if (sourceCol < Columns && _cells[CursorRow, sourceCol].IsWideContinuation)
+            sourceCol++;
+
+        var destCol = startCol;
+        while (sourceCol < Columns)
+            _cells[CursorRow, destCol++] = _cells[CursorRow, sourceCol++];
+
+        while (destCol < Columns)
+            _cells[CursorRow, destCol++] = TerminalCell.Default;
+
+        RepairWideBoundaries(CursorRow);
+        DirtyRows.Add(CursorRow);
+    }
+
+    private int GetWideSafeStartColumn(int row, int col)
+    {
+        if (row >= 0 && row < Rows && col > 0 && col < Columns && _cells[row, col].IsWideContinuation)
+            return col - 1;
+
+        return Math.Clamp(col, 0, Columns - 1);
+    }
+
+    private void RepairWideBoundaries(int row)
+    {
+        if (row < 0 || row >= Rows)
+            return;
+
+        if (_cells[row, 0].IsWideContinuation)
+            _cells[row, 0] = TerminalCell.Default;
+
+        for (var col = 1; col < Columns; col++)
+        {
+            if (_cells[row, col].IsWideContinuation && _cells[row, col - 1].IsWideContinuation)
+                _cells[row, col] = TerminalCell.Default;
+        }
+
+        if (Columns > 0 && _cells[row, Columns - 1].IsWideContinuation)
+        {
+            _cells[row, Columns - 2] = TerminalCell.Default;
+            _cells[row, Columns - 1] = TerminalCell.Default;
         }
     }
 

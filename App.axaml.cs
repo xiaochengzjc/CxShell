@@ -23,9 +23,6 @@ public partial class App : Application
             builder.UseAlibabaSansFont();
             builder.UseDesktopControls();
         });
-
-        // 启用暗色模式，防止窗口打开时闪白
-        this.SetDarkThemeMode(true);
     }
 
     public override void OnFrameworkInitializationCompleted()

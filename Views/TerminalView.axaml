@@ -14,6 +14,33 @@
 
         <!-- 终端控件 -->
         <controls:TerminalControl x:Name="Terminal"
+                                  Cursor="Ibeam"
                                   TerminalBuffer="{Binding Buffer}"/>
+
+        <Popup x:Name="TerminalContextMenuPopup"
+               Placement="Pointer"
+               IsLightDismissEnabled="True">
+            <Border Background="{atom:SharedTokenResource ColorBgElevated}"
+                    BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Padding="0,4"
+                    MinWidth="120">
+                <StackPanel Spacing="0">
+                    <atom:Button x:Name="MenuCopyBtn" Content="复制"
+                                 Background="Transparent" BorderThickness="0"
+                                 HorizontalAlignment="Stretch"
+                                 HorizontalContentAlignment="Left"
+                                 Padding="16,6" FontSize="13"
+                                 Foreground="{atom:SharedTokenResource ColorText}"/>
+                    <atom:Button x:Name="MenuPasteBtn" Content="粘贴"
+                                 Background="Transparent" BorderThickness="0"
+                                 HorizontalAlignment="Stretch"
+                                 HorizontalContentAlignment="Left"
+                                 Padding="16,6" FontSize="13"
+                                 Foreground="{atom:SharedTokenResource ColorText}"/>
+                </StackPanel>
+            </Border>
+        </Popup>
     </Grid>
 </UserControl>

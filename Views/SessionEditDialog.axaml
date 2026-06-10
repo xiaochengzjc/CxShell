@@ -10,44 +10,29 @@
              WindowStartupLocation="CenterOwner"
              CanResize="False"
              ShowInTaskbar="False"
-             Background="#0D0D0D"
+             Background="{atom:SharedTokenResource ColorBgLayout}"
              Loaded="OnWindowLoaded">
-
-    <!-- AtomUI Token 覆盖（替代 code-behind 硬编码）-->
-    <atom:Window.Resources>
-        <!-- 窗口初始背景 & 系统栏颜色，防止打开时闪白 -->
-        <SolidColorBrush x:Key="{x:Static atom:WindowTokenKind.DefaultBackground}"
-                         Color="#0D0D0D"/>
-        <SolidColorBrush x:Key="{x:Static atom:WindowTokenKind.SystemBarColor}"
-                         Color="#0D0D0D"/>
-        <!-- 标题栏按钮图标颜色 Token 覆盖 -->
-        <SolidColorBrush x:Key="{x:Static atom:WindowTitleBarTokenKind.ActiveColor}"
-                         Color="#E0E0E0"/>
-        <SolidColorBrush x:Key="{x:Static atom:WindowTitleBarTokenKind.InactiveColor}"
-                         Color="#555555"/>
-    </atom:Window.Resources>
 
     <!-- 控件样式配置 -->
     <atom:Window.Styles>
-        <!-- atom:TextBox 深色主题样式 -->
         <Style Selector="atom|TextBox">
-            <Setter Property="Background" Value="#1A1A1A"/>
-            <Setter Property="Foreground" Value="#E0E0E0"/>
-            <Setter Property="CaretBrush" Value="White"/>
-            <Setter Property="BorderBrush" Value="#444444"/>
+            <Setter Property="Background" Value="{atom:SharedTokenResource ColorBgContainer}"/>
+            <Setter Property="Foreground" Value="{atom:SharedTokenResource ColorText}"/>
+            <Setter Property="CaretBrush" Value="{atom:SharedTokenResource ColorText}"/>
+            <Setter Property="BorderBrush" Value="{atom:SharedTokenResource ColorBorder}"/>
             <Setter Property="BorderThickness" Value="1"/>
         </Style>
 
-        <!-- atom:RadioButton 深色背景前景 -->
         <Style Selector="atom|RadioButton">
-            <Setter Property="Foreground" Value="#CCCCCC"/>
+            <Setter Property="Foreground" Value="{atom:SharedTokenResource ColorTextSecondary}"/>
         </Style>
     </atom:Window.Styles>
 
     <DockPanel>
         <!-- 底部按钮栏 -->
         <Border DockPanel.Dock="Bottom" Padding="20,10"
-                Background="#111111" BorderBrush="#222222" BorderThickness="0,1,0,0">
+                Background="{atom:SharedTokenResource ColorBgContainer}"
+                BorderBrush="{atom:SharedTokenResource ColorSplit}" BorderThickness="0,1,0,0">
             <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
                 <atom:Button x:Name="CancelBtn" Content="取消" Width="80"
                              ButtonType="Default"/>
@@ -57,19 +42,20 @@
         </Border>
 
         <!-- 表单内容 -->
-        <ScrollViewer Background="#0D0D0D">
+        <ScrollViewer Background="{atom:SharedTokenResource ColorBgLayout}">
             <StackPanel Margin="24,16,24,12" Spacing="0">
 
                 <!-- 基本信息 -->
                 <Border Margin="0,0,0,14" Padding="0,0,0,6"
-                        BorderBrush="#222222" BorderThickness="0,0,0,1">
-                    <TextBlock Text="基本信息" FontSize="11" Foreground="#666666" FontWeight="Bold"/>
+                        BorderBrush="{atom:SharedTokenResource ColorSplit}" BorderThickness="0,0,0,1">
+                    <TextBlock Text="基本信息" FontSize="11"
+                               Foreground="{atom:SharedTokenResource ColorTextTertiary}" FontWeight="Bold"/>
                 </Border>
 
                 <!-- 会话名称 -->
                 <Grid ColumnDefinitions="90,*" Margin="0,0,0,10">
                     <TextBlock Grid.Column="0" Text="会话名称"
-                               Foreground="#BBBBBB" FontSize="13"
+                               Foreground="{atom:SharedTokenResource ColorTextSecondary}" FontSize="13"
                                VerticalAlignment="Center"/>
                     <atom:TextBox Grid.Column="1" x:Name="NameBox"
                                   Text="{Binding SessionName, Mode=TwoWay}"
@@ -79,7 +65,7 @@
                 <!-- 主机地址 -->
                 <Grid ColumnDefinitions="90,*" Margin="0,0,0,10">
                     <TextBlock Grid.Column="0" Text="主机地址"
-                               Foreground="#BBBBBB" FontSize="13"
+                               Foreground="{atom:SharedTokenResource ColorTextSecondary}" FontSize="13"
                                VerticalAlignment="Center"/>
                     <atom:TextBox Grid.Column="1" x:Name="HostBox"
                                   Text="{Binding Host, Mode=TwoWay}"
@@ -89,7 +75,7 @@
                 <!-- 端口 -->
                 <Grid ColumnDefinitions="90,*" Margin="0,0,0,10">
                     <TextBlock Grid.Column="0" Text="端口"
-                               Foreground="#BBBBBB" FontSize="13"
+                               Foreground="{atom:SharedTokenResource ColorTextSecondary}" FontSize="13"
                                VerticalAlignment="Center"/>
                     <atom:TextBox Grid.Column="1" x:Name="PortBox"
                                   Text="{Binding Port, Mode=TwoWay}"
@@ -99,7 +85,7 @@
                 <!-- 用户名 -->
                 <Grid ColumnDefinitions="90,*" Margin="0,0,0,18">
                     <TextBlock Grid.Column="0" Text="用户名"
-                               Foreground="#BBBBBB" FontSize="13"
+                               Foreground="{atom:SharedTokenResource ColorTextSecondary}" FontSize="13"
                                VerticalAlignment="Center"/>
                     <atom:TextBox Grid.Column="1" x:Name="UsernameBox"
                                   Text="{Binding Username, Mode=TwoWay}"
@@ -108,14 +94,15 @@
 
                 <!-- 认证方式 -->
                 <Border Margin="0,0,0,14" Padding="0,0,0,6"
-                        BorderBrush="#222222" BorderThickness="0,0,0,1">
-                    <TextBlock Text="认证方式" FontSize="11" Foreground="#666666" FontWeight="Bold"/>
+                        BorderBrush="{atom:SharedTokenResource ColorSplit}" BorderThickness="0,0,0,1">
+                    <TextBlock Text="认证方式" FontSize="11"
+                               Foreground="{atom:SharedTokenResource ColorTextTertiary}" FontWeight="Bold"/>
                 </Border>
 
                 <!-- 认证选项 -->
                 <Grid ColumnDefinitions="90,*" Margin="0,0,0,10">
                     <TextBlock Grid.Column="0" Text="方式"
-                               Foreground="#BBBBBB" FontSize="13"
+                               Foreground="{atom:SharedTokenResource ColorTextSecondary}" FontSize="13"
                                VerticalAlignment="Center"/>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="20"
                                 VerticalAlignment="Center">
@@ -130,7 +117,7 @@
                 <Grid ColumnDefinitions="90,*" Margin="0,0,0,10"
                       IsVisible="{Binding IsPrivateKeyAuth}">
                     <TextBlock Grid.Column="0" Text="私钥路径"
-                               Foreground="#BBBBBB" FontSize="13"
+                               Foreground="{atom:SharedTokenResource ColorTextSecondary}" FontSize="13"
                                VerticalAlignment="Center"/>
                     <Grid Grid.Column="1" ColumnDefinitions="*,Auto" ColumnSpacing="8">
                         <atom:TextBox Grid.Column="0" x:Name="KeyPathBox"

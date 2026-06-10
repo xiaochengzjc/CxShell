@@ -6,19 +6,20 @@
              x:Class="ChiXueSsh.Views.SftpPanelView"
              x:DataType="vm:SftpViewModel">
 
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" Background="#0D0D0D">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" Background="{atom:SharedTokenResource ColorBgLayout}">
 
         <!-- 头部 -->
-        <Border Grid.Row="0" Background="#111111" Padding="10,8">
+        <Border Grid.Row="0" Background="{atom:SharedTokenResource ColorBgContainer}" Padding="10,8">
             <Grid ColumnDefinitions="*,Auto">
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
-                    <TextBlock Text="📁" FontSize="14" VerticalAlignment="Center" Foreground="White"/>
+                    <TextBlock Text="📁" FontSize="14" VerticalAlignment="Center"
+                               Foreground="{atom:SharedTokenResource ColorText}"/>
                     <TextBlock Text="SFTP" FontSize="13" FontWeight="Bold"
-                               Foreground="White" VerticalAlignment="Center"/>
+                               Foreground="{atom:SharedTokenResource ColorText}" VerticalAlignment="Center"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
                     <TextBlock Text="{Binding HostLabel}" FontSize="11"
-                               Foreground="#888888" VerticalAlignment="Center"/>
+                               Foreground="{atom:SharedTokenResource ColorTextTertiary}" VerticalAlignment="Center"/>
                     <Ellipse Width="8" Height="8" VerticalAlignment="Center"
                              Fill="{Binding IsConnected, Converter={x:Static vm:SftpStatusColorConverter.Instance}}"/>
                 </StackPanel>
@@ -26,8 +27,8 @@
         </Border>
 
         <!-- 路径面包屑 -->
-        <Border Grid.Row="1" Background="#0A0A0A" Padding="6,4"
-                BorderBrush="#222222" BorderThickness="0,0,0,1">
+        <Border Grid.Row="1" Background="{atom:SharedTokenResource ColorBgLayout}" Padding="6,4"
+                BorderBrush="{atom:SharedTokenResource ColorSplit}" BorderThickness="0,0,0,1">
             <ScrollViewer HorizontalScrollBarVisibility="Auto"
                           VerticalScrollBarVisibility="Disabled">
                 <ItemsControl ItemsSource="{Binding PathSegments}">
@@ -44,10 +45,10 @@
                                         Command="{Binding $parent[UserControl].DataContext.NavigateToPathCommand, x:CompileBindings=False}"
                                         CommandParameter="{Binding FullPath}">
                                     <TextBlock Text="{Binding Label}" FontSize="11"
-                                               Foreground="#4EC994"
+                                               Foreground="{atom:SharedTokenResource ColorPrimary}"
                                                TextDecorations="Underline"/>
                                 </Button>
-                                <TextBlock Text="›" Foreground="#444444"
+                                <TextBlock Text="›" Foreground="{atom:SharedTokenResource ColorBorderSecondary}"
                                            VerticalAlignment="Center" Margin="0,0,2,0"/>
                             </StackPanel>
                         </DataTemplate>
@@ -57,47 +58,47 @@
         </Border>
 
         <!-- 工具栏 -->
-        <Border Grid.Row="2" Background="#111111" Padding="6,4"
-                BorderBrush="#222222" BorderThickness="0,0,0,1">
+        <Border Grid.Row="2" Background="{atom:SharedTokenResource ColorBgContainer}" Padding="6,4"
+                BorderBrush="{atom:SharedTokenResource ColorSplit}" BorderThickness="0,0,0,1">
             <StackPanel Orientation="Horizontal" Spacing="2">
-                <Button Background="#1A1A1A" BorderThickness="0" Padding="8,5"
+                <Button Background="{atom:SharedTokenResource ColorFillTertiary}" BorderThickness="0" Padding="8,5"
                         Command="{Binding NavigateHomeCommand}"
                         CornerRadius="4">
-                    <TextBlock Text="🏠" FontSize="14" Foreground="#AAAAAA"/>
+                    <TextBlock Text="🏠" FontSize="14" Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
                 </Button>
-                <Button Background="#1A1A1A" BorderThickness="0" Padding="8,5"
+                <Button Background="{atom:SharedTokenResource ColorFillTertiary}" BorderThickness="0" Padding="8,5"
                         Command="{Binding NavigateUpCommand}"
                         CornerRadius="4">
-                    <TextBlock Text="↑" FontSize="14" Foreground="#AAAAAA" FontWeight="Bold"/>
+                    <TextBlock Text="↑" FontSize="14" Foreground="{atom:SharedTokenResource ColorTextSecondary}" FontWeight="Bold"/>
                 </Button>
-                <Button Background="#1A1A1A" BorderThickness="0" Padding="8,5"
+                <Button Background="{atom:SharedTokenResource ColorFillTertiary}" BorderThickness="0" Padding="8,5"
                         Command="{Binding RefreshCommand}"
                         CornerRadius="4">
-                    <TextBlock Text="↻" FontSize="14" Foreground="#AAAAAA" FontWeight="Bold"/>
+                    <TextBlock Text="↻" FontSize="14" Foreground="{atom:SharedTokenResource ColorTextSecondary}" FontWeight="Bold"/>
                 </Button>
-                <Border Width="1" Background="#333333" Margin="4,4"/>
-                <Button Background="#1A2A1A" BorderThickness="0" Padding="8,5"
+                <Border Width="1" Background="{atom:SharedTokenResource ColorBorder}" Margin="4,4"/>
+                <Button Background="{atom:SharedTokenResource ColorSuccessBg}" BorderThickness="0" Padding="8,5"
                         Command="{Binding UploadCommand}"
                         IsEnabled="{Binding IsConnected}" CornerRadius="4">
-                    <TextBlock Text="↑ 上传" FontSize="12" Foreground="#4EC994" FontWeight="Bold"/>
+                    <TextBlock Text="↑ 上传" FontSize="12" Foreground="{atom:SharedTokenResource ColorSuccess}" FontWeight="Bold"/>
                 </Button>
-                <Button Background="#1A1A2A" BorderThickness="0" Padding="8,5"
+                <Button Background="{atom:SharedTokenResource ColorInfoBg}" BorderThickness="0" Padding="8,5"
                         Command="{Binding DownloadCommand}"
                         IsEnabled="{Binding IsConnected}" CornerRadius="4">
-                    <TextBlock Text="↓ 下载" FontSize="12" Foreground="#6FA8DC" FontWeight="Bold"/>
+                    <TextBlock Text="↓ 下载" FontSize="12" Foreground="{atom:SharedTokenResource ColorInfo}" FontWeight="Bold"/>
                 </Button>
-                <Button Background="#2A1A2A" BorderThickness="0" Padding="8,5"
+                <Button Background="{atom:SharedTokenResource ColorWarningBg}" BorderThickness="0" Padding="8,5"
                         Command="{Binding CreateDirectoryCommand}"
                         IsEnabled="{Binding IsConnected}" CornerRadius="4">
-                    <TextBlock Text="+ 目录" FontSize="12" Foreground="#C08EC0" FontWeight="Bold"/>
+                    <TextBlock Text="+ 目录" FontSize="12" Foreground="{atom:SharedTokenResource ColorWarning}" FontWeight="Bold"/>
                 </Button>
             </StackPanel>
         </Border>
 
         <!-- 错误提示 -->
-        <Border Grid.Row="3" Background="#2D1515" Padding="8,4"
+        <Border Grid.Row="3" Background="{atom:SharedTokenResource ColorErrorBg}" Padding="8,4"
                 IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-            <TextBlock Text="{Binding ErrorMessage}" Foreground="#FF6B6B"
+            <TextBlock Text="{Binding ErrorMessage}" Foreground="{atom:SharedTokenResource ColorErrorText}"
                        FontSize="11" TextWrapping="Wrap"/>
         </Border>
 
@@ -108,11 +109,11 @@
                         Spacing="8" IsVisible="{Binding !IsConnected}">
                 <TextBlock Text="📁" FontSize="32" HorizontalAlignment="Center" Opacity="0.3"/>
                 <TextBlock Text="连接 SSH 会话后自动打开" FontSize="12"
-                           Foreground="#606080" HorizontalAlignment="Center"/>
+                           Foreground="{atom:SharedTokenResource ColorTextTertiary}" HorizontalAlignment="Center"/>
             </StackPanel>
 
             <!-- 加载中 -->
-            <TextBlock Text="正在加载..." Foreground="#A0A0C0" FontSize="12"
+            <TextBlock Text="正在加载..." Foreground="{atom:SharedTokenResource ColorTextSecondary}" FontSize="12"
                        HorizontalAlignment="Center" VerticalAlignment="Center"
                        IsVisible="{Binding IsLoading}"/>
 
@@ -123,17 +124,17 @@
                 <StackPanel>
                     <!-- 内联新建目录输入行 -->
                     <Border IsVisible="{Binding IsCreatingDirectory}"
-                            Padding="8,5" Background="#1A2A1A"
-                            BorderBrush="#2A3A2A" BorderThickness="0,0,0,1">
+                            Padding="8,5" Background="{atom:SharedTokenResource ColorSuccessBg}"
+                            BorderBrush="{atom:SharedTokenResource ColorSuccessBorder}" BorderThickness="0,0,0,1">
                         <Grid ColumnDefinitions="Auto,*">
                             <TextBlock Grid.Column="0" Text="📁" FontSize="13"
-                                       VerticalAlignment="Center" Foreground="#FFD066"
+                                       VerticalAlignment="Center" Foreground="{atom:SharedTokenResource ColorWarning}"
                                        Margin="0,0,6,0"/>
                             <atom:TextBox Grid.Column="1"
                                      x:Name="NewDirInput"
                                      Text="{Binding NewDirectoryName, Mode=TwoWay}"
                                      FontSize="12"
-                                     BorderThickness="0,0,0,1" BorderBrush="#6FB0DF"
+                                     BorderThickness="0,0,0,1" BorderBrush="{atom:SharedTokenResource ColorPrimaryBorder}"
                                      Padding="2,1"
                                      VerticalAlignment="Center"
                                      KeyDown="OnNewDirInputKeyDown"
@@ -146,20 +147,20 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="models:SftpFileItem">
                                 <Border Padding="8,5"
-                                        BorderBrush="#1A1A1A" BorderThickness="0,0,0,1"
+                                        BorderBrush="{atom:SharedTokenResource ColorSplit}" BorderThickness="0,0,0,1"
                                         Cursor="Hand"
                                         Background="{Binding IsSelected, Converter={x:Static vm:SftpSelectedColorConverter.Instance}}"
                                         PointerPressed="OnFileItemPressed"
                                         PointerReleased="OnFileItemReleased">
                                     <Border.Styles>
                                         <Style Selector="Border:pointerover">
-                                            <Setter Property="Background" Value="#1E1E1E"/>
+                                            <Setter Property="Background" Value="{atom:SharedTokenResource ColorFillTertiary}"/>
                                         </Style>
                                     </Border.Styles>
                                     <Grid ColumnDefinitions="Auto,*,Auto,Auto">
                                         <TextBlock Grid.Column="0" Text="{Binding Icon}"
                                                    FontSize="13" VerticalAlignment="Center"
-                                                   Foreground="#D0D0E8" Margin="0,0,6,0"/>
+                                                   Foreground="{atom:SharedTokenResource ColorTextSecondary}" Margin="0,0,6,0"/>
                                         <!-- 正常显示名称 -->
                                         <TextBlock Grid.Column="1" Text="{Binding DisplayName}"
                                                    FontSize="12" VerticalAlignment="Center"
@@ -178,11 +179,11 @@
                                                       KeyDown="OnRenameInputKeyDown"
                                                       LostFocus="OnRenameInputLostFocus"/>
                                         <TextBlock Grid.Column="2" Text="{Binding SizeDisplay}"
-                                                   FontSize="10" Foreground="#808090"
+                                                   FontSize="10" Foreground="{atom:SharedTokenResource ColorTextTertiary}"
                                                    VerticalAlignment="Center" Margin="8,0"
                                                    MinWidth="44" TextAlignment="Right"/>
                                         <TextBlock Grid.Column="3" Text="{Binding DateDisplay}"
-                                                   FontSize="10" Foreground="#707080"
+                                                   FontSize="10" Foreground="{atom:SharedTokenResource ColorTextTertiary}"
                                                    VerticalAlignment="Center"/>
                                     </Grid>
                                 </Border>

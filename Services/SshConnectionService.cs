@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Renci.SshNet;
@@ -12,10 +13,15 @@ public class SshConnectionService : IDisposable
     private ShellStream? _shellStream;
     private CancellationTokenSource? _readCts;
     private Task? _readTask;
+    private readonly object _writeLock = new();
+    private readonly Decoder _utf8Decoder = Encoding.UTF8.GetDecoder();
+    private const string Utf8LocaleBootstrapCommand =
+        "unset LC_ALL; [ \"${LANG:-C}\" = C ] && LANG=en_US.UTF-8; export LANG; export LC_CTYPE=$LANG; clear\r";
 
     public bool IsConnected => _sshClient?.IsConnected ?? false;
 
     public event Action<string>? DataReceived;
+    public event Func<byte[], bool>? BinaryDataReceived;
     public event Action<string>? ConnectionClosed;
     public event Action<string>? ErrorOccurred;
 
@@ -54,6 +60,8 @@ public class SshConnectionService : IDisposable
                 (uint)columns, (uint)rows,
                 800, 600, 65536);
 
+            SendUtf8LocaleBootstrap();
+            _utf8Decoder.Reset();
             _readCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _readTask = Task.Run(() => ReadLoop(_readCts.Token), _readCts.Token);
         }
@@ -65,11 +73,23 @@ public class SshConnectionService : IDisposable
         }
     }
 
+    private void SendUtf8LocaleBootstrap()
+    {
+        try
+        {
+            var bytes = Encoding.UTF8.GetBytes(Utf8LocaleBootstrapCommand);
+            _shellStream?.Write(bytes, 0, bytes.Length);
+            _shellStream?.Flush();
+        }
+        catch
+        {
+            // Locale bootstrap is best-effort; the shell remains usable if it fails.
+        }
+    }
+
     private void ReadLoop(CancellationToken ct)
     {
         var buffer = new byte[4096];
-        var lastActivity = DateTime.UtcNow;
-        const int keepAliveIntervalSeconds = 30;
 
         try
         {
@@ -78,18 +98,23 @@ public class SshConnectionService : IDisposable
                 var bytesRead = _shellStream.Read(buffer, 0, buffer.Length);
                 if (bytesRead > 0)
                 {
-                    lastActivity = DateTime.UtcNow;
-                    var text = System.Text.Encoding.UTF8.GetString(buffer, 0, bytesRead);
-                    DataReceived?.Invoke(text);
+                    var data = new byte[bytesRead];
+                    Buffer.BlockCopy(buffer, 0, data, 0, bytesRead);
+                    if (BinaryDataReceived?.Invoke(data) == true)
+                        continue;
+
+                    var charCount = _utf8Decoder.GetCharCount(data, 0, data.Length);
+                    if (charCount > 0)
+                    {
+                        var chars = new char[charCount];
+                        var charsRead = _utf8Decoder.GetChars(data, 0, data.Length, chars, 0);
+                        DataReceived?.Invoke(new string(chars, 0, charsRead));
+                    }
                 }
                 else
                 {
-                    // KeepAliveInterval on SshClient handles protocol-level keepalive automatically
-                    if ((DateTime.UtcNow - lastActivity).TotalSeconds >= keepAliveIntervalSeconds)
-                    {
-                        lastActivity = DateTime.UtcNow;
-                    }
-                    Thread.Sleep(10);
+                    // A blocking stream read returning 0 indicates remote-shell EOF.
+                    break;
                 }
             }
         }
@@ -114,8 +139,35 @@ public class SshConnectionService : IDisposable
     {
         try
         {
-            _shellStream?.Write(data);
-            _shellStream?.Flush();
+            lock (_writeLock)
+            {
+                if (_shellStream != null)
+                {
+                    var bytes = Encoding.UTF8.GetBytes(data);
+                    _shellStream.Write(bytes, 0, bytes.Length);
+                }
+                _shellStream?.Flush();
+            }
+        }
+        catch (ObjectDisposedException)
+        {
+            // Shell stream already disposed, connection is dead
+        }
+        catch (System.IO.IOException)
+        {
+            // Connection lost
+        }
+    }
+
+    public void SendBytes(byte[] data)
+    {
+        try
+        {
+            lock (_writeLock)
+            {
+                _shellStream?.Write(data, 0, data.Length);
+                _shellStream?.Flush();
+            }
         }
         catch (ObjectDisposedException)
         {

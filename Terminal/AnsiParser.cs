@@ -318,11 +318,13 @@ public class AnsiParser
                 _buffer.ScrollUp();
                 break;
             case 'P': // DCH - Delete Characters
-                // Simplified: just clear current char
+                _buffer.DeleteCharacters(GetParam(0, 1));
                 break;
             case '@': // ICH - Insert blank characters
+                _buffer.InsertBlankCharacters(GetParam(0, 1));
                 break;
             case 'X': // ECH - Erase characters
+                _buffer.EraseCharacters(GetParam(0, 1));
                 break;
             case 'r': // DECSTBM - Set scrolling region
                 // Ignored in basic implementation

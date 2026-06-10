@@ -52,6 +52,11 @@ public partial class TerminalTabViewModel : ObservableObject
         }
     }
 
+    public void NotifyThemeChanged()
+    {
+        OnPropertyChanged(nameof(IsSelected));
+    }
+
     [RelayCommand]
     private void CloseTab()
     {

@@ -6,9 +6,11 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Input;
+using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using AtomUI.Theme.Styling;
 using ChiXueSsh.ViewModels;
 
 namespace ChiXueSsh.Views;
@@ -55,9 +57,9 @@ public partial class SftpPanelView : UserControl
                 var input = this.FindControl<TextBox>("NewDirInput");
                 if (input != null)
                 {
-                    input.Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#FFD066"));
-                    input.Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#1A2A3A"));
-                    input.CaretBrush = Avalonia.Media.Brushes.White;
+                    input.Foreground = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorText, Color.Parse("#000000")));
+                    input.Background = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorBgContainer, Color.Parse("#FFFFFF")));
+                    input.CaretBrush = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorText, Color.Parse("#000000")));
                     input.Text = "新目录";
                     input.Focus();
                     input.SelectAll();
@@ -74,9 +76,9 @@ public partial class SftpPanelView : UserControl
                 var tb = FindRenameTextBox(this, targetItem);
                 if (tb != null)
                 {
-                    tb.Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#FFD066"));
-                    tb.Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#1A2A3A"));
-                    tb.CaretBrush = Avalonia.Media.Brushes.White;
+                    tb.Foreground = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorText, Color.Parse("#000000")));
+                    tb.Background = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorBgContainer, Color.Parse("#FFFFFF")));
+                    tb.CaretBrush = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorText, Color.Parse("#000000")));
                     tb.Text = targetItem.Name;
                     tb.Focus();
                     tb.SelectAll();
@@ -238,7 +240,7 @@ public partial class SftpPanelView : UserControl
 
         var panel = new StackPanel
         {
-            Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#2A2A3E")),
+            Background = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorBgElevated, Color.Parse("#FFFFFF"))),
             MinWidth = 120,
         };
 
@@ -247,12 +249,12 @@ public partial class SftpPanelView : UserControl
             var btn = new Button
             {
                 Content = text,
-                Background = Avalonia.Media.Brushes.Transparent,
+                Background = Brushes.Transparent,
                 BorderThickness = new Avalonia.Thickness(0),
                 Padding = new Avalonia.Thickness(12, 6),
                 HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
                 HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Left,
-                Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#D0D0E8")),
+                Foreground = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorText, Color.Parse("#000000"))),
                 FontSize = 12,
             };
             btn.Click += (_, _) =>
@@ -269,7 +271,7 @@ public partial class SftpPanelView : UserControl
             panel.Children.Add(new Border
             {
                 Height = 1,
-                Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#404060")),
+                Background = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorSplit, Color.Parse("#F0F0F0"))),
                 Margin = new Avalonia.Thickness(4, 2),
             });
         }
@@ -281,11 +283,11 @@ public partial class SftpPanelView : UserControl
         popup.Child = new Border
         {
             Child = panel,
-            Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#2A2A3E")),
-            BorderBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#404060")),
+            Background = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorBgElevated, Color.Parse("#FFFFFF"))),
+            BorderBrush = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorBorder, Color.Parse("#D9D9D9"))),
             BorderThickness = new Avalonia.Thickness(1),
             CornerRadius = new Avalonia.CornerRadius(4),
-            BoxShadow = Avalonia.Media.BoxShadows.Parse("0 4 12 0 #80000000"),
+            BoxShadow = BoxShadows.Parse("0 4 12 0 #80000000"),
         };
 
         // 附加到当前 UserControl 的可视树
@@ -323,7 +325,7 @@ public partial class SftpPanelView : UserControl
         };
 
         var panel = new StackPanel { Spacing = 12, Margin = new Avalonia.Thickness(20) };
-        panel.Children.Add(new TextBlock { Text = message, TextWrapping = Avalonia.Media.TextWrapping.Wrap });
+        panel.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap });
 
         var btnPanel = new StackPanel
         {
@@ -360,7 +362,12 @@ public partial class SftpPanelView : UserControl
         };
 
         var panel = new StackPanel { Spacing = 12, Margin = new Avalonia.Thickness(20) };
-        var label = new TextBlock { Text = title, FontSize = 13, Foreground = Avalonia.Media.Brushes.Gray };
+        var label = new TextBlock
+        {
+            Text = title,
+            FontSize = 13,
+            Foreground = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorTextSecondary, Color.Parse("#666666")))
+        };
         var input = new TextBox { Text = defaultValue, FontSize = 13 };
         panel.Children.Add(label);
 

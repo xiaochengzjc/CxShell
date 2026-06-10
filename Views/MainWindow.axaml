@@ -5,7 +5,8 @@
              xmlns:views="using:ChiXueSsh.Views"
              x:Class="ChiXueSsh.Views.MainWindow"
              x:DataType="vm:MainWindowViewModel"
-             Title="ChiXueSsh - SSH Client"
+             Title="Cx-Ssh - SSH Client"
+             Icon="/Assets/ChiXueSshLogo.png"
              Width="1200"
              Height="800"
              MinWidth="600"
@@ -13,51 +14,75 @@
              WindowState="Normal"
              WindowStartupLocation="CenterScreen">
 
-    <!-- AtomUI Token 覆盖（解决闪白 + 标题栏图标颜色） -->
-    <atom:Window.Resources>
-        <!-- 窗口初始背景 & 系统栏颜色，防止打开时闪白 -->
-        <SolidColorBrush x:Key="{x:Static atom:WindowTokenKind.DefaultBackground}"
-                         Color="#0D0D0D"/>
-        <SolidColorBrush x:Key="{x:Static atom:WindowTokenKind.SystemBarColor}"
-                         Color="#0D0D0D"/>
-        <!-- 标题栏按钮图标颜色 -->
-        <SolidColorBrush x:Key="{x:Static atom:WindowTitleBarTokenKind.ActiveColor}"
-                         Color="#E0E0E0"/>
-        <SolidColorBrush x:Key="{x:Static atom:WindowTitleBarTokenKind.InactiveColor}"
-                         Color="#555555"/>
-    </atom:Window.Resources>
+    <atom:Window.LogoTemplate>
+        <DataTemplate>
+            <Image Source="/Assets/ChiXueSshLogo.png"/>
+        </DataTemplate>
+    </atom:Window.LogoTemplate>
 
     <DockPanel>
         <!-- 工具栏 -->
-        <Border DockPanel.Dock="Top" Padding="8,4" Background="#111111">
+        <Border DockPanel.Dock="Top" Padding="8,4"
+                IsVisible="{Binding IsMainChromeVisible}"
+                Background="{atom:SharedTokenResource ColorBgContainer}">
             <StackPanel Orientation="Horizontal" Spacing="4">
                 <atom:Button Command="{Binding NewSessionCommand}"
-                             Background="#1A1A1A" BorderThickness="1" BorderBrush="#333333">
+                             ButtonType="Default">
                     <StackPanel Orientation="Horizontal" Spacing="4">
-                        <atom:TextBlock Text="+" FontSize="16" FontWeight="Bold" Foreground="#E0E0E0"/>
-                        <atom:TextBlock Text="新建会话" Foreground="#E0E0E0"/>
+                        <atom:TextBlock Text="+" FontSize="16" FontWeight="Bold"/>
+                        <atom:TextBlock Text="新建会话"/>
                     </StackPanel>
                 </atom:Button>
                 <atom:Button Command="{Binding ShowSessionManagerCommand}"
-                             Background="#1A1A1A" BorderThickness="1" BorderBrush="#333333">
+                             ButtonType="Default">
                     <StackPanel Orientation="Horizontal" Spacing="4">
-                        <atom:TextBlock Text="☰" FontSize="16" Foreground="#E0E0E0"/>
-                        <atom:TextBlock Text="会话管理" Foreground="#E0E0E0"/>
+                        <atom:TextBlock Text="☰" FontSize="16"/>
+                        <atom:TextBlock Text="会话管理"/>
                     </StackPanel>
                 </atom:Button>
-                <Border Width="1" Background="#444444" Margin="8,4" Opacity="0.6"/>
-                <atom:Button Command="{Binding ToggleSftpCommand}"
-                             Background="#1A1A1A" BorderThickness="1" BorderBrush="#333333">
+                <Border Width="1" Background="{atom:SharedTokenResource ColorSplit}" Margin="8,4" Opacity="0.6"/>
+                <atom:Button Command="{Binding CurrentConnectCommand}"
+                             ButtonType="Default"
+                             ToolTip.Tip="连接当前会话">
                     <StackPanel Orientation="Horizontal" Spacing="4">
-                        <atom:TextBlock Text="⇅" FontSize="14" Foreground="#E0E0E0"/>
-                        <atom:TextBlock Text="SFTP" Foreground="#E0E0E0"/>
+                        <atom:TextBlock Text="▶" FontSize="12"/>
+                        <atom:TextBlock Text="连接"/>
+                    </StackPanel>
+                </atom:Button>
+                <atom:Button Command="{Binding CurrentDisconnectCommand}"
+                             ButtonType="Default"
+                             ToolTip.Tip="断开当前会话">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <atom:TextBlock Text="■" FontSize="11"/>
+                        <atom:TextBlock Text="断开"/>
+                    </StackPanel>
+                </atom:Button>
+                <Border Width="1" Background="{atom:SharedTokenResource ColorSplit}" Margin="8,4" Opacity="0.6"/>
+                <atom:Button Command="{Binding ToggleSftpCommand}"
+                             ButtonType="Default">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <atom:TextBlock Text="⇅" FontSize="14"/>
+                        <atom:TextBlock Text="SFTP"/>
                     </StackPanel>
                 </atom:Button>
                 <atom:Button Command="{Binding ToggleMonitorCommand}"
-                             Background="#1A1A1A" BorderThickness="1" BorderBrush="#333333">
+                             ButtonType="Default">
                     <StackPanel Orientation="Horizontal" Spacing="4">
-                        <atom:TextBlock Text="▦" FontSize="14" Foreground="#E0E0E0"/>
-                        <atom:TextBlock Text="监控" Foreground="#E0E0E0"/>
+                        <atom:TextBlock Text="▦" FontSize="14"/>
+                        <atom:TextBlock Text="监控"/>
+                    </StackPanel>
+                </atom:Button>
+                <!-- 主题切换 -->
+                <Border Width="1" Background="{atom:SharedTokenResource ColorSplit}" Margin="8,4" Opacity="0.6"/>
+                <atom:Button ButtonType="Default" Command="{Binding ToggleThemeCommand}"
+                             ToolTip.Tip="切换亮色/暗色主题">
+                    <atom:TextBlock Text="{Binding ThemeIcon}" FontSize="14"/>
+                </atom:Button>
+                <atom:Button ButtonType="Default" Command="{Binding ToggleTerminalFullScreenCommand}"
+                             ToolTip.Tip="全屏显示当前终端">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <atom:TextBlock Text="⛶" FontSize="14"/>
+                        <atom:TextBlock Text="全屏"/>
                     </StackPanel>
                 </atom:Button>
             </StackPanel>
@@ -65,15 +90,17 @@
 
         <!-- 状态栏 -->
         <Border DockPanel.Dock="Bottom" Padding="8,4"
-                Background="#111111" BorderBrush="#222222" BorderThickness="0,1,0,0">
+                IsVisible="{Binding IsMainChromeVisible}"
+                Background="{atom:SharedTokenResource ColorBgContainer}"
+                BorderBrush="{atom:SharedTokenResource ColorSplit}" BorderThickness="0,1,0,0">
             <StackPanel Orientation="Horizontal" Spacing="16">
                 <StackPanel Orientation="Horizontal" Spacing="4">
                     <Ellipse Width="8" Height="8"
                              Fill="{Binding ConnectionStatusColor}"/>
-                    <atom:TextBlock Text="{Binding ConnectionStatusText}" Foreground="#AAAAAA"/>
+                    <atom:TextBlock Text="{Binding ConnectionStatusText}"/>
                 </StackPanel>
-                <atom:TextBlock Text="{Binding ConnectedHostInfo}" Foreground="#888888" Opacity="0.8"/>
-                <atom:TextBlock Text="{Binding TerminalSizeText}" Foreground="#888888" Opacity="0.8"/>
+                <atom:TextBlock Text="{Binding ConnectedHostInfo}" Opacity="0.8"/>
+                <atom:TextBlock Text="{Binding TerminalSizeText}" Opacity="0.8"/>
             </StackPanel>
         </Border>
 
@@ -82,34 +109,39 @@
 
             <!-- Col 0: 左侧 SFTP 面板 -->
             <Grid Grid.Column="0" ColumnDefinitions="*,3"
-                  IsVisible="{Binding IsSftpVisible}">
+                  IsVisible="{Binding IsSftpPanelVisible}">
                 <views:SftpPanelView Grid.Column="0"
                                      DataContext="{Binding Sftp, x:CompileBindings=False}"
                                      Width="300"/>
                 <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch"
-                              Background="#222222"/>
+                              Background="{atom:SharedTokenResource ColorSplit}"/>
             </Grid>
 
-            <!-- Col 1: 终端区域 -->
+            <!-- Col 1: 终端区域（始终深色）-->
             <Grid Grid.Column="1" Background="#141414">
                 <!-- 无标签时显示欢迎页 -->
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
                             Spacing="12"
                             IsVisible="{Binding !HasTabs}">
-                    <atom:TextBlock Text="ChiXueSsh" FontSize="32" FontWeight="Bold"
-                                   HorizontalAlignment="Center" Opacity="0.3" Foreground="#FFFFFF"/>
+                    <atom:TextBlock Text="Cx-Ssh" FontSize="32" FontWeight="Bold"
+                                   HorizontalAlignment="Center" Opacity="0.3"
+                                   Foreground="{atom:SharedTokenResource ColorTextLightSolid}"/>
                     <atom:TextBlock Text="点击「会话管理」选择会话并连接，或点击「新建会话」开始"
-                                   HorizontalAlignment="Center" Opacity="0.5" Foreground="#FFFFFF"/>
+                                   HorizontalAlignment="Center" Opacity="0.5"
+                                   Foreground="{atom:SharedTokenResource ColorTextLightSolid}"/>
                     <atom:TextBlock Text="基于 AtomUI 开发"
-                                   HorizontalAlignment="Center" Opacity="0.25" Foreground="#FFFFFF"
+                                   HorizontalAlignment="Center" Opacity="0.25"
+                                   Foreground="{atom:SharedTokenResource ColorTextLightSolid}"
                                    FontSize="11"/>
                 </StackPanel>
 
                 <!-- 有标签时显示多标签布局 -->
                 <Grid IsVisible="{Binding HasTabs}" RowDefinitions="Auto,*">
                     <!-- Tab 标题栏 -->
-                    <Border Grid.Row="0" Background="#0D0D0D"
-                            BorderBrush="#333333" BorderThickness="0,0,0,1">
+                    <Border Grid.Row="0"
+                            IsVisible="{Binding IsTabHeaderVisible}"
+                            Background="{atom:SharedTokenResource ColorBgLayout}"
+                            BorderBrush="{atom:SharedTokenResource ColorBorder}" BorderThickness="0,0,0,1">
                         <ItemsControl ItemsSource="{Binding Tabs}">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
@@ -139,7 +171,7 @@
                                                              Padding="2,0" FontSize="10"
                                                              Background="Transparent" BorderThickness="0"
                                                              Opacity="0.5">
-                                                    <atom:TextBlock Text="✕" FontSize="10" Foreground="#AAAAAA"/>
+                                                    <atom:TextBlock Text="✕" FontSize="10"/>
                                                 </atom:Button>
                                             </StackPanel>
                                         </Border>
@@ -152,13 +184,42 @@
                     <views:TerminalView Grid.Row="1"
                                         x:Name="ActiveTerminalView"
                                         DataContext="{Binding SelectedTab.Terminal, x:CompileBindings=False}"/>
+                    <Grid Grid.RowSpan="2"
+                          IsVisible="{Binding IsTerminalFullScreen}"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Top"
+                          Height="44"
+                          Background="Transparent"
+                          PointerEntered="FullScreenHintArea_OnPointerEntered"
+                          PointerExited="FullScreenHintArea_OnPointerExited">
+                        <Border Height="3"
+                                Width="180"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Top"
+                                Background="#64D8FF"
+                                BoxShadow="0 0 12 0 #9964D8FF"/>
+                        <Border IsVisible="{Binding IsFullScreenHintVisible}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Top"
+                                Margin="0,8,0,0"
+                                Padding="14,6"
+                                CornerRadius="6"
+                                Background="#CC1F2933"
+                                BorderBrush="#4464D8FF"
+                                BorderThickness="1">
+                            <atom:TextBlock Text="ESC 返回"
+                                            Foreground="White"
+                                            FontSize="13"/>
+                        </Border>
+                    </Grid>
                 </Grid>
             </Grid>
 
             <!-- Col 2: 右侧分割线 + 监控面板（整体隐藏时不占宽度，Terminal 自动扩展） -->
             <StackPanel Grid.Column="2" Orientation="Horizontal"
-                        IsVisible="{Binding IsMonitorVisible}">
-                <GridSplitter Width="3" HorizontalAlignment="Left" Background="#222222"/>
+                        IsVisible="{Binding IsMonitorPanelVisible}">
+                <GridSplitter Width="3" HorizontalAlignment="Left"
+                              Background="{atom:SharedTokenResource ColorSplit}"/>
                 <views:ServerMonitorView DataContext="{Binding Monitor, x:CompileBindings=False}"
                                          Width="280"/>
             </StackPanel>

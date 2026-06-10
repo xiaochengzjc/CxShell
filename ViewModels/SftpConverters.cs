@@ -1,5 +1,7 @@
 using System;
 using System.Globalization;
+using AtomUI.Data;
+using AtomUI.Theme.Styling;
 using Avalonia.Data.Converters;
 using Avalonia.Media;
 
@@ -13,8 +15,8 @@ public class SftpStatusColorConverter : IValueConverter
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         return value is true
-            ? new SolidColorBrush(Color.Parse("#52C41A"))
-            : new SolidColorBrush(Color.Parse("#808080"));
+            ? new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorSuccess, Color.Parse("#52C41A")))
+            : new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorTextTertiary, Color.Parse("#808080")));
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
@@ -29,8 +31,8 @@ public class SftpDirColorConverter : IValueConverter
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         return value is true
-            ? new SolidColorBrush(Color.Parse("#FFD066"))
-            : new SolidColorBrush(Color.Parse("#D0D0E8"));
+            ? new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorWarning, Color.Parse("#FAAD14")))
+            : new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorText, Color.Parse("#D0D0E8")));
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
@@ -45,7 +47,7 @@ public class SftpSelectedColorConverter : IValueConverter
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         return value is true
-            ? new SolidColorBrush(Color.Parse("#1A3A1A"))
+            ? new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorPrimaryBg, Color.Parse("#E6F4FF")))
             : new SolidColorBrush(Colors.Transparent);
     }
 
@@ -59,7 +61,9 @@ public class TabSelectedBgConverter : IValueConverter
     public static readonly TabSelectedBgConverter Instance = new();
 
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-        => value is true ? Color.Parse("#1E1E1E") : Color.Parse("#0D0D0D");
+        => value is true
+            ? ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorBgContainer, Color.Parse("#1E1E1E"))
+            : ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorBgLayout, Color.Parse("#0D0D0D"));
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
         => throw new NotSupportedException();
@@ -71,7 +75,9 @@ public class TabSelectedBorderConverter : IValueConverter
     public static readonly TabSelectedBorderConverter Instance = new();
 
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-        => value is true ? Color.Parse("#4A9EFF") : Color.Parse("#333333");
+        => value is true
+            ? ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorPrimary, Color.Parse("#1677FF"))
+            : ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorBorder, Color.Parse("#333333"));
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
         => throw new NotSupportedException();
@@ -83,10 +89,24 @@ public class TabSelectedFgConverter : IValueConverter
     public static readonly TabSelectedFgConverter Instance = new();
 
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-        => value is true
-            ? (IBrush)new SolidColorBrush(Color.Parse("#FFFFFF"))
-            : new SolidColorBrush(Color.Parse("#888888"));
+        => new SolidColorBrush(value is true
+            ? ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorText, Color.Parse("#FFFFFF"))
+            : ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorTextTertiary, Color.Parse("#888888")));
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
         => throw new NotSupportedException();
+}
+
+internal static class ThemeTokenColorHelper
+{
+    public static Color GetColor(SharedTokenKind kind, Color fallback)
+    {
+        var value = TokenResourceUtils.FindGlobalTokenResource(kind);
+        return value switch
+        {
+            Color color => color,
+            ISolidColorBrush brush => brush.Color,
+            _ => fallback
+        };
+    }
 }
