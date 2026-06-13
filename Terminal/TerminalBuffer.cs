@@ -54,7 +54,12 @@ public class TerminalBuffer
             return TerminalCell.Default;
 
         if (combinedRow < _scrollback.Count)
-            return _scrollback[combinedRow][col];
+        {
+            var scrollbackRow = _scrollback[combinedRow];
+            return col < scrollbackRow.Length
+                ? scrollbackRow[col]
+                : TerminalCell.Default;
+        }
 
         var screenRow = combinedRow - _scrollback.Count;
         return screenRow >= 0 && screenRow < Rows
@@ -233,13 +238,14 @@ public class TerminalBuffer
 
     public void ClearScreen()
     {
-        for (int r = 0; r < Rows; r++)
+        for (int r = 0; r < _cells.GetLength(0); r++)
         {
-            for (int c = 0; c < Columns; c++)
+            for (int c = 0; c < _cells.GetLength(1); c++)
             {
                 _cells[r, c] = TerminalCell.Default;
             }
-            DirtyRows.Add(r);
+            if (r < Rows)
+                DirtyRows.Add(r);
         }
         Changed?.Invoke();
     }
@@ -349,7 +355,7 @@ public class TerminalBuffer
                 _cells[row, col] = TerminalCell.Default;
         }
 
-        if (Columns > 0 && _cells[row, Columns - 1].IsWideContinuation)
+        if (Columns > 1 && _cells[row, Columns - 1].IsWideContinuation)
         {
             _cells[row, Columns - 2] = TerminalCell.Default;
             _cells[row, Columns - 1] = TerminalCell.Default;
@@ -401,20 +407,23 @@ public class TerminalBuffer
         if (newColumns == Columns && newRows == Rows)
             return;
 
-        var newCells = new TerminalCell[newRows, newColumns];
+        var allocatedRows = Math.Max(newRows, _cells.GetLength(0));
+        var allocatedColumns = Math.Max(newColumns, _cells.GetLength(1));
+        var newCells = new TerminalCell[allocatedRows, allocatedColumns];
 
         // Initialize new cells
-        for (int r = 0; r < newRows; r++)
+        for (int r = 0; r < allocatedRows; r++)
         {
-            for (int c = 0; c < newColumns; c++)
+            for (int c = 0; c < allocatedColumns; c++)
             {
                 newCells[r, c] = TerminalCell.Default;
             }
         }
 
-        // Copy existing content
-        int copyRows = Math.Min(Rows, newRows);
-        int copyCols = Math.Min(Columns, newColumns);
+        // Copy the full allocated backing store. The logical Rows/Columns may shrink,
+        // but hidden right/bottom cells are kept so a later resize can reveal them.
+        int copyRows = Math.Min(_cells.GetLength(0), allocatedRows);
+        int copyCols = Math.Min(_cells.GetLength(1), allocatedColumns);
         for (int r = 0; r < copyRows; r++)
         {
             for (int c = 0; c < copyCols; c++)
@@ -430,6 +439,9 @@ public class TerminalBuffer
         CursorRow = Math.Clamp(CursorRow, 0, Rows - 1);
         CursorCol = Math.Clamp(CursorCol, 0, Columns - 1);
 
+        for (int r = 0; r < Rows; r++)
+            RepairWideBoundaries(r);
+
         // Mark all rows dirty
         for (int r = 0; r < Rows; r++)
             DirtyRows.Add(r);
@@ -439,9 +451,9 @@ public class TerminalBuffer
 
     public void Clear()
     {
-        for (int r = 0; r < Rows; r++)
+        for (int r = 0; r < _cells.GetLength(0); r++)
         {
-            for (int c = 0; c < Columns; c++)
+            for (int c = 0; c < _cells.GetLength(1); c++)
             {
                 _cells[r, c] = TerminalCell.Default;
             }

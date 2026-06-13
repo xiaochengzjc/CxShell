@@ -99,6 +99,7 @@ public class TerminalControl : Control
             _scrollOffset = 0;
             _selectionAnchor = null;
             _selectionEnd = null;
+            TerminalBuffer?.Resize(_columns, _rows);
             InvalidateVisual();
         }
     }
@@ -117,19 +118,42 @@ public class TerminalControl : Control
 
     protected override Size ArrangeOverride(Size finalSize)
     {
-        int newCols = Math.Max(20, (int)(finalSize.Width / _cellWidth));
-        int newRows = Math.Max(5, (int)(finalSize.Height / _cellHeight));
-
-        if (newCols != _columns || newRows != _rows)
-        {
-            _columns = newCols;
-            _rows = newRows;
-            TerminalBuffer?.Resize(_columns, _rows);
-            ClampScrollOffset();
-            SizeChanged2?.Invoke(_columns, _rows);
-        }
+        UpdateTerminalSize(finalSize, notify: true);
 
         return finalSize;
+    }
+
+    public void SyncSizeToBounds()
+    {
+        UpdateTerminalSize(Bounds.Size, notify: true);
+    }
+
+    private void UpdateTerminalSize(Size size, bool notify)
+    {
+        if (_cellWidth <= 0
+            || _cellHeight <= 0
+            || double.IsNaN(size.Width)
+            || double.IsNaN(size.Height)
+            || double.IsInfinity(size.Width)
+            || double.IsInfinity(size.Height)
+            || size.Width <= 0
+            || size.Height <= 0)
+        {
+            return;
+        }
+
+        var usableWidth = Math.Max(0, size.Width - ScrollbarWidth);
+        int newCols = Math.Max(20, (int)Math.Floor(usableWidth / _cellWidth));
+        int newRows = Math.Max(5, (int)Math.Floor(size.Height / _cellHeight));
+
+        var changed = newCols != _columns || newRows != _rows;
+        _columns = newCols;
+        _rows = newRows;
+        TerminalBuffer?.Resize(_columns, _rows);
+        ClampScrollOffset();
+
+        if (notify && changed)
+            SizeChanged2?.Invoke(_columns, _rows);
     }
 
     public override void Render(DrawingContext context)

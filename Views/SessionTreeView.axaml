@@ -1,31 +1,64 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:atom="https://atomui.net"
+             xmlns:antdicons="https://atomui.net/icons/antdesign"
              xmlns:vm="using:ChiXueSsh.ViewModels"
              x:Class="ChiXueSsh.Views.SessionTreeView"
              x:DataType="vm:SessionTreeViewModel"
              Background="{atom:SharedTokenResource ColorBgLayout}">
-    <DockPanel>
+    <Grid>
+        <Grid Width="760"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Top"
+              Margin="0,20,0,0"
+              RowDefinitions="Auto,12,*">
+            <StackPanel Grid.Row="0"
+                        Orientation="Horizontal"
+                        Spacing="8">
+                <atom:Button x:Name="NewSessionBtn"
+                             Icon="{antdicons:AntDesignIconProvider Kind=PlusOutlined}"
+                             Content="新建"/>
+                <atom:Button x:Name="CopySessionBtn"
+                             Icon="{antdicons:AntDesignIconProvider Kind=CopyOutlined}"
+                             Content="复制"
+                             IsEnabled="{Binding CanUseSelectedSession}"/>
+                <atom:Button x:Name="PasteSessionBtn"
+                             Icon="{antdicons:AntDesignIconProvider Kind=SnippetsOutlined}"
+                             Content="粘贴"
+                             IsEnabled="{Binding CanPaste}"/>
+                <atom:Button x:Name="PropertiesSessionBtn"
+                             Icon="{antdicons:AntDesignIconProvider Kind=SettingOutlined}"
+                             Content="属性"
+                             IsEnabled="{Binding CanUseSelectedSession}"/>
+                <atom:Button x:Name="DeleteSessionBtn"
+                             Icon="{antdicons:AntDesignIconProvider Kind=DeleteOutlined}"
+                             Content="删除"
+                             IsEnabled="{Binding CanUseSelectedSession}"/>
+            </StackPanel>
 
-        <!-- 会话树 -->
-        <atom:TreeView x:Name="SessionTree"
-                       Background="{atom:SharedTokenResource ColorBgLayout}"
-                       ItemsSource="{Binding SessionNodes}"
-                       SelectedItem="{Binding SelectedNode, Mode=TwoWay}">
-            <atom:TreeView.ItemTemplate>
-                <TreeDataTemplate DataType="vm:SessionNodeViewModel"
-                    ItemsSource="{Binding Children}">
-                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="2,2">
-                        <TextBlock Text="{Binding Icon}" FontSize="13"
-                                   Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
-                        <TextBlock Text="{Binding Name}"
-                                   Foreground="{atom:SharedTokenResource ColorText}" FontSize="13"/>
-                    </StackPanel>
-                </TreeDataTemplate>
-            </atom:TreeView.ItemTemplate>
-        </atom:TreeView>
+            <atom:DataGrid x:Name="SessionTree"
+                           Grid.Row="2"
+                           Height="500"
+                           ItemsSource="{Binding SessionRows}"
+                           SelectedItem="{Binding SelectedNode, Mode=TwoWay}"
+                           AutoGenerateColumns="False"
+                           IsReadOnly="True"
+                           SelectionMode="Single"
+                           SizeType="Middle"
+                           GridLinesVisibility="Horizontal"
+                           CanUserResizeColumns="True"
+                           CanUserSortColumns="True"
+                           IsHideOnSinglePage="True">
+                <atom:DataGrid.Columns>
+                    <atom:DataGridTextColumn Header="名称" Binding="{Binding Name}" Width="180"/>
+                    <atom:DataGridTextColumn Header="主机" Binding="{Binding Host}" Width="240"/>
+                    <atom:DataGridTextColumn Header="用户名" Binding="{Binding Username}" Width="160"/>
+                    <atom:DataGridTextColumn Header="协议" Binding="{Binding Protocol}" Width="100"/>
+                    <atom:DataGridTextColumn Header="端口" Binding="{Binding Port}" Width="100"/>
+                </atom:DataGrid.Columns>
+            </atom:DataGrid>
+        </Grid>
 
-        <!-- 右键弹出菜单 -->
         <Popup x:Name="ContextMenuPopup"
                Placement="Pointer"
                IsLightDismissEnabled="True">
@@ -58,5 +91,5 @@
                 </StackPanel>
             </Border>
         </Popup>
-    </DockPanel>
+    </Grid>
 </UserControl>

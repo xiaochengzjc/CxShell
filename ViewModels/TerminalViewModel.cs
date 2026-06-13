@@ -22,14 +22,13 @@ public partial class TerminalViewModel : ObservableObject
     public TerminalBuffer Buffer { get; private set; }
     public AnsiParser Parser { get; private set; }
 
-    private SshConnectionService? _ssh;
+    private ITerminalConnectionService? _connection;
     private SessionInfo? _session;
     private string? _password;
     private CancellationTokenSource? _connectionCts;
     private readonly SemaphoreSlim _connectGate = new(1, 1);
     private bool _manualDisconnect = true;
     private int _connectionGeneration;
-    private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(5);
     private readonly object _zmodemLock = new();
     private readonly List<byte[]> _zmodemPendingBytes = new();
     private readonly List<byte> _zmodemProbeBytes = new();
@@ -37,6 +36,9 @@ public partial class TerminalViewModel : ObservableObject
     private ZmodemTransfer? _zmodemTransfer;
     private bool _zmodemStarting;
     private ZmodemTransferDirection _zmodemStartingDirection;
+    private CancellationTokenSource? _keepAliveCts;
+    private Task? _keepAliveTask;
+    private DateTimeOffset _lastUserInputAt = DateTimeOffset.UtcNow;
 
     public Func<Task<IReadOnlyList<string>>>? PickZmodemUploadFilesAsync { get; set; }
     public Func<Task<string?>>? PickZmodemDownloadFolderAsync { get; set; }
@@ -76,14 +78,14 @@ public partial class TerminalViewModel : ObservableObject
             cancellationToken.ThrowIfCancellationRequested();
 
             int generation = ++_connectionGeneration;
-            var previous = _ssh;
-            _ssh = null;
+            var previous = _connection;
+            _connection = null;
             previous?.Dispose();
 
-            var ssh = new SshConnectionService();
-            _ssh = ssh;
+            var connection = CreateConnectionService(_session.Protocol);
+            _connection = connection;
 
-            ssh.DataReceived += data =>
+            connection.DataReceived += data =>
             {
                 Dispatcher.UIThread.Post(() =>
                 {
@@ -96,14 +98,14 @@ public partial class TerminalViewModel : ObservableObject
                 });
             };
 
-            ssh.BinaryDataReceived += bytes => HandleBinaryData(generation, bytes);
+            connection.BinaryDataReceived += bytes => HandleBinaryData(generation, bytes);
 
-            ssh.ConnectionClosed += reason =>
+            connection.ConnectionClosed += reason =>
             {
                 Dispatcher.UIThread.Post(() => HandleConnectionClosed(generation, reason));
             };
 
-            ssh.ErrorOccurred += error =>
+            connection.ErrorOccurred += error =>
             {
                 Dispatcher.UIThread.Post(() =>
                 {
@@ -114,17 +116,16 @@ public partial class TerminalViewModel : ObservableObject
                 });
             };
 
-            await ssh.ConnectAsync(
-                _session.Host, _session.Port, _session.Username,
-                _session.AuthMethod, _password, _session.PrivateKeyPath,
-                Columns, Rows, cancellationToken);
+            await connection.ConnectAsync(_session, _password, Columns, Rows, cancellationToken);
 
             cancellationToken.ThrowIfCancellationRequested();
             if (generation != _connectionGeneration || _manualDisconnect)
                 return;
 
+            connection.ResizeTerminal(Columns, Rows);
             IsConnected = true;
-            HostInfo = $"{_session.Username}@{_session.Host}:{_session.Port}";
+            HostInfo = GetHostInfo(_session);
+            StartKeepAliveLoop(generation, _session, connection, cancellationToken);
         }
         finally
         {
@@ -139,7 +140,14 @@ public partial class TerminalViewModel : ObservableObject
 
         IsConnected = false;
         HostInfo = string.Empty;
+        StopKeepAliveLoop();
         AppendStatusMessage($"[Connection closed: {reason}]", "31");
+
+        if (_session?.AutoReconnect != true)
+        {
+            AppendStatusMessage("[Auto reconnect disabled]", "33");
+            return;
+        }
 
         var cancellationToken = _connectionCts?.Token ?? CancellationToken.None;
         _ = ReconnectLoopAsync(generation, cancellationToken);
@@ -147,13 +155,24 @@ public partial class TerminalViewModel : ObservableObject
 
     private async Task ReconnectLoopAsync(int disconnectedGeneration, CancellationToken cancellationToken)
     {
+        var startedAt = DateTimeOffset.UtcNow;
+
         while (!_manualDisconnect && disconnectedGeneration == _connectionGeneration)
         {
             try
             {
-                await Task.Delay(ReconnectDelay, cancellationToken);
+                var reconnectDelay = TimeSpan.FromSeconds(Math.Max(1, _session?.ReconnectIntervalSeconds ?? 30));
+                var limitMinutes = Math.Max(0, _session?.ReconnectLimitMinutes ?? 0);
+                if (limitMinutes > 0 && DateTimeOffset.UtcNow - startedAt >= TimeSpan.FromMinutes(limitMinutes))
+                {
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                        AppendStatusMessage($"[Auto reconnect stopped after {limitMinutes} minute(s)]", "33"));
+                    return;
+                }
+
+                await Task.Delay(reconnectDelay, cancellationToken);
                 await Dispatcher.UIThread.InvokeAsync(() =>
-                    AppendStatusMessage($"[Auto reconnecting; retry interval: {ReconnectDelay.TotalSeconds:0}s...]", "33"));
+                    AppendStatusMessage($"[Auto reconnecting; retry interval: {reconnectDelay.TotalSeconds:0}s...]", "33"));
 
                 await ConnectCoreAsync(cancellationToken);
                 await Dispatcher.UIThread.InvokeAsync(() =>
@@ -364,7 +383,7 @@ public partial class TerminalViewModel : ObservableObject
             _zmodemProbeBytes.Clear();
         }
 
-        _ssh?.SendBytes(new byte[] { 24, 24, 24, 24, 24, 8, 8, 8, 8, 8 });
+        _connection?.SendBytes(new byte[] { 24, 24, 24, 24, 24, 8, 8, 8, 8, 8 });
         PostStatusMessage(message, "33");
     }
 
@@ -382,7 +401,7 @@ public partial class TerminalViewModel : ObservableObject
 
     private void SendZmodemBytes(byte[] bytes)
     {
-        _ssh?.SendBytes(bytes);
+        _connection?.SendBytes(bytes);
     }
 
     private void ProcessTerminalBytes(byte[] bytes)
@@ -412,7 +431,8 @@ public partial class TerminalViewModel : ObservableObject
 
     public void SendInput(string data)
     {
-        _ssh?.SendData(data);
+        _lastUserInputAt = DateTimeOffset.UtcNow;
+        _connection?.SendData(data);
     }
 
     public void Resize(int columns, int rows)
@@ -423,7 +443,79 @@ public partial class TerminalViewModel : ObservableObject
         Columns = columns;
         Rows = rows;
         Buffer.Resize(columns, rows);
-        _ssh?.ResizeTerminal(columns, rows);
+        _connection?.ResizeTerminal(columns, rows);
+    }
+
+    private void StartKeepAliveLoop(
+        int generation,
+        SessionInfo session,
+        ITerminalConnectionService connection,
+        CancellationToken parentCancellationToken)
+    {
+        StopKeepAliveLoop();
+
+        var sendSessionKeepAlive = session.SendSessionKeepAlive;
+        var sendIdleString = session.SendIdleString && !string.IsNullOrEmpty(session.IdleString);
+        if (!sendSessionKeepAlive && !sendIdleString)
+            return;
+
+        _lastUserInputAt = DateTimeOffset.UtcNow;
+        _keepAliveCts = CancellationTokenSource.CreateLinkedTokenSource(parentCancellationToken);
+        var cancellationToken = _keepAliveCts.Token;
+        _keepAliveTask = Task.Run(async () =>
+        {
+            var lastSessionKeepAliveAt = DateTimeOffset.UtcNow;
+            var lastIdleStringAt = DateTimeOffset.UtcNow;
+            var sessionInterval = TimeSpan.FromSeconds(Math.Max(1, session.SessionKeepAliveIntervalSeconds));
+            var idleInterval = TimeSpan.FromSeconds(Math.Max(1, session.IdleStringIntervalSeconds));
+
+            while (!cancellationToken.IsCancellationRequested &&
+                   generation == _connectionGeneration &&
+                   !_manualDisconnect)
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+                    if (!connection.IsConnected)
+                        continue;
+
+                    var now = DateTimeOffset.UtcNow;
+                    if (sendSessionKeepAlive && now - lastSessionKeepAliveAt >= sessionInterval)
+                    {
+                        connection.SendKeepAlive();
+                        lastSessionKeepAliveAt = now;
+                    }
+
+                    if (sendIdleString &&
+                        now - _lastUserInputAt >= idleInterval &&
+                        now - lastIdleStringAt >= idleInterval)
+                    {
+                        connection.SendData(session.IdleString);
+                        lastIdleStringAt = now;
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (generation == _connectionGeneration && !_manualDisconnect)
+                            AppendStatusMessage($"[Keepalive failed: {ex.Message}]", "31");
+                    });
+                }
+            }
+        }, cancellationToken);
+    }
+
+    private void StopKeepAliveLoop()
+    {
+        _keepAliveCts?.Cancel();
+        _keepAliveCts?.Dispose();
+        _keepAliveCts = null;
+        _keepAliveTask = null;
     }
 
     public void Disconnect(string? statusMessage = null)
@@ -434,14 +526,37 @@ public partial class TerminalViewModel : ObservableObject
         _connectionCts = null;
         _connectionGeneration++;
 
-        var ssh = _ssh;
-        _ssh = null;
-        ssh?.Dispose();
+        var connection = _connection;
+        _connection = null;
+        StopKeepAliveLoop();
+        connection?.Dispose();
         ClearZmodemTransfer();
         IsConnected = false;
         HostInfo = string.Empty;
 
         if (!string.IsNullOrWhiteSpace(statusMessage))
             AppendStatusMessage(statusMessage, "33");
+    }
+
+    private static ITerminalConnectionService CreateConnectionService(SessionProtocol protocol)
+    {
+        return protocol switch
+        {
+            SessionProtocol.TELNET => new TelnetConnectionService(),
+            SessionProtocol.RLOGIN => new RloginConnectionService(),
+            SessionProtocol.SERIAL => new SerialConnectionService(),
+            SessionProtocol.LOCAL => new LocalTerminalConnectionService(),
+            _ => new SshConnectionService()
+        };
+    }
+
+    private static string GetHostInfo(SessionInfo session)
+    {
+        return session.Protocol switch
+        {
+            SessionProtocol.LOCAL => "LOCAL",
+            SessionProtocol.SERIAL => session.SerialPortName,
+            _ => $"{session.Username}@{session.Host}:{session.Port}"
+        };
     }
 }

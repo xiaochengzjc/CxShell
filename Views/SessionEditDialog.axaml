@@ -1,135 +1,1196 @@
 <atom:Window xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:atom="https://atomui.net"
+             xmlns:antdicons="https://atomui.net/icons/antdesign"
              xmlns:vm="using:ChiXueSsh.ViewModels"
+             xmlns:models="using:ChiXueSsh.Models"
              x:Class="ChiXueSsh.Views.SessionEditDialog"
              x:DataType="vm:SessionEditViewModel"
              Title="{Binding DialogTitle}"
-             Width="480"
-             Height="440"
+             Width="1040"
+             Height="720"
+             MinWidth="860"
+             MinHeight="600"
              WindowStartupLocation="CenterOwner"
-             CanResize="False"
+             CanResize="True"
              ShowInTaskbar="False"
              Background="{atom:SharedTokenResource ColorBgLayout}"
              Loaded="OnWindowLoaded">
 
-    <!-- 控件样式配置 -->
     <atom:Window.Styles>
-        <Style Selector="atom|TextBox">
+        <Style Selector="atom|LineEdit">
             <Setter Property="Background" Value="{atom:SharedTokenResource ColorBgContainer}"/>
             <Setter Property="Foreground" Value="{atom:SharedTokenResource ColorText}"/>
             <Setter Property="CaretBrush" Value="{atom:SharedTokenResource ColorText}"/>
             <Setter Property="BorderBrush" Value="{atom:SharedTokenResource ColorBorder}"/>
             <Setter Property="BorderThickness" Value="1"/>
         </Style>
-
         <Style Selector="atom|RadioButton">
             <Setter Property="Foreground" Value="{atom:SharedTokenResource ColorTextSecondary}"/>
         </Style>
     </atom:Window.Styles>
 
-    <DockPanel>
-        <!-- 底部按钮栏 -->
-        <Border DockPanel.Dock="Bottom" Padding="20,10"
-                Background="{atom:SharedTokenResource ColorBgContainer}"
-                BorderBrush="{atom:SharedTokenResource ColorSplit}" BorderThickness="0,1,0,0">
-            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-                <atom:Button x:Name="CancelBtn" Content="取消" Width="80"
-                             ButtonType="Default"/>
-                <atom:Button x:Name="SaveBtn" Content="保存" Width="80"
-                             ButtonType="Primary"/>
-            </StackPanel>
-        </Border>
+    <Grid Margin="20" ColumnDefinitions="230,16,*,16,104">
+        <Grid Grid.Column="0" RowDefinitions="Auto,8,*">
+            <TextBlock Text="类别(C):"
+                       FontSize="13"
+                       FontWeight="SemiBold"
+                       Foreground="{atom:SharedTokenResource ColorText}"/>
+            <Border Grid.Row="2"
+                    Background="{atom:SharedTokenResource ColorBgContainer}"
+                    BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Padding="6">
+                <atom:TreeView x:Name="CategoryTree"
+                               Background="Transparent"
+                               IsShowLine="True"
+                               NodeHoverMode="Block">
+                    <atom:TreeViewItem Header="连接" Value="Connection" IsExpanded="True" IsSelected="True">
+                        <atom:TreeViewItem Header="用户身份验证" Value="Auth" IsExpanded="True">
+                            <atom:TreeViewItem Header="登录提示符" Value="LoginPrompt"/>
+                            <atom:TreeViewItem Header="登录脚本" Value="LoginScript"/>
+                        </atom:TreeViewItem>
+                        <atom:TreeViewItem Header="SSH" Value="Ssh" IsExpanded="True">
+                            <atom:TreeViewItem Header="安全性" Value="SshSecurity"/>
+                            <atom:TreeViewItem Header="隧道" Value="SshTunnel"/>
+                            <atom:TreeViewItem Header="SFTP" Value="SshSftp"/>
+                        </atom:TreeViewItem>
+                        <atom:TreeViewItem Header="TELNET" Value="Telnet"/>
+                        <atom:TreeViewItem Header="RLOGIN" Value="Rlogin"/>
+                        <atom:TreeViewItem Header="串口" Value="Serial"/>
+                        <atom:TreeViewItem Header="LOCAL" Value="Local"/>
+                        <atom:TreeViewItem Header="RDP" Value="Rdp"/>
+                        <atom:TreeViewItem Header="代理" Value="Proxy"/>
+                        <atom:TreeViewItem Header="保持活动状态" Value="KeepAlive"/>
+                    </atom:TreeViewItem>
+                    <atom:TreeViewItem Header="终端" Value="Terminal" IsExpanded="True">
+                        <atom:TreeViewItem Header="键盘" Value="Keyboard"/>
+                        <atom:TreeViewItem Header="VT 模式" Value="VtMode"/>
+                        <atom:TreeViewItem Header="高级" Value="TerminalAdvanced"/>
+                    </atom:TreeViewItem>
+                    <atom:TreeViewItem Header="外观" Value="Appearance" IsExpanded="True">
+                        <atom:TreeViewItem Header="窗口" Value="WindowAppearance"/>
+                        <atom:TreeViewItem Header="突出" Value="Highlight"/>
+                    </atom:TreeViewItem>
+                    <atom:TreeViewItem Header="高级" Value="Advanced" IsExpanded="True">
+                        <atom:TreeViewItem Header="跟踪" Value="Tracing"/>
+                        <atom:TreeViewItem Header="响铃" Value="Bell"/>
+                        <atom:TreeViewItem Header="日志记录" Value="Logging"/>
+                    </atom:TreeViewItem>
+                    <atom:TreeViewItem Header="文件传输" Value="FileTransfer" IsExpanded="True">
+                        <atom:TreeViewItem Header="X/YMODEM" Value="Xymodem"/>
+                        <atom:TreeViewItem Header="ZMODEM" Value="Zmodem"/>
+                    </atom:TreeViewItem>
+                </atom:TreeView>
+            </Border>
+        </Grid>
 
-        <!-- 表单内容 -->
-        <ScrollViewer Background="{atom:SharedTokenResource ColorBgLayout}">
-            <StackPanel Margin="24,16,24,12" Spacing="0">
+        <Grid Grid.Column="2" RowDefinitions="Auto,12,*">
+            <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                    BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                    BorderThickness="0,0,0,1"
+                    Padding="12,8">
+                <TextBlock x:Name="PageTitleText"
+                           Text="连接"
+                           FontSize="15"
+                           FontWeight="SemiBold"
+                           Foreground="{atom:SharedTokenResource ColorText}"/>
+            </Border>
 
-                <!-- 基本信息 -->
-                <Border Margin="0,0,0,14" Padding="0,0,0,6"
-                        BorderBrush="{atom:SharedTokenResource ColorSplit}" BorderThickness="0,0,0,1">
-                    <TextBlock Text="基本信息" FontSize="11"
-                               Foreground="{atom:SharedTokenResource ColorTextTertiary}" FontWeight="Bold"/>
-                </Border>
+            <Grid Grid.Row="2">
+                <ScrollViewer x:Name="ConnectionPage">
+                    <StackPanel Spacing="16">
+                        <Border Background="{atom:SharedTokenResource ColorErrorBg}"
+                                BorderBrush="{atom:SharedTokenResource ColorErrorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="10,8"
+                                IsVisible="{Binding HasValidationError}">
+                            <TextBlock Text="{Binding ValidationMessage}"
+                                       Foreground="{atom:SharedTokenResource ColorError}"
+                                       FontSize="13"
+                                       TextWrapping="Wrap"/>
+                        </Border>
 
-                <!-- 会话名称 -->
-                <Grid ColumnDefinitions="90,*" Margin="0,0,0,10">
-                    <TextBlock Grid.Column="0" Text="会话名称"
-                               Foreground="{atom:SharedTokenResource ColorTextSecondary}" FontSize="13"
-                               VerticalAlignment="Center"/>
-                    <atom:TextBox Grid.Column="1" x:Name="NameBox"
-                                  Text="{Binding SessionName, Mode=TwoWay}"
-                                  PlaceholderText="例如: 生产服务器"/>
-                </Grid>
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,14,Auto,12,Auto,12,Auto,12,Auto"
+                                  ColumnDefinitions="110,*">
+                                <TextBlock Grid.ColumnSpan="2"
+                                           Text="常规"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
 
-                <!-- 主机地址 -->
-                <Grid ColumnDefinitions="90,*" Margin="0,0,0,10">
-                    <TextBlock Grid.Column="0" Text="主机地址"
-                               Foreground="{atom:SharedTokenResource ColorTextSecondary}" FontSize="13"
-                               VerticalAlignment="Center"/>
-                    <atom:TextBox Grid.Column="1" x:Name="HostBox"
-                                  Text="{Binding Host, Mode=TwoWay}"
-                                  PlaceholderText="192.168.1.100 或 example.com"/>
-                </Grid>
+                                <TextBlock Grid.Row="2" Text="名称"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="2" Grid.Column="1"
+                                              x:Name="NameBox"
+                                              Status="{Binding NameStatus}"
+                                              Text="{Binding SessionName, Mode=TwoWay}"
+                                              PlaceholderText="例如：生产服务器"/>
 
-                <!-- 端口 -->
-                <Grid ColumnDefinitions="90,*" Margin="0,0,0,10">
-                    <TextBlock Grid.Column="0" Text="端口"
-                               Foreground="{atom:SharedTokenResource ColorTextSecondary}" FontSize="13"
-                               VerticalAlignment="Center"/>
-                    <atom:TextBox Grid.Column="1" x:Name="PortBox"
-                                  Text="{Binding Port, Mode=TwoWay}"
-                                  PlaceholderText="22"/>
-                </Grid>
+                                <TextBlock Grid.Row="4" Text="协议"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:Select Grid.Row="4" Grid.Column="1"
+                                             x:Name="ProtocolSelect"
+                                             Mode="Single"
+                                             HorizontalAlignment="Stretch"
+                                             PlaceholderText="请选择协议"
+                                             OptionsSource="{Binding ProtocolOptions}"
+                                             SelectionChanged="OnProtocolSelectionChanged"/>
 
-                <!-- 用户名 -->
-                <Grid ColumnDefinitions="90,*" Margin="0,0,0,18">
-                    <TextBlock Grid.Column="0" Text="用户名"
-                               Foreground="{atom:SharedTokenResource ColorTextSecondary}" FontSize="13"
-                               VerticalAlignment="Center"/>
-                    <atom:TextBox Grid.Column="1" x:Name="UsernameBox"
-                                  Text="{Binding Username, Mode=TwoWay}"
-                                  PlaceholderText="root"/>
-                </Grid>
+                                <TextBlock Grid.Row="6" Text="主机"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="6" Grid.Column="1"
+                                              x:Name="HostBox"
+                                              Status="{Binding HostStatus}"
+                                              Text="{Binding Host, Mode=TwoWay}"
+                                              PlaceholderText="192.168.1.100 或 example.com"/>
 
-                <!-- 认证方式 -->
-                <Border Margin="0,0,0,14" Padding="0,0,0,6"
-                        BorderBrush="{atom:SharedTokenResource ColorSplit}" BorderThickness="0,0,0,1">
-                    <TextBlock Text="认证方式" FontSize="11"
-                               Foreground="{atom:SharedTokenResource ColorTextTertiary}" FontWeight="Bold"/>
-                </Border>
+                                <TextBlock Grid.Row="8" Text="端口"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="8" Grid.Column="1"
+                                              x:Name="PortBox"
+                                              Width="160"
+                                              HorizontalAlignment="Left"
+                                              Status="{Binding PortStatus}"
+                                              Text="{Binding Port, Mode=TwoWay}"
+                                              PlaceholderText="22"/>
+                            </Grid>
+                        </Border>
 
-                <!-- 认证选项 -->
-                <Grid ColumnDefinitions="90,*" Margin="0,0,0,10">
-                    <TextBlock Grid.Column="0" Text="方式"
-                               Foreground="{atom:SharedTokenResource ColorTextSecondary}" FontSize="13"
-                               VerticalAlignment="Center"/>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="20"
-                                VerticalAlignment="Center">
-                        <atom:RadioButton Content="密码" IsChecked="{Binding IsPasswordAuth}"
-                                          GroupName="AuthMethod"/>
-                        <atom:RadioButton Content="私钥" IsChecked="{Binding IsPrivateKeyAuth}"
-                                          GroupName="AuthMethod"/>
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,14,Auto,12,Auto"
+                                  ColumnDefinitions="*,110,86,32,110,86,32">
+                                <TextBlock Grid.ColumnSpan="7"
+                                           Text="重新连接"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+
+                                <atom:CheckBox Grid.Row="2"
+                                               Grid.ColumnSpan="7"
+                                               Content="连接异常关闭时自动重新连接"
+                                               IsChecked="{Binding AutoReconnect, Mode=TwoWay}"/>
+
+                                <TextBlock Grid.Row="4" Grid.Column="1"
+                                           Text="间隔"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:NumericUpDown Grid.Row="4" Grid.Column="2"
+                                                    Minimum="1"
+                                                    Maximum="3600"
+                                                    Value="{Binding ReconnectIntervalSeconds, Mode=TwoWay}"
+                                                    IsEnabled="{Binding AutoReconnect}"/>
+                                <TextBlock Grid.Row="4" Grid.Column="3"
+                                           Text="秒"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+
+                                <TextBlock Grid.Row="4" Grid.Column="4"
+                                           Text="限制"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:NumericUpDown Grid.Row="4" Grid.Column="5"
+                                                    Minimum="0"
+                                                    Maximum="1440"
+                                                    Value="{Binding ReconnectLimitMinutes, Mode=TwoWay}"
+                                                    IsEnabled="{Binding AutoReconnect}"/>
+                                <TextBlock Grid.Row="4" Grid.Column="6"
+                                           Text="分"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                            </Grid>
+                        </Border>
                     </StackPanel>
-                </Grid>
+                </ScrollViewer>
 
-                <!-- 私钥路径 -->
-                <Grid ColumnDefinitions="90,*" Margin="0,0,0,10"
-                      IsVisible="{Binding IsPrivateKeyAuth}">
-                    <TextBlock Grid.Column="0" Text="私钥路径"
-                               Foreground="{atom:SharedTokenResource ColorTextSecondary}" FontSize="13"
-                               VerticalAlignment="Center"/>
-                    <Grid Grid.Column="1" ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                        <atom:TextBox Grid.Column="0" x:Name="KeyPathBox"
-                                      Text="{Binding PrivateKeyPath, Mode=TwoWay}"
-                                      PlaceholderText="~/.ssh/id_rsa"/>
-                        <atom:Button Grid.Column="1" Content="浏览"
-                                     Command="{Binding BrowseKeyCommand}"
-                                     ButtonType="Default"/>
-                    </Grid>
-                </Grid>
+                <ScrollViewer x:Name="KeepAlivePage" IsVisible="False">
+                    <StackPanel Spacing="16">
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,14,Auto,18,Auto,12,Auto,18,Auto"
+                                  ColumnDefinitions="Auto,14,110,12,40,56,120,*">
+                                <TextBlock Grid.ColumnSpan="8"
+                                           Text="保持活动状态"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
 
-            </StackPanel>
-        </ScrollViewer>
-    </DockPanel>
+                                <atom:CheckBox Grid.Row="2"
+                                               Grid.ColumnSpan="8"
+                                               Content="连接会话期间发送保持活动状态消息(S)"
+                                               IsChecked="{Binding SendSessionKeepAlive, Mode=TwoWay}"/>
+
+                                <TextBlock Grid.Row="4"
+                                           Grid.Column="1"
+                                           Grid.ColumnSpan="2"
+                                           Text="间隔(I):"
+                                           VerticalAlignment="Center"
+                                           HorizontalAlignment="Right"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:NumericUpDown Grid.Row="4"
+                                                    Grid.Column="4"
+                                                    Grid.ColumnSpan="2"
+                                                    Minimum="1"
+                                                    Maximum="86400"
+                                                    Value="{Binding SessionKeepAliveIntervalSeconds, Mode=TwoWay}"
+                                                    IsEnabled="{Binding IsSessionKeepAliveIntervalEnabled}"/>
+                                <TextBlock Grid.Row="4"
+                                           Grid.Column="6"
+                                           Text="秒"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+
+                                <atom:CheckBox Grid.Row="6"
+                                               Grid.ColumnSpan="8"
+                                               Content="网络空闲时发送字符串(R)"
+                                               IsChecked="{Binding SendIdleString, Mode=TwoWay}"/>
+
+                                <TextBlock Grid.Row="8"
+                                           Grid.Column="1"
+                                           Grid.ColumnSpan="2"
+                                           Text="间隔(E):"
+                                           VerticalAlignment="Center"
+                                           HorizontalAlignment="Right"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:NumericUpDown Grid.Row="8"
+                                                    Grid.Column="4"
+                                                    Grid.ColumnSpan="2"
+                                                    Minimum="0"
+                                                    Maximum="86400"
+                                                    Value="{Binding IdleStringIntervalSeconds, Mode=TwoWay}"
+                                                    IsEnabled="{Binding IsIdleStringSettingsEnabled}"/>
+                                <TextBlock Grid.Row="8"
+                                           Grid.Column="6"
+                                           Text="秒"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <TextBlock Grid.Row="8"
+                                           Grid.Column="7"
+                                           Text="字符串(G):"
+                                           VerticalAlignment="Center"
+                                           HorizontalAlignment="Left"
+                                           Margin="28,0,8,0"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="8"
+                                               Grid.Column="7"
+                                               Width="130"
+                                               HorizontalAlignment="Right"
+                                               Text="{Binding IdleString, Mode=TwoWay}"
+                                               IsEnabled="{Binding IsIdleStringSettingsEnabled}"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <atom:CheckBox Content="网络为空闲状态时发送 TCP 保持活动数据包(T)"
+                                           IsChecked="{Binding TcpKeepAlive, Mode=TwoWay}"/>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="AuthPage" IsVisible="False">
+                    <StackPanel Spacing="16">
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,14,Auto,12,Auto,12,Auto,12,Auto"
+                                  ColumnDefinitions="110,*">
+                                <TextBlock Grid.ColumnSpan="2"
+                                           Text="用户身份验证"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+
+                                <TextBlock Grid.Row="2" Text="用户名"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="2" Grid.Column="1"
+                                              x:Name="UsernameBox"
+                                              Text="{Binding Username, Mode=TwoWay}"
+                                              PlaceholderText="root"/>
+
+                                <TextBlock Grid.Row="4" Text="认证方法"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <StackPanel Grid.Row="4" Grid.Column="1"
+                                            Orientation="Horizontal"
+                                            Spacing="20">
+                                    <atom:RadioButton Content="密码"
+                                                      IsChecked="{Binding IsPasswordAuth}"
+                                                      GroupName="AuthMethod"/>
+                                    <atom:RadioButton Content="私钥"
+                                                      IsChecked="{Binding IsPrivateKeyAuth}"
+                                                      GroupName="AuthMethod"/>
+                                </StackPanel>
+
+                                <TextBlock Grid.Row="6" Text="密码"
+                                           VerticalAlignment="Center"
+                                           IsVisible="{Binding IsPasswordAuth}"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <StackPanel Grid.Row="6" Grid.Column="1"
+                                            Spacing="6"
+                                            IsVisible="{Binding IsPasswordAuth}">
+                                    <atom:CheckBox Content="连接时提示输入密码"
+                                                   IsChecked="True"
+                                                   IsEnabled="False"/>
+                                    <TextBlock Text="密码不会保存到会话文件。"
+                                               FontSize="12"
+                                               Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+                                </StackPanel>
+
+                                <TextBlock Grid.Row="8" Text="私钥路径"
+                                           VerticalAlignment="Center"
+                                           IsVisible="{Binding IsPrivateKeyAuth}"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <Grid Grid.Row="8" Grid.Column="1"
+                                      ColumnDefinitions="*,Auto"
+                                      ColumnSpacing="8"
+                                      IsVisible="{Binding IsPrivateKeyAuth}">
+                                    <atom:LineEdit x:Name="KeyPathBox"
+                                                  Text="{Binding PrivateKeyPath, Mode=TwoWay}"
+                                                  PlaceholderText="~/.ssh/id_rsa"/>
+                                    <atom:Button Grid.Column="1"
+                                                 Icon="{antdicons:AntDesignIconProvider Kind=FolderOpenOutlined}"
+                                                 Content="浏览"
+                                                 Command="{Binding BrowseKeyCommand}"/>
+                                </Grid>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="LoginPromptPage" IsVisible="False">
+                    <StackPanel Spacing="16">
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,14,Auto,28,Auto,12,Auto"
+                                  ColumnDefinitions="160,320">
+                                <TextBlock Grid.ColumnSpan="2"
+                                           Text="TELNET"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <TextBlock Grid.Row="2"
+                                           Grid.ColumnSpan="2"
+                                           Text="请指定用户名和密码提示，以便 TELNET 登录过程可自动运行。"
+                                           TextWrapping="Wrap"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <TextBlock Grid.Row="4" Text="用户名提示"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="4" Grid.Column="1"
+                                              x:Name="TelnetUsernamePromptBox"
+                                              Text="{Binding TelnetUsernamePrompt, Mode=TwoWay}"
+                                              PlaceholderText="ogin:"/>
+                                <TextBlock Grid.Row="6" Text="密码提示"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="6" Grid.Column="1"
+                                              x:Name="TelnetPasswordPromptBox"
+                                              Text="{Binding TelnetPasswordPrompt, Mode=TwoWay}"
+                                              PlaceholderText="assword:"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,14,Auto,28,Auto"
+                                  ColumnDefinitions="160,320">
+                                <TextBlock Grid.ColumnSpan="2"
+                                           Text="RLOGIN"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <TextBlock Grid.Row="2"
+                                           Grid.ColumnSpan="2"
+                                           Text="请指定密码提示，以便 RLOGIN 登录过程可自动运行。"
+                                           TextWrapping="Wrap"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <TextBlock Grid.Row="4" Text="密码提示"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="4" Grid.Column="1"
+                                              x:Name="RloginPasswordPromptBox"
+                                              Text="{Binding RloginPasswordPrompt, Mode=TwoWay}"
+                                              PlaceholderText="assword:"/>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="SshPage" IsVisible="False">
+                    <StackPanel Spacing="16">
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,14,Auto,28,Auto"
+                                  ColumnDefinitions="*">
+                                <TextBlock Text="远程命令"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <TextBlock Grid.Row="2"
+                                           Text="指定连接后要运行的远程命令。"
+                                           TextWrapping="Wrap"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="4"
+                                              x:Name="SshRemoteCommandBox"
+                                              Text="{Binding SshRemoteCommand, Mode=TwoWay}"
+                                              PlaceholderText="例如：cd /var/log"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,14,Auto,28,Auto"
+                                  ColumnDefinitions="*">
+                                <TextBlock Text="协议版本优先级"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <TextBlock Grid.Row="2"
+                                           Text="选择首选的 SSH 版本。通常，SSH2 提供高安全性和更多的特征。"
+                                           TextWrapping="Wrap"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:Select Grid.Row="4"
+                                             x:Name="SshVersionPolicySelect"
+                                             Mode="Single"
+                                             HorizontalAlignment="Stretch"
+                                             OptionsSource="{Binding SshVersionOptions}"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="Xagent (SSH 身份验证代理)"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <TextBlock Text="Xagent 会记住密码，并在请求时将其传递给服务器。"
+                                           TextWrapping="Wrap"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:CheckBox Content="使用 SSH 密钥代理(Xagent)(U)"
+                                               IsChecked="{Binding SshUseXagent, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="允许代理转发(E)"
+                                               IsChecked="{Binding SshForwardAgent, Mode=TwoWay}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="其他"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <atom:CheckBox Content="使用 ZLIB 压缩(Z)"
+                                               IsChecked="{Binding SshUseCompression, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="不分配终端(D)"
+                                               IsChecked="{Binding SshNoTerminal, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="第一次连接时自动接受并保存主机密钥(A)"
+                                               IsChecked="{Binding SshAcceptAndSaveHostKey, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="不要建立文件管理器连接(N)"
+                                               IsChecked="{Binding SshDoNotStartFileManager, Mode=TwoWay}"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="SshSecurityPage" IsVisible="False">
+                    <StackPanel Spacing="16">
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,14,Auto,80,Auto,12,Auto,12,Auto"
+                                  ColumnDefinitions="110,*,100">
+                                <TextBlock Grid.ColumnSpan="3"
+                                           Text="算法"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <TextBlock Grid.Row="2"
+                                           Grid.ColumnSpan="3"
+                                           Text="选择要使用的算法 SSH 连接。选择 &lt;... List&gt; 使用默认或编辑后的算法列表。"
+                                           TextWrapping="Wrap"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+
+                                <TextBlock Grid.Row="4"
+                                           Text="加密(E):"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:Select Grid.Row="4"
+                                             Grid.Column="1"
+                                             x:Name="SshCipherSelect"
+                                             Mode="Single"
+                                             OptionsSource="{Binding SshCipherOptions}"/>
+                                <atom:Button Grid.Row="4"
+                                             Grid.Column="2"
+                                             Margin="8,0,0,0"
+                                             Content="编辑(D)..."
+                                             Click="OnEditSshCipherListClick"/>
+
+                                <TextBlock Grid.Row="6"
+                                           Text="MAC:"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:Select Grid.Row="6"
+                                             Grid.Column="1"
+                                             x:Name="SshMacSelect"
+                                             Mode="Single"
+                                             OptionsSource="{Binding SshMacOptions}"/>
+                                <atom:Button Grid.Row="6"
+                                             Grid.Column="2"
+                                             Margin="8,0,0,0"
+                                             Content="编辑(I)..."
+                                             Click="OnEditSshMacListClick"/>
+
+                                <TextBlock Grid.Row="8"
+                                           Text="密钥交换(K):"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:Select Grid.Row="8"
+                                             Grid.Column="1"
+                                             x:Name="SshKeyExchangeSelect"
+                                             Mode="Single"
+                                             OptionsSource="{Binding SshKeyExchangeOptions}"/>
+                                <atom:Button Grid.Row="8"
+                                             Grid.Column="2"
+                                             Margin="8,0,0,0"
+                                             Content="编辑(T)..."
+                                             Click="OnEditSshKeyExchangeListClick"/>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="SshTunnelPage" IsVisible="False">
+                    <StackPanel Spacing="16">
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,10,Auto,14,260,14,Auto"
+                                  ColumnDefinitions="*,120,120,120,56">
+                                <TextBlock Grid.ColumnSpan="5"
+                                           Text="TCP/IP转移"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <TextBlock Grid.Row="2"
+                                           Grid.ColumnSpan="5"
+                                           Text="添加/编辑/删除 TCP/IP 转移规则。此规则连接后自动应用。"
+                                           TextWrapping="Wrap"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+
+                                <atom:DataGrid x:Name="SshTunnelRulesGrid"
+                                               Grid.Row="4"
+                                               Grid.ColumnSpan="5"
+                                               ItemsSource="{Binding SshTunnelRules}"
+                                               SelectedItem="{Binding SelectedSshTunnelRule, Mode=TwoWay}"
+                                               AutoGenerateColumns="False"
+                                               IsReadOnly="True"
+                                               SelectionMode="Single"
+                                               GridLinesVisibility="Horizontal"
+                                               CanUserResizeColumns="True">
+                                    <atom:DataGrid.Columns>
+                                        <atom:DataGridTextColumn Header="类型" Binding="{Binding TypeDisplay}" Width="150"/>
+                                        <atom:DataGridTextColumn Header="侦听端口" Binding="{Binding ListenPortDisplay}" Width="120"/>
+                                        <atom:DataGridTextColumn Header="目标" Binding="{Binding TargetDisplay}" Width="200"/>
+                                        <atom:DataGridTextColumn Header="说明" Binding="{Binding Description}" Width="260"/>
+                                    </atom:DataGrid.Columns>
+                                </atom:DataGrid>
+
+                                <atom:Button Grid.Row="6"
+                                             Grid.Column="1"
+                                             Content="添加(A)..."
+                                             Click="OnAddSshTunnelRuleClick"/>
+                                <atom:Button Grid.Row="6"
+                                             Grid.Column="2"
+                                             Content="编辑(E)..."
+                                             IsEnabled="{Binding HasSelectedSshTunnelRule}"
+                                             Click="OnEditSshTunnelRuleClick"/>
+                                <atom:Button Grid.Row="6"
+                                             Grid.Column="3"
+                                             Content="删除(R)"
+                                             IsEnabled="{Binding HasSelectedSshTunnelRule}"
+                                             Click="OnDeleteSshTunnelRuleClick"/>
+                                <atom:Button Grid.Row="6"
+                                             Grid.Column="4"
+                                             Content="..."
+                                             Click="OnAddSshTunnelRuleClick"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,12,Auto,10,Auto"
+                                  ColumnDefinitions="36,120,170,*">
+                                <TextBlock Grid.ColumnSpan="4"
+                                           Text="X11转移"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <atom:CheckBox Grid.Row="2"
+                                               Grid.Column="1"
+                                               Grid.ColumnSpan="3"
+                                               Content="转发 X11 连接到(X):"
+                                               IsChecked="{Binding SshForwardX11, Mode=TwoWay}"/>
+                                <StackPanel Grid.Row="4"
+                                            Grid.Column="1"
+                                            Grid.ColumnSpan="3"
+                                            Spacing="8">
+                                    <atom:RadioButton x:Name="SshX11XmanagerButton"
+                                                      Content="Xmanager(M)"
+                                                      GroupName="SshX11DisplayMode"
+                                                      IsChecked="{Binding SshX11UseXmanager, Mode=TwoWay}"/>
+                                    <Grid ColumnDefinitions="Auto,12,*">
+                                        <atom:RadioButton x:Name="SshX11DisplayButton"
+                                                          Content="X DISPLAY(D):"
+                                                          GroupName="SshX11DisplayMode"
+                                                          VerticalAlignment="Center"/>
+                                        <atom:LineEdit Grid.Column="2"
+                                                       x:Name="SshX11DisplayBox"
+                                                       MinWidth="260"
+                                                       MaxWidth="420"
+                                                       HorizontalAlignment="Left"
+                                                       Text="{Binding SshX11Display, Mode=TwoWay}"
+                                                       PlaceholderText="localhost:0.0"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="TelnetPage" IsVisible="False">
+                    <StackPanel Spacing="16">
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,14,Auto,22,Auto,12,Auto,12,Auto"
+                                  ColumnDefinitions="140,360">
+                                <TextBlock Grid.ColumnSpan="2"
+                                           Text="XDISPLOC"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <TextBlock Grid.Row="2"
+                                           Grid.ColumnSpan="2"
+                                           Text="使用 X 服务器时，可指定 DISPLAY 地址、显示编号和屏幕编号。"
+                                           TextWrapping="Wrap"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:CheckBox Grid.Row="4"
+                                               Grid.ColumnSpan="2"
+                                               Content="使用 XDISPLOC Telnet 选项"
+                                               IsChecked="{Binding TelnetUseXDisplayLocation, Mode=TwoWay}"/>
+                                <TextBlock Grid.Row="6" Text="显示"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="6" Grid.Column="1"
+                                              x:Name="TelnetXDisplayLocationBox"
+                                              Text="{Binding TelnetXDisplayLocation, Mode=TwoWay}"
+                                              PlaceholderText="$PCADDR:0.0"/>
+                                <TextBlock Grid.Row="8"
+                                           Grid.ColumnSpan="2"
+                                           Text="注释：$PCADDR 会替换为当前连接使用的本机 IP 地址。"
+                                           TextWrapping="Wrap"
+                                           Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="选项协商"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <TextBlock Text="请选择 TELNET 选项协商模式："
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:RadioButton x:Name="TelnetPassiveOptionButton"
+                                                  Content="Passive"
+                                                  GroupName="TelnetOptionMode"/>
+                                <atom:RadioButton x:Name="TelnetActiveOptionButton"
+                                                  Content="Active"
+                                                  GroupName="TelnetOptionMode"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="选项"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <atom:CheckBox Content="强制 Character-at-a-time 模式"
+                                               IsChecked="{Binding TelnetForceCharacterAtATime, Mode=TwoWay}"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="ProxyPage" IsVisible="False">
+                    <StackPanel Spacing="16">
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,12,Auto,28,Auto"
+                                  ColumnDefinitions="140,*,160">
+                                <TextBlock Grid.ColumnSpan="3"
+                                           Text="代理服务器"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <TextBlock Grid.Row="2"
+                                           Grid.ColumnSpan="3"
+                                           Text="用户的网络环境使用代理服务器防火墙时，请在下方选择合适的代理服务器。要添加、编辑或删除代理服务器，请点击“浏览”。"
+                                           TextWrapping="Wrap"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <TextBlock Grid.Row="4"
+                                           Text="代理服务器(R):"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:Select Grid.Row="4"
+                                             Grid.Column="1"
+                                             x:Name="ProxySelect"
+                                             Mode="Single"
+                                             ShouldUseOverlayPopup="False"
+                                             OptionsSource="{Binding ProxyOptions}"/>
+                                <atom:Button Grid.Row="4"
+                                             Grid.Column="2"
+                                             Margin="14,0,0,0"
+                                             Content="浏览(B)..."
+                                             Click="OnBrowseProxyClick"/>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="RloginPage" IsVisible="False">
+                    <StackPanel Spacing="16">
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,18,Auto"
+                                  ColumnDefinitions="140,250,*">
+                                <TextBlock Grid.ColumnSpan="3"
+                                           Text="常规"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <TextBlock Grid.Row="2"
+                                           Text="终端速度(T):"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:Select Grid.Row="2"
+                                             Grid.Column="1"
+                                             x:Name="RloginTerminalSpeedSelect"
+                                             Mode="Single"
+                                             ShouldUseOverlayPopup="False"
+                                             DisplayPageSize="15"
+                                             HorizontalAlignment="Stretch"
+                                             OptionsSource="{Binding TerminalSpeedOptions}"/>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="SftpPage" IsVisible="False">
+                    <StackPanel Spacing="16">
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,14,Auto,28,Auto,12,Auto"
+                                  ColumnDefinitions="140,*,40">
+                                <TextBlock Grid.ColumnSpan="3"
+                                           Text="启动文件夹"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <TextBlock Grid.Row="2"
+                                           Grid.ColumnSpan="3"
+                                           Text="连接后自动指定转到的本地文件夹和远程文件夹。"
+                                           TextWrapping="Wrap"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+
+                                <TextBlock Grid.Row="4"
+                                           Text="本地文件夹(L):"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="4"
+                                               Grid.Column="1"
+                                               x:Name="SftpLocalStartDirectoryBox"
+                                               Text="{Binding SftpLocalStartDirectory, Mode=TwoWay}"
+                                               PlaceholderText="选择上传和下载默认目录"/>
+                                <atom:Button Grid.Row="4"
+                                             Grid.Column="2"
+                                             Content="..."
+                                             Width="32"
+                                             HorizontalAlignment="Right"
+                                             Click="OnBrowseSftpLocalDirectoryClick"/>
+
+                                <TextBlock Grid.Row="6"
+                                           Text="远程文件夹(R):"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="6"
+                                               Grid.Column="1"
+                                               Grid.ColumnSpan="2"
+                                               x:Name="SftpRemoteStartDirectoryBox"
+                                               Text="{Binding SftpRemoteStartDirectory, Mode=TwoWay}"
+                                               PlaceholderText="/var/www"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,14,Auto,12,Auto,8,Auto"
+                                  ColumnDefinitions="140,*">
+                                <TextBlock Grid.ColumnSpan="2"
+                                           Text="SFTP服务器"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <atom:CheckBox Grid.Row="2"
+                                               Grid.ColumnSpan="2"
+                                               Content="使用自定义SFTP服务器(S)"
+                                               IsChecked="{Binding SftpUseCustomServer, Mode=TwoWay}"/>
+                                <TextBlock Grid.Row="4"
+                                           Text="命令(C):"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="4"
+                                               Grid.Column="1"
+                                               x:Name="SftpCustomServerCommandBox"
+                                               IsEnabled="{Binding IsSftpCustomServerCommandEnabled}"
+                                               Text="{Binding SftpCustomServerCommand, Mode=TwoWay}"
+                                               PlaceholderText="/usr/lib/openssh/sftp-server"/>
+                                <TextBlock Grid.Row="6"
+                                           Grid.Column="1"
+                                           Text="默认使用 SSH 标准 sftp subsystem；自定义命令保存到会话配置，当前连接时会提示需要低层通道支持。"
+                                           TextWrapping="Wrap"
+                                           Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="SftpPageLegacy" IsVisible="False">
+                    <StackPanel Spacing="16">
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,14,Auto,24,Auto,12,Auto"
+                                  ColumnDefinitions="140,*,Auto">
+                                <TextBlock Grid.ColumnSpan="3"
+                                           Text="启动文件夹"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <TextBlock Grid.Row="2"
+                                           Grid.ColumnSpan="3"
+                                           Text="连接后自动指定转到的本地文件夹和远程文件夹。"
+                                           TextWrapping="Wrap"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+
+                                <TextBlock Grid.Row="4" Text="本地文件夹"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="4" Grid.Column="1"
+                                              x:Name="SftpLocalStartDirectoryBoxLegacy"
+                                              Text="{Binding SftpLocalStartDirectory, Mode=TwoWay}"/>
+                                <atom:Button Grid.Row="4" Grid.Column="2"
+                                             Content="..."
+                                             Width="36"
+                                             Click="OnBrowseSftpLocalDirectoryClick"/>
+
+                                <TextBlock Grid.Row="6" Text="远程文件夹"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="6" Grid.Column="1"
+                                              Grid.ColumnSpan="2"
+                                              x:Name="SftpRemoteStartDirectoryBoxLegacy"
+                                              Text="{Binding SftpRemoteStartDirectory, Mode=TwoWay}"
+                                              PlaceholderText="/var/www"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,14,Auto,12,Auto"
+                                  ColumnDefinitions="140,*">
+                                <TextBlock Grid.ColumnSpan="2"
+                                           Text="SFTP 服务器"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <atom:CheckBox Grid.Row="2"
+                                               Grid.ColumnSpan="2"
+                                               Content="使用自定义 SFTP 服务器"
+                                               IsChecked="{Binding SftpUseCustomServer, Mode=TwoWay}"/>
+                                <TextBlock Grid.Row="4" Text="命令"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="4" Grid.Column="1"
+                                              x:Name="SftpCustomServerCommandBoxLegacy"
+                                              Text="{Binding SftpCustomServerCommand, Mode=TwoWay}"
+                                              PlaceholderText="/usr/lib/openssh/sftp-server"/>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="SerialPage" IsVisible="False">
+                    <StackPanel Spacing="16">
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,14,Auto,12,Auto,12,Auto,12,Auto,12,Auto,12,Auto"
+                                  ColumnDefinitions="140,240">
+                                <TextBlock Grid.ColumnSpan="2"
+                                           Text="Serial"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+
+                                <TextBlock Grid.Row="2" Text="Port"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:Select Grid.Row="2" Grid.Column="1"
+                                             x:Name="SerialPortSelect"
+                                             Mode="Single"
+                                             Status="{Binding SerialPortStatus}"
+                                             OptionsSource="{Binding SerialPortOptions}"/>
+
+                                <TextBlock Grid.Row="4" Text="Baud rate"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:Select Grid.Row="4" Grid.Column="1"
+                                             x:Name="SerialBaudRateSelect"
+                                             Mode="Single"
+                                             OptionsSource="{Binding SerialBaudRateOptions}"/>
+
+                                <TextBlock Grid.Row="6" Text="Data bits"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:Select Grid.Row="6" Grid.Column="1"
+                                             x:Name="SerialDataBitsSelect"
+                                             Mode="Single"
+                                             OptionsSource="{Binding SerialDataBitsOptions}"/>
+
+                                <TextBlock Grid.Row="8" Text="Stop bits"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:Select Grid.Row="8" Grid.Column="1"
+                                             x:Name="SerialStopBitsSelect"
+                                             Mode="Single"
+                                             OptionsSource="{Binding SerialStopBitsOptions}"/>
+
+                                <TextBlock Grid.Row="10" Text="Parity"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:Select Grid.Row="10" Grid.Column="1"
+                                             x:Name="SerialParitySelect"
+                                             Mode="Single"
+                                             OptionsSource="{Binding SerialParityOptions}"/>
+
+                                <TextBlock Grid.Row="12" Text="Flow control"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:Select Grid.Row="12" Grid.Column="1"
+                                             x:Name="SerialFlowControlSelect"
+                                             Mode="Single"
+                                             OptionsSource="{Binding SerialFlowControlOptions}"/>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="RdpPage" IsVisible="False">
+                    <StackPanel Spacing="16">
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,14,Auto,12,Auto,12,Auto,12,Auto"
+                                  ColumnDefinitions="150,320,16,80,28,80">
+                                <TextBlock Grid.ColumnSpan="6"
+                                           Text="显示"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+
+                                <TextBlock Grid.Row="2" Text="窗口大小"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:Select Grid.Row="2" Grid.Column="1"
+                                             x:Name="RdpWindowSizeSelect"
+                                             Mode="Single"
+                                             OptionsSource="{Binding RdpWindowSizeOptions}"/>
+                                <atom:LineEdit Grid.Row="2" Grid.Column="3"
+                                              x:Name="RdpWidthBox"
+                                              Text="{Binding RdpDesktopWidth, Mode=TwoWay}"/>
+                                <TextBlock Grid.Row="2" Grid.Column="4"
+                                           Text="x"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="2" Grid.Column="5"
+                                              x:Name="RdpHeightBox"
+                                              Text="{Binding RdpDesktopHeight, Mode=TwoWay}"/>
+
+                                <TextBlock Grid.Row="4" Text="改变屏幕大小"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:Select Grid.Row="4" Grid.Column="1"
+                                             Grid.ColumnSpan="5"
+                                             x:Name="RdpResizeModeSelect"
+                                             Mode="Single"
+                                             OptionsSource="{Binding RdpResizeModeOptions}"/>
+
+                                <TextBlock Grid.Row="6" Text="Screen Scale"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:Select Grid.Row="6" Grid.Column="1"
+                                             x:Name="RdpScreenScaleSelect"
+                                             Mode="Single"
+                                             OptionsSource="{Binding RdpScreenScaleOptions}"/>
+
+                                <TextBlock Grid.Row="8" Text="颜色质量"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:Select Grid.Row="8" Grid.Column="1"
+                                             x:Name="RdpColorQualitySelect"
+                                             Mode="Single"
+                                             OptionsSource="{Binding RdpColorQualityOptions}"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <StackPanel Spacing="14">
+                                <TextBlock Text="设备"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <atom:CheckBox Content="在远程计算机上应用密钥组合"
+                                               IsChecked="{Binding RdpApplyKeyCombinations, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="与远程计算机分享该计算机的驱动器"
+                                               IsChecked="{Binding RdpRedirectDrives, Mode=TwoWay}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,14,Auto,12,Auto"
+                                  ColumnDefinitions="150,*">
+                                <TextBlock Grid.ColumnSpan="2"
+                                           Text="声音"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <TextBlock Grid.Row="2" Text="远程音频播放"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:Select Grid.Row="2" Grid.Column="1"
+                                             x:Name="RdpAudioModeSelect"
+                                             Mode="Single"
+                                             OptionsSource="{Binding RdpAudioModeOptions}"/>
+                                <atom:CheckBox Grid.Row="4" Grid.Column="1"
+                                               Content="从这台电脑录制"
+                                               IsChecked="{Binding RdpAudioCapture, Mode=TwoWay}"/>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <Border x:Name="PlaceholderPage"
+                        IsVisible="False"
+                        Background="{atom:SharedTokenResource ColorBgContainer}"
+                        BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                        BorderThickness="1"
+                        CornerRadius="4"
+                        Padding="24">
+                    <StackPanel Spacing="8" VerticalAlignment="Top">
+                        <TextBlock x:Name="PlaceholderTitleText"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{atom:SharedTokenResource ColorText}"/>
+                        <TextBlock Text="此配置页将在后续步骤中实现。"
+                                   Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <StackPanel Grid.Column="4" Spacing="10">
+            <atom:Button x:Name="SaveBtn"
+                         ButtonType="Primary"
+                         Icon="{antdicons:AntDesignIconProvider Kind=CheckOutlined}"
+                         Content="保存"
+                         HorizontalAlignment="Stretch"/>
+            <atom:Button x:Name="ConnectBtn"
+                         ButtonType="Default"
+                         Icon="{antdicons:AntDesignIconProvider Kind=LinkOutlined}"
+                         Content="连接"
+                         HorizontalAlignment="Stretch"/>
+            <atom:Button x:Name="CancelBtn"
+                         Icon="{antdicons:AntDesignIconProvider Kind=CloseOutlined}"
+                         Content="取消"
+                         HorizontalAlignment="Stretch"/>
+        </StackPanel>
+    </Grid>
 </atom:Window>

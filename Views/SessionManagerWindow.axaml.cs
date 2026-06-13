@@ -1,5 +1,6 @@
 using System;
 using AtomUI.Desktop.Controls;
+using Avalonia.Interactivity;
 using ChiXueSsh.ViewModels;
 
 namespace ChiXueSsh.Views;
@@ -18,5 +19,19 @@ public partial class SessionManagerWindow : Window
     {
         vm.SelectedNode = null;
         Opened += (_, _) => DataContext = vm;
+    }
+
+    private async void OnConnectClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SessionTreeViewModel vm || vm.SelectedSession == null)
+            return;
+
+        await vm.MainWindow.ConnectSession(vm.SelectedSession);
+        Close();
+    }
+
+    private void OnCloseClick(object? sender, RoutedEventArgs e)
+    {
+        Close();
     }
 }

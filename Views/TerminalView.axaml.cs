@@ -4,6 +4,7 @@ using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using ChiXueSsh.ViewModels;
 
 namespace ChiXueSsh.Views;
@@ -59,6 +60,8 @@ public partial class TerminalView : UserControl
         vm.BufferChanged += OnBufferChanged;
         vm.PropertyChanged += OnVmPropertyChanged;
         InjectZmodemDelegates(vm);
+        SyncTerminalSize();
+        Dispatcher.UIThread.Post(SyncTerminalSize, DispatcherPriority.Loaded);
 
         // 立即刷新一次
         _terminal.InvalidateVisual();
@@ -121,6 +124,16 @@ public partial class TerminalView : UserControl
 
     private void OnInputReceived(string data) => _boundVm?.SendInput(data);
     private void OnSizeChanged(int cols, int rows) => _boundVm?.Resize(cols, rows);
+
+    private void SyncTerminalSize()
+    {
+        if (_terminal == null || _boundVm == null)
+            return;
+
+        _terminal.SyncSizeToBounds();
+        _boundVm.Resize(_terminal.Columns, _terminal.Rows);
+    }
+
     private void OnPointerPressed(object? s, Avalonia.Input.PointerPressedEventArgs e)
     {
         _terminal?.Focus();

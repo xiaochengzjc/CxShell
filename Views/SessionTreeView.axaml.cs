@@ -21,7 +21,7 @@ public partial class SessionTreeView : UserControl
     {
         if (DataContext is SessionTreeViewModel vm && SessionTree != null)
         {
-            SessionTree.ItemsSource = vm.SessionNodes;
+            SessionTree.ItemsSource = vm.SessionRows;
         }
     }
 
@@ -38,6 +38,11 @@ public partial class SessionTreeView : UserControl
         if (MenuEditBtn != null) MenuEditBtn.Click += OnEditClick;
         if (MenuConnectBtn != null) MenuConnectBtn.Click += OnConnectClick;
         if (MenuDeleteBtn != null) MenuDeleteBtn.Click += OnDeleteClick;
+        if (NewSessionBtn != null) NewSessionBtn.Click += OnNewClick;
+        if (CopySessionBtn != null) CopySessionBtn.Click += OnCopyClick;
+        if (PasteSessionBtn != null) PasteSessionBtn.Click += OnPasteClick;
+        if (PropertiesSessionBtn != null) PropertiesSessionBtn.Click += OnEditClick;
+        if (DeleteSessionBtn != null) DeleteSessionBtn.Click += OnDeleteClick;
     }
 
     private void OnTreePointerPressed(object? sender, PointerPressedEventArgs e)
@@ -132,6 +137,28 @@ public partial class SessionTreeView : UserControl
         }
     }
 
+    private void OnNewClick(object? sender, RoutedEventArgs e)
+    {
+        var mainVm = GetMainWindowViewModel();
+        mainVm?.NewSessionCommand.Execute(null);
+    }
+
+    private void OnCopyClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is SessionTreeViewModel vm)
+        {
+            vm.CopySelectedSession();
+        }
+    }
+
+    private void OnPasteClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is SessionTreeViewModel vm)
+        {
+            vm.PasteCopiedSession();
+        }
+    }
+
     private async void OnConnectClick(object? sender, RoutedEventArgs e)
     {
         ContextMenuPopup?.Close();
@@ -146,14 +173,63 @@ public partial class SessionTreeView : UserControl
         }
     }
 
-    private void OnDeleteClick(object? sender, RoutedEventArgs e)
+    private async void OnDeleteClick(object? sender, RoutedEventArgs e)
     {
         ContextMenuPopup?.Close();
         if (DataContext is not SessionTreeViewModel vm) return;
         var session = vm.SelectedSession;
         if (session == null) return;
 
+        var owner = TopLevel.GetTopLevel(this) as Avalonia.Controls.Window;
+        if (owner == null || !await ShowDeleteConfirmWindow(owner, session.Name))
+            return;
+
         var mainVm = GetMainWindowViewModel();
         mainVm?.DeleteSession(session);
+    }
+
+    private static async System.Threading.Tasks.Task<bool> ShowDeleteConfirmWindow(
+        Avalonia.Controls.Window owner,
+        string sessionName)
+    {
+        var confirmed = false;
+        var dialog = new AtomUI.Desktop.Controls.Window
+        {
+            Title = "确认删除",
+            Width = 380,
+            Height = 160,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            CanResize = false,
+            ShowInTaskbar = false
+        };
+
+        var panel = new StackPanel { Spacing = 16, Margin = new Thickness(20) };
+        panel.Children.Add(new AtomUI.Desktop.Controls.TextBlock
+        {
+            Text = $"确定要删除会话“{sessionName}”吗？",
+            TextWrapping = Avalonia.Media.TextWrapping.Wrap
+        });
+
+        var buttons = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            Spacing = 8,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right
+        };
+        var confirmButton = new AtomUI.Desktop.Controls.Button { Content = "删除", Width = 76 };
+        confirmButton.Click += (_, _) =>
+        {
+            confirmed = true;
+            dialog.Close();
+        };
+        var cancelButton = new AtomUI.Desktop.Controls.Button { Content = "取消", Width = 76 };
+        cancelButton.Click += (_, _) => dialog.Close();
+        buttons.Children.Add(confirmButton);
+        buttons.Children.Add(cancelButton);
+        panel.Children.Add(buttons);
+        dialog.Content = panel;
+
+        await dialog.ShowDialog(owner);
+        return confirmed;
     }
 }

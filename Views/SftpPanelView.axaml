@@ -14,7 +14,7 @@
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
                     <TextBlock Text="📁" FontSize="14" VerticalAlignment="Center"
                                Foreground="{atom:SharedTokenResource ColorText}"/>
-                    <TextBlock Text="SFTP" FontSize="13" FontWeight="Bold"
+                    <TextBlock Text="{Binding ProtocolLabel}" FontSize="13" FontWeight="Bold"
                                Foreground="{atom:SharedTokenResource ColorText}" VerticalAlignment="Center"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">

@@ -41,9 +41,7 @@ public partial class ServerMonitorViewModel : ObservableObject, IDisposable
         HostLabel = $"{session.Username}@{session.Host}";
         ClearData();
 
-        _ = _service.StartAsync(
-            session.Host, session.Port, session.Username,
-            session.AuthMethod, password, session.PrivateKeyPath);
+        _ = _service.StartAsync(session, password);
 
         IsMonitoring = true;
     }

@@ -1,19 +1,40 @@
 <atom:Window xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:atom="https://atomui.net"
+             xmlns:antdicons="https://atomui.net/icons/antdesign"
              xmlns:vm="using:ChiXueSsh.ViewModels"
              xmlns:views="using:ChiXueSsh.Views"
              x:Class="ChiXueSsh.Views.SessionManagerWindow"
              x:DataType="vm:SessionTreeViewModel"
              Title="会话管理器"
-             Width="320"
-             Height="600"
-             MinWidth="260"
+             Width="820"
+             Height="680"
+             MinWidth="640"
              MinHeight="300"
              WindowStartupLocation="CenterOwner"
              ShowInTaskbar="False"
              Background="{atom:SharedTokenResource ColorBgLayout}">
 
-    <views:SessionTreeView DataContext="{Binding}"/>
+    <Grid RowDefinitions="*,Auto">
+        <views:SessionTreeView Grid.Row="0" DataContext="{Binding}"/>
 
+        <Border Grid.Row="1"
+                BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                BorderThickness="0,1,0,0"
+                Padding="20,12">
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Spacing="8">
+                <atom:Button x:Name="ConnectButton"
+                             ButtonType="Primary"
+                             Icon="{antdicons:AntDesignIconProvider Kind=LinkOutlined}"
+                             Content="连接"
+                             IsEnabled="{Binding CanUseSelectedSession}"
+                             Click="OnConnectClick"/>
+                <atom:Button Icon="{antdicons:AntDesignIconProvider Kind=CloseOutlined}"
+                             Content="关闭"
+                             Click="OnCloseClick"/>
+            </StackPanel>
+        </Border>
+    </Grid>
 </atom:Window>

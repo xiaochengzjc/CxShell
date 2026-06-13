@@ -170,9 +170,12 @@ public partial class SftpPanelView : UserControl
                 new FilePickerOpenOptions
                 {
                     Title = "选择要上传的文件",
-                    AllowMultiple = false
+                    AllowMultiple = false,
+                    SuggestedStartLocation = await GetSuggestedLocalFolderAsync(topLevel, vm)
                 });
-            return files.FirstOrDefault()?.Path.LocalPath;
+            var path = files.FirstOrDefault()?.Path.LocalPath;
+            UpdateLocalStartDirectory(vm, path);
+            return path;
         };
 
         vm.PickDownloadPathAsync = async (fileName) =>
@@ -181,9 +184,12 @@ public partial class SftpPanelView : UserControl
                 new FilePickerSaveOptions
                 {
                     Title = "保存到本地",
-                    SuggestedFileName = fileName
+                    SuggestedFileName = fileName,
+                    SuggestedStartLocation = await GetSuggestedLocalFolderAsync(topLevel, vm)
                 });
-            return file?.Path.LocalPath;
+            var path = file?.Path.LocalPath;
+            UpdateLocalStartDirectory(vm, path);
+            return path;
         };
 
         vm.ShowConfirmDialogAsync = async (message) =>
@@ -199,6 +205,24 @@ public partial class SftpPanelView : UserControl
             if (window == null) return null;
             return await ShowInputWindow(window, title, defaultValue);
         };
+    }
+
+    private static async Task<IStorageFolder?> GetSuggestedLocalFolderAsync(TopLevel topLevel, SftpViewModel vm)
+    {
+        if (string.IsNullOrWhiteSpace(vm.LocalStartDirectory) || !System.IO.Directory.Exists(vm.LocalStartDirectory))
+            return null;
+
+        return await topLevel.StorageProvider.TryGetFolderFromPathAsync(vm.LocalStartDirectory);
+    }
+
+    private static void UpdateLocalStartDirectory(SftpViewModel vm, string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        var directory = System.IO.Path.GetDirectoryName(path);
+        if (!string.IsNullOrWhiteSpace(directory))
+            vm.LocalStartDirectory = directory;
     }
 
     private void OnFileItemPressed(object? sender, PointerPressedEventArgs e)

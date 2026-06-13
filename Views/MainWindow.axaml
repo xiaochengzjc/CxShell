@@ -1,6 +1,8 @@
-<atom:Window xmlns="https://github.com/avaloniaui"
+﻿<atom:Window xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:atom="https://atomui.net"
+             xmlns:antdicons="https://atomui.net/icons/antdesign"
+             xmlns:models="using:ChiXueSsh.Models"
              xmlns:vm="using:ChiXueSsh.ViewModels"
              xmlns:views="using:ChiXueSsh.Views"
              x:Class="ChiXueSsh.Views.MainWindow"
@@ -20,6 +22,28 @@
         </DataTemplate>
     </atom:Window.LogoTemplate>
 
+    <atom:Window.Styles>
+        <Style Selector="atom|Button.quick-session-bar-button">
+            <Setter Property="Background" Value="{atom:SharedTokenResource ColorBgLayout}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <Style Selector="atom|Button.quick-session-bar-button:pointerover">
+            <Setter Property="Background" Value="{atom:SharedTokenResource ColorFillSecondary}"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <Style Selector="atom|Button.quick-session-bar-button:pressed">
+            <Setter Property="Background" Value="{atom:SharedTokenResource ColorFill}"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <Style Selector="atom|Button.quick-session-bar-button:disabled">
+            <Setter Property="Background" Value="{atom:SharedTokenResource ColorBgLayout}"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+    </atom:Window.Styles>
+
+
+
     <DockPanel>
         <!-- 工具栏 -->
         <Border DockPanel.Dock="Top" Padding="8,4"
@@ -28,67 +52,142 @@
             <StackPanel Orientation="Horizontal" Spacing="4">
                 <atom:Button Command="{Binding NewSessionCommand}"
                              ButtonType="Default">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                        <atom:TextBlock Text="+" FontSize="16" FontWeight="Bold"/>
-                        <atom:TextBlock Text="新建会话"/>
+                    <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                        <atom:TextBlock Text="+" FontSize="16" FontWeight="Bold" Width="18"
+                                        TextAlignment="Center" VerticalAlignment="Center"/>
+                        <atom:TextBlock Text="新建会话" VerticalAlignment="Center"/>
                     </StackPanel>
                 </atom:Button>
                 <atom:Button Command="{Binding ShowSessionManagerCommand}"
                              ButtonType="Default">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                        <atom:TextBlock Text="☰" FontSize="16"/>
-                        <atom:TextBlock Text="会话管理"/>
+                    <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                        <atom:TextBlock Text="☰" FontSize="16" Width="18"
+                                        TextAlignment="Center" VerticalAlignment="Center"/>
+                        <atom:TextBlock Text="会话管理" VerticalAlignment="Center"/>
                     </StackPanel>
                 </atom:Button>
                 <Border Width="1" Background="{atom:SharedTokenResource ColorSplit}" Margin="8,4" Opacity="0.6"/>
                 <atom:Button Command="{Binding CurrentConnectCommand}"
                              ButtonType="Default"
                              ToolTip.Tip="连接当前会话">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                        <atom:TextBlock Text="▶" FontSize="12"/>
-                        <atom:TextBlock Text="连接"/>
+                    <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                        <atom:TextBlock Text="▶" FontSize="12" Width="18"
+                                        TextAlignment="Center" VerticalAlignment="Center"/>
+                        <atom:TextBlock Text="连接" VerticalAlignment="Center"/>
                     </StackPanel>
                 </atom:Button>
                 <atom:Button Command="{Binding CurrentDisconnectCommand}"
                              ButtonType="Default"
                              ToolTip.Tip="断开当前会话">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                        <atom:TextBlock Text="■" FontSize="11"/>
-                        <atom:TextBlock Text="断开"/>
+                    <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                        <atom:TextBlock Text="■" FontSize="11" Width="18"
+                                        TextAlignment="Center" VerticalAlignment="Center"/>
+                        <atom:TextBlock Text="断开" VerticalAlignment="Center"/>
                     </StackPanel>
                 </atom:Button>
                 <Border Width="1" Background="{atom:SharedTokenResource ColorSplit}" Margin="8,4" Opacity="0.6"/>
                 <atom:Button Command="{Binding ToggleSftpCommand}"
                              ButtonType="Default">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                        <atom:TextBlock Text="⇅" FontSize="14"/>
-                        <atom:TextBlock Text="SFTP"/>
+                    <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                        <atom:TextBlock Text="⇅" FontSize="14" Width="18"
+                                        TextAlignment="Center" VerticalAlignment="Center"/>
+                        <atom:TextBlock Text="SFTP" VerticalAlignment="Center"/>
                     </StackPanel>
                 </atom:Button>
                 <atom:Button Command="{Binding ToggleMonitorCommand}"
                              ButtonType="Default">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                        <atom:TextBlock Text="▦" FontSize="14"/>
-                        <atom:TextBlock Text="监控"/>
+                    <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                        <atom:TextBlock Text="▦" FontSize="14" Width="18"
+                                        TextAlignment="Center" VerticalAlignment="Center"/>
+                        <atom:TextBlock Text="监控" VerticalAlignment="Center"/>
                     </StackPanel>
                 </atom:Button>
                 <!-- 主题切换 -->
                 <Border Width="1" Background="{atom:SharedTokenResource ColorSplit}" Margin="8,4" Opacity="0.6"/>
                 <atom:Button ButtonType="Default" Command="{Binding ToggleThemeCommand}"
                              ToolTip.Tip="切换亮色/暗色主题">
-                    <atom:TextBlock Text="{Binding ThemeIcon}" FontSize="14"/>
+                    <atom:TextBlock Text="{Binding ThemeIcon}" FontSize="14"
+                                    TextAlignment="Center" VerticalAlignment="Center"/>
                 </atom:Button>
                 <atom:Button ButtonType="Default" Command="{Binding ToggleTerminalFullScreenCommand}"
                              ToolTip.Tip="全屏显示当前终端">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                        <atom:TextBlock Text="⛶" FontSize="14"/>
-                        <atom:TextBlock Text="全屏"/>
+                    <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                        <atom:TextBlock Text="⛶" FontSize="14" Width="18"
+                                        TextAlignment="Center" VerticalAlignment="Center"/>
+                        <atom:TextBlock Text="全屏" VerticalAlignment="Center"/>
                     </StackPanel>
                 </atom:Button>
             </StackPanel>
         </Border>
 
         <!-- 状态栏 -->
+        <Border DockPanel.Dock="Top"
+                Height="44"
+                Padding="8,5"
+                ClipToBounds="False"
+                IsVisible="{Binding IsMainChromeVisible}"
+                Background="{atom:SharedTokenResource ColorBgLayout}"
+                BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                BorderThickness="0,1,0,1">
+            <DockPanel LastChildFill="True"
+                       ClipToBounds="False"
+                       VerticalAlignment="Center">
+                <atom:Button DockPanel.Dock="Left"
+                             Classes="quick-session-bar-button"
+                              Width="32"
+                              Height="32"
+                              Padding="0"
+                              ButtonType="Default"
+                              Shape="Default"
+                              SizeType="Small"
+                              Icon="{antdicons:AntDesignIconProvider PlusOutlined}"
+                             HorizontalAlignment="Center"
+                             VerticalAlignment="Center"
+                             HorizontalContentAlignment="Center"
+                             VerticalContentAlignment="Center"
+                             Command="{Binding AddCurrentSessionToQuickBarCommand}"
+                             ToolTip.Tip="将当前会话加入快捷标签栏"/>
+                <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Disabled"
+                              Height="34"
+                              Margin="6,0,0,0"
+                              ClipToBounds="False"
+                              VerticalAlignment="Center">
+                    <ItemsControl ItemsSource="{Binding QuickSessions}"
+                                  Height="34"
+                                  ClipToBounds="False"
+                                  VerticalAlignment="Center">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal"
+                                            VerticalAlignment="Center"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="models:SessionInfo">
+                                <atom:Button ButtonType="Default"
+                                             Classes="quick-session-bar-button"
+                                             SizeType="Middle"
+                                             Height="30"
+                                             MinHeight="30"
+                                             Icon="{antdicons:AntDesignIconProvider CloudServerOutlined}"
+                                             Content="{Binding Name}"
+                                             Padding="10,0"
+                                             Margin="0,2,4,2"
+                                             Cursor="Hand"
+                                             VerticalAlignment="Center"
+                                             HorizontalContentAlignment="Center"
+                                             VerticalContentAlignment="Center"
+                                             Command="{Binding $parent[Window].DataContext.ConnectQuickSessionCommand, x:CompileBindings=False}"
+                                             CommandParameter="{Binding}"
+                                             PointerPressed="OnQuickSessionTagPointerPressed"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+
         <Border DockPanel.Dock="Bottom" Padding="8,4"
                 IsVisible="{Binding IsMainChromeVisible}"
                 Background="{atom:SharedTokenResource ColorBgContainer}"
@@ -223,6 +322,40 @@
                 <views:ServerMonitorView DataContext="{Binding Monitor, x:CompileBindings=False}"
                                          Width="280"/>
             </StackPanel>
+        <Popup x:Name="QuickSessionContextMenuPopup"
+               Placement="Pointer"
+               IsLightDismissEnabled="True">
+            <Border Background="{atom:SharedTokenResource ColorBgElevated}"
+                    BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Padding="0,4"
+                    MinWidth="120">
+                <StackPanel Spacing="0">
+                    <atom:Button x:Name="QuickSessionPropertiesBtn"
+                                 Content="属性"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 HorizontalAlignment="Stretch"
+                                 HorizontalContentAlignment="Left"
+                                 Padding="16,6"
+                                 FontSize="13"
+                                 Foreground="{atom:SharedTokenResource ColorText}"/>
+                    <Border Height="1" Background="{atom:SharedTokenResource ColorSplit}" Margin="8,4"/>
+                    <atom:Button x:Name="QuickSessionDeleteBtn"
+                                 Content="删除"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 HorizontalAlignment="Stretch"
+                                 HorizontalContentAlignment="Left"
+                                 Padding="16,6"
+                                 FontSize="13"
+                                 Foreground="{atom:SharedTokenResource ColorError}"/>
+                </StackPanel>
+            </Border>
+        </Popup>
         </Grid>
+
+
     </DockPanel>
 </atom:Window>

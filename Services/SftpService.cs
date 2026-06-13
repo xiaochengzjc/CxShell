@@ -8,7 +8,7 @@ using Renci.SshNet;
 
 namespace ChiXueSsh.Services;
 
-public class SftpService : IDisposable
+public class SftpService : IFileTransferService, IDisposable
 {
     private SftpClient? _client;
 
@@ -20,19 +20,15 @@ public class SftpService : IDisposable
     {
         Disconnect();
 
-        AuthenticationMethod auth;
-        if (session.AuthMethod == AuthMethod.PrivateKey && !string.IsNullOrEmpty(session.PrivateKeyPath))
+        if (session.SftpUseCustomServer)
         {
-            var expandedPath = ExpandPath(session.PrivateKeyPath);
-            var keyFile = new PrivateKeyFile(expandedPath);
-            auth = new PrivateKeyAuthenticationMethod(session.Username, keyFile);
-        }
-        else
-        {
-            auth = new PasswordAuthenticationMethod(session.Username, password ?? string.Empty);
+            throw new NotSupportedException(
+                "自定义 SFTP 服务器命令需要 SSH exec 通道承载 SFTP 协议；当前版本使用 SSH.NET 标准 sftp subsystem，暂不支持该模式。请取消“使用自定义SFTP服务器”后连接。");
         }
 
-        var connectionInfo = new ConnectionInfo(session.Host, session.Port, session.Username, auth);
+        var authMethods = SshAgentAuthService.CreateAuthenticationMethods(session, password);
+        var connectionInfo = ProxyConnectionFactory.CreateSshConnectionInfo(session, authMethods);
+        SshAlgorithmPreferenceService.Apply(connectionInfo, session);
         _client = new SftpClient(connectionInfo)
         {
             KeepAliveInterval = TimeSpan.FromSeconds(30)
@@ -192,15 +188,6 @@ public class SftpService : IDisposable
                    $"{(attrs.OthersCanRead ? 'r' : '-')}{(attrs.OthersCanWrite ? 'w' : '-')}{(attrs.OthersCanExecute ? 'x' : '-')}";
         }
         catch { return ""; }
-    }
-
-    private static string ExpandPath(string path)
-    {
-        if (path.StartsWith("~"))
-            return Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                path[2..]);
-        return Path.GetFullPath(path);
     }
 
     public void Dispose() => Disconnect();

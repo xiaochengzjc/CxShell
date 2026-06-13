@@ -24,27 +24,13 @@ public class ServerMonitorService : IDisposable
     public event Action<MonitorSnapshot>? DataUpdated;
     public event Action<string>? ErrorOccurred;
 
-    public async Task StartAsync(
-        string host, int port, string username,
-        global::ChiXueSsh.Models.AuthMethod authMethod,
-        string? password,
-        string? privateKeyPath)
+    public async Task StartAsync(SessionInfo session, string? password)
     {
         Stop();
 
-        AuthenticationMethod auth;
-        if (authMethod == global::ChiXueSsh.Models.AuthMethod.PrivateKey && !string.IsNullOrEmpty(privateKeyPath))
-        {
-            var expandedPath = ExpandPath(privateKeyPath);
-            var keyFile = new PrivateKeyFile(expandedPath);
-            auth = new PrivateKeyAuthenticationMethod(username, keyFile);
-        }
-        else
-        {
-            auth = new PasswordAuthenticationMethod(username, password ?? string.Empty);
-        }
-
-        var connectionInfo = new ConnectionInfo(host, port, username, auth);
+        var authMethods = SshAgentAuthService.CreateAuthenticationMethods(session, password);
+        var connectionInfo = new ConnectionInfo(session.Host, session.Port, session.Username, authMethods.ToArray());
+        SshAlgorithmPreferenceService.Apply(connectionInfo, session);
         _sshClient = new SshClient(connectionInfo)
         {
             KeepAliveInterval = TimeSpan.FromSeconds(30)
@@ -189,15 +175,6 @@ public class ServerMonitorService : IDisposable
             DiskPartitions = diskPartitions,
             DiskIo = diskIo
         };
-    }
-
-    private static string ExpandPath(string path)
-    {
-        if (path.StartsWith("~"))
-            return System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                path[2..]);
-        return System.IO.Path.GetFullPath(path);
     }
 
     public void Dispose() => Stop();

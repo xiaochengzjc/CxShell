@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Threading.Tasks;
 using Avalonia.Threading;
@@ -12,37 +11,26 @@ namespace ChiXueSsh.ViewModels;
 
 public partial class SftpViewModel : ObservableObject
 {
-    private readonly SftpService _service = new();
+    private IFileTransferService _service;
     private SessionInfo? _currentSession;
     private string? _currentPassword;
     private string _homeDirectory = "/";
 
     [ObservableProperty] private bool _isConnected;
     [ObservableProperty] private string _currentPath = "/";
-    [ObservableProperty] private string _hostLabel = "未连接";
+    [ObservableProperty] private string _hostLabel = "Not connected";
+    [ObservableProperty] private string _protocolLabel = "SFTP";
+    [ObservableProperty] private string _localStartDirectory = string.Empty;
     [ObservableProperty] private bool _isLoading;
     [ObservableProperty] private string? _errorMessage;
     [ObservableProperty] private SftpFileItem? _selectedFile;
     [ObservableProperty] private bool _isCreatingDirectory;
-    [ObservableProperty] private string _newDirectoryName = "新目录";
+    [ObservableProperty] private string _newDirectoryName = "NewFolder";
     [ObservableProperty] private SftpFileItem? _renamingItem;
-
-    partial void OnSelectedFileChanged(SftpFileItem? oldValue, SftpFileItem? newValue)
-    {
-        if (oldValue != null) oldValue.IsSelected = false;
-        if (newValue != null) newValue.IsSelected = true;
-    }
-
-    [RelayCommand]
-    private void SelectFile(SftpFileItem item)
-    {
-        SelectedFile = item;
-    }
 
     public ObservableCollection<SftpFileItem> Files { get; } = new();
     public ObservableCollection<PathSegment> PathSegments { get; } = new();
 
-    // 由 View code-behind 注入的文件对话框委托
     public Func<Task<string?>>? PickUploadFileAsync { get; set; }
     public Func<string, Task<string?>>? PickDownloadPathAsync { get; set; }
     public Func<string, Task<bool>>? ShowConfirmDialogAsync { get; set; }
@@ -50,25 +38,36 @@ public partial class SftpViewModel : ObservableObject
 
     public SftpViewModel()
     {
-        _service.ErrorOccurred += msg =>
-            Dispatcher.UIThread.Post(() =>
-            {
-                ErrorMessage = msg;
-                IsConnected = false;
-            });
+        _service = CreateService(SessionProtocol.SFTP);
+        _service.ErrorOccurred += OnServiceError;
+    }
+
+    partial void OnSelectedFileChanged(SftpFileItem? oldValue, SftpFileItem? newValue)
+    {
+        if (oldValue != null)
+            oldValue.IsSelected = false;
+
+        if (newValue != null)
+            newValue.IsSelected = true;
     }
 
     public void SwitchConnection(SessionInfo session, string? password)
     {
-        // 先断开旧连接
-        _service.Disconnect();
+        _ = SwitchConnectionAsync(session, password);
+    }
+
+    public async Task<bool> SwitchConnectionAsync(SessionInfo session, string? password)
+    {
+        SetService(CreateService(session.Protocol));
 
         _currentSession = session;
         _currentPassword = password;
+        ProtocolLabel = session.Protocol.ToString();
         HostLabel = $"{session.Username}@{session.Host}";
+        LocalStartDirectory = session.SftpLocalStartDirectory ?? string.Empty;
         ErrorMessage = null;
 
-        _ = ConnectAndBrowseAsync();
+        return await ConnectAndBrowseAsync();
     }
 
     public void StopBrowsing()
@@ -77,7 +76,7 @@ public partial class SftpViewModel : ObservableObject
         Dispatcher.UIThread.Post(() =>
         {
             IsConnected = false;
-            HostLabel = "未连接";
+            HostLabel = "Not connected";
             Files.Clear();
             PathSegments.Clear();
             CurrentPath = "/";
@@ -85,11 +84,12 @@ public partial class SftpViewModel : ObservableObject
         });
     }
 
-    private async Task ConnectAndBrowseAsync()
+    private async Task<bool> ConnectAndBrowseAsync()
     {
-        if (_currentSession == null) return;
+        if (_currentSession == null)
+            return false;
 
-        Dispatcher.UIThread.Post(() =>
+        await Dispatcher.UIThread.InvokeAsync(() =>
         {
             IsConnected = false;
             IsLoading = true;
@@ -102,26 +102,28 @@ public partial class SftpViewModel : ObservableObject
         {
             await _service.ConnectAsync(_currentSession, _currentPassword);
             _homeDirectory = await _service.GetHomeDirectoryAsync();
-
-            // 连接成功后立即标记，让 ListBox 显示出来
-            Dispatcher.UIThread.Post(() => IsConnected = true);
-
-            await LoadDirectoryAsync(_homeDirectory);
+            var startDirectory = string.IsNullOrWhiteSpace(_currentSession.SftpRemoteStartDirectory)
+                ? _homeDirectory
+                : _currentSession.SftpRemoteStartDirectory.Trim();
+            await Dispatcher.UIThread.InvokeAsync(() => IsConnected = true);
+            await LoadDirectoryAsync(startDirectory);
+            return true;
         }
         catch (Exception ex)
         {
-            Dispatcher.UIThread.Post(() =>
+            await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                ErrorMessage = $"连接失败: {ex.Message}";
+                ErrorMessage = $"Connection failed: {ex.Message}";
                 IsConnected = false;
                 IsLoading = false;
             });
+            return false;
         }
     }
 
     private async Task LoadDirectoryAsync(string path)
     {
-        Dispatcher.UIThread.Post(() =>
+        await Dispatcher.UIThread.InvokeAsync(() =>
         {
             IsLoading = true;
             ErrorMessage = null;
@@ -130,9 +132,7 @@ public partial class SftpViewModel : ObservableObject
         try
         {
             var items = await _service.ListDirectoryAsync(path);
-            System.Console.WriteLine($"[SFTP] ListDirectory '{path}' returned {items.Count} items");
-
-            Dispatcher.UIThread.Post(() =>
+            await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 CurrentPath = path;
                 UpdatePathSegments(path);
@@ -140,14 +140,13 @@ public partial class SftpViewModel : ObservableObject
                 foreach (var item in items)
                     Files.Add(item);
                 IsLoading = false;
-                System.Console.WriteLine($"[SFTP] Files.Count = {Files.Count}, IsConnected = {IsConnected}");
             });
         }
         catch (Exception ex)
         {
-            Dispatcher.UIThread.Post(() =>
+            await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                ErrorMessage = $"加载失败: {ex.Message}";
+                ErrorMessage = $"Load failed: {ex.Message}";
                 IsLoading = false;
             });
         }
@@ -156,40 +155,48 @@ public partial class SftpViewModel : ObservableObject
     private void UpdatePathSegments(string path)
     {
         PathSegments.Clear();
-
-        // 根目录
         PathSegments.Add(new PathSegment { Label = "/", FullPath = "/" });
 
-        if (path == "/") return;
+        if (path == "/")
+            return;
 
         var parts = path.TrimStart('/').Split('/');
         var accumulated = "";
         foreach (var part in parts)
         {
-            if (string.IsNullOrEmpty(part)) continue;
+            if (string.IsNullOrEmpty(part))
+                continue;
+
             accumulated += "/" + part;
             PathSegments.Add(new PathSegment { Label = part, FullPath = accumulated });
         }
     }
 
     [RelayCommand]
+    private void SelectFile(SftpFileItem item)
+    {
+        SelectedFile = item;
+    }
+
+    [RelayCommand]
     private async Task NavigateToPath(string path)
     {
-        if (!_service.IsConnected) return;
+        if (!_service.IsConnected)
+            return;
+
         await LoadDirectoryAsync(path);
     }
 
     [RelayCommand]
     private async Task NavigateUp()
     {
-        if (!_service.IsConnected) return;
-        if (CurrentPath == "/") return;
+        if (!_service.IsConnected || CurrentPath == "/")
+            return;
 
-        var parent = System.IO.Path.GetDirectoryName(CurrentPath.TrimEnd('/'))
-                     ?? "/";
-        // Linux 路径：确保使用正斜杠
+        var parent = System.IO.Path.GetDirectoryName(CurrentPath.TrimEnd('/')) ?? "/";
         parent = parent.Replace('\\', '/');
-        if (string.IsNullOrEmpty(parent)) parent = "/";
+        if (string.IsNullOrEmpty(parent))
+            parent = "/";
 
         await LoadDirectoryAsync(parent);
     }
@@ -197,21 +204,27 @@ public partial class SftpViewModel : ObservableObject
     [RelayCommand]
     private async Task NavigateHome()
     {
-        if (!_service.IsConnected) return;
+        if (!_service.IsConnected)
+            return;
+
         await LoadDirectoryAsync(_homeDirectory);
     }
 
     [RelayCommand]
     private async Task Refresh()
     {
-        if (!_service.IsConnected) return;
+        if (!_service.IsConnected)
+            return;
+
         await LoadDirectoryAsync(CurrentPath);
     }
 
     [RelayCommand]
     private async Task OpenItem(SftpFileItem item)
     {
-        if (!_service.IsConnected) return;
+        if (!_service.IsConnected)
+            return;
+
         if (item.IsDirectory)
             await LoadDirectoryAsync(item.FullPath);
     }
@@ -219,15 +232,17 @@ public partial class SftpViewModel : ObservableObject
     [RelayCommand]
     private async Task Upload()
     {
-        if (!_service.IsConnected || PickUploadFileAsync == null) return;
+        if (!_service.IsConnected || PickUploadFileAsync == null)
+            return;
 
         var localPath = await PickUploadFileAsync();
-        if (string.IsNullOrEmpty(localPath)) return;
+        if (string.IsNullOrEmpty(localPath))
+            return;
 
         var fileName = System.IO.Path.GetFileName(localPath);
         var remotePath = CurrentPath.TrimEnd('/') + "/" + fileName;
 
-        Dispatcher.UIThread.Post(() =>
+        await Dispatcher.UIThread.InvokeAsync(() =>
         {
             IsLoading = true;
             ErrorMessage = null;
@@ -240,9 +255,9 @@ public partial class SftpViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            Dispatcher.UIThread.Post(() =>
+            await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                ErrorMessage = $"上传失败: {ex.Message}";
+                ErrorMessage = $"Upload failed: {ex.Message}";
                 IsLoading = false;
             });
         }
@@ -251,13 +266,17 @@ public partial class SftpViewModel : ObservableObject
     [RelayCommand]
     private async Task Download()
     {
-        if (!_service.IsConnected || SelectedFile == null || SelectedFile.IsDirectory) return;
-        if (PickDownloadPathAsync == null) return;
+        if (!_service.IsConnected || SelectedFile == null || SelectedFile.IsDirectory)
+            return;
+
+        if (PickDownloadPathAsync == null)
+            return;
 
         var localPath = await PickDownloadPathAsync(SelectedFile.Name);
-        if (string.IsNullOrEmpty(localPath)) return;
+        if (string.IsNullOrEmpty(localPath))
+            return;
 
-        Dispatcher.UIThread.Post(() =>
+        await Dispatcher.UIThread.InvokeAsync(() =>
         {
             IsLoading = true;
             ErrorMessage = null;
@@ -266,13 +285,13 @@ public partial class SftpViewModel : ObservableObject
         try
         {
             await _service.DownloadFileAsync(SelectedFile.FullPath, localPath);
-            Dispatcher.UIThread.Post(() => IsLoading = false);
+            await Dispatcher.UIThread.InvokeAsync(() => IsLoading = false);
         }
         catch (Exception ex)
         {
-            Dispatcher.UIThread.Post(() =>
+            await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                ErrorMessage = $"下载失败: {ex.Message}";
+                ErrorMessage = $"Download failed: {ex.Message}";
                 IsLoading = false;
             });
         }
@@ -281,12 +300,14 @@ public partial class SftpViewModel : ObservableObject
     [RelayCommand]
     private async Task Delete()
     {
-        if (!_service.IsConnected || SelectedFile == null) return;
+        if (!_service.IsConnected || SelectedFile == null)
+            return;
 
         if (ShowConfirmDialogAsync != null)
         {
-            var confirmed = await ShowConfirmDialogAsync($"确认删除 '{SelectedFile.Name}'？");
-            if (!confirmed) return;
+            var confirmed = await ShowConfirmDialogAsync($"Delete '{SelectedFile.Name}'?");
+            if (!confirmed)
+                return;
         }
 
         try
@@ -296,14 +317,16 @@ public partial class SftpViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            Dispatcher.UIThread.Post(() => ErrorMessage = $"删除失败: {ex.Message}");
+            await Dispatcher.UIThread.InvokeAsync(() => ErrorMessage = $"Delete failed: {ex.Message}");
         }
     }
 
     [RelayCommand]
     private void Rename()
     {
-        if (!_service.IsConnected || SelectedFile == null) return;
+        if (!_service.IsConnected || SelectedFile == null)
+            return;
+
         RenamingItem = SelectedFile;
         SelectedFile.IsRenaming = true;
     }
@@ -311,11 +334,14 @@ public partial class SftpViewModel : ObservableObject
     [RelayCommand]
     private async Task ConfirmRename(SftpFileItem item)
     {
-        if (!item.IsRenaming) return;
+        if (!item.IsRenaming)
+            return;
+
         item.IsRenaming = false;
 
         var newName = item.RenamingText?.Trim();
-        if (string.IsNullOrEmpty(newName) || newName == item.Name) return;
+        if (string.IsNullOrEmpty(newName) || newName == item.Name)
+            return;
 
         var newPath = CurrentPath.TrimEnd('/') + "/" + newName;
         try
@@ -325,7 +351,7 @@ public partial class SftpViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            Dispatcher.UIThread.Post(() => ErrorMessage = $"重命名失败: {ex.Message}");
+            await Dispatcher.UIThread.InvokeAsync(() => ErrorMessage = $"Rename failed: {ex.Message}");
         }
     }
 
@@ -339,19 +365,24 @@ public partial class SftpViewModel : ObservableObject
     [RelayCommand]
     private void CreateDirectory()
     {
-        if (!_service.IsConnected) return;
-        NewDirectoryName = "新目录";
+        if (!_service.IsConnected)
+            return;
+
+        NewDirectoryName = "NewFolder";
         IsCreatingDirectory = true;
     }
 
     [RelayCommand]
     private async Task ConfirmCreateDirectory()
     {
-        if (!IsCreatingDirectory) return;
+        if (!IsCreatingDirectory)
+            return;
+
         IsCreatingDirectory = false;
 
         var name = NewDirectoryName?.Trim();
-        if (string.IsNullOrEmpty(name)) return;
+        if (string.IsNullOrEmpty(name))
+            return;
 
         var newPath = CurrentPath.TrimEnd('/') + "/" + name;
         try
@@ -361,7 +392,7 @@ public partial class SftpViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            Dispatcher.UIThread.Post(() => ErrorMessage = $"创建目录失败: {ex.Message}");
+            await Dispatcher.UIThread.InvokeAsync(() => ErrorMessage = $"Create directory failed: {ex.Message}");
         }
     }
 
@@ -369,7 +400,36 @@ public partial class SftpViewModel : ObservableObject
     private void CancelCreateDirectory()
     {
         IsCreatingDirectory = false;
-        NewDirectoryName = "新目录";
+        NewDirectoryName = "NewFolder";
+    }
+
+    private static IFileTransferService CreateService(SessionProtocol protocol)
+    {
+        return protocol switch
+        {
+            SessionProtocol.FTP => new FtpService(),
+            _ => new SftpService()
+        };
+    }
+
+    private void SetService(IFileTransferService service)
+    {
+        _service.ErrorOccurred -= OnServiceError;
+        _service.Disconnect();
+        if (_service is IDisposable disposable)
+            disposable.Dispose();
+
+        _service = service;
+        _service.ErrorOccurred += OnServiceError;
+    }
+
+    private void OnServiceError(string message)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            ErrorMessage = message;
+            IsConnected = false;
+        });
     }
 }
 

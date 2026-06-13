@@ -1,16 +1,25 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Globalization;
+using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using ChiXueSsh.Models;
 using Renci.SshNet;
 
 namespace ChiXueSsh.Services;
 
-public class SshConnectionService : IDisposable
+public class SshConnectionService : ITerminalConnectionService
 {
     private SshClient? _sshClient;
     private ShellStream? _shellStream;
+    private SshAgentForwardingService? _agentForwarding;
+    private readonly List<ForwardedPort> _forwardedPorts = new();
+    private ForwardedPortRemote? _x11ForwardedPort;
+    private string? _remoteX11Display;
+    private string? _x11StatusMessage;
     private CancellationTokenSource? _readCts;
     private Task? _readTask;
     private readonly object _writeLock = new();
@@ -26,44 +35,59 @@ public class SshConnectionService : IDisposable
     public event Action<string>? ErrorOccurred;
 
     public async Task ConnectAsync(
-        string host, int port, string username,
-        Models.AuthMethod authMethod, string? password, string? privateKeyPath,
+        SessionInfo session,
+        string? password,
         int columns = 80, int rows = 24,
         CancellationToken cancellationToken = default)
     {
         Disconnect();
+        _x11StatusMessage = null;
 
-        AuthenticationMethod auth;
-        if (authMethod == Models.AuthMethod.PrivateKey && !string.IsNullOrEmpty(privateKeyPath))
-        {
-            var expandedPath = ExpandPath(privateKeyPath);
-            var keyFile = new PrivateKeyFile(expandedPath);
-            auth = new PrivateKeyAuthenticationMethod(username, keyFile);
-        }
-        else
-        {
-            auth = new PasswordAuthenticationMethod(username, password ?? string.Empty);
-        }
+        if (string.Equals(session.SshVersionPolicy, "Ssh1Only", StringComparison.OrdinalIgnoreCase))
+            throw new NotSupportedException("SSH1 is not supported. Please select SSH2 or a mixed SSH policy.");
 
-        var connectionInfo = new ConnectionInfo(host, port, username, auth);
+        var authMethods = SshAgentAuthService.CreateAuthenticationMethods(session, password);
+        var connectionInfo = ProxyConnectionFactory.CreateSshConnectionInfo(session, authMethods);
+        SshAlgorithmPreferenceService.Apply(connectionInfo, session);
+        if (session.SshUseCompression)
+            PreferCompression(connectionInfo);
+
         _sshClient = new SshClient(connectionInfo)
         {
-            KeepAliveInterval = TimeSpan.FromSeconds(30)
+            KeepAliveInterval = session.SendSessionKeepAlive
+                ? TimeSpan.FromSeconds(Math.Max(1, session.SessionKeepAliveIntervalSeconds))
+                : Timeout.InfiniteTimeSpan
         };
+        if (session.SshAcceptAndSaveHostKey)
+            _sshClient.HostKeyReceived += (_, e) => e.CanTrust = true;
 
         try
         {
             await Task.Run(() => _sshClient.Connect(), cancellationToken);
+            StartForwardedPorts(session);
+            StartX11Forwarding(session);
 
-            _shellStream = _sshClient.CreateShellStream(
-                "xterm-256color",
-                (uint)columns, (uint)rows,
-                800, 600, 65536);
+            _shellStream = session.SshNoTerminal
+                ? _sshClient.CreateShellStreamNoTerminal(65536)
+                : _sshClient.CreateShellStream(
+                    "xterm-256color",
+                    (uint)columns, (uint)rows,
+                    GetPixelWidth(columns), GetPixelHeight(rows), 65536);
 
-            SendUtf8LocaleBootstrap();
+            if (session.SshForwardAgent)
+            {
+                _agentForwarding = new SshAgentForwardingService();
+                _agentForwarding.Start(_shellStream);
+            }
+
+            SendX11DisplayExport();
+            if (!session.SshNoTerminal)
+                SendUtf8LocaleBootstrap();
+            SendRemoteCommand(session.SshRemoteCommand);
             _utf8Decoder.Reset();
             _readCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _readTask = Task.Run(() => ReadLoop(_readCts.Token), _readCts.Token);
+            EmitStartupStatus();
         }
         catch (Exception ex)
         {
@@ -71,6 +95,178 @@ public class SshConnectionService : IDisposable
             Disconnect();
             throw;
         }
+    }
+
+    private void StartForwardedPorts(SessionInfo session)
+    {
+        if (_sshClient == null || session.SshTunnelRules.Count == 0)
+            return;
+
+        foreach (var rule in session.SshTunnelRules)
+        {
+            if (rule.ListenPort is < 1 or > 65535)
+                continue;
+
+            ForwardedPort forwardedPort = rule.Type switch
+            {
+                SshTunnelRuleType.Remote => new ForwardedPortRemote(
+                    NormalizeBindHost(rule.SourceHost, fallback: "0.0.0.0"),
+                    (uint)rule.ListenPort,
+                    NormalizeHost(rule.DestinationHost),
+                    (uint)rule.DestinationPort),
+                SshTunnelRuleType.Dynamic => new ForwardedPortDynamic(
+                    GetLocalBindHost(rule),
+                    (uint)rule.ListenPort),
+                _ => new ForwardedPortLocal(
+                    GetLocalBindHost(rule),
+                    (uint)rule.ListenPort,
+                    NormalizeHost(rule.DestinationHost),
+                    (uint)rule.DestinationPort)
+            };
+
+            forwardedPort.Exception += (_, e) =>
+            {
+                ErrorOccurred?.Invoke($"SSH tunnel {rule.TypeDisplay} {rule.ListenPort} failed: {e.Exception.Message}");
+            };
+
+            _sshClient.AddForwardedPort(forwardedPort);
+            forwardedPort.Start();
+            _forwardedPorts.Add(forwardedPort);
+        }
+    }
+
+    private static string GetLocalBindHost(SshTunnelRule rule)
+    {
+        return rule.AcceptLocalConnectionsOnly
+            ? "127.0.0.1"
+            : NormalizeBindHost(rule.SourceHost, fallback: "0.0.0.0");
+    }
+
+    private static string NormalizeBindHost(string? host, string fallback)
+    {
+        return string.IsNullOrWhiteSpace(host)
+            ? fallback
+            : host.Trim();
+    }
+
+    private static string NormalizeHost(string? host)
+    {
+        return string.IsNullOrWhiteSpace(host)
+            ? "localhost"
+            : host.Trim();
+    }
+
+    private void StartX11Forwarding(SessionInfo session)
+    {
+        if (_sshClient == null || !session.SshForwardX11)
+            return;
+
+        var localDisplay = ResolveLocalX11Display(session);
+        Exception? lastError = null;
+
+        for (uint remoteDisplayNumber = 10; remoteDisplayNumber <= 19; remoteDisplayNumber++)
+        {
+            var remotePort = 6000u + remoteDisplayNumber;
+
+            try
+            {
+                _x11ForwardedPort = new ForwardedPortRemote(
+                    "127.0.0.1",
+                    remotePort,
+                    localDisplay.Host,
+                    localDisplay.Port);
+                _x11ForwardedPort.Exception += (_, e) =>
+                {
+                    ErrorOccurred?.Invoke($"SSH X11 forwarding failed: {e.Exception.Message}");
+                };
+
+                _sshClient.AddForwardedPort(_x11ForwardedPort);
+                _x11ForwardedPort.Start();
+                _remoteX11Display = $"localhost:{remoteDisplayNumber}.0";
+                _x11StatusMessage =
+                    $"[SSH X11 forwarding enabled: DISPLAY={_remoteX11Display}, local target={localDisplay.Host}:{localDisplay.Port}]";
+                return;
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+                try
+                {
+                    if (_x11ForwardedPort != null)
+                        _sshClient.RemoveForwardedPort(_x11ForwardedPort);
+                }
+                catch
+                {
+                    // Ignore cleanup failure; the next display number will be tried.
+                }
+
+                _x11ForwardedPort?.Dispose();
+                _x11ForwardedPort = null;
+                _remoteX11Display = null;
+            }
+        }
+
+        ErrorOccurred?.Invoke($"SSH X11 forwarding is disabled: {lastError?.Message ?? "no remote display port is available"}");
+    }
+
+    private static (string Host, uint Port) ResolveLocalX11Display(SessionInfo session)
+    {
+        var display = session.SshX11UseXmanager || string.IsNullOrWhiteSpace(session.SshX11Display)
+            ? "localhost:0.0"
+            : session.SshX11Display.Trim();
+
+        var host = "localhost";
+        var displayPart = display;
+        var separatorIndex = display.LastIndexOf(':');
+        if (separatorIndex >= 0)
+        {
+            host = string.IsNullOrWhiteSpace(display[..separatorIndex])
+                ? "localhost"
+                : display[..separatorIndex];
+            displayPart = display[(separatorIndex + 1)..];
+        }
+
+        var screenSeparator = displayPart.IndexOf('.');
+        var displayNumberText = screenSeparator >= 0
+            ? displayPart[..screenSeparator]
+            : displayPart;
+        var displayNumber = uint.TryParse(displayNumberText, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : 0;
+
+        return (host, 6000 + displayNumber);
+    }
+
+    private void SendX11DisplayExport()
+    {
+        if (string.IsNullOrWhiteSpace(_remoteX11Display))
+            return;
+
+        try
+        {
+            var command = $"export DISPLAY={_remoteX11Display}\r";
+            var bytes = Encoding.UTF8.GetBytes(command);
+            _shellStream?.Write(bytes, 0, bytes.Length);
+            _shellStream?.Flush();
+        }
+        catch
+        {
+            // X11 DISPLAY export is best-effort; the shell remains usable.
+        }
+    }
+
+    private void EmitStartupStatus()
+    {
+        if (!string.IsNullOrWhiteSpace(_x11StatusMessage))
+            DataReceived?.Invoke($"\r\n{_x11StatusMessage}\r\n");
+    }
+
+    private static void PreferCompression(ConnectionInfo connectionInfo)
+    {
+        // SSH.NET includes "none" by default. Removing it asks the server for zlib
+        // when available and fails clearly if the server has compression disabled.
+        if (connectionInfo.CompressionAlgorithms.Count > 1)
+            connectionInfo.CompressionAlgorithms.Remove("none");
     }
 
     private void SendUtf8LocaleBootstrap()
@@ -84,6 +280,24 @@ public class SshConnectionService : IDisposable
         catch
         {
             // Locale bootstrap is best-effort; the shell remains usable if it fails.
+        }
+    }
+
+    private void SendRemoteCommand(string? remoteCommand)
+    {
+        if (string.IsNullOrWhiteSpace(remoteCommand))
+            return;
+
+        try
+        {
+            var command = remoteCommand.TrimEnd('\r', '\n') + "\r";
+            var bytes = Encoding.UTF8.GetBytes(command);
+            _shellStream?.Write(bytes, 0, bytes.Length);
+            _shellStream?.Flush();
+        }
+        catch
+        {
+            // Remote command startup is best-effort; normal input remains available.
         }
     }
 
@@ -179,21 +393,70 @@ public class SshConnectionService : IDisposable
         }
     }
 
-    public void ResizeTerminal(int columns, int rows)
+    public void SendKeepAlive()
     {
-        // ShellStream window resize - SSH.NET 2024.2.0 may not expose this publicly
-        // Reconnect with new size if needed
         try
         {
-            var method = _shellStream?.GetType().GetMethod("SendWindowChangeRequest",
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
-            method?.Invoke(_shellStream, new object[] { (uint)columns, (uint)rows, 800u, 600u });
+            _sshClient?.SendKeepAlive();
         }
-        catch
+        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException or System.IO.IOException)
         {
-            // Ignore resize failures
+            ErrorOccurred?.Invoke(ex.Message);
         }
     }
+
+    public void ResizeTerminal(int columns, int rows)
+    {
+        try
+        {
+            if (_shellStream == null)
+                return;
+
+            // SSH.NET keeps the session channel private; send the PTY window-change
+            // request through that channel so remote readline/bash wrap at our width.
+            var channelField = typeof(ShellStream).GetField(
+                "_channel",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            var channel = channelField?.GetValue(_shellStream);
+            if (channel == null || channelField == null)
+                return;
+
+            var method = channelField.FieldType.GetMethod(
+                "SendWindowChangeRequest",
+                BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public,
+                binder: null,
+                types: new[] { typeof(uint), typeof(uint), typeof(uint), typeof(uint) },
+                modifiers: null)
+                ?? channel.GetType().GetMethod(
+                    "SendWindowChangeRequest",
+                    BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public,
+                    binder: null,
+                    types: new[] { typeof(uint), typeof(uint), typeof(uint), typeof(uint) },
+                    modifiers: null);
+            if (method == null)
+            {
+                ErrorOccurred?.Invoke("SSH terminal resize failed: SendWindowChangeRequest was not found.");
+                return;
+            }
+
+            method.Invoke(channel, new object[]
+            {
+                (uint)Math.Max(1, columns),
+                (uint)Math.Max(1, rows),
+                GetPixelWidth(columns),
+                GetPixelHeight(rows)
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"SSH terminal resize failed: {ex.Message}");
+            ErrorOccurred?.Invoke($"SSH terminal resize failed: {ex.Message}");
+        }
+    }
+
+    private static uint GetPixelWidth(int columns) => (uint)Math.Max(1, columns * 8);
+
+    private static uint GetPixelHeight(int rows) => (uint)Math.Max(1, rows * 16);
 
     public void Disconnect()
     {
@@ -210,6 +473,10 @@ public class SshConnectionService : IDisposable
 
         _shellStream?.Dispose();
         _shellStream = null;
+        _agentForwarding?.Dispose();
+        _agentForwarding = null;
+        StopX11Forwarding();
+        StopForwardedPorts();
 
         if (_sshClient?.IsConnected == true)
         {
@@ -221,6 +488,69 @@ public class SshConnectionService : IDisposable
         _readCts?.Dispose();
         _readCts = null;
         _readTask = null;
+    }
+
+    private void StopForwardedPorts()
+    {
+        foreach (var forwardedPort in _forwardedPorts.ToArray())
+        {
+            try
+            {
+                if (forwardedPort.IsStarted)
+                    forwardedPort.Stop();
+            }
+            catch
+            {
+                // Ignore tunnel shutdown failures during disconnect.
+            }
+
+            try
+            {
+                _sshClient?.RemoveForwardedPort(forwardedPort);
+            }
+            catch
+            {
+                // Ignore removal failures during disconnect.
+            }
+
+            forwardedPort.Dispose();
+        }
+
+        _forwardedPorts.Clear();
+    }
+
+    private void StopX11Forwarding()
+    {
+        if (_x11ForwardedPort == null)
+        {
+            _remoteX11Display = null;
+            _x11StatusMessage = null;
+            return;
+        }
+
+        try
+        {
+            if (_x11ForwardedPort.IsStarted)
+                _x11ForwardedPort.Stop();
+        }
+        catch
+        {
+            // Ignore X11 shutdown failures during disconnect.
+        }
+
+        try
+        {
+            _sshClient?.RemoveForwardedPort(_x11ForwardedPort);
+        }
+        catch
+        {
+            // Ignore removal failures during disconnect.
+        }
+
+        _x11ForwardedPort.Dispose();
+        _x11ForwardedPort = null;
+        _remoteX11Display = null;
+        _x11StatusMessage = null;
     }
 
     private static string ExpandPath(string path)
