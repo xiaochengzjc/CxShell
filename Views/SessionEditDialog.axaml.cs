@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
@@ -13,6 +14,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using ChiXueSsh.Models;
 using ChiXueSsh.Services;
 using ChiXueSsh.ViewModels;
@@ -24,6 +26,10 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
     private bool _isLoaded;
     private bool _saveAndConnectRequested;
     private bool _isInitializingSelections;
+    private bool _isSyncingAppearanceColorPickers;
+    private DispatcherTimer? _appearanceBlinkTimer;
+    private SessionEditViewModel? _appearanceBlinkViewModel;
+    private bool _appearanceBlinkState = true;
 
     public bool ShouldConnect { get; private set; }
 
@@ -48,6 +54,8 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         SetSelectedProxyOptions();
         SetSelectedSshOptions();
         SetSelectedTelnetOptions();
+        SetSelectedTerminalOptions();
+        SetSelectedAppearanceOptions();
         SetSelectedRloginOptions();
         SetSelectedSerialOptions();
         SetSelectedRdpOptions();
@@ -55,6 +63,8 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         CategoryTree.SelectionChanged += OnCategorySelectionChanged;
         ProxySelect.SelectionChanged += OnProxySelectionChanged;
         ShowCategoryPage("Connection", "连接");
+        Closed += OnWindowClosed;
+        AttachAppearanceBlinkPreview();
     }
 
     private void OnCategorySelectionChanged(object? sender, Avalonia.Controls.SelectionChangedEventArgs e)
@@ -67,23 +77,96 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         ShowCategoryPage(key, title);
     }
 
+    private void AttachAppearanceBlinkPreview()
+    {
+        if (DataContext is not SessionEditViewModel vm)
+            return;
+
+        _appearanceBlinkViewModel = vm;
+        _appearanceBlinkViewModel.PropertyChanged += OnAppearanceBlinkPropertyChanged;
+        _appearanceBlinkTimer = new DispatcherTimer();
+        _appearanceBlinkTimer.Tick += OnAppearanceBlinkTimerTick;
+        UpdateAppearanceBlinkTimer();
+    }
+
+    private void OnWindowClosed(object? sender, EventArgs e)
+    {
+        if (_appearanceBlinkViewModel != null)
+            _appearanceBlinkViewModel.PropertyChanged -= OnAppearanceBlinkPropertyChanged;
+
+        if (_appearanceBlinkTimer != null)
+        {
+            _appearanceBlinkTimer.Stop();
+            _appearanceBlinkTimer.Tick -= OnAppearanceBlinkTimerTick;
+        }
+    }
+
+    private void OnAppearanceBlinkPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(SessionEditViewModel.AppearanceUseBlinkingCursor) or
+            nameof(SessionEditViewModel.AppearanceCursorBlinkSpeedMilliseconds))
+        {
+            UpdateAppearanceBlinkTimer();
+        }
+    }
+
+    private void UpdateAppearanceBlinkTimer()
+    {
+        if (_appearanceBlinkViewModel == null || _appearanceBlinkTimer == null)
+            return;
+
+        if (!_appearanceBlinkViewModel.AppearanceUseBlinkingCursor)
+        {
+            _appearanceBlinkTimer.Stop();
+            _appearanceBlinkState = true;
+            _appearanceBlinkViewModel.AppearancePreviewCursorVisible = true;
+            return;
+        }
+
+        var interval = Math.Clamp((int)_appearanceBlinkViewModel.AppearanceCursorBlinkSpeedMilliseconds, 1, 5000);
+        _appearanceBlinkTimer.Interval = TimeSpan.FromMilliseconds(interval);
+        _appearanceBlinkState = true;
+        _appearanceBlinkViewModel.AppearancePreviewCursorVisible = true;
+        _appearanceBlinkTimer.Start();
+    }
+
+    private void OnAppearanceBlinkTimerTick(object? sender, EventArgs e)
+    {
+        if (_appearanceBlinkViewModel == null)
+            return;
+
+        _appearanceBlinkState = !_appearanceBlinkState;
+        _appearanceBlinkViewModel.AppearancePreviewCursorVisible = _appearanceBlinkState;
+    }
+
     private void ShowCategoryPage(string key, string title)
     {
         if (key == "SshSftp")
             title = "连接 > SSH > SFTP (Secure File Transfer)";
         else if (key == "Rlogin")
             title = "连接 > RLOGIN";
+        else if (key == "WindowAppearance")
+            title = "外观 > 窗口";
 
         if (key == "Proxy")
             title = "连接 > 代理";
 
         else if (key == "KeepAlive")
             title = "连接 > 保持活动状态";
+        if (key == "Highlight")
+            title = "外观 > 突出";
+
+        if (key == "Advanced")
+            title = "高级";
+        else if (key == "Tracing")
+            title = "高级 > 协议跟踪";
+
         PageTitleText.Text = title;
         ConnectionPage.IsVisible = key == "Connection";
         AuthPage.IsVisible = key == "Auth";
         LoginPromptPage.IsVisible = key == "LoginPrompt";
         SshPage.IsVisible = key == "Ssh";
+        LoginScriptPage.IsVisible = key == "LoginScript";
         SshSecurityPage.IsVisible = key == "SshSecurity";
         SshTunnelPage.IsVisible = key == "SshTunnel";
         TelnetPage.IsVisible = key == "Telnet";
@@ -93,7 +176,16 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         SftpPage.IsVisible = key == "SshSftp";
         SerialPage.IsVisible = key == "Serial";
         RdpPage.IsVisible = key == "Rdp";
-        PlaceholderPage.IsVisible = key != "Connection" && key != "Auth" && key != "LoginPrompt" && key != "Ssh" && key != "SshSecurity" && key != "SshTunnel" && key != "Telnet" && key != "Proxy" && key != "KeepAlive" && key != "Rlogin" && key != "SshSftp" && key != "Serial" && key != "Rdp";
+        TerminalPage.IsVisible = key == "Terminal";
+        KeyboardPage.IsVisible = key == "Keyboard";
+        VtModePage.IsVisible = key == "VtMode";
+        TerminalAdvancedPage.IsVisible = key == "TerminalAdvanced";
+        AppearancePage.IsVisible = key == "Appearance";
+        WindowAppearancePage.IsVisible = key == "WindowAppearance";
+        HighlightPage.IsVisible = key == "Highlight";
+        AdvancedPage.IsVisible = key == "Advanced";
+        TracingPage.IsVisible = key == "Tracing";
+        PlaceholderPage.IsVisible = key != "Connection" && key != "Auth" && key != "LoginPrompt" && key != "LoginScript" && key != "Ssh" && key != "SshSecurity" && key != "SshTunnel" && key != "Telnet" && key != "Proxy" && key != "KeepAlive" && key != "Rlogin" && key != "SshSftp" && key != "Serial" && key != "Rdp" && key != "Terminal" && key != "Keyboard" && key != "VtMode" && key != "TerminalAdvanced" && key != "Appearance" && key != "WindowAppearance" && key != "Highlight" && key != "Advanced" && key != "Tracing";
         PlaceholderTitleText.Text = title;
     }
 
@@ -143,12 +235,40 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             vm.SshCipherAlgorithms = GetSelectedAlgorithmText(SshCipherSelect, vm.SshCipherAlgorithms);
             vm.SshMacAlgorithms = GetSelectedAlgorithmText(SshMacSelect, vm.SshMacAlgorithms);
             vm.SshKeyExchangeAlgorithms = GetSelectedAlgorithmText(SshKeyExchangeSelect, vm.SshKeyExchangeAlgorithms);
+            vm.TerminalType = GetSelectedOptionText(TerminalTypeSelect, vm.TerminalType);
+            vm.TerminalEncoding = GetSelectedOptionText(TerminalEncodingSelect, vm.TerminalEncoding);
+            vm.TerminalSendLineEnding = GetSelectedOptionText(TerminalSendLineEndingSelect, vm.TerminalSendLineEnding);
+            vm.TerminalReceiveLineEnding = GetSelectedOptionText(TerminalReceiveLineEndingSelect, vm.TerminalReceiveLineEnding);
+            vm.TerminalKeyboardFunctionKeyMode = GetSelectedOptionText(TerminalKeyboardFunctionKeySelect, vm.TerminalKeyboardFunctionKeyMode);
+            vm.TerminalKeyboardMappingFile = TerminalKeyboardMappingFileBox?.Text ?? vm.TerminalKeyboardMappingFile;
+            vm.TerminalAdvancedPreinputString = TerminalAdvancedPreinputStringBox?.Text ?? vm.TerminalAdvancedPreinputString;
+            vm.TerminalAdvancedAnswerback = TerminalAdvancedAnswerbackBox?.Text ?? vm.TerminalAdvancedAnswerback;
+            vm.AppearanceColorScheme = GetSelectedOptionText(AppearanceColorSchemeSelect, vm.AppearanceColorScheme);
+            vm.AppearanceFontFamily = GetSelectedOptionText(AppearanceFontSelect, vm.AppearanceFontFamily);
+            vm.AppearanceFontStyle = GetSelectedOptionText(AppearanceFontStyleSelect, vm.AppearanceFontStyle);
+            vm.AppearanceFontSize = ParseDecimalOption(AppearanceFontSizeSelect, vm.AppearanceFontSize);
+            vm.AppearanceCjkFontFamily = GetSelectedOptionText(AppearanceCjkFontSelect, vm.AppearanceCjkFontFamily);
+            vm.AppearanceCjkFontStyle = GetSelectedOptionText(AppearanceCjkFontStyleSelect, vm.AppearanceCjkFontStyle);
+            vm.AppearanceCjkFontSize = ParseDecimalOption(AppearanceCjkFontSizeSelect, vm.AppearanceCjkFontSize);
+            vm.AppearanceFontQuality = GetSelectedOptionText(AppearanceFontQualitySelect, vm.AppearanceFontQuality);
+            vm.AppearanceBoldTextMode = GetSelectedOptionText(AppearanceBoldTextModeSelect, vm.AppearanceBoldTextMode);
+            vm.AppearanceForegroundColor = AppearanceForegroundColorPicker.Value ?? vm.AppearanceForegroundColor;
+            vm.AppearanceBoldForegroundColor = AppearanceBoldForegroundColorPicker.Value ?? vm.AppearanceBoldForegroundColor;
+            vm.AppearanceBackgroundColor = AppearanceBackgroundColorPicker.Value ?? vm.AppearanceBackgroundColor;
+            vm.AppearanceCursorColor = AppearanceCursorColorPicker.Value ?? vm.AppearanceCursorColor;
+            vm.AppearanceCursorTextColor = AppearanceCursorTextColorPicker.Value ?? vm.AppearanceCursorTextColor;
+            vm.AppearanceTabCustomColor = AppearanceTabCustomColorPicker.Value ?? vm.AppearanceTabCustomColor;
+            vm.AppearanceBackgroundImagePath = AppearanceBackgroundImagePathBox?.Text ?? vm.AppearanceBackgroundImagePath;
+            vm.AppearanceBackgroundImagePosition = GetSelectedOptionText(AppearanceBackgroundImagePositionSelect, vm.AppearanceBackgroundImagePosition);
+            vm.AppearanceHighlightSetId = GetSelectedOptionText(AppearanceHighlightSetSelect, vm.AppearanceHighlightSetId);
+            vm.AdvancedQuickCommandSet = AdvancedQuickCommandSetBox?.Text ?? vm.AdvancedQuickCommandSet;
             vm.SshX11UseXmanager = SshX11XmanagerButton.IsChecked == true;
             vm.SshX11Display = SshX11DisplayBox?.Text ?? vm.SshX11Display;
             vm.TelnetXDisplayLocation = TelnetXDisplayLocationBox?.Text ?? vm.TelnetXDisplayLocation;
             vm.TelnetOptionMode = TelnetActiveOptionButton.IsChecked == true ? "Active" : "Passive";
             vm.TelnetUsernamePrompt = TelnetUsernamePromptBox?.Text ?? vm.TelnetUsernamePrompt;
             vm.TelnetPasswordPrompt = TelnetPasswordPromptBox?.Text ?? vm.TelnetPasswordPrompt;
+            vm.LoginScriptFilePath = LoginScriptFilePathBox?.Text ?? vm.LoginScriptFilePath;
             vm.RloginPasswordPrompt = RloginPasswordPromptBox?.Text ?? vm.RloginPasswordPrompt;
             vm.RloginTerminalSpeed = GetSelectedOptionText(RloginTerminalSpeedSelect, vm.RloginTerminalSpeed);
             vm.SftpLocalStartDirectory = SftpLocalStartDirectoryBox?.Text ?? vm.SftpLocalStartDirectory;
@@ -214,6 +334,718 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         var folder = folders.FirstOrDefault();
         if (folder != null)
             SftpLocalStartDirectoryBox.Text = folder.Path.LocalPath;
+    }
+
+    private async void OnAddLoginScriptRuleClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SessionEditViewModel vm)
+            return;
+
+        var rule = await ShowLoginScriptRuleDialogAsync(null);
+        if (rule == null)
+            return;
+
+        rule.SortOrder = vm.LoginScriptRules.Count;
+        vm.LoginScriptRules.Add(rule);
+        vm.SelectedLoginScriptRule = rule;
+    }
+
+    private async void OnEditLoginScriptRuleClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SessionEditViewModel vm || vm.SelectedLoginScriptRule == null)
+            return;
+
+        var editing = SessionEditViewModel.CloneLoginScriptRule(vm.SelectedLoginScriptRule);
+        var rule = await ShowLoginScriptRuleDialogAsync(editing);
+        if (rule == null)
+            return;
+
+        var index = vm.LoginScriptRules.IndexOf(vm.SelectedLoginScriptRule);
+        if (index < 0)
+            return;
+
+        rule.SortOrder = index;
+        vm.LoginScriptRules[index] = rule;
+        vm.SelectedLoginScriptRule = rule;
+    }
+
+    private void OnDeleteLoginScriptRuleClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SessionEditViewModel vm || vm.SelectedLoginScriptRule == null)
+            return;
+
+        var index = vm.LoginScriptRules.IndexOf(vm.SelectedLoginScriptRule);
+        vm.LoginScriptRules.Remove(vm.SelectedLoginScriptRule);
+        RenumberLoginScriptRules(vm.LoginScriptRules);
+        vm.SelectedLoginScriptRule = vm.LoginScriptRules.Count == 0
+            ? null
+            : vm.LoginScriptRules[Math.Clamp(index, 0, vm.LoginScriptRules.Count - 1)];
+    }
+
+    private void OnMoveUpLoginScriptRuleClick(object? sender, RoutedEventArgs e)
+    {
+        MoveSelectedLoginScriptRule(-1);
+    }
+
+    private void OnMoveDownLoginScriptRuleClick(object? sender, RoutedEventArgs e)
+    {
+        MoveSelectedLoginScriptRule(1);
+    }
+
+    private void MoveSelectedLoginScriptRule(int offset)
+    {
+        if (DataContext is not SessionEditViewModel vm)
+            return;
+
+        var selectedRule = vm.SelectedLoginScriptRule ?? LoginScriptRulesGrid.SelectedItem as LoginScriptRule;
+        if (selectedRule == null)
+            return;
+
+        var index = vm.LoginScriptRules.IndexOf(selectedRule);
+        var newIndex = index + offset;
+        if (index < 0 || newIndex < 0 || newIndex >= vm.LoginScriptRules.Count)
+            return;
+
+        vm.LoginScriptRules.RemoveAt(index);
+        vm.LoginScriptRules.Insert(newIndex, selectedRule);
+        RenumberLoginScriptRules(vm.LoginScriptRules);
+        vm.SelectedLoginScriptRule = selectedRule;
+        LoginScriptRulesGrid.SelectedItem = selectedRule;
+        LoginScriptRulesGrid.ScrollIntoView(selectedRule, null);
+    }
+
+    private async void OnBrowseLoginScriptFileClick(object? sender, RoutedEventArgs e)
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel == null)
+            return;
+
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "选择登录脚本文件",
+            AllowMultiple = false
+        });
+        var file = files.FirstOrDefault();
+        if (file != null)
+            LoginScriptFilePathBox.Text = file.Path.LocalPath;
+    }
+
+    private async void OnBrowseAppearanceBackgroundImageClick(object? sender, RoutedEventArgs e)
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel == null)
+            return;
+
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "选择背景图片",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Image files")
+                {
+                    Patterns = ["*.png", "*.jpg", "*.jpeg", "*.bmp", "*.gif", "*.webp"]
+                },
+                FilePickerFileTypes.All
+            ]
+        });
+
+        var file = files.FirstOrDefault();
+        if (file != null)
+            AppearanceBackgroundImagePathBox.Text = file.Path.LocalPath;
+    }
+
+    private async void OnBrowseHighlightSetsClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SessionEditViewModel vm)
+            return;
+
+        vm.AppearanceHighlightSetId = GetSelectedOptionText(AppearanceHighlightSetSelect, vm.AppearanceHighlightSetId);
+        await ShowHighlightSetsDialogAsync(vm);
+        vm.RefreshHighlightSetOptions();
+        SelectOption(AppearanceHighlightSetSelect, vm.AppearanceHighlightSetId);
+    }
+
+    private async void OnBrowseAdvancedQuickCommandSetClick(object? sender, RoutedEventArgs e)
+    {
+        var result = await ShowQuickCommandSetDialogAsync(AdvancedQuickCommandSetBox.Text);
+        if (!string.IsNullOrWhiteSpace(result))
+            AdvancedQuickCommandSetBox.Text = result;
+    }
+
+    private void OnResetAdvancedFtpPortClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is SessionEditViewModel vm)
+            vm.AdvancedFtpPort = 21;
+    }
+
+    private async Task<string?> ShowQuickCommandSetDialogAsync(string? current)
+    {
+        string? result = null;
+        var dialog = new AtomUI.Desktop.Controls.Window
+        {
+            Title = "选择快速命令集",
+            Width = 660,
+            Height = 708,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            CanResize = false,
+            ShowInTaskbar = false
+        };
+
+        var allCommandsItem = new AtomUI.Desktop.Controls.TreeViewItem
+        {
+            Header = "所有命令",
+            Value = "<<所有命令>>",
+            IsExpanded = true
+        };
+
+        var defaultSetItem = new AtomUI.Desktop.Controls.TreeViewItem
+        {
+            Header = "Default Quick Command Set",
+            Value = "Default Quick Command Set"
+        };
+        allCommandsItem.Items.Add(defaultSetItem);
+
+        var tree = new AtomUI.Desktop.Controls.TreeView
+        {
+            IsShowLine = true,
+            IsShowIcon = false,
+            IsShowLeafIcon = false,
+            NodeHoverMode = TreeItemHoverMode.Block,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch
+        };
+        tree.Items.Add(allCommandsItem);
+
+        var normalizedCurrent = current?.Trim();
+        if (string.Equals(normalizedCurrent, "Default Quick Command Set", StringComparison.OrdinalIgnoreCase))
+            defaultSetItem.IsSelected = true;
+        else if (string.Equals(normalizedCurrent, "<<所有命令>>", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(normalizedCurrent, "所有命令", StringComparison.OrdinalIgnoreCase))
+            allCommandsItem.IsSelected = true;
+        else
+            defaultSetItem.IsSelected = true;
+
+        var okButton = CreateDialogButton("确定", 136);
+        okButton.ButtonType = AtomUI.Desktop.Controls.ButtonType.Primary;
+        var cancelButton = CreateDialogButton("取消", 136);
+        okButton.Click += (_, _) =>
+        {
+            result = GetSelectedQuickCommandSetValue(tree) ?? "Default Quick Command Set";
+            dialog.Close();
+        };
+        cancelButton.Click += (_, _) => dialog.Close();
+
+        var treeHost = new Border
+        {
+            Margin = new Thickness(20, 22, 20, 18),
+            BorderBrush = Avalonia.Media.Brushes.Gray,
+            BorderThickness = new Thickness(1),
+            Background = Avalonia.Media.Brushes.White,
+            Child = tree
+        };
+
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Spacing = 24,
+            Margin = new Thickness(20, 0, 20, 20)
+        };
+        buttons.Children.Add(okButton);
+        buttons.Children.Add(cancelButton);
+
+        var root = new DockPanel();
+        DockPanel.SetDock(buttons, Dock.Bottom);
+        root.Children.Add(buttons);
+        root.Children.Add(treeHost);
+        dialog.Content = root;
+
+        await dialog.ShowDialog(this);
+        return result;
+    }
+
+    private static string? GetSelectedQuickCommandSetValue(AtomUI.Desktop.Controls.TreeView tree)
+    {
+        if (tree.SelectedItem is AtomUI.Desktop.Controls.TreeViewItem item)
+            return item.Value?.ToString() ?? item.Header?.ToString();
+
+        return null;
+    }
+
+    private async Task ShowHighlightSetsDialogAsync(SessionEditViewModel vm)
+    {
+        var dialog = new AtomUI.Desktop.Controls.Window
+        {
+            Title = "突出显示集",
+            Width = 938,
+            Height = 790,
+            MinWidth = 780,
+            MinHeight = 640,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            CanResize = true,
+            ShowInTaskbar = false
+        };
+
+        var setGrid = new AtomUI.Desktop.Controls.DataGrid
+        {
+            AutoGenerateColumns = false,
+            ItemsSource = vm.AppearanceHighlightSets,
+            SelectionMode = DataGridSelectionMode.Single,
+            GridLinesVisibility = DataGridGridLinesVisibility.Vertical,
+            IsFrameBorderVisible = true,
+            CanUserResizeColumns = true,
+            HeadersVisibility = DataGridHeadersVisibility.None,
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            Height = 228,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        setGrid.Columns.Add(new DataGridTextColumn { Binding = new Avalonia.Data.Binding(nameof(HighlightSet.DisplayName)), Width = new DataGridLength(620), CanUserResize = true });
+
+        var ruleGrid = new AtomUI.Desktop.Controls.DataGrid
+        {
+            AutoGenerateColumns = false,
+            SelectionMode = DataGridSelectionMode.Single,
+            GridLinesVisibility = DataGridGridLinesVisibility.All,
+            IsFrameBorderVisible = true,
+            CanUserResizeColumns = true,
+            HeadersVisibility = DataGridHeadersVisibility.Column,
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            Height = 280,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        ruleGrid.Columns.Add(new DataGridCheckBoxColumn { Header = string.Empty, Binding = new Avalonia.Data.Binding(nameof(HighlightRule.IsEnabled)), Width = new DataGridLength(42), CanUserResize = true });
+        ruleGrid.Columns.Add(new DataGridTextColumn { Header = "关键字", Binding = new Avalonia.Data.Binding(nameof(HighlightRule.Keyword)), Width = new DataGridLength(250), CanUserResize = true });
+        ruleGrid.Columns.Add(new DataGridTextColumn { Header = "预览", Binding = new Avalonia.Data.Binding(nameof(HighlightRule.Preview)), Width = new DataGridLength(110), CanUserResize = true });
+        ruleGrid.Columns.Add(new DataGridTextColumn { Header = "说明", Binding = new Avalonia.Data.Binding(nameof(HighlightRule.Description)), Width = new DataGridLength(360), CanUserResize = true });
+
+        var newSetButton = CreateDialogButton("新建(N)", 184);
+        var saveAsSetButton = CreateDialogButton("另存为(S)", 184);
+        var deleteSetButton = CreateDialogButton("删除(D)", 184);
+        var currentSetButton = CreateDialogButton("设置为当前组(C)", 184);
+        var addRuleButton = CreateDialogButton("添加(A)", 184);
+        var deleteRuleButton = CreateDialogButton("删除(L)", 184);
+        var editRuleButton = CreateDialogButton("编辑(E)", 184);
+        var moveUpRuleButton = CreateDialogButton("上移(U)", 184);
+        var moveDownRuleButton = CreateDialogButton("下移(O)", 184);
+        var closeButton = CreateDialogButton("关闭", 164);
+        closeButton.ButtonType = AtomUI.Desktop.Controls.ButtonType.Primary;
+
+        HighlightSet? selectedSet = vm.SelectedHighlightSet ?? vm.AppearanceHighlightSets.FirstOrDefault();
+        HighlightRule? selectedRule = null;
+
+        void ApplySelectedSet(HighlightSet? set)
+        {
+            selectedSet = set;
+            selectedRule = null;
+            ruleGrid.SelectedItem = null;
+            ruleGrid.ItemsSource = null;
+            ruleGrid.ItemsSource = selectedSet?.Rules;
+        }
+
+        void RenumberCurrentRules()
+        {
+            if (selectedSet == null)
+                return;
+
+            for (var i = 0; i < selectedSet.Rules.Count; i++)
+                selectedSet.Rules[i].SortOrder = i;
+        }
+
+        void RefreshState()
+        {
+            selectedRule = ruleGrid.SelectedItem as HighlightRule;
+            deleteSetButton.IsEnabled = selectedSet != null;
+            saveAsSetButton.IsEnabled = selectedSet != null;
+            currentSetButton.IsEnabled = selectedSet != null;
+            addRuleButton.IsEnabled = selectedSet != null;
+            deleteRuleButton.IsEnabled = selectedRule != null;
+            editRuleButton.IsEnabled = selectedRule != null;
+            moveUpRuleButton.IsEnabled = selectedRule != null && selectedSet != null && selectedSet.Rules.IndexOf(selectedRule) > 0;
+            moveDownRuleButton.IsEnabled = selectedRule != null && selectedSet != null && selectedSet.Rules.IndexOf(selectedRule) < selectedSet.Rules.Count - 1;
+        }
+
+        setGrid.SelectionChanged += (_, _) =>
+        {
+            ApplySelectedSet(setGrid.SelectedItem as HighlightSet);
+            RefreshState();
+        };
+        ruleGrid.SelectionChanged += (_, _) => RefreshState();
+
+        newSetButton.Click += (_, _) =>
+        {
+            var set = new HighlightSet { Name = $"新的突出显示集 {vm.AppearanceHighlightSets.Count + 1}" };
+            vm.AppearanceHighlightSets.Add(set);
+            setGrid.SelectedItem = set;
+            ApplySelectedSet(set);
+            RefreshState();
+        };
+
+        saveAsSetButton.Click += (_, _) =>
+        {
+            if (selectedSet == null)
+                return;
+
+            var clone = SessionEditViewModel.CloneHighlightSet(selectedSet);
+            clone.Id = Guid.NewGuid();
+            clone.Name = $"{selectedSet.Name} Copy";
+            vm.AppearanceHighlightSets.Add(clone);
+            setGrid.SelectedItem = clone;
+            ApplySelectedSet(clone);
+            RefreshState();
+        };
+
+        deleteSetButton.Click += async (_, _) =>
+        {
+            if (selectedSet == null)
+                return;
+
+            if (!await ShowConfirmDialogAsync(dialog, "删除突出显示集", $"确定删除“{selectedSet.Name}”吗？"))
+                return;
+
+            var deletedId = selectedSet.Id.ToString();
+            var index = vm.AppearanceHighlightSets.IndexOf(selectedSet);
+            vm.AppearanceHighlightSets.Remove(selectedSet);
+            if (string.Equals(vm.AppearanceHighlightSetId, deletedId, StringComparison.OrdinalIgnoreCase))
+                vm.AppearanceHighlightSetId = "None";
+
+            var nextSet = vm.AppearanceHighlightSets.Count == 0
+                ? null
+                : vm.AppearanceHighlightSets[Math.Clamp(index, 0, vm.AppearanceHighlightSets.Count - 1)];
+            setGrid.SelectedItem = nextSet;
+            ApplySelectedSet(nextSet);
+            RefreshState();
+        };
+
+        currentSetButton.Click += (_, _) =>
+        {
+            if (selectedSet != null)
+                vm.AppearanceHighlightSetId = selectedSet.Id.ToString();
+        };
+
+        addRuleButton.Click += async (_, _) =>
+        {
+            if (selectedSet == null)
+                return;
+
+            var rule = await ShowHighlightRuleDialogAsync(null);
+            if (rule == null)
+                return;
+
+            rule.SortOrder = selectedSet.Rules.Count;
+            selectedSet.Rules.Add(rule);
+            ruleGrid.SelectedItem = rule;
+            RefreshState();
+        };
+
+        editRuleButton.Click += async (_, _) =>
+        {
+            if (selectedSet == null || selectedRule == null)
+                return;
+
+            var edited = await ShowHighlightRuleDialogAsync(SessionEditViewModel.CloneHighlightRule(selectedRule));
+            if (edited == null)
+                return;
+
+            var index = selectedSet.Rules.IndexOf(selectedRule);
+            edited.SortOrder = selectedRule.SortOrder;
+            selectedSet.Rules[index] = edited;
+            ruleGrid.SelectedItem = edited;
+            RefreshState();
+        };
+
+        deleteRuleButton.Click += (_, _) =>
+        {
+            if (selectedSet == null || selectedRule == null)
+                return;
+
+            var index = selectedSet.Rules.IndexOf(selectedRule);
+            selectedSet.Rules.Remove(selectedRule);
+            RenumberCurrentRules();
+            ruleGrid.SelectedItem = selectedSet.Rules.Count == 0
+                ? null
+                : selectedSet.Rules[Math.Clamp(index, 0, selectedSet.Rules.Count - 1)];
+            RefreshState();
+        };
+
+        void MoveRule(int offset)
+        {
+            if (selectedSet == null || selectedRule == null)
+                return;
+
+            var index = selectedSet.Rules.IndexOf(selectedRule);
+            var newIndex = index + offset;
+            if (index < 0 || newIndex < 0 || newIndex >= selectedSet.Rules.Count)
+                return;
+
+            selectedSet.Rules.RemoveAt(index);
+            selectedSet.Rules.Insert(newIndex, selectedRule);
+            RenumberCurrentRules();
+            ruleGrid.SelectedItem = selectedRule;
+            RefreshState();
+        }
+
+        moveUpRuleButton.Click += (_, _) => MoveRule(-1);
+        moveDownRuleButton.Click += (_, _) => MoveRule(1);
+        closeButton.Click += (_, _) => dialog.Close();
+
+        var setButtons = new StackPanel { Spacing = 14, VerticalAlignment = VerticalAlignment.Top };
+        setButtons.Children.Add(newSetButton);
+        setButtons.Children.Add(saveAsSetButton);
+        setButtons.Children.Add(deleteSetButton);
+        setButtons.Children.Add(currentSetButton);
+
+        var ruleButtons = new StackPanel { Spacing = 14, VerticalAlignment = VerticalAlignment.Top };
+        ruleButtons.Children.Add(addRuleButton);
+        ruleButtons.Children.Add(deleteRuleButton);
+        ruleButtons.Children.Add(editRuleButton);
+        ruleButtons.Children.Add(moveUpRuleButton);
+        ruleButtons.Children.Add(moveDownRuleButton);
+
+        var setSection = new Grid { ColumnDefinitions = new ColumnDefinitions("*,12,184") };
+        setSection.Children.Add(setGrid);
+        setSection.Children.Add(setButtons);
+        Grid.SetColumn(setButtons, 2);
+
+        var ruleSection = new Grid { ColumnDefinitions = new ColumnDefinitions("*,12,184") };
+        ruleSection.Children.Add(ruleGrid);
+        ruleSection.Children.Add(ruleButtons);
+        Grid.SetColumn(ruleButtons, 2);
+
+        var contentPanel = new StackPanel { Spacing = 18, Margin = new Thickness(20, 18, 20, 10) };
+        contentPanel.Children.Add(new Avalonia.Controls.TextBlock { Text = "集", FontWeight = Avalonia.Media.FontWeight.SemiBold });
+        contentPanel.Children.Add(setSection);
+        contentPanel.Children.Add(new Avalonia.Controls.TextBlock { Text = "关键字", FontWeight = Avalonia.Media.FontWeight.SemiBold });
+        contentPanel.Children.Add(ruleSection);
+
+        var bottom = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(20, 8, 20, 18)
+        };
+        bottom.Children.Add(closeButton);
+
+        var root = new DockPanel();
+        DockPanel.SetDock(bottom, Dock.Bottom);
+        root.Children.Add(bottom);
+        root.Children.Add(contentPanel);
+        dialog.Content = root;
+
+        setGrid.SelectedItem = selectedSet;
+        ApplySelectedSet(selectedSet);
+        RefreshState();
+        await dialog.ShowDialog(this);
+    }
+
+    private async Task<HighlightRule?> ShowHighlightRuleDialogAsync(HighlightRule? source)
+    {
+        var rule = source ?? new HighlightRule();
+        HighlightRule? result = null;
+        var dialog = new AtomUI.Desktop.Controls.Window
+        {
+            Title = "关键字",
+            Width = 594,
+            Height = 878,
+            MinWidth = 560,
+            MinHeight = 720,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            CanResize = true,
+            ShowInTaskbar = false
+        };
+
+        var keywordBox = CreateLineEdit(rule.Keyword);
+        var caseBox = new AtomUI.Desktop.Controls.CheckBox { Content = "区分大小写(C)", IsChecked = rule.IsCaseSensitive };
+        var regexBox = new AtomUI.Desktop.Controls.CheckBox { Content = "正则表达式(R)", IsChecked = rule.IsRegex };
+        var descriptionBox = new TextArea
+        {
+            Text = rule.Description,
+            Lines = 3,
+            MinHeight = 74,
+            IsResizable = false,
+            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+            SizeType = SizeType.Middle,
+            StyleVariant = InputControlStyleVariant.Outlined,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        var foregroundPicker = CreateAppearanceColorPicker(ParseColorOrDefault(rule.ForegroundColor, "#000000"), 132, true);
+        var backgroundPicker = CreateAppearanceColorPicker(ParseColorOrDefault(rule.BackgroundColor, "#FFFF40"), 132, true);
+        var terminalColorBox = new AtomUI.Desktop.Controls.CheckBox { Content = "终端颜色(M)", IsChecked = rule.UseTerminalColor };
+        var boldBox = new AtomUI.Desktop.Controls.CheckBox { Content = "粗体(B)", IsChecked = rule.Bold };
+        var italicBox = new AtomUI.Desktop.Controls.CheckBox { Content = "斜体(I)", IsChecked = rule.Italic };
+        var underlineBox = new AtomUI.Desktop.Controls.CheckBox { Content = "下划线(U)", IsChecked = rule.Underline };
+        var strikeBox = new AtomUI.Desktop.Controls.CheckBox { Content = "删除线(S)", IsChecked = rule.Strikethrough };
+        var previewText = new Avalonia.Controls.TextBlock
+        {
+            Text = "Highlight",
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            FontFamily = new Avalonia.Media.FontFamily("Cascadia Mono, Consolas, Courier New, monospace")
+        };
+        var preview = new Border
+        {
+            Height = 146,
+            BorderBrush = Avalonia.Media.Brushes.LightGray,
+            BorderThickness = new Thickness(1),
+            Child = previewText
+        };
+        var okButton = CreateDialogButton("确定", 140);
+        okButton.ButtonType = AtomUI.Desktop.Controls.ButtonType.Primary;
+        var cancelButton = CreateDialogButton("取消", 140);
+
+        void UpdatePreview()
+        {
+            var useTerminalColor = terminalColorBox.IsChecked == true;
+            foregroundPicker.IsEnabled = !useTerminalColor;
+            backgroundPicker.IsEnabled = !useTerminalColor;
+            preview.Background = new Avalonia.Media.SolidColorBrush(useTerminalColor
+                ? Avalonia.Media.Color.Parse("#1F1F1F")
+                : backgroundPicker.Value ?? Avalonia.Media.Color.Parse("#FFFF40"));
+            previewText.Foreground = new Avalonia.Media.SolidColorBrush(useTerminalColor
+                ? Avalonia.Media.Colors.White
+                : foregroundPicker.Value ?? Avalonia.Media.Colors.Black);
+            previewText.FontWeight = boldBox.IsChecked == true ? Avalonia.Media.FontWeight.Bold : Avalonia.Media.FontWeight.Normal;
+            previewText.FontStyle = italicBox.IsChecked == true ? Avalonia.Media.FontStyle.Italic : Avalonia.Media.FontStyle.Normal;
+            previewText.TextDecorations = underlineBox.IsChecked == true
+                ? Avalonia.Media.TextDecorations.Underline
+                : strikeBox.IsChecked == true
+                    ? Avalonia.Media.TextDecorations.Strikethrough
+                    : null;
+            okButton.IsEnabled = !string.IsNullOrWhiteSpace(keywordBox.Text);
+        }
+
+        keywordBox.GetObservable(LineEdit.TextProperty).Subscribe(_ => UpdatePreview());
+        terminalColorBox.PropertyChanged += (_, _) => UpdatePreview();
+        boldBox.PropertyChanged += (_, _) => UpdatePreview();
+        italicBox.PropertyChanged += (_, _) => UpdatePreview();
+        underlineBox.PropertyChanged += (_, _) => UpdatePreview();
+        strikeBox.PropertyChanged += (_, _) => UpdatePreview();
+        foregroundPicker.ValueChanged += (_, _) => UpdatePreview();
+        backgroundPicker.ValueChanged += (_, _) => UpdatePreview();
+
+        okButton.Click += (_, _) =>
+        {
+            if (string.IsNullOrWhiteSpace(keywordBox.Text))
+                return;
+
+            result = new HighlightRule
+            {
+                Id = rule.Id,
+                IsEnabled = rule.IsEnabled,
+                Keyword = keywordBox.Text.Trim(),
+                IsCaseSensitive = caseBox.IsChecked == true,
+                IsRegex = regexBox.IsChecked == true,
+                Description = descriptionBox.Text?.Trim() ?? string.Empty,
+                ForegroundColor = ToHex(foregroundPicker.Value ?? Avalonia.Media.Colors.Black),
+                BackgroundColor = ToHex(backgroundPicker.Value ?? Avalonia.Media.Color.Parse("#FFFF40")),
+                UseTerminalColor = terminalColorBox.IsChecked == true,
+                Bold = boldBox.IsChecked == true,
+                Italic = italicBox.IsChecked == true,
+                Underline = underlineBox.IsChecked == true,
+                Strikethrough = strikeBox.IsChecked == true,
+                SortOrder = rule.SortOrder
+            };
+            dialog.Close();
+        };
+        cancelButton.Click += (_, _) => dialog.Close();
+
+        var keywordGrid = new Grid
+        {
+            RowDefinitions = new RowDefinitions("Auto,8,Auto,14,Auto,12,Auto,8,74"),
+            ColumnDefinitions = new ColumnDefinitions("*,18,*")
+        };
+        var keywordLabel = new Avalonia.Controls.TextBlock { Text = "要强调的关键字(K):" };
+        var descriptionLabel = new Avalonia.Controls.TextBlock { Text = "说明(D):" };
+        keywordGrid.Children.Add(keywordLabel);
+        keywordGrid.Children.Add(keywordBox);
+        keywordGrid.Children.Add(caseBox);
+        keywordGrid.Children.Add(regexBox);
+        keywordGrid.Children.Add(descriptionLabel);
+        keywordGrid.Children.Add(descriptionBox);
+        Grid.SetRow(keywordBox, 2);
+        Grid.SetColumnSpan(keywordBox, 3);
+        Grid.SetRow(caseBox, 4);
+        Grid.SetRow(regexBox, 4);
+        Grid.SetColumn(regexBox, 2);
+        Grid.SetRow(descriptionLabel, 6);
+        Grid.SetColumnSpan(descriptionLabel, 3);
+        Grid.SetRow(descriptionBox, 8);
+        Grid.SetColumnSpan(descriptionBox, 3);
+        var keywordGroup = new Border
+        {
+            BorderBrush = Avalonia.Media.Brushes.LightGray,
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(20, 16, 20, 16),
+            Child = keywordGrid
+        };
+
+        var viewGrid = new Grid
+        {
+            RowDefinitions = new RowDefinitions("Auto,12,Auto,12,Auto,12,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("132,150,18,*")
+        };
+        AddFormLabel(viewGrid, "文本颜色(T):", 0);
+        viewGrid.Children.Add(foregroundPicker);
+        Grid.SetRow(foregroundPicker, 0);
+        Grid.SetColumn(foregroundPicker, 1);
+        AddFormLabel(viewGrid, "背景颜色(G):", 2);
+        viewGrid.Children.Add(backgroundPicker);
+        Grid.SetRow(backgroundPicker, 2);
+        Grid.SetColumn(backgroundPicker, 1);
+        viewGrid.Children.Add(terminalColorBox);
+        Grid.SetRow(terminalColorBox, 2);
+        Grid.SetColumn(terminalColorBox, 3);
+        viewGrid.Children.Add(boldBox);
+        Grid.SetRow(boldBox, 4);
+        viewGrid.Children.Add(italicBox);
+        Grid.SetRow(italicBox, 4);
+        Grid.SetColumn(italicBox, 1);
+        viewGrid.Children.Add(underlineBox);
+        Grid.SetRow(underlineBox, 6);
+        viewGrid.Children.Add(strikeBox);
+        Grid.SetRow(strikeBox, 6);
+        Grid.SetColumn(strikeBox, 1);
+
+        var viewGroup = new Border
+        {
+            BorderBrush = Avalonia.Media.Brushes.LightGray,
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(20, 16, 20, 16),
+            Child = viewGrid
+        };
+
+        var main = new StackPanel { Spacing = 24, Margin = new Thickness(20, 18, 20, 12) };
+        main.Children.Add(new Avalonia.Controls.TextBlock { Text = "关键字", FontWeight = Avalonia.Media.FontWeight.SemiBold });
+        main.Children.Add(keywordGroup);
+        main.Children.Add(new Avalonia.Controls.TextBlock { Text = "查看", FontWeight = Avalonia.Media.FontWeight.SemiBold });
+        main.Children.Add(viewGroup);
+        main.Children.Add(preview);
+
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Spacing = 18,
+            Margin = new Thickness(20, 8, 20, 18)
+        };
+        buttons.Children.Add(okButton);
+        buttons.Children.Add(cancelButton);
+
+        var root = new DockPanel();
+        DockPanel.SetDock(buttons, Dock.Bottom);
+        root.Children.Add(buttons);
+        root.Children.Add(main);
+        dialog.Content = root;
+
+        UpdatePreview();
+        await dialog.ShowDialog(this);
+        return result;
+    }
+
+    private static void RenumberLoginScriptRules(ObservableCollection<LoginScriptRule> rules)
+    {
+        for (var i = 0; i < rules.Count; i++)
+            rules[i].SortOrder = i;
     }
 
     private async void OnAddSshTunnelRuleClick(object? sender, RoutedEventArgs e)
@@ -369,7 +1201,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             vm.ProxyServers.Select(SessionEditViewModel.CloneProxy));
         RefreshProxyNextProxyDisplay(proxies);
 
-        var dialog = new Avalonia.Controls.Window
+        var dialog = new AtomUI.Desktop.Controls.Window
         {
             Title = "列表代理",
             Width = 846,
@@ -381,7 +1213,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             ShowInTaskbar = false
         };
 
-        var grid = new DataGrid
+        var grid = new AtomUI.Desktop.Controls.DataGrid
         {
             ItemsSource = proxies,
             AutoGenerateColumns = false,
@@ -503,7 +1335,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
     {
         var editing = source ?? new ProxySettings { Protocol = ProxyProtocol.Socks5, Port = 1080 };
         ProxySettings? result = null;
-        var dialog = new Avalonia.Controls.Window
+        var dialog = new AtomUI.Desktop.Controls.Window
         {
             Title = "代理服务器设置",
             Width = 636,
@@ -760,7 +1592,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
     private async Task<ProxySettings?> ShowProxyDialogAsync(ProxySettings current)
     {
         ProxySettings? result = null;
-        var dialog = new Avalonia.Controls.Window
+        var dialog = new AtomUI.Desktop.Controls.Window
         {
             Title = "代理服务器",
             Width = 500,
@@ -918,10 +1750,448 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         SelectOption(RloginTerminalSpeedSelect, vm.RloginTerminalSpeed);
     }
 
+    private void SetSelectedTerminalOptions()
+    {
+        if (DataContext is not SessionEditViewModel vm)
+            return;
+
+        SelectOption(TerminalTypeSelect, vm.TerminalType);
+        SelectOption(TerminalEncodingSelect, vm.TerminalEncoding);
+        SelectOption(TerminalSendLineEndingSelect, vm.TerminalSendLineEnding);
+        SelectOption(TerminalReceiveLineEndingSelect, vm.TerminalReceiveLineEnding);
+        SelectOption(TerminalKeyboardFunctionKeySelect, vm.TerminalKeyboardFunctionKeyMode);
+    }
+
+    private void SetSelectedAppearanceOptions()
+    {
+        if (DataContext is not SessionEditViewModel vm)
+            return;
+
+        SelectOption(AppearanceColorSchemeSelect, vm.AppearanceColorScheme);
+        SelectOption(AppearanceFontSelect, vm.AppearanceFontFamily);
+        SelectOption(AppearanceFontStyleSelect, vm.AppearanceFontStyle);
+        SelectOption(AppearanceFontSizeSelect, ((int)vm.AppearanceFontSize).ToString());
+        SelectOption(AppearanceCjkFontSelect, vm.AppearanceCjkFontFamily);
+        SelectOption(AppearanceCjkFontStyleSelect, vm.AppearanceCjkFontStyle);
+        SelectOption(AppearanceCjkFontSizeSelect, ((int)vm.AppearanceCjkFontSize).ToString());
+        SelectOption(AppearanceFontQualitySelect, vm.AppearanceFontQuality);
+        SelectOption(AppearanceBoldTextModeSelect, vm.AppearanceBoldTextMode);
+        SelectOption(AppearanceBackgroundImagePositionSelect, vm.AppearanceBackgroundImagePosition);
+        SelectOption(AppearanceHighlightSetSelect, vm.AppearanceHighlightSetId);
+    }
+
+    private void OnAppearanceSelectionChanged(object? sender, SelectSelectionChangedEventArgs e)
+    {
+        if (_isInitializingSelections || _isSyncingAppearanceColorPickers || DataContext is not SessionEditViewModel vm)
+            return;
+
+        vm.AppearanceColorScheme = GetSelectedOptionText(AppearanceColorSchemeSelect, vm.AppearanceColorScheme);
+        vm.AppearanceFontFamily = GetSelectedOptionText(AppearanceFontSelect, vm.AppearanceFontFamily);
+        vm.AppearanceFontStyle = GetSelectedOptionText(AppearanceFontStyleSelect, vm.AppearanceFontStyle);
+        vm.AppearanceFontSize = ParseDecimalOption(AppearanceFontSizeSelect, vm.AppearanceFontSize);
+        vm.AppearanceCjkFontFamily = GetSelectedOptionText(AppearanceCjkFontSelect, vm.AppearanceCjkFontFamily);
+        vm.AppearanceCjkFontStyle = GetSelectedOptionText(AppearanceCjkFontStyleSelect, vm.AppearanceCjkFontStyle);
+        vm.AppearanceCjkFontSize = ParseDecimalOption(AppearanceCjkFontSizeSelect, vm.AppearanceCjkFontSize);
+        vm.AppearanceFontQuality = GetSelectedOptionText(AppearanceFontQualitySelect, vm.AppearanceFontQuality);
+        vm.AppearanceBoldTextMode = GetSelectedOptionText(AppearanceBoldTextModeSelect, vm.AppearanceBoldTextMode);
+        vm.AppearanceBackgroundImagePosition = GetSelectedOptionText(AppearanceBackgroundImagePositionSelect, vm.AppearanceBackgroundImagePosition);
+        vm.AppearanceHighlightSetId = GetSelectedOptionText(AppearanceHighlightSetSelect, vm.AppearanceHighlightSetId);
+
+        if (ReferenceEquals(sender, AppearanceColorSchemeSelect))
+            SyncAppearanceColorPickersFromViewModel(vm);
+    }
+
+    private void OnAppearanceColorPickerValueChanged(object? sender, AtomUI.Desktop.Controls.ColorChangedEventArgs e)
+    {
+        if (_isInitializingSelections || _isSyncingAppearanceColorPickers || DataContext is not SessionEditViewModel vm)
+            return;
+
+        vm.AppearanceForegroundColor = AppearanceForegroundColorPicker.Value ?? vm.AppearanceForegroundColor;
+        vm.AppearanceBoldForegroundColor = AppearanceBoldForegroundColorPicker.Value ?? vm.AppearanceBoldForegroundColor;
+        vm.AppearanceBackgroundColor = AppearanceBackgroundColorPicker.Value ?? vm.AppearanceBackgroundColor;
+        vm.AppearanceCursorColor = AppearanceCursorColorPicker.Value ?? vm.AppearanceCursorColor;
+        vm.AppearanceCursorTextColor = AppearanceCursorTextColorPicker.Value ?? vm.AppearanceCursorTextColor;
+    }
+
+    private void SyncAppearanceColorPickersFromViewModel(SessionEditViewModel vm)
+    {
+        _isSyncingAppearanceColorPickers = true;
+        try
+        {
+            AppearanceForegroundColorPicker.SetCurrentValue(AtomUI.Desktop.Controls.ColorPicker.ValueProperty, vm.AppearanceForegroundColor);
+            AppearanceBoldForegroundColorPicker.SetCurrentValue(AtomUI.Desktop.Controls.ColorPicker.ValueProperty, vm.AppearanceBoldForegroundColor);
+            AppearanceBackgroundColorPicker.SetCurrentValue(AtomUI.Desktop.Controls.ColorPicker.ValueProperty, vm.AppearanceBackgroundColor);
+            AppearanceCursorColorPicker.SetCurrentValue(AtomUI.Desktop.Controls.ColorPicker.ValueProperty, vm.AppearanceCursorColor);
+            AppearanceCursorTextColorPicker.SetCurrentValue(AtomUI.Desktop.Controls.ColorPicker.ValueProperty, vm.AppearanceCursorTextColor);
+        }
+        finally
+        {
+            _isSyncingAppearanceColorPickers = false;
+        }
+    }
+
+    private async void OnEditAppearanceColorSchemeClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SessionEditViewModel vm)
+            return;
+
+        var updated = await ShowAppearanceColorSchemeDialogAsync(vm);
+        if (!updated)
+            return;
+
+        SyncAppearanceColorPickersFromViewModel(vm);
+    }
+
+    private async Task<bool> ShowAppearanceColorSchemeDialogAsync(SessionEditViewModel vm)
+    {
+        var result = false;
+        var schemeName = GetSelectedOptionHeader(AppearanceColorSchemeSelect, vm.AppearanceColorScheme);
+        var dialog = new AtomUI.Desktop.Controls.Window
+        {
+            Title = $"{schemeName}编辑",
+            Width = 404,
+            Height = 570,
+            MinWidth = 404,
+            MinHeight = 570,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            CanResize = false,
+            ShowInTaskbar = false
+        };
+
+        var foregroundPicker = CreateAppearanceColorPicker(vm.AppearanceForegroundColor, 176, true);
+        var boldForegroundPicker = CreateAppearanceColorPicker(vm.AppearanceBoldForegroundColor, 176, true);
+        var backgroundPicker = CreateAppearanceColorPicker(vm.AppearanceBackgroundColor, 176, true);
+        var ansiPickers = CreateAnsiColorPickers(vm.AppearanceAnsiColors);
+
+        var resetButton = CreateDialogButton("还原至默认值(S)", 324);
+        resetButton.HorizontalAlignment = HorizontalAlignment.Stretch;
+        resetButton.Click += (_, _) =>
+        {
+            var defaults = SessionEditViewModel.GetAppearanceColorSchemePalette(vm.AppearanceColorScheme);
+            SetColorPickerValue(foregroundPicker, Avalonia.Media.Color.Parse(defaults.Foreground));
+            SetColorPickerValue(boldForegroundPicker, Avalonia.Media.Color.Parse(defaults.BoldForeground));
+            SetColorPickerValue(backgroundPicker, Avalonia.Media.Color.Parse(defaults.Background));
+            var defaultAnsi = ParseAnsiColors(defaults.AnsiColors);
+            for (var i = 0; i < ansiPickers.Count && i < defaultAnsi.Count; i++)
+                SetColorPickerValue(ansiPickers[i], defaultAnsi[i]);
+        };
+
+        var okButton = CreateDialogButton("确定", 140);
+        okButton.ButtonType = AtomUI.Desktop.Controls.ButtonType.Primary;
+        var cancelButton = CreateDialogButton("取消", 140);
+
+        okButton.Click += (_, _) =>
+        {
+            vm.AppearanceForegroundColor = foregroundPicker.Value ?? vm.AppearanceForegroundColor;
+            vm.AppearanceBoldForegroundColor = boldForegroundPicker.Value ?? vm.AppearanceBoldForegroundColor;
+            vm.AppearanceBackgroundColor = backgroundPicker.Value ?? vm.AppearanceBackgroundColor;
+            vm.AppearanceAnsiColors = string.Join(';', ansiPickers.Select(picker => ToHex(picker.Value ?? Avalonia.Media.Colors.Black)));
+            result = true;
+            dialog.Close();
+        };
+        cancelButton.Click += (_, _) => dialog.Close();
+
+        var colorGroup = new Border
+        {
+            BorderBrush = Avalonia.Media.Brushes.LightGray,
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(10),
+            Child = CreateAppearanceColorForm(foregroundPicker, boldForegroundPicker, backgroundPicker)
+        };
+
+        var ansiGrid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("36,6,36,6,36,6,36,6,36,6,36,6,36,6,36"),
+            RowDefinitions = new RowDefinitions("34,8,34"),
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        for (var i = 0; i < ansiPickers.Count; i++)
+        {
+            var picker = ansiPickers[i];
+            ansiGrid.Children.Add(picker);
+            Grid.SetColumn(picker, (i % 8) * 2);
+            Grid.SetRow(picker, i / 8 * 2);
+        }
+
+        var ansiPanel = new StackPanel { Spacing = 12 };
+        ansiPanel.Children.Add(new Avalonia.Controls.TextBlock { Text = "ANSI 颜色", FontWeight = Avalonia.Media.FontWeight.SemiBold });
+        ansiPanel.Children.Add(ansiGrid);
+        ansiPanel.Children.Add(resetButton);
+
+        var ansiGroup = new Border
+        {
+            BorderBrush = Avalonia.Media.Brushes.LightGray,
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(10),
+            Child = ansiPanel
+        };
+
+        var contentPanel = new StackPanel
+        {
+            Spacing = 16,
+            Margin = new Thickness(20, 18, 20, 12)
+        };
+        contentPanel.Children.Add(new Avalonia.Controls.TextBlock { Text = "文本和背景颜色", FontWeight = Avalonia.Media.FontWeight.SemiBold });
+        contentPanel.Children.Add(colorGroup);
+        contentPanel.Children.Add(ansiGroup);
+
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Spacing = 10,
+            Margin = new Thickness(20, 8, 20, 18)
+        };
+        buttons.Children.Add(okButton);
+        buttons.Children.Add(cancelButton);
+
+        var content = new DockPanel();
+        DockPanel.SetDock(buttons, Dock.Bottom);
+        content.Children.Add(buttons);
+        content.Children.Add(contentPanel);
+        dialog.Content = content;
+
+        await dialog.ShowDialog(this);
+        return result;
+    }
+
+    private static Grid CreateAppearanceColorForm(
+        AtomUI.Desktop.Controls.ColorPicker foregroundPicker,
+        AtomUI.Desktop.Controls.ColorPicker boldForegroundPicker,
+        AtomUI.Desktop.Controls.ColorPicker backgroundPicker)
+    {
+        var form = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("132,*"),
+            RowDefinitions = new RowDefinitions("Auto,12,Auto,12,Auto")
+        };
+
+        AddFormLabel(form, "正常文本(N):", 0);
+        form.Children.Add(foregroundPicker);
+        Grid.SetRow(foregroundPicker, 0);
+        Grid.SetColumn(foregroundPicker, 1);
+
+        AddFormLabel(form, "\"加粗\"文本(B):", 2);
+        form.Children.Add(boldForegroundPicker);
+        Grid.SetRow(boldForegroundPicker, 2);
+        Grid.SetColumn(boldForegroundPicker, 1);
+
+        AddFormLabel(form, "背景(A):", 4);
+        form.Children.Add(backgroundPicker);
+        Grid.SetRow(backgroundPicker, 4);
+        Grid.SetColumn(backgroundPicker, 1);
+
+        return form;
+    }
+
+    private static List<AtomUI.Desktop.Controls.ColorPicker> CreateAnsiColorPickers(string ansiColors)
+    {
+        var colors = ParseAnsiColors(ansiColors);
+        while (colors.Count < 16)
+            colors.Add(Avalonia.Media.Colors.Black);
+
+        return colors
+            .Take(16)
+            .Select(color => CreateAppearanceColorPicker(color, 36, false))
+            .ToList();
+    }
+
+    private static AtomUI.Desktop.Controls.ColorPicker CreateAppearanceColorPicker(
+        Avalonia.Media.Color color,
+        double width,
+        bool isTextVisible)
+    {
+        var picker = new AtomUI.Desktop.Controls.ColorPicker
+        {
+            DefaultValue = color,
+            Format = ColorFormat.Hex,
+            IsTextVisible = isTextVisible,
+            ShouldUseOverlayPopup = false,
+            Width = width,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+
+        picker.SetCurrentValue(AtomUI.Desktop.Controls.ColorPicker.ValueProperty, color);
+        return picker;
+    }
+
+    private static void SetColorPickerValue(AtomUI.Desktop.Controls.ColorPicker picker, Avalonia.Media.Color color)
+    {
+        picker.SetCurrentValue(AtomUI.Desktop.Controls.ColorPicker.ValueProperty, color);
+    }
+
+    private static List<Avalonia.Media.Color> ParseAnsiColors(string ansiColors)
+    {
+        return ansiColors
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(value => Avalonia.Media.Color.TryParse(value, out var color) ? color : Avalonia.Media.Colors.Black)
+            .ToList();
+    }
+
+    private static string ToHex(Avalonia.Media.Color color)
+    {
+        return $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+    }
+
+    private static Avalonia.Media.Color ParseColorOrDefault(string? value, string fallback)
+    {
+        return Avalonia.Media.Color.TryParse(value, out var color)
+            ? color
+            : Avalonia.Media.Color.Parse(fallback);
+    }
+
+    private void OnTerminalKeyboardFunctionKeySelectionChanged(object? sender, SelectSelectionChangedEventArgs e)
+    {
+        if (_isInitializingSelections || DataContext is not SessionEditViewModel vm)
+            return;
+
+        vm.TerminalKeyboardFunctionKeyMode = GetSelectedOptionText(
+            TerminalKeyboardFunctionKeySelect,
+            vm.TerminalKeyboardFunctionKeyMode);
+    }
+
+    private async void OnBrowseTerminalKeyboardMappingFileClick(object? sender, RoutedEventArgs e)
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel == null)
+            return;
+
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Select keyboard mapping file",
+            AllowMultiple = false
+        });
+
+        var file = files.FirstOrDefault();
+        if (file != null)
+            TerminalKeyboardMappingFileBox.Text = file.Path.LocalPath;
+    }
+
+    private async Task<LoginScriptRule?> ShowLoginScriptRuleDialogAsync(LoginScriptRule? source)
+    {
+        var rule = source ?? new LoginScriptRule();
+        LoginScriptRule? result = null;
+        var dialog = new AtomUI.Desktop.Controls.Window
+        {
+            Title = "等待并发送规则",
+            Width = 536,
+            Height = 526,
+            MinWidth = 500,
+            MinHeight = 460,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            CanResize = false,
+            ShowInTaskbar = false
+        };
+
+        var expectBox = CreateLineEdit(rule.Expect);
+        var sendBox = new TextArea
+        {
+            Text = rule.Send,
+            AcceptsReturn = true,
+            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+            Lines = 6,
+            MinHeight = 148,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            SizeType = SizeType.Middle,
+            StyleVariant = InputControlStyleVariant.Outlined,
+            IsResizable = false
+        };
+        var hideTextBox = new AtomUI.Desktop.Controls.CheckBox
+        {
+            Content = "隐藏文本(H)",
+            IsChecked = rule.HideText
+        };
+
+        var okButton = CreateDialogButton("确定", 126);
+        okButton.ButtonType = AtomUI.Desktop.Controls.ButtonType.Primary;
+        var cancelButton = CreateDialogButton("取消", 126);
+
+        void UpdateOkButton()
+        {
+            okButton.IsEnabled = !string.IsNullOrWhiteSpace(expectBox.Text);
+        }
+
+        expectBox.GetObservable(LineEdit.TextProperty).Subscribe(_ => UpdateOkButton());
+        UpdateOkButton();
+
+        okButton.Click += (_, _) =>
+        {
+            if (string.IsNullOrWhiteSpace(expectBox.Text))
+                return;
+
+            result = new LoginScriptRule
+            {
+                Id = rule.Id,
+                Expect = expectBox.Text.Trim(),
+                Send = sendBox.Text ?? string.Empty,
+                HideText = hideTextBox.IsChecked == true,
+                SortOrder = rule.SortOrder
+            };
+            dialog.Close();
+        };
+        cancelButton.Click += (_, _) => dialog.Close();
+
+        var form = new Grid
+        {
+            Margin = new Thickness(18, 18, 18, 8),
+            RowDefinitions = new RowDefinitions("Auto,18,Auto,12,Auto,18,Auto,12,148,12,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("92,*")
+        };
+
+        form.Children.Add(new Avalonia.Controls.TextBlock
+        {
+            Text = "请输入等待的字符串。",
+            TextWrapping = Avalonia.Media.TextWrapping.Wrap
+        });
+        Grid.SetColumnSpan(form.Children[^1], 2);
+
+        AddFormLabel(form, "等待(E):", 2);
+        form.Children.Add(expectBox);
+        Grid.SetRow(expectBox, 2);
+        Grid.SetColumn(expectBox, 1);
+
+        form.Children.Add(new Avalonia.Controls.TextBlock
+        {
+            Text = "接收等待字符串时请输入发送的文本。",
+            TextWrapping = Avalonia.Media.TextWrapping.Wrap
+        });
+        Grid.SetRow(form.Children[^1], 4);
+        Grid.SetColumnSpan(form.Children[^1], 2);
+
+        AddFormLabel(form, "发送(S):", 6);
+        form.Children.Add(sendBox);
+        Grid.SetRow(sendBox, 8);
+        Grid.SetColumn(sendBox, 1);
+
+        form.Children.Add(hideTextBox);
+        Grid.SetRow(hideTextBox, 10);
+        Grid.SetColumn(hideTextBox, 1);
+
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Spacing = 30,
+            Margin = new Thickness(18, 8, 18, 18)
+        };
+        buttons.Children.Add(okButton);
+        buttons.Children.Add(cancelButton);
+
+        var content = new DockPanel();
+        DockPanel.SetDock(buttons, Dock.Bottom);
+        content.Children.Add(buttons);
+        content.Children.Add(form);
+        dialog.Content = content;
+
+        await dialog.ShowDialog(this);
+        return result;
+    }
+
     private async Task<SshTunnelRule?> ShowSshTunnelRuleDialogAsync(SshTunnelRule? source)
     {
         var rule = source ?? new SshTunnelRule();
-        var dialog = new Avalonia.Controls.Window
+        var dialog = new AtomUI.Desktop.Controls.Window
         {
             Title = "转移规则",
             Width = 620,
@@ -1201,6 +2471,18 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         return select.SelectedOption?.Content?.ToString() ?? fallback;
     }
 
+    private static string GetSelectedOptionHeader(Select select, string fallback)
+    {
+        return select.SelectedOption?.Header?.ToString() ?? fallback;
+    }
+
+    private static decimal ParseDecimalOption(Select select, decimal fallback)
+    {
+        return decimal.TryParse(select.SelectedOption?.Content?.ToString(), out var value)
+            ? value
+            : fallback;
+    }
+
     private static string GetSelectedAlgorithmText(Select select, string fallback)
     {
         return select.SelectedOption?.Content?.ToString() ?? fallback;
@@ -1239,12 +2521,12 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         var selected = current.Length == 0
             ? new HashSet<string>(algorithms, StringComparer.Ordinal)
             : new HashSet<string>(current, StringComparer.Ordinal);
-        var checkBoxes = new List<Avalonia.Controls.CheckBox>();
+        var checkBoxes = new List<AtomUI.Desktop.Controls.CheckBox>();
 
         var listPanel = new StackPanel { Spacing = 6 };
         foreach (var algorithm in algorithms)
         {
-            var checkBox = new Avalonia.Controls.CheckBox
+            var checkBox = new AtomUI.Desktop.Controls.CheckBox
             {
                 Content = algorithm,
                 IsChecked = selected.Contains(algorithm),
@@ -1255,7 +2537,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         }
 
         string? result = null;
-        var dialog = new Avalonia.Controls.Window
+        var dialog = new AtomUI.Desktop.Controls.Window
         {
             Title = title,
             Width = 460,
@@ -1418,7 +2700,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
     private async Task<bool> ShowConfirmDialogAsync(Avalonia.Controls.Window owner, string title, string message)
     {
         var result = false;
-        var dialog = new Avalonia.Controls.Window
+        var dialog = new AtomUI.Desktop.Controls.Window
         {
             Title = title,
             Width = 360,

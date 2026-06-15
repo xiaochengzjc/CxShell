@@ -8,8 +8,9 @@ namespace ChiXueSsh.Services;
 public sealed class LocalTerminalConnectionService : ITerminalConnectionService
 {
     private readonly object _writeLock = new();
-    private readonly Decoder _stdoutDecoder = Encoding.UTF8.GetDecoder();
-    private readonly Decoder _stderrDecoder = Encoding.UTF8.GetDecoder();
+    private Encoding _terminalEncoding = Encoding.UTF8;
+    private Decoder _stdoutDecoder = Encoding.UTF8.GetDecoder();
+    private Decoder _stderrDecoder = Encoding.UTF8.GetDecoder();
     private readonly StringBuilder _pendingInput = new();
     private Process? _process;
     private CancellationTokenSource? _readCts;
@@ -33,6 +34,9 @@ public sealed class LocalTerminalConnectionService : ITerminalConnectionService
     {
         Disconnect();
 
+        _terminalEncoding = TerminalSessionOptions.GetEncoding(session);
+        _stdoutDecoder = _terminalEncoding.GetDecoder();
+        _stderrDecoder = _terminalEncoding.GetDecoder();
         _disconnecting = false;
         _pendingInput.Clear();
         _stdoutDecoder.Reset();
@@ -43,16 +47,16 @@ public sealed class LocalTerminalConnectionService : ITerminalConnectionService
         {
             FileName = shellPath,
             Arguments = IsWindowsCommandShell(shellPath)
-                ? "/Q /K \"chcp 65001 >nul\""
+                ? $"/Q /K \"chcp {_terminalEncoding.CodePage} >nul\""
                 : string.Empty,
             WorkingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             UseShellExecute = false,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            StandardInputEncoding = Encoding.UTF8,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
+            StandardInputEncoding = _terminalEncoding,
+            StandardOutputEncoding = _terminalEncoding,
+            StandardErrorEncoding = _terminalEncoding,
             CreateNoWindow = true
         };
 
@@ -118,7 +122,7 @@ public sealed class LocalTerminalConnectionService : ITerminalConnectionService
 
     public void SendBytes(byte[] data)
     {
-        SendData(Encoding.UTF8.GetString(data));
+        SendData(_terminalEncoding.GetString(data));
     }
 
     public void SendKeepAlive()

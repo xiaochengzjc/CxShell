@@ -59,9 +59,9 @@
             </atom:DataGrid>
         </Grid>
 
-        <Popup x:Name="ContextMenuPopup"
-               Placement="Pointer"
-               IsLightDismissEnabled="True">
+        <atom:Popup x:Name="ContextMenuPopup"
+                    Placement="Pointer"
+                    IsLightDismissEnabled="True">
             <Border Background="{atom:SharedTokenResource ColorBgElevated}"
                     BorderBrush="{atom:SharedTokenResource ColorBorder}"
                     BorderThickness="1"
@@ -90,6 +90,6 @@
                                  Foreground="{atom:SharedTokenResource ColorError}"/>
                 </StackPanel>
             </Border>
-        </Popup>
+        </atom:Popup>
     </Grid>
 </UserControl>

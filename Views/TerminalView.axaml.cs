@@ -130,6 +130,12 @@ public partial class TerminalView : UserControl
         if (_terminal == null || _boundVm == null)
             return;
 
+        if (_boundVm.IsTerminalSizeFixed)
+        {
+            _boundVm.ApplyConfiguredTerminalSize();
+            return;
+        }
+
         _terminal.SyncSizeToBounds();
         _boundVm.Resize(_terminal.Columns, _terminal.Rows);
     }

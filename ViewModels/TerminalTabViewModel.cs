@@ -1,4 +1,5 @@
 using System;
+using Avalonia.Media;
 using ChiXueSsh.Models;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -13,6 +14,8 @@ public partial class TerminalTabViewModel : ObservableObject
 
     public SessionInfo Session { get; }
     public TerminalViewModel Terminal { get; }
+    public bool HasTabColor => !string.Equals(Session.AppearanceTabColorMode, "Default", StringComparison.OrdinalIgnoreCase);
+    public IBrush TabColorBrush => new SolidColorBrush(ResolveTabColor());
 
     /// <summary>仅内存保存，不持久化，用于监控独立 SSH 连接</summary>
     public string? ConnectedPassword { get; set; }
@@ -55,6 +58,20 @@ public partial class TerminalTabViewModel : ObservableObject
     public void NotifyThemeChanged()
     {
         OnPropertyChanged(nameof(IsSelected));
+        OnPropertyChanged(nameof(HasTabColor));
+        OnPropertyChanged(nameof(TabColorBrush));
+    }
+
+    private Color ResolveTabColor()
+    {
+        return Session.AppearanceTabColorMode switch
+        {
+            "Red" => Color.Parse("#F5222D"),
+            "Purple" => Color.Parse("#722ED1"),
+            "Yellow" => Color.Parse("#FAAD14"),
+            "Custom" when Color.TryParse(Session.AppearanceTabCustomColor, out var color) => color,
+            _ => Colors.Transparent
+        };
     }
 
     [RelayCommand]

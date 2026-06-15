@@ -22,6 +22,7 @@ public partial class App : Application
             builder.WithDefaultTheme(IThemeManager.DEFAULT_THEME_ID);
             builder.UseAlibabaSansFont();
             builder.UseDesktopControls();
+            builder.UseDesktopColorPicker();
             builder.UseDesktopDataGrid();
         });
     }

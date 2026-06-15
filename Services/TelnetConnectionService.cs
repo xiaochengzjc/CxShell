@@ -29,7 +29,9 @@ public sealed class TelnetConnectionService : ITerminalConnectionService
     private const byte SubOptionSend = 1;
 
     private readonly object _writeLock = new();
-    private readonly Decoder _utf8Decoder = Encoding.UTF8.GetDecoder();
+    private Encoding _terminalEncoding = Encoding.UTF8;
+    private Decoder _terminalDecoder = Encoding.UTF8.GetDecoder();
+    private SessionInfo? _session;
     private TcpClient? _client;
     private NetworkStream? _stream;
     private CancellationTokenSource? _readCts;
@@ -43,6 +45,7 @@ public sealed class TelnetConnectionService : ITerminalConnectionService
     private string? _password;
     private string _usernamePrompt = "ogin:";
     private string _passwordPrompt = "assword:";
+    private string _terminalType = "xterm";
     private readonly StringBuilder _loginProbeBuffer = new();
     private bool _usernameSent;
     private bool _passwordSent;
@@ -65,6 +68,10 @@ public sealed class TelnetConnectionService : ITerminalConnectionService
         CancellationToken cancellationToken = default)
     {
         Disconnect();
+        _session = session;
+        _terminalEncoding = TerminalSessionOptions.GetEncoding(session);
+        _terminalDecoder = _terminalEncoding.GetDecoder();
+        _terminalType = TerminalSessionOptions.GetTerminalType(session);
 
         _columns = columns;
         _rows = rows;
@@ -86,13 +93,21 @@ public sealed class TelnetConnectionService : ITerminalConnectionService
         _passwordSent = false;
         _parseState = TelnetParseState.Data;
         _subNegotiation.Clear();
-        _utf8Decoder.Reset();
+        _terminalDecoder.Reset();
 
         try
         {
-            _client = await ProxyConnectionFactory.ConnectTcpAsync(session.Host, session.Port, session.Proxy, cancellationToken);
+            TraceTelnet($"connecting to {session.Host}:{session.Port}");
+            _client = await ProxyConnectionFactory.ConnectTcpAsync(
+                session.Host,
+                session.Port,
+                session.Proxy,
+                cancellationToken,
+                session.AdvancedIpVersion);
             ApplyTcpKeepAlive(_client, session.TcpKeepAlive);
+            _client.NoDelay = !session.AdvancedUseNagle;
             _stream = _client.GetStream();
+            TraceTelnet($"connected; option mode={session.TelnetOptionMode}, terminal={_terminalType}");
             if (string.Equals(session.TelnetOptionMode, "Active", StringComparison.OrdinalIgnoreCase))
                 SendActiveNegotiation();
 
@@ -109,8 +124,8 @@ public sealed class TelnetConnectionService : ITerminalConnectionService
 
     public void SendData(string data)
     {
-        var normalized = data.Replace("\r", "\r\n");
-        SendBytes(Encoding.UTF8.GetBytes(normalized));
+        var normalized = TerminalSessionOptions.NormalizeSendLineEndings(data, _session);
+        SendBytes(_terminalEncoding.GetBytes(normalized));
     }
 
     public void SendBytes(byte[] data)
@@ -188,12 +203,12 @@ public sealed class TelnetConnectionService : ITerminalConnectionService
                 if (terminalBytes.Length == 0)
                     continue;
 
-                var charCount = _utf8Decoder.GetCharCount(terminalBytes, 0, terminalBytes.Length);
+                var charCount = _terminalDecoder.GetCharCount(terminalBytes, 0, terminalBytes.Length);
                 if (charCount == 0)
                     continue;
 
                 var chars = new char[charCount];
-                var charsRead = _utf8Decoder.GetChars(terminalBytes, 0, terminalBytes.Length, chars, 0);
+                var charsRead = _terminalDecoder.GetChars(terminalBytes, 0, terminalBytes.Length, chars, 0);
                 var text = new string(chars, 0, charsRead);
                 HandleLoginPrompt(text);
                 DataReceived?.Invoke(text);
@@ -291,6 +306,7 @@ public sealed class TelnetConnectionService : ITerminalConnectionService
 
     private void HandleOption(byte option)
     {
+        TraceTelnet($"received {TelnetCommandName(_pendingCommand)} {TelnetOptionName(option)}");
         switch (_pendingCommand)
         {
             case Do:
@@ -328,11 +344,14 @@ public sealed class TelnetConnectionService : ITerminalConnectionService
 
     private void HandleSubNegotiation()
     {
+        if (_subNegotiation.Count > 0)
+            TraceTelnet($"received SB {TelnetOptionName(_subNegotiation[0])}");
+
         if (_subNegotiation.Count >= 2 &&
             _subNegotiation[0] == TerminalType &&
             _subNegotiation[1] == SubOptionSend)
         {
-            var terminalName = Encoding.ASCII.GetBytes("xterm-256color");
+            var terminalName = Encoding.ASCII.GetBytes(_terminalType);
             var response = new byte[terminalName.Length + 6];
             response[0] = Iac;
             response[1] = Sb;
@@ -375,11 +394,13 @@ public sealed class TelnetConnectionService : ITerminalConnectionService
 
     private void SendCommand(byte command, byte option)
     {
+        TraceTelnet($"sent {TelnetCommandName(command)} {TelnetOptionName(option)}");
         SendBytes(new[] { Iac, command, option });
     }
 
     private void SendNaws()
     {
+        TraceTelnet($"sent SB NAWS {_columns}x{_rows}");
         var width = Math.Clamp(_columns, 1, ushort.MaxValue);
         var height = Math.Clamp(_rows, 1, ushort.MaxValue);
         SendBytes(new[]
@@ -394,6 +415,7 @@ public sealed class TelnetConnectionService : ITerminalConnectionService
     private void SendXDisplayLocation()
     {
         var display = ResolveXDisplayLocation();
+        TraceTelnet($"sent SB XDISPLOC {display}");
         var displayBytes = Encoding.ASCII.GetBytes(display);
         var response = new List<byte>(displayBytes.Length + 6) { Iac, Sb, XDisplayLocation, SubOptionIs };
 
@@ -416,6 +438,41 @@ public sealed class TelnetConnectionService : ITerminalConnectionService
             localAddress = endpoint.Address.ToString();
 
         return _xDisplayLocation.Replace("$PCADDR", localAddress, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void TraceTelnet(string message)
+    {
+        if (_session?.AdvancedTraceTelnetOptions == true)
+            DataReceived?.Invoke($"\r\n[TRACE TELNET] {message}\r\n");
+    }
+
+    private static string TelnetCommandName(byte command)
+    {
+        return command switch
+        {
+            Do => "DO",
+            Dont => "DONT",
+            Will => "WILL",
+            Wont => "WONT",
+            Sb => "SB",
+            Se => "SE",
+            _ => $"0x{command:x2}"
+        };
+    }
+
+    private static string TelnetOptionName(byte option)
+    {
+        return option switch
+        {
+            Binary => "BINARY",
+            Echo => "ECHO",
+            SuppressGoAhead => "SUPPRESS-GO-AHEAD",
+            TerminalType => "TERMINAL-TYPE",
+            Naws => "NAWS",
+            Linemode => "LINEMODE",
+            XDisplayLocation => "XDISPLOC",
+            _ => $"OPTION-{option}"
+        };
     }
 
     private void HandleLoginPrompt(string text)
@@ -456,7 +513,8 @@ public sealed class TelnetConnectionService : ITerminalConnectionService
 
     private void SendLine(string value)
     {
-        SendBytes(Encoding.UTF8.GetBytes(value + "\r\n"));
+        var lineEnding = TerminalSessionOptions.ResolveLineEnding(_session?.TerminalSendLineEnding, "CRLF");
+        SendBytes(_terminalEncoding.GetBytes(value + lineEnding));
     }
 
     private static void ApplyTcpKeepAlive(TcpClient client, bool enabled)

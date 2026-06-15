@@ -17,7 +17,8 @@ public class AnsiParser
         CsiParam,
         CsiIntermediate,
         OscString,
-        OscEscape
+        OscEscape,
+        CharsetDesignate
     }
 
     private State _state = State.Ground;
@@ -25,7 +26,11 @@ public class AnsiParser
     private int _paramCount;
     private int _currentParam;
     private char _intermediateChar;
+    private char _charsetTarget;
     private bool _isPrivateMode; // ? prefix for private modes
+    private bool _g0LineDrawing;
+    private bool _g1LineDrawing;
+    private bool _useG1;
 
     private readonly TerminalBuffer _buffer;
 
@@ -68,6 +73,9 @@ public class AnsiParser
                 // After ESC in OSC, expect \ to terminate
                 _state = State.Ground;
                 break;
+            case State.CharsetDesignate:
+                ProcessCharsetDesignation(ch);
+                break;
         }
     }
 
@@ -92,13 +100,16 @@ public class AnsiParser
                 break;
             case '\a': // BEL - ignore
                 break;
-            case '\x0E': // SO - ignore
-            case '\x0F': // SI - ignore
+            case '\x0E': // SO - shift out G1
+                _useG1 = true;
+                break;
+            case '\x0F': // SI - shift in G0
+                _useG1 = false;
                 break;
             default:
                 if (ch >= ' ')
                 {
-                    _buffer.PutChar(ch);
+                    _buffer.PutChar(MapPrintableCharacter(ch));
                 }
                 break;
         }
@@ -118,8 +129,8 @@ public class AnsiParser
                 break;
             case '(':
             case ')':
-                // Character set selection - skip next char
-                _state = State.Ground;
+                _charsetTarget = ch;
+                _state = State.CharsetDesignate;
                 break;
             case 'M': // Reverse index
                 if (_buffer.CursorRow == 0)
@@ -274,8 +285,11 @@ public class AnsiParser
                         _buffer.ClearScreen();
                         break;
                     case 2: // Clear entire screen
-                    case 3: // Clear entire screen + scrollback
                         _buffer.ClearScreen();
+                        _buffer.MoveCursor(0, 0);
+                        break;
+                    case 3: // Clear entire screen + scrollback
+                        _buffer.ClearScreen(clearScrollback: true);
                         _buffer.MoveCursor(0, 0);
                         break;
                 }
@@ -339,9 +353,76 @@ public class AnsiParser
             case 'c': // DA - Device Attributes
                 break;
             case 'h': // SM - Set Mode
+                ExecuteSetMode(enabled: true);
+                break;
             case 'l': // RM - Reset Mode
+                ExecuteSetMode(enabled: false);
                 break;
             case 't': // Window manipulation
+                break;
+        }
+    }
+
+    private void ProcessCharsetDesignation(char ch)
+    {
+        var lineDrawing = ch == '0';
+        if (_charsetTarget == '(')
+            _g0LineDrawing = lineDrawing;
+        else if (_charsetTarget == ')')
+            _g1LineDrawing = lineDrawing;
+
+        _charsetTarget = '\0';
+        _state = State.Ground;
+    }
+
+    private char MapPrintableCharacter(char ch)
+    {
+        if (!_buffer.UseBuiltinLineDrawing)
+            return ch;
+
+        var lineDrawingActive = _useG1 ? _g1LineDrawing : _g0LineDrawing;
+        if (!lineDrawingActive)
+            return ch;
+
+        return ch switch
+        {
+            '`' => '◆',
+            'a' => '▒',
+            'f' => '°',
+            'g' => '±',
+            'j' => '┘',
+            'k' => '┐',
+            'l' => '┌',
+            'm' => '└',
+            'n' => '┼',
+            'q' => '─',
+            't' => '├',
+            'u' => '┤',
+            'v' => '┴',
+            'w' => '┬',
+            'x' => '│',
+            'y' => '≤',
+            'z' => '≥',
+            '{' => 'π',
+            '|' => '≠',
+            '}' => '£',
+            '~' => '·',
+            _ => ch
+        };
+    }
+
+    private void ExecuteSetMode(bool enabled)
+    {
+        int mode = GetParam(0, 0);
+        switch (mode)
+        {
+            case 4: // IRM
+                _buffer.InsertMode = enabled;
+                break;
+            case 12: // SRM: reset means local echo in many terminals; expose as direct flag.
+                break;
+            case 20: // LNM
+                _buffer.NewLineMode = enabled;
                 break;
         }
     }
@@ -352,10 +433,72 @@ public class AnsiParser
         switch (finalChar)
         {
             case 'h': // DECSET
-                if (mode == 25) _buffer.CursorVisible = true;
+                switch (mode)
+                {
+                    case 1:
+                        _buffer.CursorKeyApplicationMode = true;
+                        break;
+                    case 6:
+                        _buffer.OriginMode = true;
+                        _buffer.MoveCursor(0, 0);
+                        break;
+                    case 7:
+                        _buffer.AutoWrapMode = true;
+                        break;
+                    case 25:
+                        _buffer.CursorVisible = true;
+                        break;
+                    case 47:
+                    case 1047:
+                    case 1049:
+                        if (!_buffer.DisableAlternateScreen)
+                        {
+                            _buffer.ClearScreen();
+                            _buffer.MoveCursor(0, 0);
+                        }
+                        break;
+                    case 66:
+                        _buffer.NumericKeypadApplicationMode = true;
+                        break;
+                    case 5:
+                        _buffer.ReverseVideoMode = true;
+                        _buffer.MarkAllDirty();
+                        break;
+                }
                 break;
             case 'l': // DECRST
-                if (mode == 25) _buffer.CursorVisible = false;
+                switch (mode)
+                {
+                    case 1:
+                        _buffer.CursorKeyApplicationMode = false;
+                        break;
+                    case 6:
+                        _buffer.OriginMode = false;
+                        _buffer.MoveCursor(0, 0);
+                        break;
+                    case 7:
+                        _buffer.AutoWrapMode = false;
+                        break;
+                    case 25:
+                        _buffer.CursorVisible = false;
+                        break;
+                    case 47:
+                    case 1047:
+                    case 1049:
+                        if (!_buffer.DisableAlternateScreen)
+                        {
+                            _buffer.ClearScreen();
+                            _buffer.MoveCursor(0, 0);
+                        }
+                        break;
+                    case 66:
+                        _buffer.NumericKeypadApplicationMode = false;
+                        break;
+                    case 5:
+                        _buffer.ReverseVideoMode = false;
+                        _buffer.MarkAllDirty();
+                        break;
+                }
                 break;
         }
     }
@@ -378,18 +521,27 @@ public class AnsiParser
                     break;
                 case 1: // Bold
                     _buffer.CurrentBold = true;
+                    _buffer.CurrentForeground = _buffer.BoldForegroundColor;
                     break;
                 case 4: // Underline
                     _buffer.CurrentUnderline = true;
                     break;
+                case 5: // Blink
+                    if (!_buffer.DisableBlinkingText)
+                        _buffer.CurrentBlinking = true;
+                    break;
                 case 22: // Normal intensity
                     _buffer.CurrentBold = false;
+                    _buffer.CurrentForeground = _buffer.DefaultForegroundColor;
                     break;
                 case 24: // No underline
                     _buffer.CurrentUnderline = false;
                     break;
+                case 25: // No blink
+                    _buffer.CurrentBlinking = false;
+                    break;
                 case >= 30 and <= 37: // Standard foreground
-                    _buffer.CurrentForeground = TerminalColors.Standard16[p - 30];
+                    _buffer.CurrentForeground = _buffer.GetAnsiColor(p - 30);
                     break;
                 case 38: // Extended foreground
                     if (i + 1 < _paramCount)
@@ -412,10 +564,10 @@ public class AnsiParser
                     }
                     break;
                 case 39: // Default foreground
-                    _buffer.CurrentForeground = TerminalColors.DefaultForeground;
+                    _buffer.CurrentForeground = _buffer.CurrentBold ? _buffer.BoldForegroundColor : _buffer.DefaultForegroundColor;
                     break;
                 case >= 40 and <= 47: // Standard background
-                    _buffer.CurrentBackground = TerminalColors.Standard16[p - 40];
+                    _buffer.CurrentBackground = _buffer.GetAnsiColor(p - 40);
                     break;
                 case 48: // Extended background
                     if (i + 1 < _paramCount)
@@ -436,13 +588,13 @@ public class AnsiParser
                     }
                     break;
                 case 49: // Default background
-                    _buffer.CurrentBackground = TerminalColors.DefaultBackground;
+                    _buffer.CurrentBackground = _buffer.DefaultBackgroundColor;
                     break;
                 case >= 90 and <= 97: // Bright foreground
-                    _buffer.CurrentForeground = TerminalColors.Standard16[p - 90 + 8];
+                    _buffer.CurrentForeground = _buffer.GetAnsiColor(p - 90 + 8);
                     break;
                 case >= 100 and <= 107: // Bright background
-                    _buffer.CurrentBackground = TerminalColors.Standard16[p - 100 + 8];
+                    _buffer.CurrentBackground = _buffer.GetAnsiColor(p - 100 + 8);
                     break;
             }
         }

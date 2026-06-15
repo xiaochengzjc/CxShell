@@ -15,3 +15,4 @@ AtomUI/
 # OS 文件
 Thumbs.db
 .DS_Store
+.codex-build

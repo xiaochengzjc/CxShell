@@ -11,7 +11,9 @@ namespace ChiXueSsh.Services;
 public sealed class RloginConnectionService : ITerminalConnectionService
 {
     private readonly object _writeLock = new();
-    private readonly Decoder _utf8Decoder = Encoding.UTF8.GetDecoder();
+    private Encoding _terminalEncoding = Encoding.UTF8;
+    private Decoder _terminalDecoder = Encoding.UTF8.GetDecoder();
+    private SessionInfo? _session;
     private TcpClient? _client;
     private NetworkStream? _stream;
     private CancellationTokenSource? _readCts;
@@ -19,6 +21,7 @@ public sealed class RloginConnectionService : ITerminalConnectionService
     private int _columns = 80;
     private int _rows = 24;
     private int _terminalSpeed = 38400;
+    private string _terminalType = "xterm";
     private string? _password;
     private string _passwordPrompt = "assword:";
     private readonly StringBuilder _loginProbeBuffer = new();
@@ -39,22 +42,32 @@ public sealed class RloginConnectionService : ITerminalConnectionService
         CancellationToken cancellationToken = default)
     {
         Disconnect();
+        _session = session;
+        _terminalEncoding = TerminalSessionOptions.GetEncoding(session);
+        _terminalDecoder = _terminalEncoding.GetDecoder();
 
         _columns = Math.Max(1, columns);
         _rows = Math.Max(1, rows);
         _terminalSpeed = session.RloginTerminalSpeed > 0 ? session.RloginTerminalSpeed : 38400;
+        _terminalType = TerminalSessionOptions.GetTerminalType(session);
         _password = password;
         _passwordPrompt = string.IsNullOrWhiteSpace(session.RloginPasswordPrompt)
             ? "assword:"
             : session.RloginPasswordPrompt;
         _loginProbeBuffer.Clear();
         _passwordSent = false;
-        _utf8Decoder.Reset();
+        _terminalDecoder.Reset();
 
         try
         {
-            _client = await ProxyConnectionFactory.ConnectTcpAsync(session.Host, session.Port, session.Proxy, cancellationToken);
+            _client = await ProxyConnectionFactory.ConnectTcpAsync(
+                session.Host,
+                session.Port,
+                session.Proxy,
+                cancellationToken,
+                session.AdvancedIpVersion);
             ApplyTcpKeepAlive(_client, session.TcpKeepAlive);
+            _client.NoDelay = !session.AdvancedUseNagle;
             _stream = _client.GetStream();
             await SendHandshakeAsync(session.Username, cancellationToken);
             await ReadLoginResponseAsync(cancellationToken);
@@ -73,7 +86,8 @@ public sealed class RloginConnectionService : ITerminalConnectionService
 
     public void SendData(string data)
     {
-        SendBytes(Encoding.UTF8.GetBytes(data));
+        var normalized = TerminalSessionOptions.NormalizeSendLineEndings(data, _session);
+        SendBytes(_terminalEncoding.GetBytes(normalized));
     }
 
     public void SendBytes(byte[] data)
@@ -137,7 +151,7 @@ public sealed class RloginConnectionService : ITerminalConnectionService
         var safeUsername = string.IsNullOrWhiteSpace(username)
             ? Environment.UserName
             : username.Trim();
-        var terminal = $"xterm-256color/{_terminalSpeed}";
+        var terminal = $"{_terminalType}/{_terminalSpeed}";
 
         using var payload = new MemoryStream();
         payload.WriteByte(0);
@@ -183,7 +197,7 @@ public sealed class RloginConnectionService : ITerminalConnectionService
             if (read <= 0)
                 break;
 
-            builder.Append(Encoding.UTF8.GetString(buffer, 0, read));
+            builder.Append(_terminalEncoding.GetString(buffer, 0, read));
             if (builder.ToString().Contains('\n'))
                 break;
         }
@@ -208,12 +222,12 @@ public sealed class RloginConnectionService : ITerminalConnectionService
                 if (BinaryDataReceived?.Invoke(chunk) == true)
                     continue;
 
-                var charCount = _utf8Decoder.GetCharCount(chunk, 0, chunk.Length);
+                var charCount = _terminalDecoder.GetCharCount(chunk, 0, chunk.Length);
                 if (charCount == 0)
                     continue;
 
                 var chars = new char[charCount];
-                var charsRead = _utf8Decoder.GetChars(chunk, 0, chunk.Length, chars, 0);
+                var charsRead = _terminalDecoder.GetChars(chunk, 0, chunk.Length, chars, 0);
                 var text = new string(chars, 0, charsRead);
                 HandleLoginPrompt(text);
                 DataReceived?.Invoke(text);
@@ -268,7 +282,8 @@ public sealed class RloginConnectionService : ITerminalConnectionService
             return;
 
         _passwordSent = true;
-        SendBytes(Encoding.UTF8.GetBytes(_password + "\n"));
+        var lineEnding = TerminalSessionOptions.ResolveLineEnding(_session?.TerminalSendLineEnding, "LF");
+        SendBytes(_terminalEncoding.GetBytes(_password + lineEnding));
         _loginProbeBuffer.Clear();
     }
 

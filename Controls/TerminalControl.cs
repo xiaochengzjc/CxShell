@@ -1,5 +1,9 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -7,7 +11,10 @@ using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Input.TextInput;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
+using ChiXueSsh.Models;
 using ChiXueSsh.Terminal;
 
 namespace ChiXueSsh.Controls;
@@ -26,12 +33,117 @@ public class TerminalControl : Control
     private bool _isDraggingScrollbar;
     private double _scrollbarDragOffsetY;
     private bool _isPointerOverScrollbar;
+    private bool _scrollLockActive;
+    private readonly DispatcherTimer _cursorBlinkTimer;
+    private bool _cursorBlinkVisible = true;
     private readonly TerminalTextInputMethodClient _textInputMethodClient;
+    private Bitmap? _backgroundImage;
+    private string? _loadedBackgroundImagePath;
+    private IReadOnlyList<CompiledHighlightRule> _compiledHighlightRules = [];
     private const double ScrollbarWidth = 16;
     private const double ScrollbarMinThumbHeight = 28;
 
     public static readonly StyledProperty<TerminalBuffer?> TerminalBufferProperty =
         AvaloniaProperty.Register<TerminalControl, TerminalBuffer?>(nameof(TerminalBuffer));
+
+    public static readonly StyledProperty<bool> IsSizeFixedProperty =
+        AvaloniaProperty.Register<TerminalControl, bool>(nameof(IsSizeFixed));
+
+    public static readonly StyledProperty<int> FixedColumnsProperty =
+        AvaloniaProperty.Register<TerminalControl, int>(nameof(FixedColumns), 80);
+
+    public static readonly StyledProperty<int> FixedRowsProperty =
+        AvaloniaProperty.Register<TerminalControl, int>(nameof(FixedRows), 24);
+
+    public static readonly StyledProperty<string> KeyboardFunctionKeyModeProperty =
+        AvaloniaProperty.Register<TerminalControl, string>(nameof(KeyboardFunctionKeyMode), "Default");
+
+    public static readonly StyledProperty<string> KeyboardMappingFileProperty =
+        AvaloniaProperty.Register<TerminalControl, string>(nameof(KeyboardMappingFile), string.Empty);
+
+    public static readonly StyledProperty<string> DeleteKeySequenceProperty =
+        AvaloniaProperty.Register<TerminalControl, string>(nameof(DeleteKeySequence), "VT220");
+
+    public static readonly StyledProperty<string> BackspaceKeySequenceProperty =
+        AvaloniaProperty.Register<TerminalControl, string>(nameof(BackspaceKeySequence), "Backspace");
+
+    public static readonly StyledProperty<bool> LeftAltAsMetaProperty =
+        AvaloniaProperty.Register<TerminalControl, bool>(nameof(LeftAltAsMeta));
+
+    public static readonly StyledProperty<bool> RightAltAsMetaProperty =
+        AvaloniaProperty.Register<TerminalControl, bool>(nameof(RightAltAsMeta));
+
+    public static readonly StyledProperty<bool> CtrlAltAsAltGrProperty =
+        AvaloniaProperty.Register<TerminalControl, bool>(nameof(CtrlAltAsAltGr), true);
+
+    public static readonly StyledProperty<bool> NewLineModeProperty =
+        AvaloniaProperty.Register<TerminalControl, bool>(nameof(NewLineMode));
+
+    public static readonly StyledProperty<string> CursorKeyModeProperty =
+        AvaloniaProperty.Register<TerminalControl, string>(nameof(CursorKeyMode), "Normal");
+
+    public static readonly StyledProperty<string> NumericKeypadModeProperty =
+        AvaloniaProperty.Register<TerminalControl, string>(nameof(NumericKeypadMode), "Normal");
+
+    public static readonly StyledProperty<bool> UseApplicationCursorModeProperty =
+        AvaloniaProperty.Register<TerminalControl, bool>(nameof(UseApplicationCursorMode), true);
+
+    public static readonly StyledProperty<bool> ShiftLimitsApplicationCursorModeProperty =
+        AvaloniaProperty.Register<TerminalControl, bool>(nameof(ShiftLimitsApplicationCursorMode), true);
+
+    public static readonly StyledProperty<bool> ScrollToBottomOnInputOutputProperty =
+        AvaloniaProperty.Register<TerminalControl, bool>(nameof(ScrollToBottomOnInputOutput), true);
+
+    public static readonly StyledProperty<bool> ScrollToBottomByKeyProperty =
+        AvaloniaProperty.Register<TerminalControl, bool>(nameof(ScrollToBottomByKey));
+
+    public static readonly StyledProperty<bool> SuspendScrollToBottomOnScrollLockProperty =
+        AvaloniaProperty.Register<TerminalControl, bool>(nameof(SuspendScrollToBottomOnScrollLock));
+
+    public static readonly StyledProperty<bool> UseRxvtHomeEndProperty =
+        AvaloniaProperty.Register<TerminalControl, bool>(nameof(UseRxvtHomeEnd));
+
+    public static readonly StyledProperty<string> TerminalFontFamilyProperty =
+        AvaloniaProperty.Register<TerminalControl, string>(nameof(TerminalFontFamily), "DejaVu Sans Mono");
+
+    public static readonly StyledProperty<string> TerminalFontStyleProperty =
+        AvaloniaProperty.Register<TerminalControl, string>(nameof(TerminalFontStyle), "Normal");
+
+    public static readonly StyledProperty<double> TerminalFontSizeProperty =
+        AvaloniaProperty.Register<TerminalControl, double>(nameof(TerminalFontSize), 14);
+
+    public static readonly StyledProperty<Color> CursorColorProperty =
+        AvaloniaProperty.Register<TerminalControl, Color>(nameof(CursorColor), Color.Parse("#00FF00"));
+
+    public static readonly StyledProperty<Color> CursorTextColorProperty =
+        AvaloniaProperty.Register<TerminalControl, Color>(nameof(CursorTextColor), Colors.Black);
+
+    public static readonly StyledProperty<string> CursorShapeProperty =
+        AvaloniaProperty.Register<TerminalControl, string>(nameof(CursorShape), "Block");
+
+    public static readonly StyledProperty<bool> UseBlinkingCursorProperty =
+        AvaloniaProperty.Register<TerminalControl, bool>(nameof(UseBlinkingCursor));
+
+    public static readonly StyledProperty<int> CursorBlinkSpeedMillisecondsProperty =
+        AvaloniaProperty.Register<TerminalControl, int>(nameof(CursorBlinkSpeedMilliseconds), 500);
+
+    public static readonly StyledProperty<Thickness> TerminalPaddingProperty =
+        AvaloniaProperty.Register<TerminalControl, Thickness>(nameof(TerminalPadding), new Thickness(5));
+
+    public static readonly StyledProperty<double> LineSpacingProperty =
+        AvaloniaProperty.Register<TerminalControl, double>(nameof(LineSpacing));
+
+    public static readonly StyledProperty<double> CharacterSpacingProperty =
+        AvaloniaProperty.Register<TerminalControl, double>(nameof(CharacterSpacing));
+
+    public static readonly StyledProperty<string> BackgroundImagePathProperty =
+        AvaloniaProperty.Register<TerminalControl, string>(nameof(BackgroundImagePath), string.Empty);
+
+    public static readonly StyledProperty<string> BackgroundImagePositionProperty =
+        AvaloniaProperty.Register<TerminalControl, string>(nameof(BackgroundImagePosition), "Center");
+
+    public static readonly StyledProperty<IReadOnlyList<HighlightRule>?> HighlightRulesProperty =
+        AvaloniaProperty.Register<TerminalControl, IReadOnlyList<HighlightRule>?>(nameof(HighlightRules));
 
     public TerminalBuffer? TerminalBuffer
     {
@@ -39,11 +151,211 @@ public class TerminalControl : Control
         set => SetValue(TerminalBufferProperty, value);
     }
 
+    public bool IsSizeFixed
+    {
+        get => GetValue(IsSizeFixedProperty);
+        set => SetValue(IsSizeFixedProperty, value);
+    }
+
+    public int FixedColumns
+    {
+        get => GetValue(FixedColumnsProperty);
+        set => SetValue(FixedColumnsProperty, value);
+    }
+
+    public int FixedRows
+    {
+        get => GetValue(FixedRowsProperty);
+        set => SetValue(FixedRowsProperty, value);
+    }
+
+    public string KeyboardFunctionKeyMode
+    {
+        get => GetValue(KeyboardFunctionKeyModeProperty);
+        set => SetValue(KeyboardFunctionKeyModeProperty, value);
+    }
+
+    public string KeyboardMappingFile
+    {
+        get => GetValue(KeyboardMappingFileProperty);
+        set => SetValue(KeyboardMappingFileProperty, value);
+    }
+
+    public string DeleteKeySequence
+    {
+        get => GetValue(DeleteKeySequenceProperty);
+        set => SetValue(DeleteKeySequenceProperty, value);
+    }
+
+    public string BackspaceKeySequence
+    {
+        get => GetValue(BackspaceKeySequenceProperty);
+        set => SetValue(BackspaceKeySequenceProperty, value);
+    }
+
+    public bool LeftAltAsMeta
+    {
+        get => GetValue(LeftAltAsMetaProperty);
+        set => SetValue(LeftAltAsMetaProperty, value);
+    }
+
+    public bool RightAltAsMeta
+    {
+        get => GetValue(RightAltAsMetaProperty);
+        set => SetValue(RightAltAsMetaProperty, value);
+    }
+
+    public bool CtrlAltAsAltGr
+    {
+        get => GetValue(CtrlAltAsAltGrProperty);
+        set => SetValue(CtrlAltAsAltGrProperty, value);
+    }
+
+    public bool NewLineMode
+    {
+        get => GetValue(NewLineModeProperty);
+        set => SetValue(NewLineModeProperty, value);
+    }
+
+    public string CursorKeyMode
+    {
+        get => GetValue(CursorKeyModeProperty);
+        set => SetValue(CursorKeyModeProperty, value);
+    }
+
+    public string NumericKeypadMode
+    {
+        get => GetValue(NumericKeypadModeProperty);
+        set => SetValue(NumericKeypadModeProperty, value);
+    }
+
+    public bool UseApplicationCursorMode
+    {
+        get => GetValue(UseApplicationCursorModeProperty);
+        set => SetValue(UseApplicationCursorModeProperty, value);
+    }
+
+    public bool ShiftLimitsApplicationCursorMode
+    {
+        get => GetValue(ShiftLimitsApplicationCursorModeProperty);
+        set => SetValue(ShiftLimitsApplicationCursorModeProperty, value);
+    }
+
+    public bool ScrollToBottomOnInputOutput
+    {
+        get => GetValue(ScrollToBottomOnInputOutputProperty);
+        set => SetValue(ScrollToBottomOnInputOutputProperty, value);
+    }
+
+    public bool ScrollToBottomByKey
+    {
+        get => GetValue(ScrollToBottomByKeyProperty);
+        set => SetValue(ScrollToBottomByKeyProperty, value);
+    }
+
+    public bool SuspendScrollToBottomOnScrollLock
+    {
+        get => GetValue(SuspendScrollToBottomOnScrollLockProperty);
+        set => SetValue(SuspendScrollToBottomOnScrollLockProperty, value);
+    }
+
+    public bool UseRxvtHomeEnd
+    {
+        get => GetValue(UseRxvtHomeEndProperty);
+        set => SetValue(UseRxvtHomeEndProperty, value);
+    }
+
+    public string TerminalFontFamily
+    {
+        get => GetValue(TerminalFontFamilyProperty);
+        set => SetValue(TerminalFontFamilyProperty, value);
+    }
+
+    public string TerminalFontStyle
+    {
+        get => GetValue(TerminalFontStyleProperty);
+        set => SetValue(TerminalFontStyleProperty, value);
+    }
+
+    public double TerminalFontSize
+    {
+        get => GetValue(TerminalFontSizeProperty);
+        set => SetValue(TerminalFontSizeProperty, value);
+    }
+
+    public Color CursorColor
+    {
+        get => GetValue(CursorColorProperty);
+        set => SetValue(CursorColorProperty, value);
+    }
+
+    public Color CursorTextColor
+    {
+        get => GetValue(CursorTextColorProperty);
+        set => SetValue(CursorTextColorProperty, value);
+    }
+
+    public string CursorShape
+    {
+        get => GetValue(CursorShapeProperty);
+        set => SetValue(CursorShapeProperty, value);
+    }
+
+    public bool UseBlinkingCursor
+    {
+        get => GetValue(UseBlinkingCursorProperty);
+        set => SetValue(UseBlinkingCursorProperty, value);
+    }
+
+    public int CursorBlinkSpeedMilliseconds
+    {
+        get => GetValue(CursorBlinkSpeedMillisecondsProperty);
+        set => SetValue(CursorBlinkSpeedMillisecondsProperty, value);
+    }
+
+    public Thickness TerminalPadding
+    {
+        get => GetValue(TerminalPaddingProperty);
+        set => SetValue(TerminalPaddingProperty, value);
+    }
+
+    public double LineSpacing
+    {
+        get => GetValue(LineSpacingProperty);
+        set => SetValue(LineSpacingProperty, value);
+    }
+
+    public double CharacterSpacing
+    {
+        get => GetValue(CharacterSpacingProperty);
+        set => SetValue(CharacterSpacingProperty, value);
+    }
+
+    public string BackgroundImagePath
+    {
+        get => GetValue(BackgroundImagePathProperty);
+        set => SetValue(BackgroundImagePathProperty, value);
+    }
+
+    public string BackgroundImagePosition
+    {
+        get => GetValue(BackgroundImagePositionProperty);
+        set => SetValue(BackgroundImagePositionProperty, value);
+    }
+
+    public IReadOnlyList<HighlightRule>? HighlightRules
+    {
+        get => GetValue(HighlightRulesProperty);
+        set => SetValue(HighlightRulesProperty, value);
+    }
+
     public event Action<string>? InputReceived;
     public event Action<int, int>? SizeChanged2;
 
     private int _columns = 80;
     private int _rows = 24;
+    private string? _loadedKeyboardMappingFile;
+    private System.Collections.Generic.Dictionary<string, string>? _customKeyboardMap;
 
     public int Columns => _columns;
     public int Rows => _rows;
@@ -59,13 +371,50 @@ public class TerminalControl : Control
         TextInputOptions.SetMultiline(this, true);
         _textInputMethodClient = new TerminalTextInputMethodClient(this);
         TextInputMethodClientRequested += OnTextInputMethodClientRequested;
-        _typeface = new Typeface("Cascadia Mono, Consolas, Courier New, monospace");
+        _cursorBlinkTimer = new DispatcherTimer();
+        _cursorBlinkTimer.Tick += OnCursorBlinkTimerTick;
+        _typeface = CreateTypeface();
         CalculateCellSize();
+        UpdateCursorBlinkTimer();
     }
 
     private void OnTextInputMethodClientRequested(object? sender, TextInputMethodClientRequestedEventArgs e)
     {
         e.Client = _textInputMethodClient;
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        UpdateCursorBlinkTimer();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        _cursorBlinkTimer.Stop();
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    private void OnCursorBlinkTimerTick(object? sender, EventArgs e)
+    {
+        _cursorBlinkVisible = !_cursorBlinkVisible;
+        InvalidateVisual();
+    }
+
+    private void UpdateCursorBlinkTimer()
+    {
+        if (!UseBlinkingCursor || !this.IsAttachedToVisualTree())
+        {
+            _cursorBlinkTimer.Stop();
+            _cursorBlinkVisible = true;
+            InvalidateVisual();
+            return;
+        }
+
+        _cursorBlinkTimer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(CursorBlinkSpeedMilliseconds, 1, 5000));
+        _cursorBlinkVisible = true;
+        _cursorBlinkTimer.Start();
+        InvalidateVisual();
     }
 
     private void CalculateCellSize()
@@ -75,11 +424,11 @@ public class TerminalControl : Control
             System.Globalization.CultureInfo.CurrentCulture,
             FlowDirection.LeftToRight,
             _typeface,
-            14,
+            TerminalFontSize,
             Brushes.White);
 
-        _cellWidth = formattedText.Width;
-        _cellHeight = formattedText.Height;
+        _cellWidth = Math.Max(1, formattedText.Width + CharacterSpacing);
+        _cellHeight = Math.Max(1, formattedText.Height + LineSpacing);
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -99,7 +448,66 @@ public class TerminalControl : Control
             _scrollOffset = 0;
             _selectionAnchor = null;
             _selectionEnd = null;
-            TerminalBuffer?.Resize(_columns, _rows);
+            if (IsSizeFixed)
+                ApplyFixedSizeToBuffer(notify: false);
+            else
+                TerminalBuffer?.Resize(_columns, _rows);
+            InvalidateVisual();
+        }
+        else if (change.Property == IsSizeFixedProperty ||
+                 change.Property == FixedColumnsProperty ||
+                 change.Property == FixedRowsProperty)
+        {
+            ApplyFixedSizeToBuffer(notify: true);
+            InvalidateVisual();
+        }
+        else if (change.Property == KeyboardMappingFileProperty ||
+                 change.Property == KeyboardFunctionKeyModeProperty)
+        {
+            _loadedKeyboardMappingFile = null;
+            _customKeyboardMap = null;
+        }
+        else if (change.Property == TerminalFontFamilyProperty ||
+                  change.Property == TerminalFontStyleProperty ||
+                  change.Property == TerminalFontSizeProperty ||
+                  change.Property == LineSpacingProperty ||
+                  change.Property == CharacterSpacingProperty)
+        {
+            _typeface = CreateTypeface();
+            CalculateCellSize();
+            UpdateTerminalSize(Bounds.Size, notify: true);
+            InvalidateMeasure();
+            InvalidateVisual();
+        }
+        else if (change.Property == TerminalPaddingProperty)
+        {
+            UpdateTerminalSize(Bounds.Size, notify: true);
+            InvalidateMeasure();
+            InvalidateVisual();
+        }
+        else if (change.Property == BackgroundImagePathProperty)
+        {
+            LoadBackgroundImage();
+            InvalidateVisual();
+        }
+        else if (change.Property == BackgroundImagePositionProperty)
+        {
+            InvalidateVisual();
+        }
+        else if (change.Property == HighlightRulesProperty)
+        {
+            CompileHighlightRules();
+            InvalidateVisual();
+        }
+        else if (change.Property == UseBlinkingCursorProperty ||
+                 change.Property == CursorBlinkSpeedMillisecondsProperty)
+        {
+            UpdateCursorBlinkTimer();
+        }
+        else if (change.Property == CursorColorProperty ||
+                 change.Property == CursorTextColorProperty ||
+                 change.Property == CursorShapeProperty)
+        {
             InvalidateVisual();
         }
     }
@@ -130,6 +538,12 @@ public class TerminalControl : Control
 
     private void UpdateTerminalSize(Size size, bool notify)
     {
+        if (IsSizeFixed)
+        {
+            ApplyFixedSizeToBuffer(notify);
+            return;
+        }
+
         if (_cellWidth <= 0
             || _cellHeight <= 0
             || double.IsNaN(size.Width)
@@ -142,10 +556,26 @@ public class TerminalControl : Control
             return;
         }
 
-        var usableWidth = Math.Max(0, size.Width - ScrollbarWidth);
+        var content = GetContentRect(size);
+        var usableWidth = Math.Max(0, content.Width - ScrollbarWidth);
+        var usableHeight = Math.Max(0, content.Height);
         int newCols = Math.Max(20, (int)Math.Floor(usableWidth / _cellWidth));
-        int newRows = Math.Max(5, (int)Math.Floor(size.Height / _cellHeight));
+        int newRows = Math.Max(5, (int)Math.Floor(usableHeight / _cellHeight));
 
+        var changed = newCols != _columns || newRows != _rows;
+        _columns = newCols;
+        _rows = newRows;
+        TerminalBuffer?.Resize(_columns, _rows);
+        ClampScrollOffset();
+
+        if (notify && changed)
+            SizeChanged2?.Invoke(_columns, _rows);
+    }
+
+    private void ApplyFixedSizeToBuffer(bool notify)
+    {
+        var newCols = Math.Clamp(FixedColumns, 20, 500);
+        var newRows = Math.Clamp(FixedRows, 5, 200);
         var changed = newCols != _columns || newRows != _rows;
         _columns = newCols;
         _rows = newRows;
@@ -166,92 +596,116 @@ public class TerminalControl : Control
             context.FillRectangle(
                 new SolidColorBrush(TerminalColors.DefaultBackground),
                 new Rect(Bounds.Size));
+            DrawBackgroundImage(context, new Rect(Bounds.Size));
             return;
         }
 
         // Draw background
         context.FillRectangle(
-            new SolidColorBrush(TerminalColors.DefaultBackground),
+            new SolidColorBrush(buffer.DefaultBackgroundColor),
             new Rect(Bounds.Size));
+        DrawBackgroundImage(context, GetContentRect(Bounds.Size));
 
-        for (int row = 0; row < buffer.Rows; row++)
+        var contentRect = GetContentRect(Bounds.Size);
+        using (context.PushClip(contentRect))
+        using (context.PushTransform(Matrix.CreateTranslation(contentRect.X, contentRect.Y)))
         {
-            double y = row * _cellHeight;
-
-            // Draw background segments
-            int segStart = 0;
-            var segColor = GetViewportCell(buffer, row, 0).Background;
-
-            for (int col = 0; col <= buffer.Columns; col++)
+            for (int row = 0; row < buffer.Rows; row++)
             {
-                var cellColor = col < buffer.Columns
-                    ? GetViewportCell(buffer, row, col).Background
-                    : TerminalColors.DefaultBackground;
+                double y = row * _cellHeight;
+                var highlightMap = BuildHighlightMap(buffer, row);
 
-                if (cellColor != segColor || col == buffer.Columns)
+                // Draw background segments
+                int segStart = 0;
+                var segColor = ResolveHighlightBackground(buffer, GetViewportCell(buffer, row, 0), highlightMap?[0]);
+
+                for (int col = 0; col <= buffer.Columns; col++)
                 {
-                    if (segColor != TerminalColors.DefaultBackground)
+                    var cellColor = col < buffer.Columns
+                        ? ResolveHighlightBackground(buffer, GetViewportCell(buffer, row, col), highlightMap?[col])
+                        : ResolveBackground(buffer, buffer.CreateDefaultCell());
+
+                    if (cellColor != segColor || col == buffer.Columns)
                     {
-                        context.FillRectangle(
-                            new SolidColorBrush(segColor),
-                            new Rect(segStart * _cellWidth, y, (col - segStart) * _cellWidth, _cellHeight));
+                        if (segColor != buffer.DefaultBackgroundColor)
+                        {
+                            context.FillRectangle(
+                                new SolidColorBrush(segColor),
+                                new Rect(segStart * _cellWidth, y, (col - segStart) * _cellWidth, _cellHeight));
+                        }
+                        segStart = col;
+                        segColor = cellColor;
                     }
-                    segStart = col;
-                    segColor = cellColor;
                 }
-            }
 
-            DrawSelection(context, row, y);
+                DrawSelection(context, row, y);
 
-            // Draw foreground text at cell positions so wide CJK characters keep cursor alignment.
-            for (int col = 0; col < buffer.Columns; col++)
-            {
-                var cell = GetViewportCell(buffer, row, col);
-                if (cell.IsWideContinuation || cell.Character == ' ')
-                    continue;
-
-                DrawTextRun(context, cell.Character.ToString(), col * _cellWidth, y, cell.Foreground, cell.Bold);
-            }
-
-            // Draw underline for cells that have it
-            for (int col = 0; col < buffer.Columns; col++)
-            {
-                var cell = GetViewportCell(buffer, row, col);
-                if (cell.Underline && cell.Character != ' ' && !cell.IsWideContinuation)
+                // Draw foreground text at cell positions so wide CJK characters keep cursor alignment.
+                for (int col = 0; col < buffer.Columns; col++)
                 {
-                    var width = col + 1 < buffer.Columns && GetViewportCell(buffer, row, col + 1).IsWideContinuation
-                        ? 2
-                        : 1;
-                    var pen = new Pen(new SolidColorBrush(cell.Foreground), 1);
-                    context.DrawLine(pen,
-                        new Point(col * _cellWidth, y + _cellHeight - 1),
-                        new Point((col + width) * _cellWidth, y + _cellHeight - 1));
+                    var cell = GetViewportCell(buffer, row, col);
+                    if (cell.IsWideContinuation || cell.Character == ' ')
+                        continue;
+
+                    var highlight = highlightMap?[col];
+                    DrawTextRun(
+                        context,
+                        cell.Character.ToString(),
+                        col * _cellWidth,
+                        y,
+                        ResolveHighlightForeground(buffer, cell, highlight),
+                        cell.Bold || highlight?.Bold == true,
+                        highlight?.Italic == true);
+                }
+
+                // Draw underline for cells that have it
+                for (int col = 0; col < buffer.Columns; col++)
+                {
+                    var cell = GetViewportCell(buffer, row, col);
+                    var highlight = highlightMap?[col];
+                    if ((cell.Underline || highlight?.Underline == true || highlight?.Strikethrough == true) && cell.Character != ' ' && !cell.IsWideContinuation)
+                    {
+                        var width = col + 1 < buffer.Columns && GetViewportCell(buffer, row, col + 1).IsWideContinuation
+                            ? 2
+                            : 1;
+                        var pen = new Pen(new SolidColorBrush(ResolveHighlightForeground(buffer, cell, highlight)), 1);
+                        if (cell.Underline || highlight?.Underline == true)
+                        {
+                            context.DrawLine(pen,
+                                new Point(col * _cellWidth, y + _cellHeight - 1),
+                                new Point((col + width) * _cellWidth, y + _cellHeight - 1));
+                        }
+
+                        if (highlight?.Strikethrough == true)
+                        {
+                            context.DrawLine(pen,
+                                new Point(col * _cellWidth, y + _cellHeight * 0.55),
+                                new Point((col + width) * _cellWidth, y + _cellHeight * 0.55));
+                        }
+                    }
                 }
             }
-        }
 
-        // Draw cursor
-        if (buffer.CursorVisible && _scrollOffset == 0)
-        {
-            var cursorCol = buffer.CursorCol;
-            var cursorCell = buffer.GetCell(buffer.CursorRow, cursorCol);
-            var cursorWidth = !cursorCell.IsWideContinuation
-                && cursorCol + 1 < buffer.Columns
-                && buffer.GetCell(buffer.CursorRow, cursorCol + 1).IsWideContinuation
-                ? _cellWidth * 2
-                : _cellWidth;
-            double cursorX = cursorCol * _cellWidth;
-            double cursorY = buffer.CursorRow * _cellHeight;
-            // Draw green cursor block (like Xshell style)
-            context.FillRectangle(
-                new SolidColorBrush(Color.Parse("#33FF33")),
-                new Rect(cursorX, cursorY, cursorWidth, _cellHeight));
-            // Re-draw the character under cursor in black (inverted) so it remains visible
-            if (!cursorCell.IsWideContinuation && cursorCell.Character != '\0' && cursorCell.Character != ' ')
+            // Draw cursor
+            if (buffer.CursorVisible && _scrollOffset == 0 && _cursorBlinkVisible)
             {
-                DrawTextRun(context, cursorCell.Character.ToString(),
-                    cursorX, cursorY,
-                    Colors.Black, cursorCell.Bold);
+                var cursorCol = buffer.CursorCol;
+                var cursorCell = buffer.GetCell(buffer.CursorRow, cursorCol);
+                var cursorWidth = !cursorCell.IsWideContinuation
+                    && cursorCol + 1 < buffer.Columns
+                    && buffer.GetCell(buffer.CursorRow, cursorCol + 1).IsWideContinuation
+                    ? _cellWidth * 2
+                    : _cellWidth;
+                double cursorX = cursorCol * _cellWidth;
+                double cursorY = buffer.CursorRow * _cellHeight;
+                DrawCursor(context, cursorX, cursorY, cursorWidth);
+                // Re-draw the character under cursor in black (inverted) so it remains visible
+                if (!cursorCell.IsWideContinuation && cursorCell.Character != '\0' && cursorCell.Character != ' ')
+                {
+                    DrawTextRun(context, cursorCell.Character.ToString(),
+                        cursorX, cursorY,
+                        CursorTextColor, cursorCell.Bold);
+                }
             }
         }
 
@@ -278,14 +732,104 @@ public class TerminalControl : Control
             thumb);
     }
 
+    private void LoadBackgroundImage()
+    {
+        var path = BackgroundImagePath?.Trim();
+        if (string.Equals(path, _loadedBackgroundImagePath, StringComparison.Ordinal))
+            return;
+
+        _backgroundImage?.Dispose();
+        _backgroundImage = null;
+        _loadedBackgroundImagePath = path;
+
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            return;
+
+        try
+        {
+            _backgroundImage = new Bitmap(path);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error loading terminal background image: {ex.Message}");
+        }
+    }
+
+    private void DrawBackgroundImage(DrawingContext context, Rect target)
+    {
+        if (_backgroundImage == null)
+            LoadBackgroundImage();
+
+        var image = _backgroundImage;
+        if (image == null || target.Width <= 0 || target.Height <= 0)
+            return;
+
+        var source = new Rect(image.Size);
+        var mode = BackgroundImagePosition?.Trim();
+        if (string.Equals(mode, "Stretch", StringComparison.OrdinalIgnoreCase))
+        {
+            context.DrawImage(image, source, target);
+            return;
+        }
+
+        if (string.Equals(mode, "Tile", StringComparison.OrdinalIgnoreCase))
+        {
+            for (double y = target.Y; y < target.Bottom; y += image.Size.Height)
+            {
+                for (double x = target.X; x < target.Right; x += image.Size.Width)
+                {
+                    var width = Math.Min(image.Size.Width, target.Right - x);
+                    var height = Math.Min(image.Size.Height, target.Bottom - y);
+                    if (width <= 0 || height <= 0)
+                        continue;
+
+                    context.DrawImage(image, new Rect(0, 0, width, height), new Rect(x, y, width, height));
+                }
+            }
+            return;
+        }
+
+        var xPos = target.X + (target.Width - image.Size.Width) / 2;
+        var yPos = target.Y + (target.Height - image.Size.Height) / 2;
+        if (string.Equals(mode, "TopLeft", StringComparison.OrdinalIgnoreCase))
+        {
+            xPos = target.X;
+            yPos = target.Y;
+        }
+        else if (string.Equals(mode, "TopRight", StringComparison.OrdinalIgnoreCase))
+        {
+            xPos = target.Right - image.Size.Width;
+            yPos = target.Y;
+        }
+        else if (string.Equals(mode, "BottomLeft", StringComparison.OrdinalIgnoreCase))
+        {
+            xPos = target.X;
+            yPos = target.Bottom - image.Size.Height;
+        }
+        else if (string.Equals(mode, "BottomRight", StringComparison.OrdinalIgnoreCase))
+        {
+            xPos = target.Right - image.Size.Width;
+            yPos = target.Bottom - image.Size.Height;
+        }
+
+        context.DrawImage(image, source, new Rect(xPos, yPos, image.Size.Width, image.Size.Height));
+    }
+
     private void OnTerminalBufferChanged()
     {
         var count = TerminalBuffer?.ScrollbackCount ?? 0;
         var delta = count - _lastScrollbackCount;
         if (_scrollOffset > 0 && delta > 0)
         {
-            _scrollOffset += delta;
-            ClampScrollOffset();
+            if (ScrollToBottomOnInputOutput && !(SuspendScrollToBottomOnScrollLock && _scrollLockActive))
+            {
+                _scrollOffset = 0;
+            }
+            else
+            {
+                _scrollOffset += delta;
+                ClampScrollOffset();
+            }
         }
 
         _lastScrollbackCount = count;
@@ -315,8 +859,112 @@ public class TerminalControl : Control
         return buffer.GetViewportCell(row, col, _scrollOffset);
     }
 
+    private static Color ResolveForeground(TerminalBuffer buffer, TerminalCell cell)
+    {
+        return buffer.ReverseVideoMode ? cell.Background : cell.Foreground;
+    }
+
+    private static Color ResolveBackground(TerminalBuffer buffer, TerminalCell cell)
+    {
+        return buffer.ReverseVideoMode ? cell.Foreground : cell.Background;
+    }
+
+    private static Color ResolveHighlightForeground(TerminalBuffer buffer, TerminalCell cell, CompiledHighlightRule? highlight)
+    {
+        if (highlight == null || highlight.UseTerminalColor)
+            return ResolveForeground(buffer, cell);
+
+        return highlight.ForegroundColor;
+    }
+
+    private static Color ResolveHighlightBackground(TerminalBuffer buffer, TerminalCell cell, CompiledHighlightRule? highlight)
+    {
+        if (highlight == null || highlight.UseTerminalColor)
+            return ResolveBackground(buffer, cell);
+
+        return highlight.BackgroundColor;
+    }
+
+    private CompiledHighlightRule?[]? BuildHighlightMap(TerminalBuffer buffer, int row)
+    {
+        if (_compiledHighlightRules.Count == 0)
+            return null;
+
+        var chars = new char[buffer.Columns];
+        for (var col = 0; col < buffer.Columns; col++)
+        {
+            var cell = GetViewportCell(buffer, row, col);
+            chars[col] = cell.IsWideContinuation || cell.Character == '\0'
+                ? ' '
+                : cell.Character;
+        }
+
+        var text = new string(chars);
+        CompiledHighlightRule?[]? map = null;
+        foreach (var rule in _compiledHighlightRules)
+        {
+            try
+            {
+                foreach (Match match in rule.Regex.Matches(text))
+                {
+                    if (!match.Success || match.Length <= 0)
+                        continue;
+
+                    map ??= new CompiledHighlightRule?[buffer.Columns];
+                    var start = Math.Clamp(match.Index, 0, buffer.Columns);
+                    var end = Math.Clamp(match.Index + match.Length, 0, buffer.Columns);
+                    for (var col = start; col < end; col++)
+                        map[col] = rule;
+                }
+            }
+            catch (RegexMatchTimeoutException)
+            {
+            }
+        }
+
+        return map;
+    }
+
+    private void CompileHighlightRules()
+    {
+        var compiled = new List<CompiledHighlightRule>();
+        foreach (var rule in HighlightRules ?? [])
+        {
+            if (!rule.IsEnabled || string.IsNullOrWhiteSpace(rule.Keyword))
+                continue;
+
+            var pattern = rule.IsRegex ? rule.Keyword : Regex.Escape(rule.Keyword);
+            var options = RegexOptions.CultureInvariant;
+            if (!rule.IsCaseSensitive)
+                options |= RegexOptions.IgnoreCase;
+
+            try
+            {
+                compiled.Add(new CompiledHighlightRule(
+                    new Regex(pattern, options, TimeSpan.FromMilliseconds(50)),
+                    ParseColorOrDefault(rule.ForegroundColor, Colors.Black),
+                    ParseColorOrDefault(rule.BackgroundColor, Color.Parse("#FFFF40")),
+                    rule.UseTerminalColor,
+                    rule.Bold,
+                    rule.Italic,
+                    rule.Underline,
+                    rule.Strikethrough));
+            }
+            catch (ArgumentException)
+            {
+            }
+        }
+
+        _compiledHighlightRules = compiled;
+    }
+
+    private static Color ParseColorOrDefault(string? value, Color fallback)
+    {
+        return Color.TryParse(value, out var color) ? color : fallback;
+    }
+
     private void DrawTextRun(DrawingContext context, string text, double x, double y,
-        Color color, bool bold)
+        Color color, bool bold, bool italic = false)
     {
         // Skip whitespace-only runs for performance
         bool allSpaces = true;
@@ -330,8 +978,8 @@ public class TerminalControl : Control
             text,
             System.Globalization.CultureInfo.CurrentCulture,
             FlowDirection.LeftToRight,
-            _typeface,
-            14,
+            bold || italic ? CreateTypeface(forceBold: bold, forceItalic: italic) : _typeface,
+            TerminalFontSize,
             new SolidColorBrush(color));
 
         context.DrawText(ft, new Point(x, y));
@@ -342,9 +990,52 @@ public class TerminalControl : Control
         base.OnTextInput(e);
         if (e.Text != null)
         {
-            ScrollToBottom();
+            MaybeScrollToBottomForInput();
             InputReceived?.Invoke(e.Text);
             e.Handled = true;
+        }
+    }
+
+    private Typeface CreateTypeface(bool forceBold = false, bool forceItalic = false)
+    {
+        var styleText = TerminalFontStyle ?? "Normal";
+        var fontStyle = forceItalic || styleText.Contains("Italic", StringComparison.OrdinalIgnoreCase)
+            ? FontStyle.Italic
+            : FontStyle.Normal;
+        var fontWeight = forceBold || styleText.Contains("Bold", StringComparison.OrdinalIgnoreCase)
+            ? FontWeight.Bold
+            : FontWeight.Normal;
+        var family = string.IsNullOrWhiteSpace(TerminalFontFamily)
+            ? "DejaVu Sans Mono"
+            : TerminalFontFamily;
+        return new Typeface($"{family}, Cascadia Mono, Consolas, Courier New, monospace", fontStyle, fontWeight);
+    }
+
+    private sealed record CompiledHighlightRule(
+        Regex Regex,
+        Color ForegroundColor,
+        Color BackgroundColor,
+        bool UseTerminalColor,
+        bool Bold,
+        bool Italic,
+        bool Underline,
+        bool Strikethrough);
+
+    private void DrawCursor(DrawingContext context, double x, double y, double width)
+    {
+        var brush = new SolidColorBrush(CursorColor);
+        var shape = CursorShape?.Trim();
+        if (string.Equals(shape, "Vertical", StringComparison.OrdinalIgnoreCase))
+        {
+            context.FillRectangle(brush, new Rect(x, y, Math.Max(2, width * 0.18), _cellHeight));
+        }
+        else if (string.Equals(shape, "Underline", StringComparison.OrdinalIgnoreCase))
+        {
+            context.FillRectangle(brush, new Rect(x, y + _cellHeight - 3, width, 3));
+        }
+        else
+        {
+            context.FillRectangle(brush, new Rect(x, y, width, _cellHeight));
         }
     }
 
@@ -528,10 +1219,11 @@ public class TerminalControl : Control
         var buffer = TerminalBuffer;
         int columns = buffer?.Columns ?? _columns;
         int rows = buffer?.Rows ?? _rows;
-        int row = Math.Clamp((int)(point.Y / _cellHeight), 0, rows - 1);
-        int column = Math.Clamp((int)(point.X / _cellWidth), 0, columns - 1);
+        var contentPoint = point - GetContentRect(Bounds.Size).Position;
+        int row = Math.Clamp((int)(contentPoint.Y / _cellHeight), 0, rows - 1);
+        int column = Math.Clamp((int)(contentPoint.X / _cellWidth), 0, columns - 1);
 
-        if (includeCell && point.X >= column * _cellWidth + _cellWidth / 2)
+        if (includeCell && contentPoint.X >= column * _cellWidth + _cellWidth / 2)
             column++;
 
         return new CellPosition(row, column);
@@ -565,9 +1257,18 @@ public class TerminalControl : Control
         base.OnKeyDown(e);
 
         bool ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
+        bool alt = e.KeyModifiers.HasFlag(KeyModifiers.Alt);
+        bool useAltAsMeta = alt && (LeftAltAsMeta || RightAltAsMeta) && !(ctrl && CtrlAltAsAltGr);
+
+        if (e.Key == Key.Scroll)
+        {
+            _scrollLockActive = !_scrollLockActive;
+            e.Handled = true;
+            return;
+        }
 
         // Ctrl+key combinations
-        if (ctrl)
+        if (ctrl && !alt)
         {
             string? ctrlData = e.Key switch
             {
@@ -586,37 +1287,231 @@ public class TerminalControl : Control
 
             if (ctrlData != null)
             {
-                ScrollToBottom();
+                MaybeScrollToBottomForInput();
                 InputReceived?.Invoke(ctrlData);
                 e.Handled = true;
                 return;
             }
         }
 
-        string? data = e.Key switch
-        {
-            Key.Enter => "\r",
-            Key.Back => "\x7F",
-            Key.Tab => "\t",
-            Key.Escape => "\x1B",
-            Key.Up => "\x1B[A",
-            Key.Down => "\x1B[B",
-            Key.Right => "\x1B[C",
-            Key.Left => "\x1B[D",
-            Key.Home => "\x1B[H",
-            Key.End => "\x1B[F",
-            Key.Delete => "\x1B[3~",
-            Key.PageUp => "\x1B[5~",
-            Key.PageDown => "\x1B[6~",
-            _ => null
-        };
+        string? data = TryGetCustomKeySequence(e.Key)
+            ?? GetStandardKeySequence(e.Key, e.KeyModifiers);
+
+        if (data != null && useAltAsMeta)
+            data = "\x1B" + data;
 
         if (data != null)
         {
-            ScrollToBottom();
+            MaybeScrollToBottomForInput();
             InputReceived?.Invoke(data);
             e.Handled = true;
         }
+    }
+
+    private string? GetStandardKeySequence(Key key, KeyModifiers modifiers)
+    {
+        return key switch
+        {
+            Key.Enter => NewLineMode ? "\r\n" : "\r",
+            Key.Back => ResolveEraseSequence(BackspaceKeySequence),
+            Key.Tab => "\t",
+            Key.Escape => "\x1B",
+            Key.Up => GetCursorKeySequence('A', modifiers),
+            Key.Down => GetCursorKeySequence('B', modifiers),
+            Key.Right => GetCursorKeySequence('C', modifiers),
+            Key.Left => GetCursorKeySequence('D', modifiers),
+            Key.Home => UseRxvtHomeEnd ? "\x1B[7~" : "\x1B[H",
+            Key.End => UseRxvtHomeEnd ? "\x1B[8~" : "\x1B[F",
+            Key.Delete => ResolveEraseSequence(DeleteKeySequence),
+            Key.PageUp => "\x1B[5~",
+            Key.PageDown => "\x1B[6~",
+            Key.F1 => GetFunctionKeySequence(1),
+            Key.F2 => GetFunctionKeySequence(2),
+            Key.F3 => GetFunctionKeySequence(3),
+            Key.F4 => GetFunctionKeySequence(4),
+            Key.F5 => GetFunctionKeySequence(5),
+            Key.F6 => GetFunctionKeySequence(6),
+            Key.F7 => GetFunctionKeySequence(7),
+            Key.F8 => GetFunctionKeySequence(8),
+            Key.F9 => GetFunctionKeySequence(9),
+            Key.F10 => GetFunctionKeySequence(10),
+            Key.F11 => GetFunctionKeySequence(11),
+            Key.F12 => GetFunctionKeySequence(12),
+            Key.NumPad0 => GetNumericKeypadSequence("0", "Op"),
+            Key.NumPad1 => GetNumericKeypadSequence("1", "Oq"),
+            Key.NumPad2 => GetNumericKeypadSequence("2", "Or"),
+            Key.NumPad3 => GetNumericKeypadSequence("3", "Os"),
+            Key.NumPad4 => GetNumericKeypadSequence("4", "Ot"),
+            Key.NumPad5 => GetNumericKeypadSequence("5", "Ou"),
+            Key.NumPad6 => GetNumericKeypadSequence("6", "Ov"),
+            Key.NumPad7 => GetNumericKeypadSequence("7", "Ow"),
+            Key.NumPad8 => GetNumericKeypadSequence("8", "Ox"),
+            Key.NumPad9 => GetNumericKeypadSequence("9", "Oy"),
+            _ => null
+        };
+    }
+
+    private string GetCursorKeySequence(char suffix, KeyModifiers modifiers)
+    {
+        var shiftLimitsApplication = ShiftLimitsApplicationCursorMode && modifiers.HasFlag(KeyModifiers.Shift);
+        var applicationMode = UseApplicationCursorMode &&
+                              !shiftLimitsApplication &&
+                              (TerminalBuffer?.CursorKeyApplicationMode == true ||
+                               string.Equals(CursorKeyMode, "Application", StringComparison.OrdinalIgnoreCase));
+        return applicationMode ? $"\x1BO{suffix}" : $"\x1B[{suffix}";
+    }
+
+    private void MaybeScrollToBottomForInput()
+    {
+        if (ScrollToBottomOnInputOutput || ScrollToBottomByKey)
+            ScrollToBottom();
+    }
+
+    private string GetNumericKeypadSequence(string normal, string applicationSuffix)
+    {
+        var forceNormal = string.Equals(NumericKeypadMode, "ForceNormal", StringComparison.OrdinalIgnoreCase);
+        var applicationMode = !forceNormal &&
+                              (TerminalBuffer?.NumericKeypadApplicationMode == true ||
+                               string.Equals(NumericKeypadMode, "Application", StringComparison.OrdinalIgnoreCase));
+
+        return applicationMode ? "\x1B" + applicationSuffix : normal;
+    }
+
+    private static string ResolveEraseSequence(string? mode)
+    {
+        return mode?.Trim().ToUpperInvariant() switch
+        {
+            "ASCII127" => "\x7F",
+            "BACKSPACE" => "\x08",
+            _ => "\x1B[3~"
+        };
+    }
+
+    private string? GetFunctionKeySequence(int index)
+    {
+        var mode = KeyboardFunctionKeyMode?.Trim();
+        if (string.IsNullOrWhiteSpace(mode) || string.Equals(mode, "Default", StringComparison.OrdinalIgnoreCase))
+            mode = "XtermR6";
+
+        return mode.ToUpperInvariant() switch
+        {
+            "ESCN" => index is >= 1 and <= 12 ? $"\x1B[{index + 10}~" : null,
+            "LINUX" => GetLinuxFunctionKeySequence(index),
+            "VT400" => GetXtermFunctionKeySequence(index),
+            "VT100PLUS" => GetVt100FunctionKeySequence(index),
+            "SCO" => index is >= 1 and <= 12 ? "\x1B[" + (char)('M' + index - 1) : null,
+            _ => GetXtermFunctionKeySequence(index)
+        };
+    }
+
+    private static string? GetVt100FunctionKeySequence(int index)
+    {
+        return index switch
+        {
+            1 => "\x1BOP",
+            2 => "\x1BOQ",
+            3 => "\x1BOR",
+            4 => "\x1BOS",
+            _ => GetXtermFunctionKeySequence(index)
+        };
+    }
+
+    private static string? GetLinuxFunctionKeySequence(int index)
+    {
+        return index switch
+        {
+            1 => "\x1B[[A",
+            2 => "\x1B[[B",
+            3 => "\x1B[[C",
+            4 => "\x1B[[D",
+            5 => "\x1B[[E",
+            _ => GetXtermFunctionKeySequence(index)
+        };
+    }
+
+    private static string? GetXtermFunctionKeySequence(int index)
+    {
+        return index switch
+        {
+            1 => "\x1BOP",
+            2 => "\x1BOQ",
+            3 => "\x1BOR",
+            4 => "\x1BOS",
+            5 => "\x1B[15~",
+            6 => "\x1B[17~",
+            7 => "\x1B[18~",
+            8 => "\x1B[19~",
+            9 => "\x1B[20~",
+            10 => "\x1B[21~",
+            11 => "\x1B[23~",
+            12 => "\x1B[24~",
+            _ => null
+        };
+    }
+
+    private string? TryGetCustomKeySequence(Key key)
+    {
+        if (!string.Equals(KeyboardFunctionKeyMode, "UserCustom", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        var map = GetCustomKeyboardMap();
+        if (map == null)
+            return null;
+
+        return map.TryGetValue(key.ToString(), out var sequence) ? sequence : null;
+    }
+
+    private System.Collections.Generic.Dictionary<string, string>? GetCustomKeyboardMap()
+    {
+        var path = KeyboardMappingFile?.Trim();
+        if (string.IsNullOrWhiteSpace(path))
+            return null;
+
+        if (_customKeyboardMap != null && string.Equals(_loadedKeyboardMappingFile, path, StringComparison.OrdinalIgnoreCase))
+            return _customKeyboardMap;
+
+        _loadedKeyboardMappingFile = path;
+        _customKeyboardMap = new System.Collections.Generic.Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        try
+        {
+            if (!File.Exists(path))
+                return _customKeyboardMap;
+
+            foreach (var rawLine in File.ReadLines(path))
+            {
+                var line = rawLine.Split('#', 2)[0].Trim();
+                if (string.IsNullOrWhiteSpace(line))
+                    continue;
+
+                var separatorIndex = line.IndexOf('=');
+                if (separatorIndex <= 0)
+                    continue;
+
+                var keyName = line[..separatorIndex].Trim();
+                var sequence = DecodeKeySequence(line[(separatorIndex + 1)..].Trim());
+                if (!string.IsNullOrWhiteSpace(keyName))
+                    _customKeyboardMap[keyName] = sequence;
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error loading keyboard mapping file: {ex.Message}");
+        }
+
+        return _customKeyboardMap;
+    }
+
+    private static string DecodeKeySequence(string text)
+    {
+        return text
+            .Replace("\\e", "\x1B", StringComparison.OrdinalIgnoreCase)
+            .Replace("\\r", "\r", StringComparison.OrdinalIgnoreCase)
+            .Replace("\\n", "\n", StringComparison.OrdinalIgnoreCase)
+            .Replace("\\t", "\t", StringComparison.OrdinalIgnoreCase)
+            .Replace("\\x1b", "\x1B", StringComparison.OrdinalIgnoreCase)
+            .Replace("\\x7f", "\x7F", StringComparison.OrdinalIgnoreCase)
+            .Replace("\\x08", "\x08", StringComparison.OrdinalIgnoreCase);
     }
 
     private void ScrollToBottom()
@@ -637,12 +1532,27 @@ public class TerminalControl : Control
 
     private bool ShouldShowScrollbar(TerminalBuffer buffer)
     {
-        return buffer.ScrollbackCount > 0 && Bounds.Height > ScrollbarMinThumbHeight;
+        return buffer.ScrollbackCount > 0 && GetContentRect(Bounds.Size).Height > ScrollbarMinThumbHeight;
+    }
+
+    private Rect GetContentRect(Size size)
+    {
+        var padding = TerminalPadding;
+        var left = Math.Clamp(padding.Left, 0, Math.Max(0, size.Width));
+        var top = Math.Clamp(padding.Top, 0, Math.Max(0, size.Height));
+        var right = Math.Clamp(padding.Right, 0, Math.Max(0, size.Width - left));
+        var bottom = Math.Clamp(padding.Bottom, 0, Math.Max(0, size.Height - top));
+        return new Rect(
+            left,
+            top,
+            Math.Max(0, size.Width - left - right),
+            Math.Max(0, size.Height - top - bottom));
     }
 
     private Rect GetScrollbarTrackRect()
     {
-        return new Rect(Math.Max(0, Bounds.Width - ScrollbarWidth), 0, ScrollbarWidth, Bounds.Height);
+        var content = GetContentRect(Bounds.Size);
+        return new Rect(Math.Max(content.X, content.Right - ScrollbarWidth), content.Y, ScrollbarWidth, content.Height);
     }
 
     private Rect GetScrollbarThumbRect(TerminalBuffer buffer, Rect track)
@@ -691,7 +1601,8 @@ public class TerminalControl : Control
         var buffer = TerminalBuffer;
         var col = buffer?.CursorCol ?? _columns;
         var row = buffer?.CursorRow ?? _rows;
-        return new Rect(col * _cellWidth, row * _cellHeight, _cellWidth, _cellHeight);
+        var content = GetContentRect(Bounds.Size);
+        return new Rect(content.X + col * _cellWidth, content.Y + row * _cellHeight, _cellWidth, _cellHeight);
     }
 
     private sealed class TerminalTextInputMethodClient : TextInputMethodClient

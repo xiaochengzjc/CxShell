@@ -12,6 +12,10 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using AtomUI.Theme.Styling;
 using ChiXueSsh.ViewModels;
+using AtomButton = AtomUI.Desktop.Controls.Button;
+using AtomPopup = AtomUI.Desktop.Controls.Popup;
+using AtomTextBox = AtomUI.Desktop.Controls.TextBox;
+using AtomWindow = AtomUI.Desktop.Controls.Window;
 
 namespace ChiXueSsh.Views;
 
@@ -254,7 +258,7 @@ public partial class SftpPanelView : UserControl
     private void ShowFileContextMenu(Border anchor, Models.SftpFileItem item, SftpViewModel vm)
     {
         // 用 Popup + StackPanel 完全绕开 AtomUI ContextMenu
-        var popup = new Avalonia.Controls.Primitives.Popup
+        var popup = new AtomPopup
         {
             PlacementTarget = anchor,
             Placement = Avalonia.Controls.PlacementMode.Pointer,
@@ -270,7 +274,7 @@ public partial class SftpPanelView : UserControl
 
         void AddItem(string text, Action action)
         {
-            var btn = new Button
+            var btn = new AtomButton
             {
                 Content = text,
                 Background = Brushes.Transparent,
@@ -338,7 +342,7 @@ public partial class SftpPanelView : UserControl
     private static async Task<bool> ShowConfirmWindow(Window owner, string message)
     {
         var result = false;
-        var dialog = new Window
+        var dialog = new AtomWindow
         {
             Title = "确认",
             Width = 360,
@@ -358,9 +362,9 @@ public partial class SftpPanelView : UserControl
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right
         };
 
-        var okBtn = new Button { Content = "确认", Width = 70 };
+        var okBtn = new AtomButton { Content = "确认", Width = 70 };
         okBtn.Click += (_, _) => { result = true; dialog.Close(); };
-        var cancelBtn = new Button { Content = "取消", Width = 70 };
+        var cancelBtn = new AtomButton { Content = "取消", Width = 70 };
         cancelBtn.Click += (_, _) => dialog.Close();
 
         btnPanel.Children.Add(okBtn);
@@ -375,7 +379,7 @@ public partial class SftpPanelView : UserControl
     private static async Task<string?> ShowInputWindow(Window owner, string title, string defaultValue)
     {
         string? result = null;
-        var dialog = new Window
+        var dialog = new AtomWindow
         {
             Title = title,
             Width = 360,
@@ -392,7 +396,7 @@ public partial class SftpPanelView : UserControl
             FontSize = 13,
             Foreground = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorTextSecondary, Color.Parse("#666666")))
         };
-        var input = new TextBox { Text = defaultValue, FontSize = 13 };
+        var input = new AtomTextBox { Text = defaultValue, FontSize = 13 };
         panel.Children.Add(label);
 
         // 窗口显示后聚焦并全选，方便用户直接输入
@@ -409,9 +413,9 @@ public partial class SftpPanelView : UserControl
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right
         };
 
-        var okBtn = new Button { Content = "确认", Width = 70 };
+        var okBtn = new AtomButton { Content = "确认", Width = 70 };
         okBtn.Click += (_, _) => { result = input.Text; dialog.Close(); };
-        var cancelBtn = new Button { Content = "取消", Width = 70 };
+        var cancelBtn = new AtomButton { Content = "取消", Width = 70 };
         cancelBtn.Click += (_, _) => dialog.Close();
 
         // 回车确认

@@ -65,16 +65,16 @@
                                                Text="{Binding Label}"
                                                FontSize="10" Foreground="{atom:SharedTokenResource ColorTextSecondary}"
                                                VerticalAlignment="Center"/>
-                                    <ProgressBar Grid.Column="1"
-                                                 Value="{Binding UsagePercent}"
-                                                 Minimum="0" Maximum="100"
-                                                 Height="6"
-                                                 VerticalAlignment="Center"
-                                                 Margin="4,0">
-                                        <ProgressBar.Foreground>
+                                    <atom:ProgressBar Grid.Column="1"
+                                                      Value="{Binding UsagePercent}"
+                                                      Minimum="0" Maximum="100"
+                                                      Height="6"
+                                                      VerticalAlignment="Center"
+                                                      Margin="4,0">
+                                        <atom:ProgressBar.Foreground>
                                             <SolidColorBrush Color="{Binding UsagePercent, Converter={x:Static controls:CpuColorConverter.Instance}}"/>
-                                        </ProgressBar.Foreground>
-                                    </ProgressBar>
+                                        </atom:ProgressBar.Foreground>
+                                    </atom:ProgressBar>
                                     <TextBlock Grid.Column="2"
                                                FontSize="10" Foreground="{atom:SharedTokenResource ColorTextSecondary}"
                                                VerticalAlignment="Center"
@@ -202,13 +202,13 @@
                                             </TextBlock.Text>
                                         </TextBlock>
                                     </Grid>
-                                    <ProgressBar Value="{Binding UsagePercent}"
-                                                 Minimum="0" Maximum="100"
-                                                 Height="4">
-                                        <ProgressBar.Foreground>
+                                    <atom:ProgressBar Value="{Binding UsagePercent}"
+                                                      Minimum="0" Maximum="100"
+                                                      Height="4">
+                                        <atom:ProgressBar.Foreground>
                                             <SolidColorBrush Color="{Binding UsagePercent, Converter={x:Static controls:DiskColorConverter.Instance}}"/>
-                                        </ProgressBar.Foreground>
-                                    </ProgressBar>
+                                        </atom:ProgressBar.Foreground>
+                                    </atom:ProgressBar>
                                 </StackPanel>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>

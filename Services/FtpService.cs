@@ -25,7 +25,10 @@ public sealed class FtpService : IFileTransferService, IDisposable
             throw new NotSupportedException("FTP does not support private key authentication.");
 
         var credentials = new NetworkCredential(session.Username, password ?? string.Empty);
-        _client = new AsyncFtpClient(session.Host, credentials, session.Port);
+        var port = session.AdvancedFtpPort is >= 1 and <= 65535
+            ? session.AdvancedFtpPort
+            : session.Port;
+        _client = new AsyncFtpClient(session.Host, credentials, port);
 
         try
         {

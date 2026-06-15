@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Text.Json.Serialization;
 
 namespace ChiXueSsh.Models;
@@ -122,6 +123,46 @@ public class SshTunnelRule
         : $"{DestinationHost}:{DestinationPort}";
 }
 
+public class LoginScriptRule
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Expect { get; set; } = string.Empty;
+    public string Send { get; set; } = string.Empty;
+    public bool HideText { get; set; }
+    public int SortOrder { get; set; }
+}
+
+public class HighlightRule
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public bool IsEnabled { get; set; } = true;
+    public string Keyword { get; set; } = string.Empty;
+    public bool IsCaseSensitive { get; set; }
+    public bool IsRegex { get; set; }
+    public string Description { get; set; } = string.Empty;
+    public string ForegroundColor { get; set; } = "#000000";
+    public string BackgroundColor { get; set; } = "#FFFF40";
+    public bool UseTerminalColor { get; set; }
+    public bool Bold { get; set; } = true;
+    public bool Italic { get; set; }
+    public bool Underline { get; set; }
+    public bool Strikethrough { get; set; }
+    public int SortOrder { get; set; }
+
+    [JsonIgnore]
+    public string Preview => "Highlight";
+}
+
+public class HighlightSet
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Name { get; set; } = string.Empty;
+    public ObservableCollection<HighlightRule> Rules { get; set; } = new();
+
+    [JsonIgnore]
+    public string DisplayName => string.IsNullOrWhiteSpace(Name) ? "Highlight Set" : Name;
+}
+
 public class SessionInfo
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -150,6 +191,100 @@ public class SessionInfo
     public int IdleStringIntervalSeconds { get; set; }
     public string IdleString { get; set; } = string.Empty;
     public bool TcpKeepAlive { get; set; }
+    public string TerminalType { get; set; } = "xterm";
+    public int TerminalColumns { get; set; } = 80;
+    public int TerminalRows { get; set; } = 24;
+    public bool TerminalFixedSize { get; set; }
+    public bool TerminalResetSizeOnConnect { get; set; } = true;
+    public int TerminalScrollbackSize { get; set; } = 1024;
+    public bool TerminalPushClearedScreenToScrollback { get; set; } = true;
+    public string TerminalEncoding { get; set; } = "utf-8";
+    public bool TerminalTreatAmbiguousAsWide { get; set; }
+    public string TerminalSendLineEnding { get; set; } = "CR";
+    public string TerminalReceiveLineEnding { get; set; } = "CRLF";
+    public string TerminalKeyboardFunctionKeyMode { get; set; } = "Default";
+    public string TerminalKeyboardMappingFile { get; set; } = string.Empty;
+    public string TerminalDeleteKeySequence { get; set; } = "VT220";
+    public string TerminalBackspaceKeySequence { get; set; } = "Backspace";
+    public bool TerminalLeftAltAsMeta { get; set; }
+    public bool TerminalRightAltAsMeta { get; set; }
+    public bool TerminalCtrlAltAsAltGr { get; set; } = true;
+    public bool TerminalVtAutoWrapMode { get; set; } = true;
+    public bool TerminalVtOriginMode { get; set; }
+    public bool TerminalVtReverseVideoMode { get; set; }
+    public bool TerminalVtNewLineMode { get; set; }
+    public bool TerminalVtInsertMode { get; set; }
+    public bool TerminalVtEchoMode { get; set; }
+    public string TerminalVtCursorKeyMode { get; set; } = "Normal";
+    public string TerminalVtNumericKeypadMode { get; set; } = "Normal";
+    public bool TerminalAdvancedUseApplicationCursorMode { get; set; } = true;
+    public bool TerminalAdvancedShiftLimitsApplicationCursorMode { get; set; } = true;
+    public bool TerminalAdvancedClearScreenBackground { get; set; } = true;
+    public bool TerminalAdvancedScrollToBottomOnInputOutput { get; set; } = true;
+    public bool TerminalAdvancedSuspendScrollToBottomOnScrollLock { get; set; }
+    public bool TerminalAdvancedScrollToBottomByKey { get; set; }
+    public bool TerminalAdvancedDuplicateSessionCd { get; set; } = true;
+    public string TerminalAdvancedPreinputString { get; set; } = string.Empty;
+    public bool TerminalAdvancedUseRxvtHomeEnd { get; set; }
+    public bool TerminalAdvancedDisableBlinkingText { get; set; }
+    public bool TerminalAdvancedDisableTitleChange { get; set; }
+    public bool TerminalAdvancedDisableTerminalPrint { get; set; }
+    public bool TerminalAdvancedDisableAlternateScreen { get; set; }
+    public bool TerminalAdvancedIgnoreResizeRequest { get; set; } = true;
+    public string TerminalAdvancedAnswerback { get; set; } = "CxShell";
+    public bool TerminalAdvancedUseBuiltinLineDrawing { get; set; } = true;
+    public bool TerminalAdvancedUseBuiltinPowerline { get; set; } = true;
+    public string AppearanceColorScheme { get; set; } = "XTerm";
+    public string AppearanceForegroundColor { get; set; } = "#CCCCCC";
+    public string AppearanceBoldForegroundColor { get; set; } = "#33FF33";
+    public string AppearanceBackgroundColor { get; set; } = "#000000";
+    public string AppearanceAnsiColors { get; set; } = "#000000;#CC0000;#4E9A06;#C4A000;#3465A4;#75507B;#06989A;#D3D7CF;#555753;#EF2929;#8AE234;#FCE94F;#729FCF;#AD7FA8;#34E2E2;#EEEEEC";
+    public string AppearanceFontFamily { get; set; } = "DejaVu Sans Mono";
+    public string AppearanceFontStyle { get; set; } = "Normal";
+    public int AppearanceFontSize { get; set; } = 14;
+    public string AppearanceCjkFontFamily { get; set; } = "DejaVu Sans Mono";
+    public string AppearanceCjkFontStyle { get; set; } = "Normal";
+    public int AppearanceCjkFontSize { get; set; } = 14;
+    public bool AppearanceUseVariablePitchFont { get; set; }
+    public string AppearanceFontQuality { get; set; } = "Default";
+    public string AppearanceBoldTextMode { get; set; } = "ColorAndFont";
+    public string AppearanceCursorColor { get; set; } = "#00FF00";
+    public string AppearanceCursorTextColor { get; set; } = "#000000";
+    public bool AppearanceUseBlinkingCursor { get; set; }
+    public int AppearanceCursorBlinkSpeedMilliseconds { get; set; } = 500;
+    public string AppearanceCursorShape { get; set; } = "Block";
+    public int AppearanceWindowPaddingTop { get; set; } = 5;
+    public int AppearanceWindowPaddingBottom { get; set; } = 5;
+    public int AppearanceWindowPaddingLeft { get; set; } = 5;
+    public int AppearanceWindowPaddingRight { get; set; } = 5;
+    public int AppearanceLineSpacing { get; set; }
+    public int AppearanceCharacterSpacing { get; set; }
+    public string AppearanceTabColorMode { get; set; } = "Default";
+    public string AppearanceTabCustomColor { get; set; } = "#000000";
+    public string AppearanceBackgroundImagePath { get; set; } = string.Empty;
+    public string AppearanceBackgroundImagePosition { get; set; } = "Center";
+    public string AppearanceHighlightSetId { get; set; } = "None";
+    public ObservableCollection<HighlightSet> AppearanceHighlightSets { get; set; } = new();
+    public string AdvancedQuickCommandSet { get; set; } = "<<所有命令>>";
+    public bool AdvancedDisableQuickCommandShortcuts { get; set; }
+    public int AdvancedFtpPort { get; set; } = 21;
+    public int AdvancedCharacterDelayMilliseconds { get; set; }
+    public bool AdvancedUseLineDelay { get; set; } = true;
+    public int AdvancedLineDelayMilliseconds { get; set; }
+    public bool AdvancedUsePromptDelay { get; set; }
+    public string AdvancedPromptText { get; set; } = string.Empty;
+    public int AdvancedPromptMaxWaitMilliseconds { get; set; }
+    public bool AdvancedUseNagle { get; set; }
+    public string AdvancedIpVersion { get; set; } = "Auto";
+    public bool AdvancedTraceSshProtocol { get; set; }
+    public bool AdvancedTraceSshTunneling { get; set; }
+    public bool AdvancedTraceSshPackets { get; set; }
+    public bool AdvancedTraceTelnetOptions { get; set; }
+    public bool EnableLoginScriptRules { get; set; } = true;
+    public List<LoginScriptRule> LoginScriptRules { get; set; } = new();
+    public bool RunLoginScriptFile { get; set; }
+    public string LoginScriptFilePath { get; set; } = string.Empty;
+    public string LoginScriptParameters { get; set; } = string.Empty;
     public string SshRemoteCommand { get; set; } = string.Empty;
     public string SshVersionPolicy { get; set; } = "Ssh2Only";
     public bool SshUseXagent { get; set; }

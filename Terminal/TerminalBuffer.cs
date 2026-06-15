@@ -16,6 +16,27 @@ public class TerminalBuffer
     public int CursorRow { get; set; }
     public int CursorCol { get; set; }
     public bool CursorVisible { get; set; } = true;
+    public bool PushClearedScreenToScrollback { get; set; } = true;
+    public bool TreatAmbiguousAsWide { get; set; }
+    public bool AutoWrapMode { get; set; } = true;
+    public bool OriginMode { get; set; }
+    public bool ReverseVideoMode { get; set; }
+    public bool NewLineMode { get; set; }
+    public bool InsertMode { get; set; }
+    public bool CursorKeyApplicationMode { get; set; }
+    public bool NumericKeypadApplicationMode { get; set; }
+    public bool ClearScreenWithDefaultBackground { get; set; } = true;
+    public bool DisableAlternateScreen { get; set; }
+    public bool DisableBlinkingText { get; set; }
+    public bool DisableTitleChange { get; set; }
+    public bool DisableTerminalPrint { get; set; }
+    public bool IgnoreResizeRequest { get; set; } = true;
+    public bool UseBuiltinLineDrawing { get; set; } = true;
+    public bool UseBuiltinPowerline { get; set; } = true;
+    public Color DefaultForegroundColor { get; set; } = TerminalColors.DefaultForeground;
+    public Color DefaultBackgroundColor { get; set; } = TerminalColors.DefaultBackground;
+    public Color BoldForegroundColor { get; set; } = Color.Parse("#33FF33");
+    public Color[] AnsiColors { get; set; } = TerminalColors.Standard16.ToArray();
 
     public HashSet<int> DirtyRows { get; } = new();
 
@@ -24,15 +45,62 @@ public class TerminalBuffer
     public Color CurrentBackground { get; set; } = TerminalColors.DefaultBackground;
     public bool CurrentBold { get; set; }
     public bool CurrentUnderline { get; set; }
+    public bool CurrentBlinking { get; set; }
 
     public event Action? Changed;
 
-    public TerminalBuffer(int columns = 80, int rows = 24, int maxScrollback = 10000)
+    public TerminalBuffer(
+        int columns = 80,
+        int rows = 24,
+        int maxScrollback = 10000,
+        bool pushClearedScreenToScrollback = true,
+        bool treatAmbiguousAsWide = false,
+        bool autoWrapMode = true,
+        bool originMode = false,
+        bool reverseVideoMode = false,
+        bool newLineMode = false,
+        bool insertMode = false,
+        bool cursorKeyApplicationMode = false,
+        bool numericKeypadApplicationMode = false,
+        bool clearScreenWithDefaultBackground = true,
+        bool disableAlternateScreen = false,
+        bool disableBlinkingText = false,
+        bool disableTitleChange = false,
+        bool disableTerminalPrint = false,
+        bool ignoreResizeRequest = true,
+        bool useBuiltinLineDrawing = true,
+        bool useBuiltinPowerline = true,
+        Color? defaultForegroundColor = null,
+        Color? defaultBackgroundColor = null,
+        Color? boldForegroundColor = null,
+        Color[]? ansiColors = null)
     {
         Columns = columns;
         Rows = rows;
         _maxScrollback = maxScrollback;
+        PushClearedScreenToScrollback = pushClearedScreenToScrollback;
+        TreatAmbiguousAsWide = treatAmbiguousAsWide;
+        AutoWrapMode = autoWrapMode;
+        OriginMode = originMode;
+        ReverseVideoMode = reverseVideoMode;
+        NewLineMode = newLineMode;
+        InsertMode = insertMode;
+        CursorKeyApplicationMode = cursorKeyApplicationMode;
+        NumericKeypadApplicationMode = numericKeypadApplicationMode;
+        ClearScreenWithDefaultBackground = clearScreenWithDefaultBackground;
+        DisableAlternateScreen = disableAlternateScreen;
+        DisableBlinkingText = disableBlinkingText;
+        DisableTitleChange = disableTitleChange;
+        DisableTerminalPrint = disableTerminalPrint;
+        IgnoreResizeRequest = ignoreResizeRequest;
+        UseBuiltinLineDrawing = useBuiltinLineDrawing;
+        UseBuiltinPowerline = useBuiltinPowerline;
+        DefaultForegroundColor = defaultForegroundColor ?? TerminalColors.DefaultForeground;
+        DefaultBackgroundColor = defaultBackgroundColor ?? TerminalColors.DefaultBackground;
+        BoldForegroundColor = boldForegroundColor ?? Color.Parse("#33FF33");
+        AnsiColors = ansiColors is { Length: >= 16 } ? ansiColors.Take(16).ToArray() : TerminalColors.Standard16.ToArray();
         _cells = new TerminalCell[rows, columns];
+        ResetAttributes();
         Clear();
     }
 
@@ -75,14 +143,31 @@ public class TerminalBuffer
 
         if (CursorCol >= Columns)
         {
-            CursorCol = 0;
-            LineFeed();
+            if (AutoWrapMode)
+            {
+                CursorCol = 0;
+                LineFeed();
+            }
+            else
+            {
+                CursorCol = Columns - 1;
+            }
         }
         if (width == 2 && CursorCol == Columns - 1)
         {
-            CursorCol = 0;
-            LineFeed();
+            if (AutoWrapMode)
+            {
+                CursorCol = 0;
+                LineFeed();
+            }
+            else
+            {
+                width = 1;
+            }
         }
+
+        if (InsertMode)
+            InsertBlankCharacters(width);
 
         ClearWideContext(CursorRow, CursorCol);
         _cells[CursorRow, CursorCol] = new TerminalCell
@@ -92,6 +177,7 @@ public class TerminalBuffer
             Background = CurrentBackground,
             Bold = CurrentBold,
             Underline = CurrentUnderline,
+            Blinking = CurrentBlinking,
             IsWideContinuation = false
         };
         if (width == 2 && CursorCol + 1 < Columns)
@@ -104,12 +190,13 @@ public class TerminalBuffer
                 Background = CurrentBackground,
                 Bold = CurrentBold,
                 Underline = CurrentUnderline,
+                Blinking = CurrentBlinking,
                 IsWideContinuation = true
             };
         }
 
         DirtyRows.Add(CursorRow);
-        CursorCol += width;
+        CursorCol = AutoWrapMode ? CursorCol + width : Math.Min(Columns - 1, CursorCol + width);
     }
 
     private void ClearWideContext(int row, int col)
@@ -118,15 +205,15 @@ public class TerminalBuffer
             return;
 
         if (_cells[row, col].IsWideContinuation && col > 0)
-            _cells[row, col - 1] = TerminalCell.Default;
+            _cells[row, col - 1] = CreateClearedCell();
 
         if (col + 1 < Columns && _cells[row, col + 1].IsWideContinuation)
-            _cells[row, col + 1] = TerminalCell.Default;
+            _cells[row, col + 1] = CreateClearedCell();
 
-        _cells[row, col] = TerminalCell.Default;
+        _cells[row, col] = CreateClearedCell();
     }
 
-    private static int GetDisplayWidth(char c)
+    private int GetDisplayWidth(char c)
     {
         var category = CharUnicodeInfo.GetUnicodeCategory(c);
         if (category is UnicodeCategory.NonSpacingMark
@@ -134,7 +221,7 @@ public class TerminalBuffer
             or UnicodeCategory.Format)
             return 0;
 
-        return IsWideCharacter(c) ? 2 : 1;
+        return IsWideCharacter(c) || TreatAmbiguousAsWide && IsAmbiguousWidthCharacter(c) ? 2 : 1;
     }
 
     private static bool IsWideCharacter(char c)
@@ -151,8 +238,38 @@ public class TerminalBuffer
             || code >= 0xFFE0 && code <= 0xFFE6;
     }
 
+    private static bool IsAmbiguousWidthCharacter(char c)
+    {
+        var code = c;
+        return code >= 0x00A1 && code <= 0x00FF
+            || code >= 0x0101 && code <= 0x0111
+            || code >= 0x0113 && code <= 0x11FF
+            || code >= 0x2010 && code <= 0x2027
+            || code >= 0x2030 && code <= 0x205E
+            || code >= 0x2070 && code <= 0x209F
+            || code >= 0x20A0 && code <= 0x20CF
+            || code >= 0x2100 && code <= 0x214F
+            || code >= 0x2150 && code <= 0x218F
+            || code >= 0x2190 && code <= 0x21FF
+            || code >= 0x2200 && code <= 0x22FF
+            || code >= 0x2300 && code <= 0x23FF
+            || code >= 0x2460 && code <= 0x24FF
+            || code >= 0x2500 && code <= 0x257F
+            || code >= 0x2580 && code <= 0x259F
+            || code >= 0x25A0 && code <= 0x25FF
+            || code >= 0x2600 && code <= 0x26FF
+            || code >= 0x2700 && code <= 0x27BF
+            || code >= 0x2900 && code <= 0x297F
+            || code >= 0x2980 && code <= 0x29FF
+            || code >= 0x2B00 && code <= 0x2BFF
+            || code >= 0xE000 && code <= 0xF8FF;
+    }
+
     public void LineFeed()
     {
+        if (NewLineMode)
+            CarriageReturn();
+
         CursorRow++;
         if (CursorRow >= Rows)
         {
@@ -186,17 +303,7 @@ public class TerminalBuffer
     public void ScrollUp()
     {
         // Save top row to scroll back
-        if (_scrollback.Count >= _maxScrollback)
-        {
-            _scrollback.RemoveAt(0);
-        }
-
-        var topRow = new TerminalCell[Columns];
-        for (int c = 0; c < Columns; c++)
-        {
-            topRow[c] = _cells[0, c];
-        }
-        _scrollback.Add(topRow);
+        AddScrollbackRow(0, includeBlank: true);
 
         // Shift all rows up
         for (int r = 0; r < Rows - 1; r++)
@@ -211,7 +318,7 @@ public class TerminalBuffer
         // Clear bottom row
         for (int c = 0; c < Columns; c++)
         {
-            _cells[Rows - 1, c] = TerminalCell.Default;
+            _cells[Rows - 1, c] = CreateClearedCell();
         }
         DirtyRows.Add(Rows - 1);
         Changed?.Invoke();
@@ -230,24 +337,74 @@ public class TerminalBuffer
 
         for (int c = 0; c < Columns; c++)
         {
-            _cells[0, c] = TerminalCell.Default;
+            _cells[0, c] = CreateClearedCell();
         }
         DirtyRows.Add(0);
         Changed?.Invoke();
     }
 
-    public void ClearScreen()
+    public void ClearScreen(bool clearScrollback = false)
+    {
+        if (clearScrollback)
+            _scrollback.Clear();
+        else if (PushClearedScreenToScrollback)
+            PushVisibleScreenToScrollback();
+
+        ClearScreenCells();
+    }
+
+    private void ClearScreenCells()
     {
         for (int r = 0; r < _cells.GetLength(0); r++)
         {
             for (int c = 0; c < _cells.GetLength(1); c++)
             {
-                _cells[r, c] = TerminalCell.Default;
+                _cells[r, c] = CreateClearedCell();
             }
             if (r < Rows)
                 DirtyRows.Add(r);
         }
         Changed?.Invoke();
+    }
+
+    private void PushVisibleScreenToScrollback()
+    {
+        for (var row = 0; row < Rows; row++)
+            AddScrollbackRow(row, includeBlank: false);
+    }
+
+    private void AddScrollbackRow(int row, bool includeBlank)
+    {
+        if (_maxScrollback <= 0 || row < 0 || row >= Rows)
+            return;
+
+        if (!includeBlank && IsRowBlank(row))
+            return;
+
+        if (_scrollback.Count >= _maxScrollback)
+            _scrollback.RemoveAt(0);
+
+        var scrollbackRow = new TerminalCell[Columns];
+        for (int c = 0; c < Columns; c++)
+            scrollbackRow[c] = _cells[row, c];
+
+        _scrollback.Add(scrollbackRow);
+    }
+
+    private bool IsRowBlank(int row)
+    {
+        for (var c = 0; c < Columns; c++)
+        {
+            var cell = _cells[row, c];
+            if (cell.Character != ' ' ||
+                cell.Background != TerminalColors.DefaultBackground ||
+                cell.IsWideContinuation)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public void ClearLine()
@@ -256,7 +413,7 @@ public class TerminalBuffer
         {
             for (int c = 0; c < Columns; c++)
             {
-                _cells[CursorRow, c] = TerminalCell.Default;
+                _cells[CursorRow, c] = CreateClearedCell();
             }
             DirtyRows.Add(CursorRow);
         }
@@ -272,7 +429,7 @@ public class TerminalBuffer
 
             for (int c = startCol; c < Columns; c++)
             {
-                _cells[CursorRow, c] = TerminalCell.Default;
+                _cells[CursorRow, c] = CreateClearedCell();
             }
             DirtyRows.Add(CursorRow);
         }
@@ -289,7 +446,7 @@ public class TerminalBuffer
             endCol++;
 
         for (int c = startCol; c < endCol; c++)
-            _cells[CursorRow, c] = TerminalCell.Default;
+            _cells[CursorRow, c] = CreateClearedCell();
 
         DirtyRows.Add(CursorRow);
     }
@@ -305,7 +462,7 @@ public class TerminalBuffer
             _cells[CursorRow, c] = _cells[CursorRow, c - count];
 
         for (int c = startCol; c < Math.Min(Columns, startCol + count); c++)
-            _cells[CursorRow, c] = TerminalCell.Default;
+            _cells[CursorRow, c] = CreateClearedCell();
 
         RepairWideBoundaries(CursorRow);
         DirtyRows.Add(CursorRow);
@@ -327,7 +484,7 @@ public class TerminalBuffer
             _cells[CursorRow, destCol++] = _cells[CursorRow, sourceCol++];
 
         while (destCol < Columns)
-            _cells[CursorRow, destCol++] = TerminalCell.Default;
+            _cells[CursorRow, destCol++] = CreateClearedCell();
 
         RepairWideBoundaries(CursorRow);
         DirtyRows.Add(CursorRow);
@@ -347,18 +504,18 @@ public class TerminalBuffer
             return;
 
         if (_cells[row, 0].IsWideContinuation)
-            _cells[row, 0] = TerminalCell.Default;
+            _cells[row, 0] = CreateClearedCell();
 
         for (var col = 1; col < Columns; col++)
         {
             if (_cells[row, col].IsWideContinuation && _cells[row, col - 1].IsWideContinuation)
-                _cells[row, col] = TerminalCell.Default;
+                _cells[row, col] = CreateClearedCell();
         }
 
         if (Columns > 1 && _cells[row, Columns - 1].IsWideContinuation)
         {
-            _cells[row, Columns - 2] = TerminalCell.Default;
-            _cells[row, Columns - 1] = TerminalCell.Default;
+            _cells[row, Columns - 2] = CreateClearedCell();
+            _cells[row, Columns - 1] = CreateClearedCell();
         }
     }
 
@@ -369,7 +526,7 @@ public class TerminalBuffer
         {
             for (int c = 0; c < Columns; c++)
             {
-                _cells[r, c] = TerminalCell.Default;
+                _cells[r, c] = CreateClearedCell();
             }
             DirtyRows.Add(r);
         }
@@ -416,7 +573,7 @@ public class TerminalBuffer
         {
             for (int c = 0; c < allocatedColumns; c++)
             {
-                newCells[r, c] = TerminalCell.Default;
+                newCells[r, c] = CreateClearedCell();
             }
         }
 
@@ -455,21 +612,61 @@ public class TerminalBuffer
         {
             for (int c = 0; c < _cells.GetLength(1); c++)
             {
-                _cells[r, c] = TerminalCell.Default;
+                _cells[r, c] = CreateClearedCell();
             }
         }
         CursorRow = 0;
         CursorCol = 0;
+        _scrollback.Clear();
         for (int r = 0; r < Rows; r++)
             DirtyRows.Add(r);
     }
 
     public void ResetAttributes()
     {
-        CurrentForeground = TerminalColors.DefaultForeground;
-        CurrentBackground = TerminalColors.DefaultBackground;
+        CurrentForeground = DefaultForegroundColor;
+        CurrentBackground = DefaultBackgroundColor;
         CurrentBold = false;
         CurrentUnderline = false;
+        CurrentBlinking = false;
+    }
+
+    public Color GetAnsiColor(int index)
+    {
+        return index >= 0 && index < AnsiColors.Length
+            ? AnsiColors[index]
+            : TerminalColors.Get256Color(index);
+    }
+
+    private TerminalCell CreateClearedCell()
+    {
+        if (ClearScreenWithDefaultBackground)
+            return CreateDefaultCell();
+
+        return new TerminalCell
+        {
+            Character = ' ',
+            Foreground = DefaultForegroundColor,
+            Background = CurrentBackground,
+            Bold = false,
+            Underline = false,
+            Blinking = false,
+            IsWideContinuation = false
+        };
+    }
+
+    public TerminalCell CreateDefaultCell()
+    {
+        return new TerminalCell
+        {
+            Character = ' ',
+            Foreground = DefaultForegroundColor,
+            Background = DefaultBackgroundColor,
+            Bold = false,
+            Underline = false,
+            Blinking = false,
+            IsWideContinuation = false
+        };
     }
 
     public int ScrollbackCount => _scrollback.Count;

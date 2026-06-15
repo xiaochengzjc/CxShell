@@ -144,8 +144,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (!IsSftpVisible) return;
         if (tab == null ||
             !tab.Terminal.IsConnected ||
-            tab.Session.Protocol != SessionProtocol.SSH ||
-            tab.Session.SshDoNotStartFileManager)
+            tab.Session.Protocol != SessionProtocol.SSH)
         {
             Sftp.StopBrowsing();
             return;
@@ -406,7 +405,7 @@ public partial class MainWindowViewModel : ObservableObject
                 Monitor.SwitchConnection(tab.Session, tab.ConnectedPassword);
 
             // 濠碘€冲€归悘?SFTP 闂傚牄鍨哄妯侯啅閸欏鈪电€殿喒鍋撻柨娑樼灱閻濇盯宕＄€圭姷绠鹃柟?
-            if (IsSftpVisible && tab.Session.Protocol == SessionProtocol.SSH && !tab.Session.SshDoNotStartFileManager)
+            if (IsSftpVisible && tab.Session.Protocol == SessionProtocol.SSH)
                 Sftp.SwitchConnection(tab.Session, tab.ConnectedPassword);
         }
         catch (Exception ex)
@@ -569,7 +568,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private async Task<string?> ShowPasswordDialog(SessionInfo session)
     {
-        var dialog = new Window
+        var dialog = new AtomUI.Desktop.Controls.Window
         {
             Title = $"Enter password - {session.Name}",
             Width = 460,

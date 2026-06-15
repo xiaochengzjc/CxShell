@@ -23,9 +23,11 @@ public class SshConnectionService : ITerminalConnectionService
     private CancellationTokenSource? _readCts;
     private Task? _readTask;
     private readonly object _writeLock = new();
-    private readonly Decoder _utf8Decoder = Encoding.UTF8.GetDecoder();
+    private Encoding _terminalEncoding = Encoding.UTF8;
+    private Decoder _terminalDecoder = Encoding.UTF8.GetDecoder();
+    private SessionInfo? _session;
     private const string Utf8LocaleBootstrapCommand =
-        "unset LC_ALL; [ \"${LANG:-C}\" = C ] && LANG=en_US.UTF-8; export LANG; export LC_CTYPE=$LANG; clear\r";
+        "unset LC_ALL; [ \"${LANG:-C}\" = C ] && LANG=en_US.UTF-8; export LANG; export LC_CTYPE=$LANG; clear; history -d $((HISTCMD-1)) 2>/dev/null\r";
 
     public bool IsConnected => _sshClient?.IsConnected ?? false;
 
@@ -42,6 +44,9 @@ public class SshConnectionService : ITerminalConnectionService
     {
         Disconnect();
         _x11StatusMessage = null;
+        _session = session;
+        _terminalEncoding = TerminalSessionOptions.GetEncoding(session);
+        _terminalDecoder = _terminalEncoding.GetDecoder();
 
         if (string.Equals(session.SshVersionPolicy, "Ssh1Only", StringComparison.OrdinalIgnoreCase))
             throw new NotSupportedException("SSH1 is not supported. Please select SSH2 or a mixed SSH policy.");
@@ -63,28 +68,34 @@ public class SshConnectionService : ITerminalConnectionService
 
         try
         {
+            TraceSshProtocol($"connecting to {session.Username}@{session.Host}:{session.Port}");
             await Task.Run(() => _sshClient.Connect(), cancellationToken);
+            TraceSshProtocol($"connected; SSH version policy={session.SshVersionPolicy}, auth={session.AuthMethod}");
             StartForwardedPorts(session);
             StartX11Forwarding(session);
 
+            TraceSshProtocol(session.SshNoTerminal
+                ? "opening shell channel without PTY"
+                : $"requesting PTY terminal={TerminalSessionOptions.GetTerminalType(session)}, size={columns}x{rows}");
             _shellStream = session.SshNoTerminal
                 ? _sshClient.CreateShellStreamNoTerminal(65536)
                 : _sshClient.CreateShellStream(
-                    "xterm-256color",
+                    TerminalSessionOptions.GetTerminalType(session),
                     (uint)columns, (uint)rows,
                     GetPixelWidth(columns), GetPixelHeight(rows), 65536);
 
             if (session.SshForwardAgent)
             {
+                TraceSshProtocol("starting SSH agent forwarding");
                 _agentForwarding = new SshAgentForwardingService();
                 _agentForwarding.Start(_shellStream);
             }
 
             SendX11DisplayExport();
-            if (!session.SshNoTerminal)
+            if (!session.SshNoTerminal && _terminalEncoding.CodePage == Encoding.UTF8.CodePage)
                 SendUtf8LocaleBootstrap();
             SendRemoteCommand(session.SshRemoteCommand);
-            _utf8Decoder.Reset();
+            _terminalDecoder.Reset();
             _readCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _readTask = Task.Run(() => ReadLoop(_readCts.Token), _readCts.Token);
             EmitStartupStatus();
@@ -131,6 +142,7 @@ public class SshConnectionService : ITerminalConnectionService
 
             _sshClient.AddForwardedPort(forwardedPort);
             forwardedPort.Start();
+            TraceSshTunneling($"started {rule.TypeDisplay} tunnel on {rule.ListenPort} -> {rule.DestinationHost}:{rule.DestinationPort}");
             _forwardedPorts.Add(forwardedPort);
         }
     }
@@ -185,6 +197,7 @@ public class SshConnectionService : ITerminalConnectionService
                 _remoteX11Display = $"localhost:{remoteDisplayNumber}.0";
                 _x11StatusMessage =
                     $"[SSH X11 forwarding enabled: DISPLAY={_remoteX11Display}, local target={localDisplay.Host}:{localDisplay.Port}]";
+                TraceSshTunneling($"started X11 remote display {_remoteX11Display} -> {localDisplay.Host}:{localDisplay.Port}");
                 return;
             }
             catch (Exception ex)
@@ -245,7 +258,7 @@ public class SshConnectionService : ITerminalConnectionService
         try
         {
             var command = $"export DISPLAY={_remoteX11Display}\r";
-            var bytes = Encoding.UTF8.GetBytes(command);
+            var bytes = _terminalEncoding.GetBytes(command);
             _shellStream?.Write(bytes, 0, bytes.Length);
             _shellStream?.Flush();
         }
@@ -259,6 +272,24 @@ public class SshConnectionService : ITerminalConnectionService
     {
         if (!string.IsNullOrWhiteSpace(_x11StatusMessage))
             DataReceived?.Invoke($"\r\n{_x11StatusMessage}\r\n");
+    }
+
+    private void TraceSshProtocol(string message)
+    {
+        if (_session?.AdvancedTraceSshProtocol == true)
+            DataReceived?.Invoke($"\r\n[TRACE SSH] {message}\r\n");
+    }
+
+    private void TraceSshTunneling(string message)
+    {
+        if (_session?.AdvancedTraceSshTunneling == true)
+            DataReceived?.Invoke($"\r\n[TRACE SSH TUNNEL] {message}\r\n");
+    }
+
+    private void TraceSshPacket(string message)
+    {
+        if (_session?.AdvancedTraceSshPackets == true)
+            DataReceived?.Invoke($"\r\n[TRACE SSH PACKET] {message}\r\n");
     }
 
     private static void PreferCompression(ConnectionInfo connectionInfo)
@@ -290,8 +321,8 @@ public class SshConnectionService : ITerminalConnectionService
 
         try
         {
-            var command = remoteCommand.TrimEnd('\r', '\n') + "\r";
-            var bytes = Encoding.UTF8.GetBytes(command);
+            var command = TerminalSessionOptions.NormalizeSendLineEndings(remoteCommand.TrimEnd('\r', '\n') + "\r", _session);
+            var bytes = _terminalEncoding.GetBytes(command);
             _shellStream?.Write(bytes, 0, bytes.Length);
             _shellStream?.Flush();
         }
@@ -317,11 +348,12 @@ public class SshConnectionService : ITerminalConnectionService
                     if (BinaryDataReceived?.Invoke(data) == true)
                         continue;
 
-                    var charCount = _utf8Decoder.GetCharCount(data, 0, data.Length);
+                    TraceSshPacket($"received {bytesRead} byte(s)");
+                    var charCount = _terminalDecoder.GetCharCount(data, 0, data.Length);
                     if (charCount > 0)
                     {
                         var chars = new char[charCount];
-                        var charsRead = _utf8Decoder.GetChars(data, 0, data.Length, chars, 0);
+                        var charsRead = _terminalDecoder.GetChars(data, 0, data.Length, chars, 0);
                         DataReceived?.Invoke(new string(chars, 0, charsRead));
                     }
                 }
@@ -357,7 +389,9 @@ public class SshConnectionService : ITerminalConnectionService
             {
                 if (_shellStream != null)
                 {
-                    var bytes = Encoding.UTF8.GetBytes(data);
+                    var normalized = TerminalSessionOptions.NormalizeSendLineEndings(data, _session);
+                    var bytes = _terminalEncoding.GetBytes(normalized);
+                    TraceSshPacket($"sent {bytes.Length} byte(s)");
                     _shellStream.Write(bytes, 0, bytes.Length);
                 }
                 _shellStream?.Flush();
@@ -379,6 +413,7 @@ public class SshConnectionService : ITerminalConnectionService
         {
             lock (_writeLock)
             {
+                TraceSshPacket($"sent {data.Length} raw byte(s)");
                 _shellStream?.Write(data, 0, data.Length);
                 _shellStream?.Flush();
             }
@@ -395,14 +430,7 @@ public class SshConnectionService : ITerminalConnectionService
 
     public void SendKeepAlive()
     {
-        try
-        {
-            _sshClient?.SendKeepAlive();
-        }
-        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException or System.IO.IOException)
-        {
-            ErrorOccurred?.Invoke(ex.Message);
-        }
+        // SSH.NET sends SSH keepalive automatically through KeepAliveInterval.
     }
 
     public void ResizeTerminal(int columns, int rows)

@@ -7,7 +7,7 @@
              xmlns:views="using:ChiXueSsh.Views"
              x:Class="ChiXueSsh.Views.MainWindow"
              x:DataType="vm:MainWindowViewModel"
-             Title="Cx-Ssh - SSH Client"
+             Title="CxShell - SSH Client"
              Icon="/Assets/ChiXueSshLogo.png"
              Width="1200"
              Height="800"
@@ -222,7 +222,7 @@
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
                             Spacing="12"
                             IsVisible="{Binding !HasTabs}">
-                    <atom:TextBlock Text="Cx-Ssh" FontSize="32" FontWeight="Bold"
+                    <atom:TextBlock Text="CxShell" FontSize="32" FontWeight="Bold"
                                    HorizontalAlignment="Center" Opacity="0.3"
                                    Foreground="{atom:SharedTokenResource ColorTextLightSolid}"/>
                     <atom:TextBlock Text="点击「会话管理」选择会话并连接，或点击「新建会话」开始"
@@ -261,11 +261,17 @@
                                             </Border.Background>
                                             <Border.BorderBrush>
                                                 <SolidColorBrush Color="{Binding IsSelected, Converter={x:Static vm:TabSelectedBorderConverter.Instance}}"/>
-                                            </Border.BorderBrush>
-                                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                                <atom:TextBlock Text="{Binding Title}" FontSize="12"
-                                                               VerticalAlignment="Center"
-                                                               Foreground="{Binding IsSelected, Converter={x:Static vm:TabSelectedFgConverter.Instance}}"/>
+                                             </Border.BorderBrush>
+                                             <StackPanel Orientation="Horizontal" Spacing="6">
+                                                 <Border Width="4"
+                                                         Height="14"
+                                                         CornerRadius="2"
+                                                         Background="{Binding TabColorBrush}"
+                                                         IsVisible="{Binding HasTabColor}"
+                                                         VerticalAlignment="Center"/>
+                                                 <atom:TextBlock Text="{Binding Title}" FontSize="12"
+                                                                VerticalAlignment="Center"
+                                                                Foreground="{Binding IsSelected, Converter={x:Static vm:TabSelectedFgConverter.Instance}}"/>
                                                 <atom:Button Command="{Binding CloseTabCommand}"
                                                              Padding="2,0" FontSize="10"
                                                              Background="Transparent" BorderThickness="0"
@@ -322,9 +328,9 @@
                 <views:ServerMonitorView DataContext="{Binding Monitor, x:CompileBindings=False}"
                                          Width="280"/>
             </StackPanel>
-        <Popup x:Name="QuickSessionContextMenuPopup"
-               Placement="Pointer"
-               IsLightDismissEnabled="True">
+        <atom:Popup x:Name="QuickSessionContextMenuPopup"
+                    Placement="Pointer"
+                    IsLightDismissEnabled="True">
             <Border Background="{atom:SharedTokenResource ColorBgElevated}"
                     BorderBrush="{atom:SharedTokenResource ColorBorder}"
                     BorderThickness="1"
@@ -353,7 +359,7 @@
                                  Foreground="{atom:SharedTokenResource ColorError}"/>
                 </StackPanel>
             </Border>
-        </Popup>
+        </atom:Popup>
         </Grid>
 
 

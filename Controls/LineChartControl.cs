@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
@@ -7,6 +8,9 @@ namespace ChiXueSsh.Controls;
 
 public class LineChartControl : Control
 {
+    private INotifyCollectionChanged? _series1Collection;
+    private INotifyCollectionChanged? _series2Collection;
+
     public static readonly StyledProperty<IList<double>?> Series1Property =
         AvaloniaProperty.Register<LineChartControl, IList<double>?>(nameof(Series1));
 
@@ -48,8 +52,38 @@ public class LineChartControl : Control
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (change.Property == Series1Property || change.Property == Series2Property)
+        if (change.Property == Series1Property)
+        {
+            SubscribeSeriesCollection(ref _series1Collection, Series1);
             InvalidateVisual();
+        }
+        else if (change.Property == Series2Property)
+        {
+            SubscribeSeriesCollection(ref _series2Collection, Series2);
+            InvalidateVisual();
+        }
+    }
+
+    protected override void OnDetachedFromVisualTree(Avalonia.VisualTreeAttachmentEventArgs e)
+    {
+        SubscribeSeriesCollection(ref _series1Collection, null);
+        SubscribeSeriesCollection(ref _series2Collection, null);
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    private void SubscribeSeriesCollection(ref INotifyCollectionChanged? current, IList<double>? series)
+    {
+        if (current != null)
+            current.CollectionChanged -= OnSeriesCollectionChanged;
+
+        current = series as INotifyCollectionChanged;
+        if (current != null)
+            current.CollectionChanged += OnSeriesCollectionChanged;
+    }
+
+    private void OnSeriesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        InvalidateVisual();
     }
 
     public override void Render(DrawingContext context)
@@ -113,7 +147,10 @@ public class LineChartControl : Control
         for (int i = 0; i < count; i++)
         {
             double x = padLeft + chartW * i / (count - 1);
-            double y = padTop + chartH * (1.0 - series[i] / maxVal);
+            double normalized = maxVal <= 0 ? 0 : series[i] / maxVal;
+            double y = padTop + chartH * (1.0 - normalized);
+            if (series[i] <= 0)
+                y = padTop + chartH - 1;
             points[i] = new Point(x, y);
         }
 

@@ -8,6 +8,7 @@ using AtomUI.Desktop.Controls;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using ChiXueSsh.Models;
 using ChiXueSsh.Services;
@@ -18,6 +19,14 @@ namespace ChiXueSsh.ViewModels;
 
 public partial class SessionEditViewModel : ObservableObject
 {
+    public readonly record struct AppearanceColorPalette(
+        string Foreground,
+        string BoldForeground,
+        string Background,
+        string Cursor,
+        string CursorText,
+        string AnsiColors);
+
     [ObservableProperty] private string _dialogTitle = "New Session Properties";
     [ObservableProperty] private string _sessionName = string.Empty;
     [ObservableProperty] private string _protocol = SessionProtocol.SSH.ToString();
@@ -42,6 +51,102 @@ public partial class SessionEditViewModel : ObservableObject
     [ObservableProperty] private decimal _idleStringIntervalSeconds;
     [ObservableProperty] private string _idleString = string.Empty;
     [ObservableProperty] private bool _tcpKeepAlive;
+    [ObservableProperty] private string _terminalType = "xterm";
+    [ObservableProperty] private decimal _terminalColumns = 80;
+    [ObservableProperty] private decimal _terminalRows = 24;
+    [ObservableProperty] private bool _terminalFixedSize;
+    [ObservableProperty] private bool _terminalResetSizeOnConnect = true;
+    [ObservableProperty] private decimal _terminalScrollbackSize = 1024;
+    [ObservableProperty] private bool _terminalPushClearedScreenToScrollback = true;
+    [ObservableProperty] private string _terminalEncoding = "utf-8";
+    [ObservableProperty] private bool _terminalTreatAmbiguousAsWide;
+    [ObservableProperty] private string _terminalSendLineEnding = "CR";
+    [ObservableProperty] private string _terminalReceiveLineEnding = "CRLF";
+    [ObservableProperty] private string _terminalKeyboardFunctionKeyMode = "Default";
+    [ObservableProperty] private string _terminalKeyboardMappingFile = string.Empty;
+    [ObservableProperty] private string _terminalDeleteKeySequence = "VT220";
+    [ObservableProperty] private string _terminalBackspaceKeySequence = "Backspace";
+    [ObservableProperty] private bool _terminalLeftAltAsMeta;
+    [ObservableProperty] private bool _terminalRightAltAsMeta;
+    [ObservableProperty] private bool _terminalCtrlAltAsAltGr = true;
+    [ObservableProperty] private bool _terminalVtAutoWrapMode = true;
+    [ObservableProperty] private bool _terminalVtOriginMode;
+    [ObservableProperty] private bool _terminalVtReverseVideoMode;
+    [ObservableProperty] private bool _terminalVtNewLineMode;
+    [ObservableProperty] private bool _terminalVtInsertMode;
+    [ObservableProperty] private bool _terminalVtEchoMode;
+    [ObservableProperty] private string _terminalVtCursorKeyMode = "Normal";
+    [ObservableProperty] private string _terminalVtNumericKeypadMode = "Normal";
+    [ObservableProperty] private bool _terminalAdvancedUseApplicationCursorMode = true;
+    [ObservableProperty] private bool _terminalAdvancedShiftLimitsApplicationCursorMode = true;
+    [ObservableProperty] private bool _terminalAdvancedClearScreenBackground = true;
+    [ObservableProperty] private bool _terminalAdvancedScrollToBottomOnInputOutput = true;
+    [ObservableProperty] private bool _terminalAdvancedSuspendScrollToBottomOnScrollLock;
+    [ObservableProperty] private bool _terminalAdvancedScrollToBottomByKey;
+    [ObservableProperty] private bool _terminalAdvancedDuplicateSessionCd = true;
+    [ObservableProperty] private string _terminalAdvancedPreinputString = string.Empty;
+    [ObservableProperty] private bool _terminalAdvancedUseRxvtHomeEnd;
+    [ObservableProperty] private bool _terminalAdvancedDisableBlinkingText;
+    [ObservableProperty] private bool _terminalAdvancedDisableTitleChange;
+    [ObservableProperty] private bool _terminalAdvancedDisableTerminalPrint;
+    [ObservableProperty] private bool _terminalAdvancedDisableAlternateScreen;
+    [ObservableProperty] private bool _terminalAdvancedIgnoreResizeRequest = true;
+    [ObservableProperty] private string _terminalAdvancedAnswerback = "CxShell";
+    [ObservableProperty] private bool _terminalAdvancedUseBuiltinLineDrawing = true;
+    [ObservableProperty] private bool _terminalAdvancedUseBuiltinPowerline = true;
+    [ObservableProperty] private string _appearanceColorScheme = "XTerm";
+    [ObservableProperty] private Color _appearanceForegroundColor = Color.Parse("#CCCCCC");
+    [ObservableProperty] private Color _appearanceBoldForegroundColor = Color.Parse("#33FF33");
+    [ObservableProperty] private Color _appearanceBackgroundColor = Color.Parse("#000000");
+    [ObservableProperty] private string _appearanceAnsiColors = "#000000;#CC0000;#4E9A06;#C4A000;#3465A4;#75507B;#06989A;#D3D7CF;#555753;#EF2929;#8AE234;#FCE94F;#729FCF;#AD7FA8;#34E2E2;#EEEEEC";
+    [ObservableProperty] private string _appearanceFontFamily = "DejaVu Sans Mono";
+    [ObservableProperty] private string _appearanceFontStyle = "Normal";
+    [ObservableProperty] private decimal _appearanceFontSize = 14;
+    [ObservableProperty] private string _appearanceCjkFontFamily = "DejaVu Sans Mono";
+    [ObservableProperty] private string _appearanceCjkFontStyle = "Normal";
+    [ObservableProperty] private decimal _appearanceCjkFontSize = 14;
+    [ObservableProperty] private bool _appearanceUseVariablePitchFont;
+    [ObservableProperty] private string _appearanceFontQuality = "Default";
+    [ObservableProperty] private string _appearanceBoldTextMode = "ColorAndFont";
+    [ObservableProperty] private Color _appearanceCursorColor = Color.Parse("#00FF00");
+    [ObservableProperty] private Color _appearanceCursorTextColor = Color.Parse("#000000");
+    [ObservableProperty] private bool _appearanceUseBlinkingCursor;
+    [ObservableProperty] private decimal _appearanceCursorBlinkSpeedMilliseconds = 500;
+    [ObservableProperty] private string _appearanceCursorShape = "Block";
+    [ObservableProperty] private bool _appearancePreviewCursorVisible = true;
+    [ObservableProperty] private decimal _appearanceWindowPaddingTop = 5;
+    [ObservableProperty] private decimal _appearanceWindowPaddingBottom = 5;
+    [ObservableProperty] private decimal _appearanceWindowPaddingLeft = 5;
+    [ObservableProperty] private decimal _appearanceWindowPaddingRight = 5;
+    [ObservableProperty] private decimal _appearanceLineSpacing;
+    [ObservableProperty] private decimal _appearanceCharacterSpacing;
+    [ObservableProperty] private string _appearanceTabColorMode = "Default";
+    [ObservableProperty] private Color _appearanceTabCustomColor = Color.Parse("#000000");
+    [ObservableProperty] private string _appearanceBackgroundImagePath = string.Empty;
+    [ObservableProperty] private string _appearanceBackgroundImagePosition = "Center";
+    [ObservableProperty] private string _appearanceHighlightSetId = "None";
+    [ObservableProperty] private HighlightSet? _selectedHighlightSet;
+    [ObservableProperty] private HighlightRule? _selectedHighlightRule;
+    [ObservableProperty] private string _advancedQuickCommandSet = "<<所有命令>>";
+    [ObservableProperty] private bool _advancedDisableQuickCommandShortcuts;
+    [ObservableProperty] private decimal _advancedFtpPort = 21;
+    [ObservableProperty] private decimal _advancedCharacterDelayMilliseconds;
+    [ObservableProperty] private bool _advancedUseLineDelay = true;
+    [ObservableProperty] private decimal _advancedLineDelayMilliseconds;
+    [ObservableProperty] private bool _advancedUsePromptDelay;
+    [ObservableProperty] private string _advancedPromptText = string.Empty;
+    [ObservableProperty] private decimal _advancedPromptMaxWaitMilliseconds;
+    [ObservableProperty] private bool _advancedUseNagle;
+    [ObservableProperty] private string _advancedIpVersion = "Auto";
+    [ObservableProperty] private bool _advancedTraceSshProtocol;
+    [ObservableProperty] private bool _advancedTraceSshTunneling;
+    [ObservableProperty] private bool _advancedTraceSshPackets;
+    [ObservableProperty] private bool _advancedTraceTelnetOptions;
+    [ObservableProperty] private bool _enableLoginScriptRules = true;
+    [ObservableProperty] private LoginScriptRule? _selectedLoginScriptRule;
+    [ObservableProperty] private bool _runLoginScriptFile;
+    [ObservableProperty] private string _loginScriptFilePath = string.Empty;
+    [ObservableProperty] private string _loginScriptParameters = string.Empty;
     [ObservableProperty] private string _sshRemoteCommand = string.Empty;
     [ObservableProperty] private string _sshVersionPolicy = "Ssh2Only";
     [ObservableProperty] private bool _sshUseXagent;
@@ -97,9 +202,165 @@ public partial class SessionEditViewModel : ObservableObject
     public bool IsPortInvalid => PortStatus == InputControlStatus.Error;
     public bool IsSerialPortInvalid => SerialPortStatus == InputControlStatus.Error;
     public bool HasSelectedSshTunnelRule => SelectedSshTunnelRule != null;
+    public bool HasSelectedLoginScriptRule => SelectedLoginScriptRule != null;
+    public bool HasSelectedHighlightSet => SelectedHighlightSet != null;
+    public bool HasSelectedHighlightRule => SelectedHighlightRule != null;
     public bool IsSftpCustomServerCommandEnabled => SftpUseCustomServer;
     public bool IsSessionKeepAliveIntervalEnabled => SendSessionKeepAlive;
     public bool IsIdleStringSettingsEnabled => SendIdleString;
+    public bool IsLoginScriptFileEnabled => RunLoginScriptFile;
+    public bool IsKeyboardMappingFileEnabled => string.Equals(TerminalKeyboardFunctionKeyMode, "UserCustom", StringComparison.OrdinalIgnoreCase);
+    public bool IsAdvancedLineDelay => AdvancedUseLineDelay;
+    public bool IsAdvancedPromptDelay => AdvancedUsePromptDelay;
+    public bool IsAdvancedIpVersionAuto
+    {
+        get => string.Equals(AdvancedIpVersion, "Auto", StringComparison.OrdinalIgnoreCase);
+        set { if (value) AdvancedIpVersion = "Auto"; }
+    }
+    public bool IsAdvancedIpVersion4
+    {
+        get => string.Equals(AdvancedIpVersion, "IPv4", StringComparison.OrdinalIgnoreCase);
+        set { if (value) AdvancedIpVersion = "IPv4"; }
+    }
+    public bool IsAdvancedIpVersion6
+    {
+        get => string.Equals(AdvancedIpVersion, "IPv6", StringComparison.OrdinalIgnoreCase);
+        set { if (value) AdvancedIpVersion = "IPv6"; }
+    }
+    public FontStyle AppearancePreviewFontStyle => AppearanceFontStyle.Contains("Italic", StringComparison.OrdinalIgnoreCase)
+        ? FontStyle.Italic
+        : FontStyle.Normal;
+    public FontWeight AppearancePreviewFontWeight => AppearanceFontStyle.Contains("Bold", StringComparison.OrdinalIgnoreCase)
+        ? FontWeight.Bold
+        : FontWeight.Normal;
+    public FontWeight AppearancePreviewBoldWeight => string.Equals(AppearanceBoldTextMode, "Font", StringComparison.OrdinalIgnoreCase) ||
+                                                     string.Equals(AppearanceBoldTextMode, "ColorAndFont", StringComparison.OrdinalIgnoreCase)
+        ? FontWeight.Bold
+        : FontWeight.Normal;
+    public Color AppearancePreviewBoldColor => string.Equals(AppearanceBoldTextMode, "Color", StringComparison.OrdinalIgnoreCase) ||
+                                               string.Equals(AppearanceBoldTextMode, "ColorAndFont", StringComparison.OrdinalIgnoreCase)
+        ? AppearanceBoldForegroundColor
+        : AppearanceForegroundColor;
+    public IBrush AppearanceForegroundBrush => new SolidColorBrush(AppearanceForegroundColor);
+    public IBrush AppearanceBoldForegroundBrush => new SolidColorBrush(AppearanceBoldForegroundColor);
+    public IBrush AppearanceBackgroundBrush => new SolidColorBrush(AppearanceBackgroundColor);
+    public IBrush AppearancePreviewBoldBrush => new SolidColorBrush(AppearancePreviewBoldColor);
+    public IBrush AppearanceCursorBrush => new SolidColorBrush(AppearanceCursorColor);
+    public IBrush AppearanceCursorTextBrush => new SolidColorBrush(AppearanceCursorTextColor);
+    public IBrush AppearanceAnsiBlackBrush => new SolidColorBrush(AppearanceAnsiBlack);
+    public IBrush AppearanceAnsiRedBrush => new SolidColorBrush(AppearanceAnsiRed);
+    public IBrush AppearanceAnsiGreenBrush => new SolidColorBrush(AppearanceAnsiGreen);
+    public IBrush AppearanceAnsiYellowBrush => new SolidColorBrush(AppearanceAnsiYellow);
+    public IBrush AppearanceAnsiBlueBrush => new SolidColorBrush(AppearanceAnsiBlue);
+    public IBrush AppearanceAnsiMagentaBrush => new SolidColorBrush(AppearanceAnsiMagenta);
+    public IBrush AppearanceAnsiCyanBrush => new SolidColorBrush(AppearanceAnsiCyan);
+    public IBrush AppearanceAnsiWhiteBrush => new SolidColorBrush(AppearanceAnsiWhite);
+    public Color AppearanceAnsiBlack => GetAnsiPreviewColor(0, "#000000");
+    public Color AppearanceAnsiRed => GetAnsiPreviewColor(1, "#CC0000");
+    public Color AppearanceAnsiGreen => GetAnsiPreviewColor(2, "#4E9A06");
+    public Color AppearanceAnsiYellow => GetAnsiPreviewColor(3, "#C4A000");
+    public Color AppearanceAnsiBlue => GetAnsiPreviewColor(4, "#3465A4");
+    public Color AppearanceAnsiMagenta => GetAnsiPreviewColor(5, "#75507B");
+    public Color AppearanceAnsiCyan => GetAnsiPreviewColor(6, "#06989A");
+    public Color AppearanceAnsiWhite => GetAnsiPreviewColor(7, "#D3D7CF");
+    public bool IsAppearanceCursorShapeBlock
+    {
+        get => string.Equals(AppearanceCursorShape, "Block", StringComparison.OrdinalIgnoreCase);
+        set { if (value) AppearanceCursorShape = "Block"; }
+    }
+    public bool IsAppearanceCursorShapeVertical
+    {
+        get => string.Equals(AppearanceCursorShape, "Vertical", StringComparison.OrdinalIgnoreCase);
+        set { if (value) AppearanceCursorShape = "Vertical"; }
+    }
+    public bool IsAppearanceCursorShapeUnderline
+    {
+        get => string.Equals(AppearanceCursorShape, "Underline", StringComparison.OrdinalIgnoreCase);
+        set { if (value) AppearanceCursorShape = "Underline"; }
+    }
+    public bool IsAppearanceCursorBlockVisible => IsAppearanceCursorShapeBlock && AppearancePreviewCursorVisible;
+    public bool IsAppearanceCursorVerticalVisible => IsAppearanceCursorShapeVertical && AppearancePreviewCursorVisible;
+    public bool IsAppearanceCursorUnderlineVisible => IsAppearanceCursorShapeUnderline && AppearancePreviewCursorVisible;
+    public bool IsAppearanceTabColorDefault
+    {
+        get => string.Equals(AppearanceTabColorMode, "Default", StringComparison.OrdinalIgnoreCase);
+        set { if (value) AppearanceTabColorMode = "Default"; }
+    }
+    public bool IsAppearanceTabColorRed
+    {
+        get => string.Equals(AppearanceTabColorMode, "Red", StringComparison.OrdinalIgnoreCase);
+        set { if (value) AppearanceTabColorMode = "Red"; }
+    }
+    public bool IsAppearanceTabColorPurple
+    {
+        get => string.Equals(AppearanceTabColorMode, "Purple", StringComparison.OrdinalIgnoreCase);
+        set { if (value) AppearanceTabColorMode = "Purple"; }
+    }
+    public bool IsAppearanceTabColorYellow
+    {
+        get => string.Equals(AppearanceTabColorMode, "Yellow", StringComparison.OrdinalIgnoreCase);
+        set { if (value) AppearanceTabColorMode = "Yellow"; }
+    }
+    public bool IsAppearanceTabColorCustom
+    {
+        get => string.Equals(AppearanceTabColorMode, "Custom", StringComparison.OrdinalIgnoreCase);
+        set { if (value) AppearanceTabColorMode = "Custom"; }
+    }
+    public bool IsDeleteKeyVt220
+    {
+        get => string.Equals(TerminalDeleteKeySequence, "VT220", StringComparison.OrdinalIgnoreCase);
+        set { if (value) TerminalDeleteKeySequence = "VT220"; }
+    }
+    public bool IsDeleteKeyAscii127
+    {
+        get => string.Equals(TerminalDeleteKeySequence, "ASCII127", StringComparison.OrdinalIgnoreCase);
+        set { if (value) TerminalDeleteKeySequence = "ASCII127"; }
+    }
+    public bool IsDeleteKeyBackspace
+    {
+        get => string.Equals(TerminalDeleteKeySequence, "Backspace", StringComparison.OrdinalIgnoreCase);
+        set { if (value) TerminalDeleteKeySequence = "Backspace"; }
+    }
+    public bool IsBackspaceKeyVt220
+    {
+        get => string.Equals(TerminalBackspaceKeySequence, "VT220", StringComparison.OrdinalIgnoreCase);
+        set { if (value) TerminalBackspaceKeySequence = "VT220"; }
+    }
+    public bool IsBackspaceKeyAscii127
+    {
+        get => string.Equals(TerminalBackspaceKeySequence, "ASCII127", StringComparison.OrdinalIgnoreCase);
+        set { if (value) TerminalBackspaceKeySequence = "ASCII127"; }
+    }
+    public bool IsBackspaceKeyBackspace
+    {
+        get => string.Equals(TerminalBackspaceKeySequence, "Backspace", StringComparison.OrdinalIgnoreCase);
+        set { if (value) TerminalBackspaceKeySequence = "Backspace"; }
+    }
+    public bool IsCursorKeyModeNormal
+    {
+        get => string.Equals(TerminalVtCursorKeyMode, "Normal", StringComparison.OrdinalIgnoreCase);
+        set { if (value) TerminalVtCursorKeyMode = "Normal"; }
+    }
+    public bool IsCursorKeyModeApplication
+    {
+        get => string.Equals(TerminalVtCursorKeyMode, "Application", StringComparison.OrdinalIgnoreCase);
+        set { if (value) TerminalVtCursorKeyMode = "Application"; }
+    }
+    public bool IsNumericKeypadModeNormal
+    {
+        get => string.Equals(TerminalVtNumericKeypadMode, "Normal", StringComparison.OrdinalIgnoreCase);
+        set { if (value) TerminalVtNumericKeypadMode = "Normal"; }
+    }
+    public bool IsNumericKeypadModeApplication
+    {
+        get => string.Equals(TerminalVtNumericKeypadMode, "Application", StringComparison.OrdinalIgnoreCase);
+        set { if (value) TerminalVtNumericKeypadMode = "Application"; }
+    }
+    public bool IsNumericKeypadModeForceNormal
+    {
+        get => string.Equals(TerminalVtNumericKeypadMode, "ForceNormal", StringComparison.OrdinalIgnoreCase);
+        set { if (value) TerminalVtNumericKeypadMode = "ForceNormal"; }
+    }
 
     public ObservableCollection<ISelectOption> ProtocolOptions { get; } =
     [
@@ -129,11 +390,163 @@ public partial class SessionEditViewModel : ObservableObject
     ];
     public ObservableCollection<ProxySettings> ProxyServers { get; } = new();
 
+    public ObservableCollection<ISelectOption> TerminalTypeOptions { get; } =
+    [
+        new SelectOption { Header = "vt100", Content = "vt100" },
+        new SelectOption { Header = "vt102", Content = "vt102" },
+        new SelectOption { Header = "vt220", Content = "vt220" },
+        new SelectOption { Header = "vt320", Content = "vt320" },
+        new SelectOption { Header = "xterm", Content = "xterm" },
+        new SelectOption { Header = "linux", Content = "linux" },
+        new SelectOption { Header = "scoansi", Content = "scoansi" },
+        new SelectOption { Header = "ansi", Content = "ansi" }
+    ];
+
+    public ObservableCollection<ISelectOption> TerminalEncodingOptions { get; } =
+    [
+        new SelectOption { Header = "默认语言", Content = "default" },
+        new SelectOption { Header = "Unicode (UTF-8)", Content = "utf-8" },
+        new SelectOption { Header = "Arabic (ASMO 708)", Content = "asmo-708" },
+        new SelectOption { Header = "Arabic (DOS)", Content = "ibm864" },
+        new SelectOption { Header = "Arabic (ISO)", Content = "iso-8859-6" },
+        new SelectOption { Header = "Arabic (Windows)", Content = "windows-1256" },
+        new SelectOption { Header = "Baltic (ISO)", Content = "iso-8859-4" },
+        new SelectOption { Header = "Baltic (Windows)", Content = "windows-1257" },
+        new SelectOption { Header = "Central European (ISO)", Content = "iso-8859-2" },
+        new SelectOption { Header = "Central European (Windows)", Content = "windows-1250" },
+        new SelectOption { Header = "Chinese Simplified (GBK)", Content = "gbk" },
+        new SelectOption { Header = "Chinese Simplified (GB18030)", Content = "gb18030" },
+        new SelectOption { Header = "Chinese Simplified (GB2312)", Content = "gb2312" },
+        new SelectOption { Header = "Chinese Traditional (Big5)", Content = "big5" },
+        new SelectOption { Header = "Cyrillic (ISO)", Content = "iso-8859-5" },
+        new SelectOption { Header = "Cyrillic (KOI8-R)", Content = "koi8-r" },
+        new SelectOption { Header = "Cyrillic (KOI8-U)", Content = "koi8-u" },
+        new SelectOption { Header = "Cyrillic (Windows)", Content = "windows-1251" },
+        new SelectOption { Header = "Cyrillic (IBM-866)", Content = "ibm866" },
+        new SelectOption { Header = "Greek (ISO)", Content = "iso-8859-7" },
+        new SelectOption { Header = "Greek (Windows)", Content = "windows-1253" },
+        new SelectOption { Header = "Hebrew (DOS)", Content = "dos-862" },
+        new SelectOption { Header = "Hebrew (ISO-Visual)", Content = "iso-8859-8" },
+        new SelectOption { Header = "Hebrew (ISO-Logical)", Content = "iso-8859-8-i" },
+        new SelectOption { Header = "Hebrew (Windows)", Content = "windows-1255" },
+        new SelectOption { Header = "Japanese (EUC)", Content = "euc-jp" },
+        new SelectOption { Header = "Japanese (Shift-JIS)", Content = "shift_jis" },
+        new SelectOption { Header = "Korean", Content = "ks_c_5601-1987" },
+        new SelectOption { Header = "Korean (EUC)", Content = "euc-kr" },
+        new SelectOption { Header = "Thai (Windows)", Content = "windows-874" },
+        new SelectOption { Header = "Turkish (ISO)", Content = "iso-8859-9" },
+        new SelectOption { Header = "Turkish (Windows)", Content = "windows-1254" },
+        new SelectOption { Header = "Vietnamese (Windows)", Content = "windows-1258" },
+        new SelectOption { Header = "Western European (ISO)", Content = "iso-8859-1" },
+        new SelectOption { Header = "Western European (Windows)", Content = "windows-1252" }
+    ];
+
+    public ObservableCollection<ISelectOption> TerminalLineEndingOptions { get; } =
+    [
+        new SelectOption { Header = "CR", Content = "CR" },
+        new SelectOption { Header = "LF", Content = "LF" },
+        new SelectOption { Header = "CRLF", Content = "CRLF" }
+    ];
+
+    public ObservableCollection<ISelectOption> TerminalKeyboardFunctionKeyOptions { get; } =
+    [
+        new SelectOption { Header = "默认", Content = "Default" },
+        new SelectOption { Header = "用户自定义", Content = "UserCustom" },
+        new SelectOption { Header = "ESC[n~", Content = "EscN" },
+        new SelectOption { Header = "Linux", Content = "Linux" },
+        new SelectOption { Header = "Xterm R6", Content = "XtermR6" },
+        new SelectOption { Header = "VT400", Content = "VT400" },
+        new SelectOption { Header = "VT100+", Content = "VT100Plus" },
+        new SelectOption { Header = "SCO", Content = "SCO" }
+    ];
+
+    public ObservableCollection<ISelectOption> AppearanceColorSchemeOptions { get; } =
+    [
+        new SelectOption { Header = "Afterglow", Content = "Afterglow" },
+        new SelectOption { Header = "ANSI Colors on Black", Content = "AnsiBlack" },
+        new SelectOption { Header = "ANSI Colors on White", Content = "AnsiWhite" },
+        new SelectOption { Header = "Arthur", Content = "Arthur" },
+        new SelectOption { Header = "Belafonte Day", Content = "BelafonteDay" },
+        new SelectOption { Header = "Black on White", Content = "BlackOnWhite" },
+        new SelectOption { Header = "Chalk", Content = "Chalk" },
+        new SelectOption { Header = "Chalkboard", Content = "Chalkboard" },
+        new SelectOption { Header = "Codeschool", Content = "Codeschool" },
+        new SelectOption { Header = "Earthsong", Content = "Earthsong" },
+        new SelectOption { Header = "Espresso", Content = "Espresso" },
+        new SelectOption { Header = "IR Black", Content = "IrBlack" },
+        new SelectOption { Header = "New Black", Content = "NewBlack" },
+        new SelectOption { Header = "New White", Content = "NewWhite" },
+        new SelectOption { Header = "Obsidian", Content = "Obsidian" },
+        new SelectOption { Header = "Pastel on Black", Content = "PastelBlack" },
+        new SelectOption { Header = "Pastel on White", Content = "PastelWhite" },
+        new SelectOption { Header = "White on Black", Content = "WhiteOnBlack" },
+        new SelectOption { Header = "XTerm", Content = "XTerm" }
+    ];
+
+    public ObservableCollection<ISelectOption> AppearanceFontOptions { get; } = CreateFontOptions();
+    public ObservableCollection<ISelectOption> AppearanceFontStyleOptions { get; } =
+    [
+        new SelectOption { Header = "Normal", Content = "Normal" },
+        new SelectOption { Header = "Bold", Content = "Bold" },
+        new SelectOption { Header = "Italic", Content = "Italic" },
+        new SelectOption { Header = "Bold Italic", Content = "BoldItalic" }
+    ];
+    public ObservableCollection<ISelectOption> AppearanceFontSizeOptions { get; } =
+    [
+        new SelectOption { Header = "8", Content = "8" },
+        new SelectOption { Header = "9", Content = "9" },
+        new SelectOption { Header = "10", Content = "10" },
+        new SelectOption { Header = "11", Content = "11" },
+        new SelectOption { Header = "12", Content = "12" },
+        new SelectOption { Header = "14", Content = "14" },
+        new SelectOption { Header = "16", Content = "16" },
+        new SelectOption { Header = "18", Content = "18" },
+        new SelectOption { Header = "20", Content = "20" },
+        new SelectOption { Header = "22", Content = "22" },
+        new SelectOption { Header = "24", Content = "24" },
+        new SelectOption { Header = "26", Content = "26" },
+        new SelectOption { Header = "28", Content = "28" },
+        new SelectOption { Header = "36", Content = "36" },
+        new SelectOption { Header = "48", Content = "48" },
+        new SelectOption { Header = "72", Content = "72" }
+    ];
+    public ObservableCollection<ISelectOption> AppearanceFontQualityOptions { get; } =
+    [
+        new SelectOption { Header = "Default", Content = "Default" },
+        new SelectOption { Header = "Antialias", Content = "Antialias" },
+        new SelectOption { Header = "ClearType", Content = "ClearType" }
+    ];
+    public ObservableCollection<ISelectOption> AppearanceBoldTextModeOptions { get; } =
+    [
+        new SelectOption { Header = "使用大胆的色彩", Content = "Color" },
+        new SelectOption { Header = "使用粗体", Content = "Font" },
+        new SelectOption { Header = "使用大胆的颜色和字体", Content = "ColorAndFont" }
+    ];
+    public ObservableCollection<ISelectOption> AppearanceCursorShapeOptions { get; } =
+    [
+        new SelectOption { Header = "块", Content = "Block" },
+        new SelectOption { Header = "竖线", Content = "Vertical" },
+        new SelectOption { Header = "下划线", Content = "Underline" }
+    ];
+    public ObservableCollection<ISelectOption> AppearanceBackgroundImagePositionOptions { get; } =
+    [
+        new SelectOption { Header = "中央", Content = "Center" },
+        new SelectOption { Header = "瓦", Content = "Tile" },
+        new SelectOption { Header = "伸展", Content = "Stretch" },
+        new SelectOption { Header = "左上方", Content = "TopLeft" },
+        new SelectOption { Header = "右上", Content = "TopRight" },
+        new SelectOption { Header = "左下方", Content = "BottomLeft" },
+        new SelectOption { Header = "右下", Content = "BottomRight" }
+    ];
+
+    public ObservableCollection<ISelectOption> AppearanceHighlightSetOptions { get; } = new();
+    public ObservableCollection<HighlightSet> AppearanceHighlightSets { get; } = new();
     public ObservableCollection<ISelectOption> SerialPortOptions { get; } = new();
     public ObservableCollection<ISelectOption> SshCipherOptions { get; } = CreateAlgorithmOptions("<Cipher List>", SshAlgorithmPreferenceService.DefaultCipherAlgorithms);
     public ObservableCollection<ISelectOption> SshMacOptions { get; } = CreateAlgorithmOptions("<MAC List>", SshAlgorithmPreferenceService.DefaultMacAlgorithms);
     public ObservableCollection<ISelectOption> SshKeyExchangeOptions { get; } = CreateAlgorithmOptions("<Key Exchange List>", SshAlgorithmPreferenceService.DefaultKeyExchangeAlgorithms);
     public ObservableCollection<SshTunnelRule> SshTunnelRules { get; } = new();
+    public ObservableCollection<LoginScriptRule> LoginScriptRules { get; } = new();
     public ObservableCollection<ISelectOption> TerminalSpeedOptions { get; } =
     [
         new SelectOption { Header = "110", Content = "110" },
@@ -264,6 +677,7 @@ public partial class SessionEditViewModel : ObservableObject
 
     public SessionEditViewModel()
     {
+        LoadHighlightSets(null, "None");
         RefreshSerialPortOptions();
     }
 
@@ -295,6 +709,102 @@ public partial class SessionEditViewModel : ObservableObject
         IdleStringIntervalSeconds = Math.Max(0, session.IdleStringIntervalSeconds);
         IdleString = session.IdleString ?? string.Empty;
         TcpKeepAlive = session.TcpKeepAlive;
+        TerminalType = string.IsNullOrWhiteSpace(session.TerminalType) ? "xterm" : session.TerminalType;
+        TerminalColumns = Math.Clamp(session.TerminalColumns, 20, 500);
+        TerminalRows = Math.Clamp(session.TerminalRows, 5, 200);
+        TerminalFixedSize = session.TerminalFixedSize;
+        TerminalResetSizeOnConnect = session.TerminalResetSizeOnConnect;
+        TerminalScrollbackSize = Math.Clamp(session.TerminalScrollbackSize, 0, 200000);
+        TerminalPushClearedScreenToScrollback = session.TerminalPushClearedScreenToScrollback;
+        TerminalEncoding = string.IsNullOrWhiteSpace(session.TerminalEncoding) ? "utf-8" : session.TerminalEncoding;
+        TerminalTreatAmbiguousAsWide = session.TerminalTreatAmbiguousAsWide;
+        TerminalSendLineEnding = string.IsNullOrWhiteSpace(session.TerminalSendLineEnding) ? "CR" : session.TerminalSendLineEnding;
+        TerminalReceiveLineEnding = string.IsNullOrWhiteSpace(session.TerminalReceiveLineEnding) ? "CRLF" : session.TerminalReceiveLineEnding;
+        TerminalKeyboardFunctionKeyMode = string.IsNullOrWhiteSpace(session.TerminalKeyboardFunctionKeyMode) ? "Default" : session.TerminalKeyboardFunctionKeyMode;
+        TerminalKeyboardMappingFile = session.TerminalKeyboardMappingFile ?? string.Empty;
+        TerminalDeleteKeySequence = string.IsNullOrWhiteSpace(session.TerminalDeleteKeySequence) ? "VT220" : session.TerminalDeleteKeySequence;
+        TerminalBackspaceKeySequence = string.IsNullOrWhiteSpace(session.TerminalBackspaceKeySequence) ? "Backspace" : session.TerminalBackspaceKeySequence;
+        TerminalLeftAltAsMeta = session.TerminalLeftAltAsMeta;
+        TerminalRightAltAsMeta = session.TerminalRightAltAsMeta;
+        TerminalCtrlAltAsAltGr = session.TerminalCtrlAltAsAltGr;
+        TerminalVtAutoWrapMode = session.TerminalVtAutoWrapMode;
+        TerminalVtOriginMode = session.TerminalVtOriginMode;
+        TerminalVtReverseVideoMode = session.TerminalVtReverseVideoMode;
+        TerminalVtNewLineMode = session.TerminalVtNewLineMode;
+        TerminalVtInsertMode = session.TerminalVtInsertMode;
+        TerminalVtEchoMode = session.TerminalVtEchoMode;
+        TerminalVtCursorKeyMode = string.IsNullOrWhiteSpace(session.TerminalVtCursorKeyMode) ? "Normal" : session.TerminalVtCursorKeyMode;
+        TerminalVtNumericKeypadMode = string.IsNullOrWhiteSpace(session.TerminalVtNumericKeypadMode) ? "Normal" : session.TerminalVtNumericKeypadMode;
+        TerminalAdvancedUseApplicationCursorMode = session.TerminalAdvancedUseApplicationCursorMode;
+        TerminalAdvancedShiftLimitsApplicationCursorMode = session.TerminalAdvancedShiftLimitsApplicationCursorMode;
+        TerminalAdvancedClearScreenBackground = session.TerminalAdvancedClearScreenBackground;
+        TerminalAdvancedScrollToBottomOnInputOutput = session.TerminalAdvancedScrollToBottomOnInputOutput;
+        TerminalAdvancedSuspendScrollToBottomOnScrollLock = session.TerminalAdvancedSuspendScrollToBottomOnScrollLock;
+        TerminalAdvancedScrollToBottomByKey = session.TerminalAdvancedScrollToBottomByKey;
+        TerminalAdvancedDuplicateSessionCd = session.TerminalAdvancedDuplicateSessionCd;
+        TerminalAdvancedPreinputString = session.TerminalAdvancedPreinputString ?? string.Empty;
+        TerminalAdvancedUseRxvtHomeEnd = session.TerminalAdvancedUseRxvtHomeEnd;
+        TerminalAdvancedDisableBlinkingText = session.TerminalAdvancedDisableBlinkingText;
+        TerminalAdvancedDisableTitleChange = session.TerminalAdvancedDisableTitleChange;
+        TerminalAdvancedDisableTerminalPrint = session.TerminalAdvancedDisableTerminalPrint;
+        TerminalAdvancedDisableAlternateScreen = session.TerminalAdvancedDisableAlternateScreen;
+        TerminalAdvancedIgnoreResizeRequest = session.TerminalAdvancedIgnoreResizeRequest;
+        TerminalAdvancedAnswerback = string.IsNullOrEmpty(session.TerminalAdvancedAnswerback) ? "CxShell" : session.TerminalAdvancedAnswerback;
+        TerminalAdvancedUseBuiltinLineDrawing = session.TerminalAdvancedUseBuiltinLineDrawing;
+        TerminalAdvancedUseBuiltinPowerline = session.TerminalAdvancedUseBuiltinPowerline;
+        AppearanceColorScheme = string.IsNullOrWhiteSpace(session.AppearanceColorScheme) ? "XTerm" : session.AppearanceColorScheme;
+        AppearanceForegroundColor = ParseColorOrDefault(session.AppearanceForegroundColor, "#CCCCCC");
+        AppearanceBoldForegroundColor = ParseColorOrDefault(session.AppearanceBoldForegroundColor, "#33FF33");
+        AppearanceBackgroundColor = ParseColorOrDefault(session.AppearanceBackgroundColor, "#000000");
+        AppearanceAnsiColors = string.IsNullOrWhiteSpace(session.AppearanceAnsiColors) ? new SessionInfo().AppearanceAnsiColors : session.AppearanceAnsiColors;
+        AppearanceFontFamily = string.IsNullOrWhiteSpace(session.AppearanceFontFamily) ? "DejaVu Sans Mono" : session.AppearanceFontFamily;
+        AppearanceFontStyle = string.IsNullOrWhiteSpace(session.AppearanceFontStyle) ? "Normal" : session.AppearanceFontStyle;
+        AppearanceFontSize = Math.Clamp(session.AppearanceFontSize, 6, 96);
+        AppearanceCjkFontFamily = string.IsNullOrWhiteSpace(session.AppearanceCjkFontFamily) ? AppearanceFontFamily : session.AppearanceCjkFontFamily;
+        AppearanceCjkFontStyle = string.IsNullOrWhiteSpace(session.AppearanceCjkFontStyle) ? "Normal" : session.AppearanceCjkFontStyle;
+        AppearanceCjkFontSize = Math.Clamp(session.AppearanceCjkFontSize, 6, 96);
+        AppearanceUseVariablePitchFont = session.AppearanceUseVariablePitchFont;
+        AppearanceFontQuality = string.IsNullOrWhiteSpace(session.AppearanceFontQuality) ? "Default" : session.AppearanceFontQuality;
+        AppearanceBoldTextMode = string.IsNullOrWhiteSpace(session.AppearanceBoldTextMode) ? "ColorAndFont" : session.AppearanceBoldTextMode;
+        AppearanceCursorColor = ParseColorOrDefault(session.AppearanceCursorColor, "#00FF00");
+        AppearanceCursorTextColor = ParseColorOrDefault(session.AppearanceCursorTextColor, "#000000");
+        AppearanceUseBlinkingCursor = session.AppearanceUseBlinkingCursor;
+        AppearanceCursorBlinkSpeedMilliseconds = Math.Clamp(session.AppearanceCursorBlinkSpeedMilliseconds, 1, 5000);
+        AppearanceCursorShape = string.IsNullOrWhiteSpace(session.AppearanceCursorShape) ? "Block" : session.AppearanceCursorShape;
+        AppearanceWindowPaddingTop = Math.Clamp(session.AppearanceWindowPaddingTop, 0, 200);
+        AppearanceWindowPaddingBottom = Math.Clamp(session.AppearanceWindowPaddingBottom, 0, 200);
+        AppearanceWindowPaddingLeft = Math.Clamp(session.AppearanceWindowPaddingLeft, 0, 200);
+        AppearanceWindowPaddingRight = Math.Clamp(session.AppearanceWindowPaddingRight, 0, 200);
+        AppearanceLineSpacing = Math.Clamp(session.AppearanceLineSpacing, -5, 32);
+        AppearanceCharacterSpacing = Math.Clamp(session.AppearanceCharacterSpacing, -5, 32);
+        AppearanceTabColorMode = string.IsNullOrWhiteSpace(session.AppearanceTabColorMode) ? "Default" : session.AppearanceTabColorMode;
+        AppearanceTabCustomColor = ParseColorOrDefault(session.AppearanceTabCustomColor, "#000000");
+        AppearanceBackgroundImagePath = session.AppearanceBackgroundImagePath ?? string.Empty;
+        AppearanceBackgroundImagePosition = string.IsNullOrWhiteSpace(session.AppearanceBackgroundImagePosition)
+            ? "Center"
+            : session.AppearanceBackgroundImagePosition;
+        LoadHighlightSets(session.AppearanceHighlightSets, session.AppearanceHighlightSetId);
+        AdvancedQuickCommandSet = string.IsNullOrWhiteSpace(session.AdvancedQuickCommandSet) ? "<<所有命令>>" : session.AdvancedQuickCommandSet;
+        AdvancedDisableQuickCommandShortcuts = session.AdvancedDisableQuickCommandShortcuts;
+        AdvancedFtpPort = Math.Clamp(session.AdvancedFtpPort <= 0 ? 21 : session.AdvancedFtpPort, 1, 65535);
+        AdvancedCharacterDelayMilliseconds = Math.Clamp(session.AdvancedCharacterDelayMilliseconds, 0, 60000);
+        AdvancedUseLineDelay = session.AdvancedUseLineDelay;
+        AdvancedLineDelayMilliseconds = Math.Clamp(session.AdvancedLineDelayMilliseconds, 0, 60000);
+        AdvancedUsePromptDelay = session.AdvancedUsePromptDelay;
+        AdvancedPromptText = session.AdvancedPromptText ?? string.Empty;
+        AdvancedPromptMaxWaitMilliseconds = Math.Clamp(session.AdvancedPromptMaxWaitMilliseconds, 0, 600000);
+        AdvancedUseNagle = session.AdvancedUseNagle;
+        AdvancedIpVersion = string.IsNullOrWhiteSpace(session.AdvancedIpVersion) ? "Auto" : session.AdvancedIpVersion;
+        AdvancedTraceSshProtocol = session.AdvancedTraceSshProtocol;
+        AdvancedTraceSshTunneling = session.AdvancedTraceSshTunneling;
+        AdvancedTraceSshPackets = session.AdvancedTraceSshPackets;
+        AdvancedTraceTelnetOptions = session.AdvancedTraceTelnetOptions;
+        EnableLoginScriptRules = session.EnableLoginScriptRules;
+        foreach (var rule in session.LoginScriptRules.OrderBy(rule => rule.SortOrder))
+            LoginScriptRules.Add(CloneLoginScriptRule(rule));
+        RunLoginScriptFile = session.RunLoginScriptFile;
+        LoginScriptFilePath = session.LoginScriptFilePath ?? string.Empty;
+        LoginScriptParameters = session.LoginScriptParameters ?? string.Empty;
         SshRemoteCommand = session.SshRemoteCommand ?? string.Empty;
         SshVersionPolicy = string.IsNullOrWhiteSpace(session.SshVersionPolicy) ? "Ssh2Only" : session.SshVersionPolicy;
         SshUseXagent = session.SshUseXagent;
@@ -391,6 +901,112 @@ public partial class SessionEditViewModel : ObservableObject
         session.IdleStringIntervalSeconds = Math.Max(0, (int)IdleStringIntervalSeconds);
         session.IdleString = IdleString;
         session.TcpKeepAlive = TcpKeepAlive;
+        session.TerminalType = string.IsNullOrWhiteSpace(TerminalType) ? "xterm" : TerminalType;
+        session.TerminalColumns = Math.Clamp((int)TerminalColumns, 20, 500);
+        session.TerminalRows = Math.Clamp((int)TerminalRows, 5, 200);
+        session.TerminalFixedSize = TerminalFixedSize;
+        session.TerminalResetSizeOnConnect = TerminalResetSizeOnConnect;
+        session.TerminalScrollbackSize = Math.Clamp((int)TerminalScrollbackSize, 0, 200000);
+        session.TerminalPushClearedScreenToScrollback = TerminalPushClearedScreenToScrollback;
+        session.TerminalEncoding = string.IsNullOrWhiteSpace(TerminalEncoding) ? "utf-8" : TerminalEncoding;
+        session.TerminalTreatAmbiguousAsWide = TerminalTreatAmbiguousAsWide;
+        session.TerminalSendLineEnding = string.IsNullOrWhiteSpace(TerminalSendLineEnding) ? "CR" : TerminalSendLineEnding;
+        session.TerminalReceiveLineEnding = string.IsNullOrWhiteSpace(TerminalReceiveLineEnding) ? "CRLF" : TerminalReceiveLineEnding;
+        session.TerminalKeyboardFunctionKeyMode = string.IsNullOrWhiteSpace(TerminalKeyboardFunctionKeyMode) ? "Default" : TerminalKeyboardFunctionKeyMode;
+        session.TerminalKeyboardMappingFile = TerminalKeyboardMappingFile.Trim();
+        session.TerminalDeleteKeySequence = string.IsNullOrWhiteSpace(TerminalDeleteKeySequence) ? "VT220" : TerminalDeleteKeySequence;
+        session.TerminalBackspaceKeySequence = string.IsNullOrWhiteSpace(TerminalBackspaceKeySequence) ? "Backspace" : TerminalBackspaceKeySequence;
+        session.TerminalLeftAltAsMeta = TerminalLeftAltAsMeta;
+        session.TerminalRightAltAsMeta = TerminalRightAltAsMeta;
+        session.TerminalCtrlAltAsAltGr = TerminalCtrlAltAsAltGr;
+        session.TerminalVtAutoWrapMode = TerminalVtAutoWrapMode;
+        session.TerminalVtOriginMode = TerminalVtOriginMode;
+        session.TerminalVtReverseVideoMode = TerminalVtReverseVideoMode;
+        session.TerminalVtNewLineMode = TerminalVtNewLineMode;
+        session.TerminalVtInsertMode = TerminalVtInsertMode;
+        session.TerminalVtEchoMode = TerminalVtEchoMode;
+        session.TerminalVtCursorKeyMode = string.IsNullOrWhiteSpace(TerminalVtCursorKeyMode) ? "Normal" : TerminalVtCursorKeyMode;
+        session.TerminalVtNumericKeypadMode = string.IsNullOrWhiteSpace(TerminalVtNumericKeypadMode) ? "Normal" : TerminalVtNumericKeypadMode;
+        session.TerminalAdvancedUseApplicationCursorMode = TerminalAdvancedUseApplicationCursorMode;
+        session.TerminalAdvancedShiftLimitsApplicationCursorMode = TerminalAdvancedShiftLimitsApplicationCursorMode;
+        session.TerminalAdvancedClearScreenBackground = TerminalAdvancedClearScreenBackground;
+        session.TerminalAdvancedScrollToBottomOnInputOutput = TerminalAdvancedScrollToBottomOnInputOutput;
+        session.TerminalAdvancedSuspendScrollToBottomOnScrollLock = TerminalAdvancedSuspendScrollToBottomOnScrollLock;
+        session.TerminalAdvancedScrollToBottomByKey = TerminalAdvancedScrollToBottomByKey;
+        session.TerminalAdvancedDuplicateSessionCd = TerminalAdvancedDuplicateSessionCd;
+        session.TerminalAdvancedPreinputString = TerminalAdvancedPreinputString.Trim();
+        session.TerminalAdvancedUseRxvtHomeEnd = TerminalAdvancedUseRxvtHomeEnd;
+        session.TerminalAdvancedDisableBlinkingText = TerminalAdvancedDisableBlinkingText;
+        session.TerminalAdvancedDisableTitleChange = TerminalAdvancedDisableTitleChange;
+        session.TerminalAdvancedDisableTerminalPrint = TerminalAdvancedDisableTerminalPrint;
+        session.TerminalAdvancedDisableAlternateScreen = TerminalAdvancedDisableAlternateScreen;
+        session.TerminalAdvancedIgnoreResizeRequest = TerminalAdvancedIgnoreResizeRequest;
+        session.TerminalAdvancedAnswerback = string.IsNullOrEmpty(TerminalAdvancedAnswerback) ? "CxShell" : TerminalAdvancedAnswerback;
+        session.TerminalAdvancedUseBuiltinLineDrawing = TerminalAdvancedUseBuiltinLineDrawing;
+        session.TerminalAdvancedUseBuiltinPowerline = TerminalAdvancedUseBuiltinPowerline;
+        session.AppearanceColorScheme = string.IsNullOrWhiteSpace(AppearanceColorScheme) ? "XTerm" : AppearanceColorScheme;
+        session.AppearanceForegroundColor = ToHex(AppearanceForegroundColor);
+        session.AppearanceBoldForegroundColor = ToHex(AppearanceBoldForegroundColor);
+        session.AppearanceBackgroundColor = ToHex(AppearanceBackgroundColor);
+        session.AppearanceAnsiColors = AppearanceAnsiColors;
+        session.AppearanceFontFamily = string.IsNullOrWhiteSpace(AppearanceFontFamily) ? "DejaVu Sans Mono" : AppearanceFontFamily;
+        session.AppearanceFontStyle = string.IsNullOrWhiteSpace(AppearanceFontStyle) ? "Normal" : AppearanceFontStyle;
+        session.AppearanceFontSize = Math.Clamp((int)AppearanceFontSize, 6, 96);
+        session.AppearanceCjkFontFamily = string.IsNullOrWhiteSpace(AppearanceCjkFontFamily) ? session.AppearanceFontFamily : AppearanceCjkFontFamily;
+        session.AppearanceCjkFontStyle = string.IsNullOrWhiteSpace(AppearanceCjkFontStyle) ? "Normal" : AppearanceCjkFontStyle;
+        session.AppearanceCjkFontSize = Math.Clamp((int)AppearanceCjkFontSize, 6, 96);
+        session.AppearanceUseVariablePitchFont = AppearanceUseVariablePitchFont;
+        session.AppearanceFontQuality = string.IsNullOrWhiteSpace(AppearanceFontQuality) ? "Default" : AppearanceFontQuality;
+        session.AppearanceBoldTextMode = string.IsNullOrWhiteSpace(AppearanceBoldTextMode) ? "ColorAndFont" : AppearanceBoldTextMode;
+        session.AppearanceCursorColor = ToHex(AppearanceCursorColor);
+        session.AppearanceCursorTextColor = ToHex(AppearanceCursorTextColor);
+        session.AppearanceUseBlinkingCursor = AppearanceUseBlinkingCursor;
+        session.AppearanceCursorBlinkSpeedMilliseconds = Math.Clamp((int)AppearanceCursorBlinkSpeedMilliseconds, 1, 5000);
+        session.AppearanceCursorShape = string.IsNullOrWhiteSpace(AppearanceCursorShape) ? "Block" : AppearanceCursorShape;
+        session.AppearanceWindowPaddingTop = Math.Clamp((int)AppearanceWindowPaddingTop, 0, 200);
+        session.AppearanceWindowPaddingBottom = Math.Clamp((int)AppearanceWindowPaddingBottom, 0, 200);
+        session.AppearanceWindowPaddingLeft = Math.Clamp((int)AppearanceWindowPaddingLeft, 0, 200);
+        session.AppearanceWindowPaddingRight = Math.Clamp((int)AppearanceWindowPaddingRight, 0, 200);
+        session.AppearanceLineSpacing = Math.Clamp((int)AppearanceLineSpacing, -5, 32);
+        session.AppearanceCharacterSpacing = Math.Clamp((int)AppearanceCharacterSpacing, -5, 32);
+        session.AppearanceTabColorMode = string.IsNullOrWhiteSpace(AppearanceTabColorMode) ? "Default" : AppearanceTabColorMode;
+        session.AppearanceTabCustomColor = ToHex(AppearanceTabCustomColor);
+        session.AppearanceBackgroundImagePath = AppearanceBackgroundImagePath.Trim();
+        session.AppearanceBackgroundImagePosition = string.IsNullOrWhiteSpace(AppearanceBackgroundImagePosition)
+            ? "Center"
+            : AppearanceBackgroundImagePosition;
+        session.AppearanceHighlightSetId = string.IsNullOrWhiteSpace(AppearanceHighlightSetId)
+            ? "None"
+            : AppearanceHighlightSetId;
+        session.AppearanceHighlightSets = new ObservableCollection<HighlightSet>(
+            AppearanceHighlightSets.Select(CloneHighlightSet));
+        session.AdvancedQuickCommandSet = string.IsNullOrWhiteSpace(AdvancedQuickCommandSet) ? "<<所有命令>>" : AdvancedQuickCommandSet.Trim();
+        session.AdvancedDisableQuickCommandShortcuts = AdvancedDisableQuickCommandShortcuts;
+        session.AdvancedFtpPort = Math.Clamp((int)AdvancedFtpPort, 1, 65535);
+        session.AdvancedCharacterDelayMilliseconds = Math.Clamp((int)AdvancedCharacterDelayMilliseconds, 0, 60000);
+        session.AdvancedUseLineDelay = AdvancedUseLineDelay;
+        session.AdvancedLineDelayMilliseconds = Math.Clamp((int)AdvancedLineDelayMilliseconds, 0, 60000);
+        session.AdvancedUsePromptDelay = AdvancedUsePromptDelay;
+        session.AdvancedPromptText = AdvancedPromptText.Trim();
+        session.AdvancedPromptMaxWaitMilliseconds = Math.Clamp((int)AdvancedPromptMaxWaitMilliseconds, 0, 600000);
+        session.AdvancedUseNagle = AdvancedUseNagle;
+        session.AdvancedIpVersion = string.IsNullOrWhiteSpace(AdvancedIpVersion) ? "Auto" : AdvancedIpVersion;
+        session.AdvancedTraceSshProtocol = AdvancedTraceSshProtocol;
+        session.AdvancedTraceSshTunneling = AdvancedTraceSshTunneling;
+        session.AdvancedTraceSshPackets = AdvancedTraceSshPackets;
+        session.AdvancedTraceTelnetOptions = AdvancedTraceTelnetOptions;
+        session.EnableLoginScriptRules = EnableLoginScriptRules;
+        session.LoginScriptRules = LoginScriptRules
+            .Select((rule, index) =>
+            {
+                var clone = CloneLoginScriptRule(rule);
+                clone.SortOrder = index;
+                return clone;
+            })
+            .ToList();
+        session.RunLoginScriptFile = RunLoginScriptFile;
+        session.LoginScriptFilePath = LoginScriptFilePath.Trim();
+        session.LoginScriptParameters = LoginScriptParameters.Trim();
         session.SshRemoteCommand = SshRemoteCommand.Trim();
         session.SshVersionPolicy = string.IsNullOrWhiteSpace(SshVersionPolicy) ? "Ssh2Only" : SshVersionPolicy;
         session.SshUseXagent = SshUseXagent;
@@ -488,6 +1104,53 @@ public partial class SessionEditViewModel : ObservableObject
         OnPropertyChanged(nameof(HasSelectedSshTunnelRule));
     }
 
+    partial void OnSelectedLoginScriptRuleChanged(LoginScriptRule? value)
+    {
+        OnPropertyChanged(nameof(HasSelectedLoginScriptRule));
+    }
+
+    partial void OnSelectedHighlightSetChanged(HighlightSet? value)
+    {
+        OnPropertyChanged(nameof(HasSelectedHighlightSet));
+        if (value != null)
+            AppearanceHighlightSetId = value.Id.ToString();
+        SelectedHighlightRule = null;
+    }
+
+    partial void OnSelectedHighlightRuleChanged(HighlightRule? value)
+    {
+        OnPropertyChanged(nameof(HasSelectedHighlightRule));
+    }
+
+    partial void OnAppearanceHighlightSetIdChanged(string value)
+    {
+        SelectedHighlightSet = AppearanceHighlightSets.FirstOrDefault(set =>
+            string.Equals(set.Id.ToString(), value, StringComparison.OrdinalIgnoreCase));
+    }
+
+    partial void OnAdvancedUseLineDelayChanged(bool value)
+    {
+        if (value)
+            AdvancedUsePromptDelay = false;
+        OnPropertyChanged(nameof(IsAdvancedLineDelay));
+        OnPropertyChanged(nameof(IsAdvancedPromptDelay));
+    }
+
+    partial void OnAdvancedUsePromptDelayChanged(bool value)
+    {
+        if (value)
+            AdvancedUseLineDelay = false;
+        OnPropertyChanged(nameof(IsAdvancedLineDelay));
+        OnPropertyChanged(nameof(IsAdvancedPromptDelay));
+    }
+
+    partial void OnAdvancedIpVersionChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsAdvancedIpVersionAuto));
+        OnPropertyChanged(nameof(IsAdvancedIpVersion4));
+        OnPropertyChanged(nameof(IsAdvancedIpVersion6));
+    }
+
     partial void OnSftpUseCustomServerChanged(bool value)
     {
         OnPropertyChanged(nameof(IsSftpCustomServerCommandEnabled));
@@ -501,6 +1164,124 @@ public partial class SessionEditViewModel : ObservableObject
     partial void OnSendIdleStringChanged(bool value)
     {
         OnPropertyChanged(nameof(IsIdleStringSettingsEnabled));
+    }
+
+    partial void OnRunLoginScriptFileChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsLoginScriptFileEnabled));
+    }
+
+    partial void OnTerminalKeyboardFunctionKeyModeChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsKeyboardMappingFileEnabled));
+    }
+
+    partial void OnTerminalDeleteKeySequenceChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsDeleteKeyVt220));
+        OnPropertyChanged(nameof(IsDeleteKeyAscii127));
+        OnPropertyChanged(nameof(IsDeleteKeyBackspace));
+    }
+
+    partial void OnTerminalBackspaceKeySequenceChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsBackspaceKeyVt220));
+        OnPropertyChanged(nameof(IsBackspaceKeyAscii127));
+        OnPropertyChanged(nameof(IsBackspaceKeyBackspace));
+    }
+
+    partial void OnTerminalVtCursorKeyModeChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsCursorKeyModeNormal));
+        OnPropertyChanged(nameof(IsCursorKeyModeApplication));
+    }
+
+    partial void OnTerminalVtNumericKeypadModeChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsNumericKeypadModeNormal));
+        OnPropertyChanged(nameof(IsNumericKeypadModeApplication));
+        OnPropertyChanged(nameof(IsNumericKeypadModeForceNormal));
+    }
+
+    partial void OnAppearanceColorSchemeChanged(string value)
+    {
+        ApplyAppearanceColorScheme(value);
+    }
+
+    partial void OnAppearanceForegroundColorChanged(Color value)
+    {
+        OnPropertyChanged(nameof(AppearancePreviewBoldColor));
+        OnPropertyChanged(nameof(AppearanceForegroundBrush));
+        OnPropertyChanged(nameof(AppearancePreviewBoldBrush));
+    }
+
+    partial void OnAppearanceBoldForegroundColorChanged(Color value)
+    {
+        OnPropertyChanged(nameof(AppearancePreviewBoldColor));
+        OnPropertyChanged(nameof(AppearanceBoldForegroundBrush));
+        OnPropertyChanged(nameof(AppearancePreviewBoldBrush));
+    }
+
+    partial void OnAppearanceBackgroundColorChanged(Color value)
+    {
+        OnPropertyChanged(nameof(AppearanceBackgroundBrush));
+    }
+
+    partial void OnAppearanceCursorColorChanged(Color value)
+    {
+        OnPropertyChanged(nameof(AppearanceCursorBrush));
+    }
+
+    partial void OnAppearanceCursorTextColorChanged(Color value)
+    {
+        OnPropertyChanged(nameof(AppearanceCursorTextBrush));
+    }
+
+    partial void OnAppearanceFontStyleChanged(string value)
+    {
+        OnPropertyChanged(nameof(AppearancePreviewFontStyle));
+        OnPropertyChanged(nameof(AppearancePreviewFontWeight));
+    }
+
+    partial void OnAppearanceBoldTextModeChanged(string value)
+    {
+        OnPropertyChanged(nameof(AppearancePreviewBoldWeight));
+        OnPropertyChanged(nameof(AppearancePreviewBoldColor));
+        OnPropertyChanged(nameof(AppearancePreviewBoldBrush));
+    }
+
+    partial void OnAppearanceAnsiColorsChanged(string value)
+    {
+        NotifyAnsiPreviewColorsChanged();
+    }
+
+    partial void OnAppearanceCursorShapeChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsAppearanceCursorShapeBlock));
+        OnPropertyChanged(nameof(IsAppearanceCursorShapeVertical));
+        OnPropertyChanged(nameof(IsAppearanceCursorShapeUnderline));
+        NotifyAppearancePreviewCursorVisibilityChanged();
+    }
+
+    partial void OnAppearancePreviewCursorVisibleChanged(bool value)
+    {
+        NotifyAppearancePreviewCursorVisibilityChanged();
+    }
+
+    partial void OnAppearanceTabColorModeChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsAppearanceTabColorDefault));
+        OnPropertyChanged(nameof(IsAppearanceTabColorRed));
+        OnPropertyChanged(nameof(IsAppearanceTabColorPurple));
+        OnPropertyChanged(nameof(IsAppearanceTabColorYellow));
+        OnPropertyChanged(nameof(IsAppearanceTabColorCustom));
+    }
+
+    private void NotifyAppearancePreviewCursorVisibilityChanged()
+    {
+        OnPropertyChanged(nameof(IsAppearanceCursorBlockVisible));
+        OnPropertyChanged(nameof(IsAppearanceCursorVerticalVisible));
+        OnPropertyChanged(nameof(IsAppearanceCursorUnderlineVisible));
     }
 
     partial void OnValidationMessageChanged(string? value)
@@ -783,6 +1564,127 @@ public partial class SessionEditViewModel : ObservableObject
         return options;
     }
 
+    private static ObservableCollection<ISelectOption> CreateFontOptions()
+    {
+        var fontNames = new[]
+            {
+                "DejaVu Sans Mono",
+                "Cascadia Mono",
+                "Cascadia Code",
+                "Consolas",
+                "Courier New",
+                "Fixedsys",
+                "Lucida Console",
+                "Lucida Sans Typewriter",
+                "MS Gothic",
+                "SimSun-ExtB",
+                "SimSun-ExtG",
+                "Terminal"
+            }
+            .Concat(GetInstalledFontNames())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase)
+            .Select(name => (ISelectOption)new SelectOption { Header = name, Content = name });
+
+        return new ObservableCollection<ISelectOption>(fontNames);
+    }
+
+    private Color GetAnsiPreviewColor(int index, string fallback)
+    {
+        var colors = AppearanceAnsiColors
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return index >= 0 && index < colors.Length
+            ? ParseColorOrDefault(colors[index], fallback)
+            : Color.Parse(fallback);
+    }
+
+    private void NotifyAnsiPreviewColorsChanged()
+    {
+        OnPropertyChanged(nameof(AppearanceAnsiBlack));
+        OnPropertyChanged(nameof(AppearanceAnsiRed));
+        OnPropertyChanged(nameof(AppearanceAnsiGreen));
+        OnPropertyChanged(nameof(AppearanceAnsiYellow));
+        OnPropertyChanged(nameof(AppearanceAnsiBlue));
+        OnPropertyChanged(nameof(AppearanceAnsiMagenta));
+        OnPropertyChanged(nameof(AppearanceAnsiCyan));
+        OnPropertyChanged(nameof(AppearanceAnsiWhite));
+        OnPropertyChanged(nameof(AppearanceAnsiBlackBrush));
+        OnPropertyChanged(nameof(AppearanceAnsiRedBrush));
+        OnPropertyChanged(nameof(AppearanceAnsiGreenBrush));
+        OnPropertyChanged(nameof(AppearanceAnsiYellowBrush));
+        OnPropertyChanged(nameof(AppearanceAnsiBlueBrush));
+        OnPropertyChanged(nameof(AppearanceAnsiMagentaBrush));
+        OnPropertyChanged(nameof(AppearanceAnsiCyanBrush));
+        OnPropertyChanged(nameof(AppearanceAnsiWhiteBrush));
+    }
+
+    public static AppearanceColorPalette GetAppearanceColorSchemePalette(string value)
+    {
+        return value switch
+        {
+            "AnsiWhite" or "BlackOnWhite" or "NewWhite" or "PastelWhite" => new AppearanceColorPalette("#000000", "#000000", "#FFFFFF", "#000000", "#FFFFFF",
+                "#000000;#CD0000;#00CD00;#CDCD00;#0000EE;#CD00CD;#00CDCD;#E5E5E5;#7F7F7F;#FF0000;#00FF00;#FFFF00;#5C5CFF;#FF00FF;#00FFFF;#FFFFFF"),
+            "WhiteOnBlack" or "AnsiBlack" => new AppearanceColorPalette("#FFFFFF", "#FFFFFF", "#000000", "#FFFFFF", "#000000",
+                "#000000;#CD0000;#00CD00;#CDCD00;#0000EE;#CD00CD;#00CDCD;#E5E5E5;#7F7F7F;#FF0000;#00FF00;#FFFF00;#5C5CFF;#FF00FF;#00FFFF;#FFFFFF"),
+            "Afterglow" => new AppearanceColorPalette("#D0D0D0", "#FFD580", "#212121", "#D0D0D0", "#212121",
+                "#151515;#AC4142;#7E8E50;#E5B567;#6C99BB;#9F4E85;#7DD6CF;#D0D0D0;#505050;#AC4142;#7E8E50;#E5B567;#6C99BB;#9F4E85;#7DD6CF;#F5F5F5"),
+            "Arthur" => new AppearanceColorPalette("#DDEEDD", "#A4FFA4", "#1C1C1C", "#DDEEDD", "#1C1C1C",
+                "#3D352A;#CD5C5C;#86AF80;#E8AE5B;#6495ED;#DEB887;#B0C4DE;#BBAA99;#554444;#CC5533;#88AA22;#FFA75D;#87CEEB;#996600;#B0C4DE;#DDCCBB"),
+            "BelafonteDay" => new AppearanceColorPalette("#45373C", "#45373C", "#D5CCBA", "#45373C", "#D5CCBA",
+                "#20111B;#BE100E;#858162;#EAA549;#426A79;#97522C;#989A9C;#968C83;#5E5252;#BE100E;#858162;#EAA549;#426A79;#97522C;#989A9C;#D5CCBA"),
+            "Chalk" or "Chalkboard" => new AppearanceColorPalette("#D9E6F2", "#96E072", "#2B2D2E", "#D9E6F2", "#2B2D2E",
+                "#000000;#C37372;#72C373;#C2C372;#7372C3;#C372C2;#72C2C3;#D9D9D9;#323232;#DCA3A3;#A3DCA3;#DCDCA3;#A3A3DC;#DCA3DC;#A3DCDC;#FFFFFF"),
+            "Codeschool" => new AppearanceColorPalette("#9EA7A6", "#B5D8F6", "#232C31", "#9EA7A6", "#232C31",
+                "#2A343A;#2A5491;#237986;#A03B1E;#484D79;#C59820;#B02F30;#9EA7A6;#3F4944;#2A5491;#237986;#A03B1E;#484D79;#C59820;#B02F30;#B5D8F6"),
+            "Earthsong" => new AppearanceColorPalette("#E5C7A9", "#F6F7EC", "#292520", "#E5C7A9", "#292520",
+                "#121418;#C94234;#85C54C;#F5AE2E;#1398B9;#D0633D;#509552;#E5C6AA;#675F54;#FF645A;#98E036;#E0D561;#5FDAFF;#FF9269;#84F088;#F6F7EC"),
+            "Espresso" => new AppearanceColorPalette("#FFFFFF", "#FFFFFF", "#323232", "#FFFFFF", "#323232",
+                "#353535;#D25252;#A5C261;#FFC66D;#6C99BB;#D197D9;#BED6FF;#EEEEEC;#535353;#F00C0C;#C2E075;#E1E48B;#8AB7D9;#EFB5F7;#DCF4FF;#FFFFFF"),
+            "IrBlack" or "NewBlack" => new AppearanceColorPalette("#F1F1F1", "#A8FF60", "#000000", "#F1F1F1", "#000000",
+                "#4E4E4E;#FF6C60;#A8FF60;#FFFFB6;#96CBFE;#FF73FD;#C6C5FE;#EEEEEE;#7C7C7C;#FFB6B0;#CEFFAB;#FFFFCB;#B5DCFF;#FF9CFE;#DFDFFE;#FFFFFF"),
+            "Obsidian" => new AppearanceColorPalette("#E0E0E0", "#93C863", "#283033", "#E0E0E0", "#283033",
+                "#000000;#A60001;#00BB00;#FECD22;#3A9BDB;#BB00BB;#00BBBB;#BBBBBB;#555555;#FF0003;#93C863;#FEF874;#A1D7FF;#FF55FF;#55FFFF;#FFFFFF"),
+            _ => new AppearanceColorPalette("#CCCCCC", "#33FF33", "#000000", "#00FF00", "#000000",
+                "#000000;#CC0000;#4E9A06;#C4A000;#3465A4;#75507B;#06989A;#D3D7CF;#555753;#EF2929;#8AE234;#FCE94F;#729FCF;#AD7FA8;#34E2E2;#EEEEEC")
+        };
+    }
+
+    private void ApplyAppearanceColorScheme(string value)
+    {
+        var scheme = GetAppearanceColorSchemePalette(value);
+
+        AppearanceForegroundColor = Color.Parse(scheme.Foreground);
+        AppearanceBoldForegroundColor = Color.Parse(scheme.BoldForeground);
+        AppearanceBackgroundColor = Color.Parse(scheme.Background);
+        AppearanceCursorColor = Color.Parse(scheme.Cursor);
+        AppearanceCursorTextColor = Color.Parse(scheme.CursorText);
+        AppearanceAnsiColors = scheme.AnsiColors;
+    }
+
+    private static IEnumerable<string> GetInstalledFontNames()
+    {
+        try
+        {
+            return FontManager.Current.SystemFonts
+                .Select(font => font.Name)
+                .Where(name => !string.IsNullOrWhiteSpace(name));
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static Color ParseColorOrDefault(string? value, string fallback)
+    {
+        return Color.TryParse(value, out var color) ? color : Color.Parse(fallback);
+    }
+
+    private static string ToHex(Color color)
+    {
+        return $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+    }
+
     private static string NormalizeAlgorithmList(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -805,6 +1707,159 @@ public partial class SessionEditViewModel : ObservableObject
             DestinationHost = source.DestinationHost,
             DestinationPort = source.DestinationPort,
             Description = source.Description
+        };
+    }
+
+    public static LoginScriptRule CloneLoginScriptRule(LoginScriptRule source)
+    {
+        return new LoginScriptRule
+        {
+            Id = source.Id,
+            Expect = source.Expect,
+            Send = source.Send,
+            HideText = source.HideText,
+            SortOrder = source.SortOrder
+        };
+    }
+
+    public void RefreshHighlightSetOptions()
+    {
+        AppearanceHighlightSetOptions.Clear();
+        AppearanceHighlightSetOptions.Add(new SelectOption { Header = "None", Content = "None" });
+
+        foreach (var set in AppearanceHighlightSets)
+            AppearanceHighlightSetOptions.Add(new SelectOption { Header = set.Name, Content = set.Id.ToString() });
+
+        if (!string.Equals(AppearanceHighlightSetId, "None", StringComparison.OrdinalIgnoreCase) &&
+            AppearanceHighlightSets.All(set => !string.Equals(set.Id.ToString(), AppearanceHighlightSetId, StringComparison.OrdinalIgnoreCase)))
+        {
+            AppearanceHighlightSetId = "None";
+        }
+    }
+
+    private void LoadHighlightSets(IEnumerable<HighlightSet>? sets, string? selectedSetId)
+    {
+        AppearanceHighlightSets.Clear();
+        var sourceSets = sets?.Select(CloneHighlightSet).ToList() ?? [];
+        if (sourceSets.Count == 0)
+            sourceSets.Add(CreateSampleHighlightSet());
+        EnsureSampleHighlightSet(sourceSets);
+
+        foreach (var set in sourceSets)
+            AppearanceHighlightSets.Add(set);
+
+        AppearanceHighlightSetId = string.IsNullOrWhiteSpace(selectedSetId) ? "None" : selectedSetId;
+        SelectedHighlightSet = AppearanceHighlightSets.FirstOrDefault(set =>
+            string.Equals(set.Id.ToString(), AppearanceHighlightSetId, StringComparison.OrdinalIgnoreCase));
+        RefreshHighlightSetOptions();
+    }
+
+    private static void EnsureSampleHighlightSet(List<HighlightSet> sets)
+    {
+        var sample = sets.FirstOrDefault(set =>
+            string.Equals(set.Name, "New Highlight Set (Sample)", StringComparison.OrdinalIgnoreCase));
+
+        if (sample == null)
+        {
+            sets.Insert(0, CreateSampleHighlightSet());
+            return;
+        }
+
+        if (sample.Rules.Count > 0)
+            return;
+
+        var sampleRules = CreateSampleHighlightSet().Rules;
+        foreach (var rule in sampleRules)
+            sample.Rules.Add(CloneHighlightRule(rule));
+        if (string.IsNullOrWhiteSpace(sample.Name))
+            sample.Name = "New Highlight Set (Sample)";
+    }
+
+    public static HighlightSet CreateSampleHighlightSet()
+    {
+        var set = new HighlightSet { Name = "New Highlight Set (Sample)" };
+        set.Rules.Add(new HighlightRule
+        {
+            Keyword = @"\d{3}-\d{3,4}-\d{4}",
+            IsRegex = true,
+            Description = "Phone number",
+            ForegroundColor = "#000000",
+            BackgroundColor = "#FFFF00",
+            Bold = true,
+            SortOrder = 0
+        });
+        set.Rules.Add(new HighlightRule
+        {
+            Keyword = @"([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})",
+            IsRegex = true,
+            Description = "IP address",
+            ForegroundColor = "#000000",
+            BackgroundColor = "#FFA940",
+            Italic = true,
+            SortOrder = 1
+        });
+        set.Rules.Add(new HighlightRule
+        {
+            Keyword = @"[_a-z0-9-]+([._a-z0-9-]+)*@[a-z0-9-]+([.a-z0-9-]+)*",
+            IsRegex = true,
+            Description = "Email address",
+            ForegroundColor = "#111111",
+            BackgroundColor = "#9DBBFF",
+            Underline = true,
+            SortOrder = 2
+        });
+        set.Rules.Add(new HighlightRule
+        {
+            Keyword = @"\d",
+            IsRegex = true,
+            Description = "Only number",
+            ForegroundColor = "#FF4D4F",
+            BackgroundColor = "#000000",
+            Strikethrough = true,
+            SortOrder = 3
+        });
+        set.Rules.Add(new HighlightRule
+        {
+            Keyword = @"\s",
+            IsRegex = true,
+            Description = "Space",
+            ForegroundColor = "#000000",
+            BackgroundColor = "#C8C8C8",
+            SortOrder = 4
+        });
+        return set;
+    }
+
+    public static HighlightSet CloneHighlightSet(HighlightSet source)
+    {
+        var clone = new HighlightSet
+        {
+            Id = source.Id,
+            Name = string.IsNullOrWhiteSpace(source.Name) ? "Highlight Set" : source.Name
+        };
+        foreach (var rule in source.Rules.OrderBy(rule => rule.SortOrder))
+            clone.Rules.Add(CloneHighlightRule(rule));
+        return clone;
+    }
+
+    public static HighlightRule CloneHighlightRule(HighlightRule source)
+    {
+        return new HighlightRule
+        {
+            Id = source.Id,
+            IsEnabled = source.IsEnabled,
+            Keyword = source.Keyword,
+            IsCaseSensitive = source.IsCaseSensitive,
+            IsRegex = source.IsRegex,
+            Description = source.Description,
+            ForegroundColor = source.ForegroundColor,
+            BackgroundColor = source.BackgroundColor,
+            UseTerminalColor = source.UseTerminalColor,
+            Bold = source.Bold,
+            Italic = source.Italic,
+            Underline = source.Underline,
+            Strikethrough = source.Strikethrough,
+            SortOrder = source.SortOrder
         };
     }
 }

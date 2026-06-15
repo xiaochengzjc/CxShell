@@ -1,6 +1,7 @@
 using System;
 using System.Buffers.Binary;
 using System.IO;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
@@ -35,19 +36,20 @@ public static class ProxyConnectionFactory
         string host,
         int port,
         ProxySettings? proxy,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string ipVersion = "Auto")
     {
         if (proxy?.IsEnabled != true)
         {
             var directClient = new TcpClient();
-            await directClient.ConnectAsync(host, port, cancellationToken);
+            await ConnectClientAsync(directClient, host, port, ipVersion, cancellationToken);
             return directClient;
         }
 
         var client = new TcpClient();
         try
         {
-            await client.ConnectAsync(proxy.Host, proxy.Port, cancellationToken);
+            await ConnectClientAsync(client, proxy.Host, proxy.Port, ipVersion, cancellationToken);
             var stream = client.GetStream();
             switch (proxy.Protocol)
             {
@@ -72,6 +74,30 @@ public static class ProxyConnectionFactory
             client.Dispose();
             throw;
         }
+    }
+
+    private static async Task ConnectClientAsync(
+        TcpClient client,
+        string host,
+        int port,
+        string ipVersion,
+        CancellationToken cancellationToken)
+    {
+        if (string.Equals(ipVersion, "Auto", StringComparison.OrdinalIgnoreCase))
+        {
+            await client.ConnectAsync(host, port, cancellationToken);
+            return;
+        }
+
+        var family = string.Equals(ipVersion, "IPv6", StringComparison.OrdinalIgnoreCase)
+            ? AddressFamily.InterNetworkV6
+            : AddressFamily.InterNetwork;
+        var addresses = await Dns.GetHostAddressesAsync(host, family, cancellationToken);
+        var address = addresses.FirstOrDefault();
+        if (address == null)
+            throw new SocketException((int)SocketError.HostNotFound);
+
+        await client.ConnectAsync(address, port, cancellationToken);
     }
 
     private static ProxyTypes ToSshProxyType(ProxySettings proxy)

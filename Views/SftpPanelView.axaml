@@ -40,14 +40,14 @@
                     <ItemsControl.ItemTemplate>
                         <DataTemplate DataType="vm:PathSegment">
                             <StackPanel Orientation="Horizontal">
-                                <Button Background="Transparent" BorderThickness="0"
-                                        Padding="3,2"
-                                        Command="{Binding $parent[UserControl].DataContext.NavigateToPathCommand, x:CompileBindings=False}"
-                                        CommandParameter="{Binding FullPath}">
+                                <atom:Button Background="Transparent" BorderThickness="0"
+                                             Padding="3,2"
+                                             Command="{Binding $parent[UserControl].DataContext.NavigateToPathCommand, x:CompileBindings=False}"
+                                             CommandParameter="{Binding FullPath}">
                                     <TextBlock Text="{Binding Label}" FontSize="11"
                                                Foreground="{atom:SharedTokenResource ColorPrimary}"
                                                TextDecorations="Underline"/>
-                                </Button>
+                                </atom:Button>
                                 <TextBlock Text="›" Foreground="{atom:SharedTokenResource ColorBorderSecondary}"
                                            VerticalAlignment="Center" Margin="0,0,2,0"/>
                             </StackPanel>
@@ -61,37 +61,37 @@
         <Border Grid.Row="2" Background="{atom:SharedTokenResource ColorBgContainer}" Padding="6,4"
                 BorderBrush="{atom:SharedTokenResource ColorSplit}" BorderThickness="0,0,0,1">
             <StackPanel Orientation="Horizontal" Spacing="2">
-                <Button Background="{atom:SharedTokenResource ColorFillTertiary}" BorderThickness="0" Padding="8,5"
-                        Command="{Binding NavigateHomeCommand}"
-                        CornerRadius="4">
+                <atom:Button Background="{atom:SharedTokenResource ColorFillTertiary}" BorderThickness="0" Padding="8,5"
+                             Command="{Binding NavigateHomeCommand}"
+                             CornerRadius="4">
                     <TextBlock Text="🏠" FontSize="14" Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
-                </Button>
-                <Button Background="{atom:SharedTokenResource ColorFillTertiary}" BorderThickness="0" Padding="8,5"
-                        Command="{Binding NavigateUpCommand}"
-                        CornerRadius="4">
+                </atom:Button>
+                <atom:Button Background="{atom:SharedTokenResource ColorFillTertiary}" BorderThickness="0" Padding="8,5"
+                             Command="{Binding NavigateUpCommand}"
+                             CornerRadius="4">
                     <TextBlock Text="↑" FontSize="14" Foreground="{atom:SharedTokenResource ColorTextSecondary}" FontWeight="Bold"/>
-                </Button>
-                <Button Background="{atom:SharedTokenResource ColorFillTertiary}" BorderThickness="0" Padding="8,5"
-                        Command="{Binding RefreshCommand}"
-                        CornerRadius="4">
+                </atom:Button>
+                <atom:Button Background="{atom:SharedTokenResource ColorFillTertiary}" BorderThickness="0" Padding="8,5"
+                             Command="{Binding RefreshCommand}"
+                             CornerRadius="4">
                     <TextBlock Text="↻" FontSize="14" Foreground="{atom:SharedTokenResource ColorTextSecondary}" FontWeight="Bold"/>
-                </Button>
+                </atom:Button>
                 <Border Width="1" Background="{atom:SharedTokenResource ColorBorder}" Margin="4,4"/>
-                <Button Background="{atom:SharedTokenResource ColorSuccessBg}" BorderThickness="0" Padding="8,5"
-                        Command="{Binding UploadCommand}"
-                        IsEnabled="{Binding IsConnected}" CornerRadius="4">
+                <atom:Button Background="{atom:SharedTokenResource ColorSuccessBg}" BorderThickness="0" Padding="8,5"
+                             Command="{Binding UploadCommand}"
+                             IsEnabled="{Binding IsConnected}" CornerRadius="4">
                     <TextBlock Text="↑ 上传" FontSize="12" Foreground="{atom:SharedTokenResource ColorSuccess}" FontWeight="Bold"/>
-                </Button>
-                <Button Background="{atom:SharedTokenResource ColorInfoBg}" BorderThickness="0" Padding="8,5"
-                        Command="{Binding DownloadCommand}"
-                        IsEnabled="{Binding IsConnected}" CornerRadius="4">
+                </atom:Button>
+                <atom:Button Background="{atom:SharedTokenResource ColorInfoBg}" BorderThickness="0" Padding="8,5"
+                             Command="{Binding DownloadCommand}"
+                             IsEnabled="{Binding IsConnected}" CornerRadius="4">
                     <TextBlock Text="↓ 下载" FontSize="12" Foreground="{atom:SharedTokenResource ColorInfo}" FontWeight="Bold"/>
-                </Button>
-                <Button Background="{atom:SharedTokenResource ColorWarningBg}" BorderThickness="0" Padding="8,5"
-                        Command="{Binding CreateDirectoryCommand}"
-                        IsEnabled="{Binding IsConnected}" CornerRadius="4">
+                </atom:Button>
+                <atom:Button Background="{atom:SharedTokenResource ColorWarningBg}" BorderThickness="0" Padding="8,5"
+                             Command="{Binding CreateDirectoryCommand}"
+                             IsEnabled="{Binding IsConnected}" CornerRadius="4">
                     <TextBlock Text="+ 目录" FontSize="12" Foreground="{atom:SharedTokenResource ColorWarning}" FontWeight="Bold"/>
-                </Button>
+                </atom:Button>
             </StackPanel>
         </Border>
 

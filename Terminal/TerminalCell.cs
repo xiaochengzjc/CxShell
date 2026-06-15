@@ -9,6 +9,7 @@ public struct TerminalCell
     public Color Background;
     public bool Bold;
     public bool Underline;
+    public bool Blinking;
     public bool IsWideContinuation;
 
     public static TerminalCell Default => new()
@@ -18,6 +19,7 @@ public struct TerminalCell
         Background = TerminalColors.DefaultBackground,
         Bold = false,
         Underline = false,
+        Blinking = false,
         IsWideContinuation = false
     };
 
@@ -28,6 +30,7 @@ public struct TerminalCell
         Background = TerminalColors.DefaultBackground;
         Bold = false;
         Underline = false;
+        Blinking = false;
         IsWideContinuation = false;
     }
 }

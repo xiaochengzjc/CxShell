@@ -15,11 +15,44 @@
         <!-- 终端控件 -->
         <controls:TerminalControl x:Name="Terminal"
                                   Cursor="Ibeam"
+                                  IsSizeFixed="{Binding IsTerminalSizeFixed}"
+                                  FixedColumns="{Binding Columns}"
+                                  FixedRows="{Binding Rows}"
+                                  KeyboardFunctionKeyMode="{Binding KeyboardFunctionKeyMode}"
+                                  KeyboardMappingFile="{Binding KeyboardMappingFile}"
+                                  DeleteKeySequence="{Binding DeleteKeySequence}"
+                                  BackspaceKeySequence="{Binding BackspaceKeySequence}"
+                                  LeftAltAsMeta="{Binding LeftAltAsMeta}"
+                                  RightAltAsMeta="{Binding RightAltAsMeta}"
+                                  CtrlAltAsAltGr="{Binding CtrlAltAsAltGr}"
+                                  NewLineMode="{Binding NewLineMode}"
+                                  CursorKeyMode="{Binding CursorKeyMode}"
+                                  NumericKeypadMode="{Binding NumericKeypadMode}"
+                                  UseApplicationCursorMode="{Binding UseApplicationCursorMode}"
+                                  ShiftLimitsApplicationCursorMode="{Binding ShiftLimitsApplicationCursorMode}"
+                                  ScrollToBottomOnInputOutput="{Binding ScrollToBottomOnInputOutput}"
+                                  SuspendScrollToBottomOnScrollLock="{Binding SuspendScrollToBottomOnScrollLock}"
+                                  ScrollToBottomByKey="{Binding ScrollToBottomByKey}"
+                                  UseRxvtHomeEnd="{Binding UseRxvtHomeEnd}"
+                                  TerminalFontFamily="{Binding AppearanceFontFamily}"
+                                  TerminalFontStyle="{Binding AppearanceFontStyle}"
+                                  TerminalFontSize="{Binding AppearanceFontSize}"
+                                  CursorColor="{Binding AppearanceCursorColor}"
+                                  CursorTextColor="{Binding AppearanceCursorTextColor}"
+                                  CursorShape="{Binding AppearanceCursorShape}"
+                                  UseBlinkingCursor="{Binding AppearanceUseBlinkingCursor}"
+                                  CursorBlinkSpeedMilliseconds="{Binding AppearanceCursorBlinkSpeedMilliseconds}"
+                                  TerminalPadding="{Binding AppearanceTerminalPadding}"
+                                  LineSpacing="{Binding AppearanceLineSpacing}"
+                                  CharacterSpacing="{Binding AppearanceCharacterSpacing}"
+                                  BackgroundImagePath="{Binding AppearanceBackgroundImagePath}"
+                                  BackgroundImagePosition="{Binding AppearanceBackgroundImagePosition}"
+                                  HighlightRules="{Binding AppearanceHighlightRules}"
                                   TerminalBuffer="{Binding Buffer}"/>
 
-        <Popup x:Name="TerminalContextMenuPopup"
-               Placement="Pointer"
-               IsLightDismissEnabled="True">
+        <atom:Popup x:Name="TerminalContextMenuPopup"
+                    Placement="Pointer"
+                    IsLightDismissEnabled="True">
             <Border Background="{atom:SharedTokenResource ColorBgElevated}"
                     BorderBrush="{atom:SharedTokenResource ColorBorder}"
                     BorderThickness="1"
@@ -41,6 +74,6 @@
                                  Foreground="{atom:SharedTokenResource ColorText}"/>
                 </StackPanel>
             </Border>
-        </Popup>
+        </atom:Popup>
     </Grid>
 </UserControl>

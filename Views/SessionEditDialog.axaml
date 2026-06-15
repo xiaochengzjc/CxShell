@@ -1,4 +1,4 @@
-<atom:Window xmlns="https://github.com/avaloniaui"
+﻿<atom:Window xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:atom="https://atomui.net"
              xmlns:antdicons="https://atomui.net/icons/antdesign"
@@ -152,7 +152,7 @@
                                               x:Name="HostBox"
                                               Status="{Binding HostStatus}"
                                               Text="{Binding Host, Mode=TwoWay}"
-                                              PlaceholderText="192.168.1.100 或 example.com"/>
+                                             PlaceholderText="192.168.1.100 或 example.com"/>
 
                                 <TextBlock Grid.Row="8" Text="端口"
                                            VerticalAlignment="Center"
@@ -208,7 +208,7 @@
                                                     Value="{Binding ReconnectLimitMinutes, Mode=TwoWay}"
                                                     IsEnabled="{Binding AutoReconnect}"/>
                                 <TextBlock Grid.Row="4" Grid.Column="6"
-                                           Text="分"
+                                           Text="分钟"
                                            VerticalAlignment="Center"
                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
                             </Grid>
@@ -441,6 +441,90 @@
                     </StackPanel>
                 </ScrollViewer>
 
+                <ScrollViewer x:Name="LoginScriptPage" IsVisible="False">
+                    <StackPanel Spacing="16">
+                        <TextBlock Text="成功登录服务器后，可以执行使用等待并发送规则添加的命令或者使用第二次自动登录。"
+                                   TextWrapping="Wrap"
+                                   Foreground="{atom:SharedTokenResource ColorText}"/>
+
+                        <Grid RowDefinitions="Auto,12,380,22,Auto,12,Auto,12,Auto"
+                              ColumnDefinitions="*,18,164">
+                            <atom:CheckBox Grid.ColumnSpan="3"
+                                           Content="执行以下等待并发送规则(X)."
+                                           IsChecked="{Binding EnableLoginScriptRules, Mode=TwoWay}"/>
+
+                            <atom:DataGrid x:Name="LoginScriptRulesGrid"
+                                           Grid.Row="2"
+                                           ItemsSource="{Binding LoginScriptRules}"
+                                           SelectedItem="{Binding SelectedLoginScriptRule, Mode=TwoWay}"
+                                           AutoGenerateColumns="False"
+                                           IsReadOnly="True"
+                                           SelectionMode="Single"
+                                           SizeType="Middle"
+                                           GridLinesVisibility="Vertical"
+                                           CanUserResizeColumns="True"
+                                           IsHideOnSinglePage="True">
+                                <atom:DataGrid.Columns>
+                                    <atom:DataGridTextColumn Header="Expect" Binding="{Binding Expect}" Width="160"/>
+                                    <atom:DataGridTextColumn Header="Send" Binding="{Binding Send}" Width="360"/>
+                                </atom:DataGrid.Columns>
+                            </atom:DataGrid>
+
+                            <StackPanel Grid.Row="2"
+                                        Grid.Column="2"
+                                        Spacing="10">
+                                <atom:Button x:Name="AddLoginScriptRuleBtn"
+                                             Content="添加(A)..."
+                                             Click="OnAddLoginScriptRuleClick"/>
+                                <atom:Button x:Name="EditLoginScriptRuleBtn"
+                                             Content="缂栬緫(E)..."
+                                             IsEnabled="{Binding HasSelectedLoginScriptRule}"
+                                             Click="OnEditLoginScriptRuleClick"/>
+                                <atom:Button x:Name="DeleteLoginScriptRuleBtn"
+                                             Content="删除(R)"
+                                             IsEnabled="{Binding HasSelectedLoginScriptRule}"
+                                             Click="OnDeleteLoginScriptRuleClick"/>
+                                <atom:Button x:Name="MoveUpLoginScriptRuleBtn"
+                                             Content="上移(U)"
+                                             IsEnabled="{Binding HasSelectedLoginScriptRule}"
+                                             Click="OnMoveUpLoginScriptRuleClick"/>
+                                <atom:Button x:Name="MoveDownLoginScriptRuleBtn"
+                                             Content="下移(D)"
+                                             IsEnabled="{Binding HasSelectedLoginScriptRule}"
+                                             Click="OnMoveDownLoginScriptRuleClick"/>
+                            </StackPanel>
+
+                            <atom:CheckBox Grid.Row="4"
+                                           Grid.ColumnSpan="3"
+                                           Content="连接会话时运行脚本(S)."
+                                           IsChecked="{Binding RunLoginScriptFile, Mode=TwoWay}"/>
+
+                            <Grid Grid.Row="6"
+                                  Grid.ColumnSpan="3"
+                                  ColumnDefinitions="*,32">
+                                <atom:LineEdit x:Name="LoginScriptFilePathBox"
+                                               Text="{Binding LoginScriptFilePath, Mode=TwoWay}"
+                                               IsEnabled="{Binding IsLoginScriptFileEnabled}"/>
+                                <atom:Button Grid.Column="1"
+                                             Content="..."
+                                             Width="32"
+                                             IsEnabled="{Binding IsLoginScriptFileEnabled}"
+                                             Click="OnBrowseLoginScriptFileClick"/>
+                            </Grid>
+
+                            <TextBlock Grid.Row="8"
+                                       Text="参数(P):"
+                                       VerticalAlignment="Center"
+                                       Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                            <atom:LineEdit Grid.Row="8"
+                                           Grid.Column="1"
+                                           Grid.ColumnSpan="2"
+                                           Text="{Binding LoginScriptParameters, Mode=TwoWay}"
+                                           IsEnabled="{Binding IsLoginScriptFileEnabled}"/>
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
+
                 <ScrollViewer x:Name="SshPage" IsVisible="False">
                     <StackPanel Spacing="16">
                         <Border Background="{atom:SharedTokenResource ColorBgContainer}"
@@ -558,7 +642,7 @@
                                 <atom:Button Grid.Row="4"
                                              Grid.Column="2"
                                              Margin="8,0,0,0"
-                                             Content="编辑(D)..."
+                                             Content="缂栬緫(D)..."
                                              Click="OnEditSshCipherListClick"/>
 
                                 <TextBlock Grid.Row="6"
@@ -573,7 +657,7 @@
                                 <atom:Button Grid.Row="6"
                                              Grid.Column="2"
                                              Margin="8,0,0,0"
-                                             Content="编辑(I)..."
+                                             Content="缂栬緫(I)..."
                                              Click="OnEditSshMacListClick"/>
 
                                 <TextBlock Grid.Row="8"
@@ -588,7 +672,7 @@
                                 <atom:Button Grid.Row="8"
                                              Grid.Column="2"
                                              Margin="8,0,0,0"
-                                             Content="编辑(T)..."
+                                             Content="缂栬緫(T)..."
                                              Click="OnEditSshKeyExchangeListClick"/>
                             </Grid>
                         </Border>
@@ -605,7 +689,7 @@
                             <Grid RowDefinitions="Auto,10,Auto,14,260,14,Auto"
                                   ColumnDefinitions="*,120,120,120,56">
                                 <TextBlock Grid.ColumnSpan="5"
-                                           Text="TCP/IP转移"
+                                           Text="TCP/IP杞Щ"
                                            FontWeight="SemiBold"
                                            Foreground="{atom:SharedTokenResource ColorText}"/>
                                 <TextBlock Grid.Row="2"
@@ -638,7 +722,7 @@
                                              Click="OnAddSshTunnelRuleClick"/>
                                 <atom:Button Grid.Row="6"
                                              Grid.Column="2"
-                                             Content="编辑(E)..."
+                                             Content="缂栬緫(E)..."
                                              IsEnabled="{Binding HasSelectedSshTunnelRule}"
                                              Click="OnEditSshTunnelRuleClick"/>
                                 <atom:Button Grid.Row="6"
@@ -661,7 +745,7 @@
                             <Grid RowDefinitions="Auto,12,Auto,10,Auto"
                                   ColumnDefinitions="36,120,170,*">
                                 <TextBlock Grid.ColumnSpan="4"
-                                           Text="X11转移"
+                                           Text="X11杞Щ"
                                            FontWeight="SemiBold"
                                            Foreground="{atom:SharedTokenResource ColorText}"/>
                                 <atom:CheckBox Grid.Row="2"
@@ -718,7 +802,7 @@
                                                Grid.ColumnSpan="2"
                                                Content="使用 XDISPLOC Telnet 选项"
                                                IsChecked="{Binding TelnetUseXDisplayLocation, Mode=TwoWay}"/>
-                                <TextBlock Grid.Row="6" Text="显示"
+                                <TextBlock Grid.Row="6" Text="鏄剧ず"
                                            VerticalAlignment="Center"
                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
                                 <atom:LineEdit Grid.Row="6" Grid.Column="1"
@@ -727,7 +811,7 @@
                                               PlaceholderText="$PCADDR:0.0"/>
                                 <TextBlock Grid.Row="8"
                                            Grid.ColumnSpan="2"
-                                           Text="注释：$PCADDR 会替换为当前连接使用的本机 IP 地址。"
+                                           Text="注释：PCADDR 会替换为当前连接使用的本机 IP 地址。"
                                            TextWrapping="Wrap"
                                            Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
                             </Grid>
@@ -901,7 +985,7 @@
                                                Content="使用自定义SFTP服务器(S)"
                                                IsChecked="{Binding SftpUseCustomServer, Mode=TwoWay}"/>
                                 <TextBlock Grid.Row="4"
-                                           Text="命令(C):"
+                                           Text="鍛戒护(C):"
                                            VerticalAlignment="Center"
                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
                                 <atom:LineEdit Grid.Row="4"
@@ -976,7 +1060,7 @@
                                                Grid.ColumnSpan="2"
                                                Content="使用自定义 SFTP 服务器"
                                                IsChecked="{Binding SftpUseCustomServer, Mode=TwoWay}"/>
-                                <TextBlock Grid.Row="4" Text="命令"
+                                <TextBlock Grid.Row="4" Text="鍛戒护"
                                            VerticalAlignment="Center"
                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
                                 <atom:LineEdit Grid.Row="4" Grid.Column="1"
@@ -1065,11 +1149,11 @@
                             <Grid RowDefinitions="Auto,14,Auto,12,Auto,12,Auto,12,Auto"
                                   ColumnDefinitions="150,320,16,80,28,80">
                                 <TextBlock Grid.ColumnSpan="6"
-                                           Text="显示"
+                                           Text="鏄剧ず"
                                            FontWeight="SemiBold"
                                            Foreground="{atom:SharedTokenResource ColorText}"/>
 
-                                <TextBlock Grid.Row="2" Text="窗口大小"
+                                <TextBlock Grid.Row="2" Text="绐楀彛澶у皬"
                                            VerticalAlignment="Center"
                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
                                 <atom:Select Grid.Row="2" Grid.Column="1"
@@ -1105,7 +1189,7 @@
                                              Mode="Single"
                                              OptionsSource="{Binding RdpScreenScaleOptions}"/>
 
-                                <TextBlock Grid.Row="8" Text="颜色质量"
+                                <TextBlock Grid.Row="8" Text="棰滆壊璐ㄩ噺"
                                            VerticalAlignment="Center"
                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
                                 <atom:Select Grid.Row="8" Grid.Column="1"
@@ -1139,7 +1223,7 @@
                             <Grid RowDefinitions="Auto,14,Auto,12,Auto"
                                   ColumnDefinitions="150,*">
                                 <TextBlock Grid.ColumnSpan="2"
-                                           Text="声音"
+                                           Text="澹伴煶"
                                            FontWeight="SemiBold"
                                            Foreground="{atom:SharedTokenResource ColorText}"/>
                                 <TextBlock Grid.Row="2" Text="远程音频播放"
@@ -1153,6 +1237,1189 @@
                                                Content="从这台电脑录制"
                                                IsChecked="{Binding RdpAudioCapture, Mode=TwoWay}"/>
                             </Grid>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="TerminalPage" IsVisible="False">
+                    <StackPanel Spacing="16">
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,14,Auto,18,Auto,14,Auto"
+                                  ColumnDefinitions="130,54,88,16,54,88,*">
+                                <TextBlock Grid.ColumnSpan="7"
+                                           Text="仿真"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+
+                                <TextBlock Grid.Row="2"
+                                           Text="终端类型(T):"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:Select Grid.Row="2"
+                                             Grid.Column="1"
+                                             Grid.ColumnSpan="5"
+                                             x:Name="TerminalTypeSelect"
+                                             Mode="Single"
+                                             HorizontalAlignment="Stretch"
+                                             OptionsSource="{Binding TerminalTypeOptions}"/>
+
+                                <TextBlock Grid.Row="4"
+                                           Text="终端大小"
+                                           VerticalAlignment="Center"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <TextBlock Grid.Row="4"
+                                           Grid.Column="1"
+                                           Text="列(O):"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:NumericUpDown Grid.Row="4"
+                                                    Grid.Column="2"
+                                                    Minimum="20"
+                                                    Maximum="500"
+                                                    Value="{Binding TerminalColumns, Mode=TwoWay}"/>
+                                <TextBlock Grid.Row="4"
+                                           Grid.Column="4"
+                                           Text="行(R):"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:NumericUpDown Grid.Row="4"
+                                                    Grid.Column="5"
+                                                    Minimum="5"
+                                                    Maximum="200"
+                                                    Value="{Binding TerminalRows, Mode=TwoWay}"/>
+                                <StackPanel Grid.Row="6"
+                                            Grid.Column="1"
+                                            Grid.ColumnSpan="6"
+                                            Orientation="Horizontal"
+                                            Spacing="28"
+                                            Margin="0,14,0,0">
+                                    <atom:CheckBox Content="固定列尺寸(F)"
+                                                   IsChecked="{Binding TerminalFixedSize, Mode=TwoWay}"/>
+                                    <atom:CheckBox Content="连接时重置终端尺寸(C)"
+                                                   IsChecked="{Binding TerminalResetSizeOnConnect, Mode=TwoWay}"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,14,Auto,14,Auto"
+                                  ColumnDefinitions="130,120,48,*">
+                                <TextBlock Grid.ColumnSpan="4"
+                                           Text="滚动缓冲区"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <TextBlock Grid.Row="2"
+                                           Text="缓冲区大小(S):"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:NumericUpDown Grid.Row="2"
+                                                    Grid.Column="1"
+                                                    Minimum="0"
+                                                    Maximum="200000"
+                                                    Value="{Binding TerminalScrollbackSize, Mode=TwoWay}"/>
+                                <TextBlock Grid.Row="2"
+                                           Grid.Column="2"
+                                           Text="行"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:CheckBox Grid.Row="4"
+                                               Grid.Column="1"
+                                               Grid.ColumnSpan="3"
+                                               Content="将清除的屏幕推到滚动缓冲区(P)."
+                                               IsChecked="{Binding TerminalPushClearedScreenToScrollback, Mode=TwoWay}"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,14,Auto,14,Auto"
+                                  ColumnDefinitions="130,*">
+                                <TextBlock Grid.ColumnSpan="2"
+                                           Text="转换"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <TextBlock Grid.Row="2"
+                                           Text="编码(E):"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:Select Grid.Row="2"
+                                             Grid.Column="1"
+                                             x:Name="TerminalEncodingSelect"
+                                             Mode="Single"
+                                             HorizontalAlignment="Stretch"
+                                             OptionsSource="{Binding TerminalEncodingOptions}"/>
+                                <atom:CheckBox Grid.Row="4"
+                                               Grid.Column="1"
+                                               Content="将含糊的大小字符视为宽字符(A)"
+                                               IsChecked="{Binding TerminalTreatAmbiguousAsWide, Mode=TwoWay}"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,14,Auto"
+                                  ColumnDefinitions="130,160,32,130,160,*">
+                                <TextBlock Grid.ColumnSpan="6"
+                                           Text="换行符"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <TextBlock Grid.Row="2"
+                                           Text="发送(D):"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:Select Grid.Row="2"
+                                             Grid.Column="1"
+                                             x:Name="TerminalSendLineEndingSelect"
+                                             Mode="Single"
+                                             HorizontalAlignment="Stretch"
+                                             OptionsSource="{Binding TerminalLineEndingOptions}"/>
+                                <TextBlock Grid.Row="2"
+                                           Grid.Column="3"
+                                           Text="收到(V):"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:Select Grid.Row="2"
+                                             Grid.Column="4"
+                                             x:Name="TerminalReceiveLineEndingSelect"
+                                             Mode="Single"
+                                             HorizontalAlignment="Stretch"
+                                             OptionsSource="{Binding TerminalLineEndingOptions}"/>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="KeyboardPage" IsVisible="False">
+                    <StackPanel Spacing="16">
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,14,Auto,12,Auto,22,Auto,12,Auto"
+                                  ColumnDefinitions="180,230,*,32">
+                                <TextBlock Grid.ColumnSpan="4"
+                                           Text="功能键仿真"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <TextBlock Grid.Row="2"
+                                           Text="功能键类型(T):"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:Select Grid.Row="2"
+                                             Grid.Column="1"
+                                             x:Name="TerminalKeyboardFunctionKeySelect"
+                                             Mode="Single"
+                                             HorizontalAlignment="Stretch"
+                                             SelectionChanged="OnTerminalKeyboardFunctionKeySelectionChanged"
+                                             OptionsSource="{Binding TerminalKeyboardFunctionKeyOptions}"/>
+                                <TextBlock Grid.Row="4"
+                                           Grid.ColumnSpan="4"
+                                           Text="注释: 选择 &lt;默认&gt; 时，CxShell 根据终端类型自动选择合适的功能键。"
+                                           TextWrapping="Wrap"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <TextBlock Grid.Row="6"
+                                           Grid.ColumnSpan="4"
+                                           Text="请指定要替换的按键对应文件(S):"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="8"
+                                               Grid.ColumnSpan="3"
+                                               x:Name="TerminalKeyboardMappingFileBox"
+                                               Text="{Binding TerminalKeyboardMappingFile, Mode=TwoWay}"
+                                               IsEnabled="{Binding IsKeyboardMappingFileEnabled}"/>
+                                <atom:Button Grid.Row="8"
+                                             Grid.Column="3"
+                                             Content="..."
+                                             Width="32"
+                                             IsEnabled="{Binding IsKeyboardMappingFileEnabled}"
+                                             Click="OnBrowseTerminalKeyboardMappingFileClick"/>
+                            </Grid>
+                        </Border>
+
+                        <Grid ColumnDefinitions="*,22,*">
+                            <Border Grid.Column="0"
+                                    Background="{atom:SharedTokenResource ColorBgContainer}"
+                                    BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                    BorderThickness="1"
+                                    CornerRadius="4"
+                                    Padding="18">
+                                <StackPanel Spacing="12">
+                                    <TextBlock Text="DELETE 键序列"
+                                               FontWeight="SemiBold"
+                                               Foreground="{atom:SharedTokenResource ColorText}"/>
+                                    <atom:RadioButton Content="VT220 Del (Esc[3~)"
+                                                      GroupName="TerminalDeleteKey"
+                                                      IsChecked="{Binding IsDeleteKeyVt220, Mode=TwoWay}"/>
+                                    <atom:RadioButton Content="ASCII 127 (Ctrl+?)"
+                                                      GroupName="TerminalDeleteKey"
+                                                      IsChecked="{Binding IsDeleteKeyAscii127, Mode=TwoWay}"/>
+                                    <atom:RadioButton Content="Backspace (Ctrl+H)"
+                                                      GroupName="TerminalDeleteKey"
+                                                      IsChecked="{Binding IsDeleteKeyBackspace, Mode=TwoWay}"/>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Grid.Column="2"
+                                    Background="{atom:SharedTokenResource ColorBgContainer}"
+                                    BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                    BorderThickness="1"
+                                    CornerRadius="4"
+                                    Padding="18">
+                                <StackPanel Spacing="12">
+                                    <TextBlock Text="BACKSPACE 键序列"
+                                               FontWeight="SemiBold"
+                                               Foreground="{atom:SharedTokenResource ColorText}"/>
+                                    <atom:RadioButton Content="VT220 Del (Esc[3~)"
+                                                      GroupName="TerminalBackspaceKey"
+                                                      IsChecked="{Binding IsBackspaceKeyVt220, Mode=TwoWay}"/>
+                                    <atom:RadioButton Content="ASCII 127 (Ctrl+?)"
+                                                      GroupName="TerminalBackspaceKey"
+                                                      IsChecked="{Binding IsBackspaceKeyAscii127, Mode=TwoWay}"/>
+                                    <atom:RadioButton Content="Backspace (Ctrl+H)"
+                                                      GroupName="TerminalBackspaceKey"
+                                                      IsChecked="{Binding IsBackspaceKeyBackspace, Mode=TwoWay}"/>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <StackPanel Spacing="14">
+                                <TextBlock Text="ALT(Meta)键仿真"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <TextBlock Text="终端作业时使用需要如 Emacs 等相关的 Meta 键的应用程序时，需要以下选项。"
+                                           TextWrapping="Wrap"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:CheckBox Content="将左ALT 用作 Meta 键(U)"
+                                               IsChecked="{Binding TerminalLeftAltAsMeta, Mode=TwoWay}"/>
+                                <atom:CheckBox Margin="32,0,0,0"
+                                               Content="将 Ctrl+Alt 用作 Alt Gr(G)"
+                                               IsEnabled="{Binding TerminalLeftAltAsMeta}"
+                                               IsChecked="{Binding TerminalCtrlAltAsAltGr, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="将右ALT 用作 Meta 键(R)"
+                                               IsChecked="{Binding TerminalRightAltAsMeta, Mode=TwoWay}"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="VtModePage" IsVisible="False">
+                    <StackPanel Spacing="16">
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <StackPanel Spacing="14">
+                                <TextBlock Text="初始VT模式"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <atom:CheckBox Content="Auto Wrap Mode (DECAWM)"
+                                               IsChecked="{Binding TerminalVtAutoWrapMode, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="Origin Mode (DECOM)"
+                                               IsChecked="{Binding TerminalVtOriginMode, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="Reverse Video Mode (DECSCNM)"
+                                               IsChecked="{Binding TerminalVtReverseVideoMode, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="New Line Mode (NLM)"
+                                               IsChecked="{Binding TerminalVtNewLineMode, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="Insert Mode (IRM)"
+                                               IsChecked="{Binding TerminalVtInsertMode, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="Echo Mode (SRM)"
+                                               IsChecked="{Binding TerminalVtEchoMode, Mode=TwoWay}"/>
+
+                                <TextBlock Text="初始光标键模式(DECCKM):"
+                                           Margin="0,12,0,0"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <StackPanel Orientation="Horizontal" Spacing="54">
+                                    <atom:RadioButton Content="普通(M)"
+                                                      GroupName="VtCursorKeyMode"
+                                                      IsChecked="{Binding IsCursorKeyModeNormal, Mode=TwoWay}"/>
+                                    <atom:RadioButton Content="应用程序(P)"
+                                                      GroupName="VtCursorKeyMode"
+                                                      IsChecked="{Binding IsCursorKeyModeApplication, Mode=TwoWay}"/>
+                                </StackPanel>
+
+                                <TextBlock Text="初始数字键盘模式 (DECNKM):"
+                                           Margin="0,4,0,0"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <StackPanel Orientation="Horizontal" Spacing="54">
+                                    <atom:RadioButton Content="普通(L)"
+                                                      GroupName="VtNumericKeypadMode"
+                                                      IsChecked="{Binding IsNumericKeypadModeNormal, Mode=TwoWay}"/>
+                                    <atom:RadioButton Content="应用程序(T)"
+                                                      GroupName="VtNumericKeypadMode"
+                                                      IsChecked="{Binding IsNumericKeypadModeApplication, Mode=TwoWay}"/>
+                                    <atom:RadioButton Content="设置为普通(S)"
+                                                      GroupName="VtNumericKeypadMode"
+                                                      IsChecked="{Binding IsNumericKeypadModeForceNormal, Mode=TwoWay}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="TerminalAdvancedPage" IsVisible="False">
+                    <StackPanel Spacing="16">
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="选项"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <atom:CheckBox Content="使用应用程序光标键模式"
+                                               IsChecked="{Binding TerminalAdvancedUseApplicationCursorMode, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="按住 Shift 时限制应用程序光标键模式"
+                                               IsChecked="{Binding TerminalAdvancedShiftLimitsApplicationCursorMode, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="清屏时使用默认背景色"
+                                               IsChecked="{Binding TerminalAdvancedClearScreenBackground, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="输入或输出时滚动到底部"
+                                               IsChecked="{Binding TerminalAdvancedScrollToBottomOnInputOutput, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="Scroll Lock 激活时暂停自动滚动到底部"
+                                               IsChecked="{Binding TerminalAdvancedSuspendScrollToBottomOnScrollLock, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="按键时滚动到底部"
+                                               IsChecked="{Binding TerminalAdvancedScrollToBottomByKey, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="复制会话后移动到工作目录"
+                                               IsChecked="{Binding TerminalAdvancedDuplicateSessionCd, Mode=TwoWay}"/>
+                                <Grid ColumnDefinitions="150,*" RowDefinitions="Auto">
+                                    <TextBlock Text="预输入字符串:"
+                                               VerticalAlignment="Center"
+                                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                    <atom:LineEdit Grid.Column="1"
+                                                   x:Name="TerminalAdvancedPreinputStringBox"
+                                                   Text="{Binding TerminalAdvancedPreinputString, Mode=TwoWay}"
+                                                   PlaceholderText="为空时执行 cd"/>
+                                </Grid>
+                                <atom:CheckBox Content="使用 rxvt Home/End 键序列"
+                                               IsChecked="{Binding TerminalAdvancedUseRxvtHomeEnd, Mode=TwoWay}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="其他"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <atom:CheckBox Content="禁用闪烁文本"
+                                               IsChecked="{Binding TerminalAdvancedDisableBlinkingText, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="禁用更改终端标题"
+                                               IsChecked="{Binding TerminalAdvancedDisableTitleChange, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="禁用终端打印"
+                                               IsChecked="{Binding TerminalAdvancedDisableTerminalPrint, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="禁用备用屏幕切换"
+                                               IsChecked="{Binding TerminalAdvancedDisableAlternateScreen, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="忽略终端大小调整请求"
+                                               IsChecked="{Binding TerminalAdvancedIgnoreResizeRequest, Mode=TwoWay}"/>
+                                <Grid ColumnDefinitions="150,*" RowDefinitions="Auto">
+                                    <TextBlock Text="^E Answerback:"
+                                               VerticalAlignment="Center"
+                                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                    <atom:LineEdit Grid.Column="1"
+                                                   x:Name="TerminalAdvancedAnswerbackBox"
+                                                   Text="{Binding TerminalAdvancedAnswerback, Mode=TwoWay}"
+                                                   PlaceholderText="CxShell"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="字体选项"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <atom:CheckBox Content="使用内置字体绘制线条字符"
+                                               IsChecked="{Binding TerminalAdvancedUseBuiltinLineDrawing, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="使用内置字体支持 Powerline"
+                                               IsChecked="{Binding TerminalAdvancedUseBuiltinPowerline, Mode=TwoWay}"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="WindowAppearancePage" IsVisible="False">
+                    <StackPanel Spacing="16">
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="边距"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <TextBlock Text="以像素为单位指定终端窗口的边距。"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <Grid ColumnDefinitions="90,120,40,90,120"
+                                      RowDefinitions="Auto,12,Auto">
+                                    <TextBlock Text="顶(T):"
+                                               VerticalAlignment="Center"
+                                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                    <atom:NumericUpDown Grid.Column="1"
+                                                        Width="96"
+                                                        Minimum="0"
+                                                        Maximum="200"
+                                                        Value="{Binding AppearanceWindowPaddingTop, Mode=TwoWay}"/>
+                                    <TextBlock Grid.Column="3"
+                                               Text="底部(B):"
+                                               VerticalAlignment="Center"
+                                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                    <atom:NumericUpDown Grid.Column="4"
+                                                        Width="96"
+                                                        Minimum="0"
+                                                        Maximum="200"
+                                                        Value="{Binding AppearanceWindowPaddingBottom, Mode=TwoWay}"/>
+
+                                    <TextBlock Grid.Row="2"
+                                               Text="左(L):"
+                                               VerticalAlignment="Center"
+                                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                    <atom:NumericUpDown Grid.Row="2"
+                                                        Grid.Column="1"
+                                                        Width="96"
+                                                        Minimum="0"
+                                                        Maximum="200"
+                                                        Value="{Binding AppearanceWindowPaddingLeft, Mode=TwoWay}"/>
+                                    <TextBlock Grid.Row="2"
+                                               Grid.Column="3"
+                                               Text="右(R):"
+                                               VerticalAlignment="Center"
+                                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                    <atom:NumericUpDown Grid.Row="2"
+                                                        Grid.Column="4"
+                                                        Width="96"
+                                                        Minimum="0"
+                                                        Maximum="200"
+                                                        Value="{Binding AppearanceWindowPaddingRight, Mode=TwoWay}"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="间隔"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <TextBlock Text="以像素为单位指定终端窗口的间距选项。"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <Grid ColumnDefinitions="120,120,16,Auto"
+                                      RowDefinitions="Auto,12,Auto">
+                                    <TextBlock Text="行距(I):"
+                                               VerticalAlignment="Center"
+                                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                    <atom:NumericUpDown Grid.Column="1"
+                                                        Width="96"
+                                                        Minimum="-5"
+                                                        Maximum="32"
+                                                        Value="{Binding AppearanceLineSpacing, Mode=TwoWay}"/>
+                                    <TextBlock Grid.Column="3"
+                                               Text="(-5 ~ 32)"
+                                               VerticalAlignment="Center"
+                                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+
+                                    <TextBlock Grid.Row="2"
+                                               Text="字符间距(H):"
+                                               VerticalAlignment="Center"
+                                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                    <atom:NumericUpDown Grid.Row="2"
+                                                        Grid.Column="1"
+                                                        Width="96"
+                                                        Minimum="-5"
+                                                        Maximum="32"
+                                                        Value="{Binding AppearanceCharacterSpacing, Mode=TwoWay}"/>
+                                    <TextBlock Grid.Row="2"
+                                               Grid.Column="3"
+                                               Text="(-5 ~ 32)"
+                                               VerticalAlignment="Center"
+                                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <StackPanel Spacing="14">
+                                <TextBlock Text="工作表标签颜色"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <StackPanel Orientation="Horizontal" Spacing="26">
+                                    <atom:RadioButton Content="默认"
+                                                      GroupName="AppearanceTabColor"
+                                                      IsChecked="{Binding IsAppearanceTabColorDefault, Mode=TwoWay}"/>
+                                    <atom:RadioButton Content="红"
+                                                      GroupName="AppearanceTabColor"
+                                                      IsChecked="{Binding IsAppearanceTabColorRed, Mode=TwoWay}"/>
+                                    <atom:RadioButton Content="紫色"
+                                                      GroupName="AppearanceTabColor"
+                                                      IsChecked="{Binding IsAppearanceTabColorPurple, Mode=TwoWay}"/>
+                                    <atom:RadioButton Content="黄色"
+                                                      GroupName="AppearanceTabColor"
+                                                      IsChecked="{Binding IsAppearanceTabColorYellow, Mode=TwoWay}"/>
+                                    <atom:RadioButton Content="其他:"
+                                                      GroupName="AppearanceTabColor"
+                                                      IsChecked="{Binding IsAppearanceTabColorCustom, Mode=TwoWay}"/>
+                                    <atom:ColorPicker x:Name="AppearanceTabCustomColorPicker"
+                                                      Width="112"
+                                                      DefaultValue="{Binding AppearanceTabCustomColor}"
+                                                      Value="{Binding AppearanceTabCustomColor, Mode=TwoWay}"
+                                                      Format="Hex"
+                                                      ShouldUseOverlayPopup="False"
+                                                      IsTextVisible="False"
+                                                      IsEnabled="{Binding IsAppearanceTabColorCustom}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <StackPanel Spacing="14">
+                                <TextBlock Text="背景图"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <Grid ColumnDefinitions="120,*,8,36"
+                                      RowDefinitions="Auto,12,Auto">
+                                    <TextBlock Text="文件(E):"
+                                               VerticalAlignment="Center"
+                                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                    <atom:LineEdit Grid.Column="1"
+                                                   x:Name="AppearanceBackgroundImagePathBox"
+                                                   Text="{Binding AppearanceBackgroundImagePath, Mode=TwoWay}"/>
+                                    <atom:Button Grid.Column="3"
+                                                 Content="..."
+                                                 Click="OnBrowseAppearanceBackgroundImageClick"/>
+
+                                    <TextBlock Grid.Row="2"
+                                               Text="位置(P):"
+                                               VerticalAlignment="Center"
+                                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                    <atom:Select Grid.Row="2"
+                                                 Grid.Column="1"
+                                                 x:Name="AppearanceBackgroundImagePositionSelect"
+                                                 Mode="Single"
+                                                 HorizontalAlignment="Stretch"
+                                                 SelectionChanged="OnAppearanceSelectionChanged"
+                                                 OptionsSource="{Binding AppearanceBackgroundImagePositionOptions}"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="HighlightPage" IsVisible="False">
+                    <StackPanel Spacing="16">
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <StackPanel Spacing="18">
+                                <TextBlock Text="突出显示集"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <TextBlock Text="突出显示集允许您配置在 CxShell 终端上突出显示的关键字列表。这些也接受正则表达式。"
+                                           TextWrapping="Wrap"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <Grid ColumnDefinitions="*,12,156">
+                                    <atom:Select x:Name="AppearanceHighlightSetSelect"
+                                                 Mode="Single"
+                                                 HorizontalAlignment="Stretch"
+                                                 SelectionChanged="OnAppearanceSelectionChanged"
+                                                 OptionsSource="{Binding AppearanceHighlightSetOptions}"/>
+                                    <atom:Button Grid.Column="2"
+                                                 Content="浏览(B)..."
+                                                 Click="OnBrowseHighlightSetsClick"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="AdvancedPage" IsVisible="False">
+                    <StackPanel Spacing="14">
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <StackPanel Spacing="14">
+                                <TextBlock Text="快速命令集"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <Grid ColumnDefinitions="*,12,196"
+                                      RowDefinitions="Auto,12,Auto">
+                                    <atom:LineEdit x:Name="AdvancedQuickCommandSetBox"
+                                                   Text="{Binding AdvancedQuickCommandSet, Mode=TwoWay}"
+                                                   IsReadOnly="True"/>
+                                    <atom:Button Grid.Column="2"
+                                                 Content="浏览(B)..."
+                                                 Click="OnBrowseAdvancedQuickCommandSetClick"/>
+                                    <atom:CheckBox Grid.Row="2"
+                                                   Grid.ColumnSpan="3"
+                                                   Content="禁用快速命令快捷方式键(D)"
+                                                   IsChecked="{Binding AdvancedDisableQuickCommandShortcuts, Mode=TwoWay}"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="ftp 选项"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <TextBlock Text="调用 ftp 时，请使用以下 FTP 端口(F):"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <StackPanel Orientation="Horizontal" Spacing="26" HorizontalAlignment="Center">
+                                    <atom:NumericUpDown x:Name="AdvancedFtpPortBox"
+                                                        Width="136"
+                                                        Minimum="1"
+                                                        Maximum="65535"
+                                                        Value="{Binding AdvancedFtpPort, Mode=TwoWay}"/>
+                                    <atom:Button Content="重置(R)"
+                                                 Width="136"
+                                                 Click="OnResetAdvancedFtpPortClick"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <StackPanel Spacing="16">
+                                <TextBlock Text="延迟发送"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <TextBlock Text="设置字符之间的延迟时间间隔。"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <Grid ColumnDefinitions="160,120,12,Auto">
+                                    <TextBlock Text="字符延迟(C):"
+                                               VerticalAlignment="Center"
+                                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                    <atom:NumericUpDown Grid.Column="1"
+                                                        Width="92"
+                                                        Minimum="0"
+                                                        Maximum="60000"
+                                                        Value="{Binding AdvancedCharacterDelayMilliseconds, Mode=TwoWay}"/>
+                                    <TextBlock Grid.Column="3"
+                                               Text="毫秒"
+                                               VerticalAlignment="Center"
+                                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                </Grid>
+                                <TextBlock Text="设置行之间的延迟时间间隔。"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <Grid ColumnDefinitions="160,220,24,Auto,100"
+                                      RowDefinitions="Auto,12,Auto">
+                                    <atom:RadioButton Content="线路延迟(L):"
+                                                      GroupName="AdvancedSendDelay"
+                                                      IsChecked="{Binding AdvancedUseLineDelay, Mode=TwoWay}"/>
+                                    <atom:NumericUpDown Grid.Column="1"
+                                                        Width="92"
+                                                        Minimum="0"
+                                                        Maximum="60000"
+                                                        IsEnabled="{Binding IsAdvancedLineDelay}"
+                                                        Value="{Binding AdvancedLineDelayMilliseconds, Mode=TwoWay}"/>
+                                    <TextBlock Grid.Column="3"
+                                               Text="毫秒"
+                                               VerticalAlignment="Center"
+                                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                    <atom:RadioButton Grid.Row="2"
+                                                      Content="提示(P)"
+                                                      GroupName="AdvancedSendDelay"
+                                                      IsChecked="{Binding AdvancedUsePromptDelay, Mode=TwoWay}"/>
+                                    <atom:LineEdit Grid.Row="2"
+                                                   Grid.Column="1"
+                                                   Width="202"
+                                                   IsEnabled="{Binding IsAdvancedPromptDelay}"
+                                                   Text="{Binding AdvancedPromptText, Mode=TwoWay}"/>
+                                    <TextBlock Grid.Row="2"
+                                               Grid.Column="3"
+                                               Text="最大等待(ms)(M):"
+                                               VerticalAlignment="Center"
+                                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                    <atom:NumericUpDown Grid.Row="2"
+                                                        Grid.Column="4"
+                                                        Width="92"
+                                                        Minimum="0"
+                                                        Maximum="600000"
+                                                        IsEnabled="{Binding IsAdvancedPromptDelay}"
+                                                        Value="{Binding AdvancedPromptMaxWaitMilliseconds, Mode=TwoWay}"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="TCP 选项"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <atom:CheckBox Content="使用 Nagle 算法(U)"
+                                               IsChecked="{Binding AdvancedUseNagle, Mode=TwoWay}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="互联网协议版本"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <StackPanel Orientation="Horizontal" Spacing="58">
+                                    <atom:RadioButton Content="自动(T)"
+                                                      GroupName="AdvancedIpVersion"
+                                                      IsChecked="{Binding IsAdvancedIpVersionAuto, Mode=TwoWay}"/>
+                                    <atom:RadioButton Content="IPv4"
+                                                      GroupName="AdvancedIpVersion"
+                                                      IsChecked="{Binding IsAdvancedIpVersion4, Mode=TwoWay}"/>
+                                    <atom:RadioButton Content="IPv6"
+                                                      GroupName="AdvancedIpVersion"
+                                                      IsChecked="{Binding IsAdvancedIpVersion6, Mode=TwoWay}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="AppearancePage" IsVisible="False">
+                    <StackPanel Spacing="16">
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="预览"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <Border Background="{Binding AppearanceBackgroundBrush}"
+                                        Height="146"
+                                        Padding="8">
+                                    <StackPanel Spacing="4">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBlock FontFamily="{Binding AppearanceFontFamily}"
+                                                       FontSize="{Binding AppearanceFontSize}"
+                                                       FontStyle="{Binding AppearancePreviewFontStyle}"
+                                                       FontWeight="{Binding AppearancePreviewFontWeight}"
+                                                       Foreground="{Binding AppearanceForegroundBrush}"
+                                                       Text="Normal"/>
+                                            <TextBlock FontFamily="{Binding AppearanceFontFamily}"
+                                                       FontSize="{Binding AppearanceFontSize}"
+                                                       FontStyle="{Binding AppearancePreviewFontStyle}"
+                                                       FontWeight="{Binding AppearancePreviewBoldWeight}"
+                                                       Foreground="{Binding AppearancePreviewBoldBrush}"
+                                                       Text="Bold"/>
+                                            <TextBlock FontFamily="{Binding AppearanceFontFamily}"
+                                                       FontSize="{Binding AppearanceFontSize}"
+                                                       FontStyle="{Binding AppearancePreviewFontStyle}"
+                                                       FontWeight="{Binding AppearancePreviewFontWeight}"
+                                                       TextDecorations="Underline"
+                                                       Foreground="{Binding AppearanceForegroundBrush}"
+                                                       Text="Underline"/>
+                                            <TextBlock FontFamily="{Binding AppearanceFontFamily}"
+                                                       FontSize="{Binding AppearanceFontSize}"
+                                                       FontStyle="{Binding AppearancePreviewFontStyle}"
+                                                       FontWeight="{Binding AppearancePreviewFontWeight}"
+                                                       Background="{Binding AppearanceForegroundBrush}"
+                                                       Foreground="{Binding AppearanceBackgroundBrush}"
+                                                       Text="Reversed"/>
+                                            <Border Background="{Binding AppearanceCursorBrush}"
+                                                    IsVisible="{Binding IsAppearanceCursorBlockVisible}">
+                                                <TextBlock FontFamily="{Binding AppearanceFontFamily}"
+                                                           FontSize="{Binding AppearanceFontSize}"
+                                                           Foreground="{Binding AppearanceCursorTextBrush}"
+                                                           Text="C"/>
+                                            </Border>
+                                            <Grid Width="20"
+                                                  IsVisible="{Binding IsAppearanceCursorVerticalVisible}">
+                                                <Border Width="2"
+                                                        HorizontalAlignment="Left"
+                                                        Background="{Binding AppearanceCursorBrush}"/>
+                                                <TextBlock Margin="4,0,0,0"
+                                                           FontFamily="{Binding AppearanceFontFamily}"
+                                                           FontSize="{Binding AppearanceFontSize}"
+                                                           Foreground="{Binding AppearanceForegroundBrush}"
+                                                           Text="C"/>
+                                            </Grid>
+                                            <Grid Width="20"
+                                                  RowDefinitions="*,3"
+                                                  IsVisible="{Binding IsAppearanceCursorUnderlineVisible}">
+                                                <TextBlock FontFamily="{Binding AppearanceFontFamily}"
+                                                           FontSize="{Binding AppearanceFontSize}"
+                                                           Foreground="{Binding AppearanceForegroundBrush}"
+                                                           Text="C"/>
+                                                <Border Grid.Row="1"
+                                                        Background="{Binding AppearanceCursorBrush}"/>
+                                            </Grid>
+                                        </StackPanel>
+                                        <TextBlock FontFamily="{Binding AppearanceFontFamily}"
+                                                   FontSize="{Binding AppearanceFontSize}"
+                                                   FontStyle="{Binding AppearancePreviewFontStyle}"
+                                                   FontWeight="{Binding AppearancePreviewFontWeight}">
+                                            <Run Text="black " Foreground="{Binding AppearanceAnsiBlackBrush}"/>
+                                            <Run Text="red " Foreground="{Binding AppearanceAnsiRedBrush}"/>
+                                            <Run Text="green " Foreground="{Binding AppearanceAnsiGreenBrush}"/>
+                                            <Run Text="yellow " Foreground="{Binding AppearanceAnsiYellowBrush}"/>
+                                            <Run Text="blue " Foreground="{Binding AppearanceAnsiBlueBrush}"/>
+                                            <Run Text="magenta " Foreground="{Binding AppearanceAnsiMagentaBrush}"/>
+                                            <Run Text="cyan " Foreground="{Binding AppearanceAnsiCyanBrush}"/>
+                                            <Run Text="white" Foreground="{Binding AppearanceAnsiWhiteBrush}"/>
+                                        </TextBlock>
+                                        <TextBlock FontFamily="{Binding AppearanceCjkFontFamily}"
+                                                   FontSize="{Binding AppearanceCjkFontSize}"
+                                                   FontStyle="{Binding AppearancePreviewFontStyle}"
+                                                   FontWeight="{Binding AppearancePreviewBoldWeight}"
+                                                   Text="中文预览  CxShell terminal"
+                                                   Foreground="{Binding AppearancePreviewBoldBrush}"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border IsVisible="False"
+                                        Background="{Binding AppearanceBackgroundColor}"
+                                        Height="146"
+                                        Padding="8">
+                                    <StackPanel Spacing="2">
+                                        <TextBlock FontFamily="{Binding AppearanceFontFamily}"
+                                                   FontSize="{Binding AppearanceFontSize}"
+                                                   TextWrapping="NoWrap">
+                                            <Run Text="Normal " Foreground="{Binding AppearanceForegroundColor}"/>
+                                            <Run Text="Bold " FontWeight="Bold" Foreground="{Binding AppearanceBoldForegroundColor}"/>
+                                            <Run Text="Underline " TextDecorations="Underline" Foreground="{Binding AppearanceForegroundColor}"/>
+                                            <Run Text="Reversed " Background="{Binding AppearanceForegroundColor}" Foreground="{Binding AppearanceBackgroundColor}"/>
+                                            <Run Text="Cursor" Background="{Binding AppearanceCursorColor}" Foreground="{Binding AppearanceCursorTextColor}"/>
+                                        </TextBlock>
+                                        <TextBlock FontFamily="{Binding AppearanceFontFamily}"
+                                                   FontSize="{Binding AppearanceFontSize}"
+                                                   Text="black  red  green  yellow  blue  magenta  cyan  white"
+                                                   Foreground="{Binding AppearanceForegroundColor}"/>
+                                        <TextBlock FontFamily="{Binding AppearanceFontFamily}"
+                                                   FontSize="{Binding AppearanceFontSize}"
+                                                   Text="文本颜色  使用大胆的颜色和字体"
+                                                   Foreground="{Binding AppearanceBoldForegroundColor}"
+                                                   FontWeight="Bold"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Grid ColumnDefinitions="130,*,12,96" RowDefinitions="Auto">
+                                    <TextBlock Text="配色方案:"
+                                               VerticalAlignment="Center"
+                                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                     <atom:Select Grid.Column="1"
+                                                  x:Name="AppearanceColorSchemeSelect"
+                                                  Mode="Single"
+                                                  HorizontalAlignment="Stretch"
+                                                  SelectionChanged="OnAppearanceSelectionChanged"
+                                                  OptionsSource="{Binding AppearanceColorSchemeOptions}"/>
+                                    <atom:Button Grid.Column="3"
+                                                 Content="编辑..."
+                                                 HorizontalAlignment="Stretch"
+                                                 Click="OnEditAppearanceColorSchemeClick"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <Grid RowDefinitions="Auto,14,Auto,12,Auto,12,Auto,12,Auto,12,Auto"
+                                  ColumnDefinitions="130,1.6*,12,156,12,92">
+                                <TextBlock Grid.ColumnSpan="6"
+                                           Text="字体"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+
+                                <TextBlock Grid.Row="2"
+                                           Text="字体:"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                 <atom:Select Grid.Row="2"
+                                              Grid.Column="1"
+                                              x:Name="AppearanceFontSelect"
+                                              Mode="Single"
+                                              HorizontalAlignment="Stretch"
+                                              SelectionChanged="OnAppearanceSelectionChanged"
+                                              OptionsSource="{Binding AppearanceFontOptions}"/>
+                                 <atom:Select Grid.Row="2"
+                                              Grid.Column="3"
+                                              x:Name="AppearanceFontStyleSelect"
+                                              Mode="Single"
+                                              HorizontalAlignment="Stretch"
+                                              SelectionChanged="OnAppearanceSelectionChanged"
+                                              OptionsSource="{Binding AppearanceFontStyleOptions}"/>
+                                 <atom:Select Grid.Row="2"
+                                              Grid.Column="5"
+                                              x:Name="AppearanceFontSizeSelect"
+                                              Mode="Single"
+                                              HorizontalAlignment="Stretch"
+                                              SelectionChanged="OnAppearanceSelectionChanged"
+                                              OptionsSource="{Binding AppearanceFontSizeOptions}"/>
+
+                                <TextBlock Grid.Row="4"
+                                           Text="亚洲字体:"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                 <atom:Select Grid.Row="4"
+                                              Grid.Column="1"
+                                              x:Name="AppearanceCjkFontSelect"
+                                              Mode="Single"
+                                              HorizontalAlignment="Stretch"
+                                              SelectionChanged="OnAppearanceSelectionChanged"
+                                              OptionsSource="{Binding AppearanceFontOptions}"/>
+                                 <atom:Select Grid.Row="4"
+                                              Grid.Column="3"
+                                              x:Name="AppearanceCjkFontStyleSelect"
+                                              Mode="Single"
+                                              HorizontalAlignment="Stretch"
+                                              SelectionChanged="OnAppearanceSelectionChanged"
+                                              OptionsSource="{Binding AppearanceFontStyleOptions}"/>
+                                 <atom:Select Grid.Row="4"
+                                              Grid.Column="5"
+                                              x:Name="AppearanceCjkFontSizeSelect"
+                                              Mode="Single"
+                                              HorizontalAlignment="Stretch"
+                                              SelectionChanged="OnAppearanceSelectionChanged"
+                                              OptionsSource="{Binding AppearanceFontSizeOptions}"/>
+
+                                <atom:CheckBox Grid.Row="6"
+                                               Grid.Column="1"
+                                               Grid.ColumnSpan="5"
+                                               Content="使用可变间距字体"
+                                               IsChecked="{Binding AppearanceUseVariablePitchFont, Mode=TwoWay}"/>
+
+                                <TextBlock Grid.Row="8"
+                                           Text="字体质量:"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                 <atom:Select Grid.Row="8"
+                                              Grid.Column="1"
+                                              Grid.ColumnSpan="3"
+                                              x:Name="AppearanceFontQualitySelect"
+                                              Mode="Single"
+                                              HorizontalAlignment="Stretch"
+                                              SelectionChanged="OnAppearanceSelectionChanged"
+                                              OptionsSource="{Binding AppearanceFontQualityOptions}"/>
+
+                                <TextBlock Grid.Row="10"
+                                           Text="“加粗”文本"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                 <atom:Select Grid.Row="10"
+                                              Grid.Column="1"
+                                              Grid.ColumnSpan="3"
+                                              x:Name="AppearanceBoldTextModeSelect"
+                                              Mode="Single"
+                                              HorizontalAlignment="Stretch"
+                                              SelectionChanged="OnAppearanceSelectionChanged"
+                                              OptionsSource="{Binding AppearanceBoldTextModeOptions}"/>
+                            </Grid>
+                        </Border>
+
+                        <StackPanel Spacing="16">
+                            <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                    BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                    BorderThickness="1"
+                                    CornerRadius="4"
+                                    Padding="18">
+                                <StackPanel Spacing="12">
+                                    <TextBlock Text="文本和背景颜色"
+                                               FontWeight="SemiBold"
+                                               Foreground="{atom:SharedTokenResource ColorText}"/>
+                                    <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,12,Auto,12,Auto">
+                                        <TextBlock Text="正常文本:"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                         <atom:ColorPicker Grid.Column="1"
+                                                           x:Name="AppearanceForegroundColorPicker"
+                                                           DefaultValue="{Binding AppearanceForegroundColor}"
+                                                           Value="{Binding AppearanceForegroundColor, Mode=TwoWay}"
+                                                           ValueChanged="OnAppearanceColorPickerValueChanged"
+                                                           Format="Hex"
+                                                           ShouldUseOverlayPopup="False"
+                                                           IsTextVisible="True"/>
+                                        <TextBlock Grid.Row="2"
+                                                   Text="“加粗”文本:"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                         <atom:ColorPicker Grid.Row="2"
+                                                           Grid.Column="1"
+                                                           x:Name="AppearanceBoldForegroundColorPicker"
+                                                           DefaultValue="{Binding AppearanceBoldForegroundColor}"
+                                                           Value="{Binding AppearanceBoldForegroundColor, Mode=TwoWay}"
+                                                           ValueChanged="OnAppearanceColorPickerValueChanged"
+                                                           Format="Hex"
+                                                           ShouldUseOverlayPopup="False"
+                                                           IsTextVisible="True"/>
+                                        <TextBlock Grid.Row="4"
+                                                   Text="背景:"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                         <atom:ColorPicker Grid.Row="4"
+                                                           Grid.Column="1"
+                                                           x:Name="AppearanceBackgroundColorPicker"
+                                                           DefaultValue="{Binding AppearanceBackgroundColor}"
+                                                           Value="{Binding AppearanceBackgroundColor, Mode=TwoWay}"
+                                                           ValueChanged="OnAppearanceColorPickerValueChanged"
+                                                           Format="Hex"
+                                                           ShouldUseOverlayPopup="False"
+                                                           IsTextVisible="True"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                    BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                    BorderThickness="1"
+                                    CornerRadius="4"
+                                    Padding="18">
+                                <StackPanel Spacing="12">
+                                    <TextBlock Text="游标"
+                                               FontWeight="SemiBold"
+                                               Foreground="{atom:SharedTokenResource ColorText}"/>
+                                    <Grid ColumnDefinitions="150,180,12,Auto,*" RowDefinitions="Auto,12,Auto,12,Auto,12,Auto">
+                                        <TextBlock Text="游标颜色:"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                         <atom:ColorPicker Grid.Column="1"
+                                                           x:Name="AppearanceCursorColorPicker"
+                                                           DefaultValue="{Binding AppearanceCursorColor}"
+                                                           Value="{Binding AppearanceCursorColor, Mode=TwoWay}"
+                                                           ValueChanged="OnAppearanceColorPickerValueChanged"
+                                                           Format="Hex"
+                                                           ShouldUseOverlayPopup="False"
+                                                           IsTextVisible="True"/>
+                                        <TextBlock Grid.Row="2"
+                                                   Text="文本颜色:"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                         <atom:ColorPicker Grid.Row="2"
+                                                           Grid.Column="1"
+                                                           x:Name="AppearanceCursorTextColorPicker"
+                                                           DefaultValue="{Binding AppearanceCursorTextColor}"
+                                                           Value="{Binding AppearanceCursorTextColor, Mode=TwoWay}"
+                                                           ValueChanged="OnAppearanceColorPickerValueChanged"
+                                                           Format="Hex"
+                                                           ShouldUseOverlayPopup="False"
+                                                           IsTextVisible="True"/>
+                                        <atom:CheckBox Grid.Row="4"
+                                                       Grid.Column="1"
+                                                       Content="使用闪烁的光标"
+                                                       IsChecked="{Binding AppearanceUseBlinkingCursor, Mode=TwoWay}"/>
+                                        <TextBlock Grid.Row="6"
+                                                   Text="速度:"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                        <atom:NumericUpDown Grid.Row="6"
+                                                            Grid.Column="1"
+                                                            Width="120"
+                                                            HorizontalAlignment="Left"
+                                                            Minimum="1"
+                                                            Maximum="5000"
+                                                            Value="{Binding AppearanceCursorBlinkSpeedMilliseconds, Mode=TwoWay}"/>
+                                        <TextBlock Grid.Row="6"
+                                                   Grid.Column="3"
+                                                   Text="毫秒"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="150,*">
+                                        <TextBlock Text="外观:"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                        <StackPanel Grid.Column="1"
+                                                    Orientation="Horizontal"
+                                                    Spacing="18">
+                                            <atom:RadioButton Content="块"
+                                                              GroupName="AppearanceCursorShape"
+                                                              IsChecked="{Binding IsAppearanceCursorShapeBlock, Mode=TwoWay}"/>
+                                            <atom:RadioButton Content="竖线"
+                                                              GroupName="AppearanceCursorShape"
+                                                              IsChecked="{Binding IsAppearanceCursorShapeVertical, Mode=TwoWay}"/>
+                                            <atom:RadioButton Content="下划线"
+                                                              GroupName="AppearanceCursorShape"
+                                                              IsChecked="{Binding IsAppearanceCursorShapeUnderline, Mode=TwoWay}"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="TracingPage" IsVisible="False">
+                    <StackPanel Spacing="16">
+                        <atom:TextBlock Text="选择跟踪的事件。所选的事件状态将输出到终端窗口中。"
+                                        Foreground="{atom:SharedTokenResource ColorText}"
+                                        TextWrapping="Wrap"/>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <StackPanel Spacing="16">
+                                <atom:TextBlock Text="协议事件"
+                                                FontWeight="SemiBold"
+                                                Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <StackPanel Spacing="12">
+                                    <atom:CheckBox Content="SSH版本、算法交换和用户身份验证(S)"
+                                                   IsChecked="{Binding AdvancedTraceSshProtocol, Mode=TwoWay}"/>
+                                    <atom:CheckBox Content="SSH TCP/IP 和 X11隧道(H)"
+                                                   IsChecked="{Binding AdvancedTraceSshTunneling, Mode=TwoWay}"/>
+                                    <atom:CheckBox Content="SSH数据包(P)"
+                                                   IsChecked="{Binding AdvancedTraceSshPackets, Mode=TwoWay}"/>
+                                    <atom:CheckBox Content="TELNET选项模式(T)"
+                                                   IsChecked="{Binding AdvancedTraceTelnetOptions, Mode=TwoWay}"/>
+                                </StackPanel>
+                            </StackPanel>
                         </Border>
                     </StackPanel>
                 </ScrollViewer>
