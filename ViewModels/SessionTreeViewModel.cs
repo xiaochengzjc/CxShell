@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using ChiXueSsh.Models;
@@ -42,6 +43,7 @@ public partial class SessionTreeViewModel : ObservableObject
     [ObservableProperty] private ObservableCollection<SessionNodeViewModel> _sessionRows = new();
     [ObservableProperty] private ObservableCollection<SessionInfo> _quickSessions = new();
     [ObservableProperty] private SessionNodeViewModel? _selectedNode;
+    [ObservableProperty] private string _sessionSearchText = string.Empty;
 
     private readonly SessionStorageService _storage;
     private readonly MainWindowViewModel _mainWindow;
@@ -53,13 +55,119 @@ public partial class SessionTreeViewModel : ObservableObject
     public bool CanPaste => _copiedSession != null;
 
     public MainWindowViewModel MainWindow => _mainWindow;
+    public ApplicationSettings Settings => _data.Settings;
 
     public SessionTreeViewModel(MainWindowViewModel mainWindow)
     {
         _mainWindow = mainWindow;
         _storage = new SessionStorageService();
         _data = _storage.Load();
+        _data.Settings ??= new ApplicationSettings();
+        _data.Settings.GlobalDefaults ??= ApplicationSettings.CreateDefaultSession();
         LoadSessions();
+    }
+
+    public SessionInfo CreateSessionFromGlobalDefaults()
+    {
+        return new SessionInfo
+        {
+            Id = Guid.NewGuid(),
+            Name = string.Empty,
+            Host = string.Empty,
+            Username = string.Empty
+        };
+    }
+
+    public void SaveSettings(ApplicationSettings settings)
+    {
+        _data.Settings = settings;
+        _data.Settings.GlobalDefaults ??= ApplicationSettings.CreateDefaultSession();
+        _storage.Save(_data);
+    }
+
+    public SessionInfo GetEffectiveSession(SessionInfo session)
+    {
+        var defaults = _data.Settings.GlobalDefaults ?? ApplicationSettings.CreateDefaultSession();
+        return MergeSession(defaults, session);
+    }
+
+    private static SessionInfo MergeSession(SessionInfo defaults, SessionInfo session)
+    {
+        var effective = CloneSession(defaults, session.Name);
+        effective.Id = session.Id;
+        effective.GroupId = session.GroupId;
+        ApplySessionConnectionOverrides(effective, session);
+        return effective;
+    }
+
+    private static void ApplySessionConnectionOverrides(SessionInfo target, SessionInfo source)
+    {
+        target.Proxy = CloneProxy(source.Proxy);
+        target.ProxyServers = source.ProxyServers.Select(CloneProxy).ToList();
+        target.SelectedProxyId = source.SelectedProxyId;
+        target.Host = source.Host;
+        target.Port = source.Port;
+        target.Username = source.Username;
+        target.Protocol = source.Protocol;
+        target.AuthMethod = source.AuthMethod;
+        target.PrivateKeyPath = source.PrivateKeyPath;
+        target.AutoReconnect = source.AutoReconnect;
+        target.ReconnectIntervalSeconds = source.ReconnectIntervalSeconds;
+        target.ReconnectLimitMinutes = source.ReconnectLimitMinutes;
+        target.SendSessionKeepAlive = source.SendSessionKeepAlive;
+        target.SessionKeepAliveIntervalSeconds = source.SessionKeepAliveIntervalSeconds;
+        target.SendIdleString = source.SendIdleString;
+        target.IdleStringIntervalSeconds = source.IdleStringIntervalSeconds;
+        target.IdleString = source.IdleString;
+        target.TcpKeepAlive = source.TcpKeepAlive;
+        target.EnableLoginScriptRules = source.EnableLoginScriptRules;
+        target.LoginScriptRules = source.LoginScriptRules.Select(SessionEditViewModel.CloneLoginScriptRule).ToList();
+        target.RunLoginScriptFile = source.RunLoginScriptFile;
+        target.LoginScriptFilePath = source.LoginScriptFilePath;
+        target.LoginScriptParameters = source.LoginScriptParameters;
+        target.SshRemoteCommand = source.SshRemoteCommand;
+        target.SshVersionPolicy = source.SshVersionPolicy;
+        target.SshUseXagent = source.SshUseXagent;
+        target.SshForwardAgent = source.SshForwardAgent;
+        target.SshUseCompression = source.SshUseCompression;
+        target.SshNoTerminal = source.SshNoTerminal;
+        target.SshAcceptAndSaveHostKey = source.SshAcceptAndSaveHostKey;
+        target.SshDoNotStartFileManager = source.SshDoNotStartFileManager;
+        target.SshCipherAlgorithms = source.SshCipherAlgorithms;
+        target.SshMacAlgorithms = source.SshMacAlgorithms;
+        target.SshKeyExchangeAlgorithms = source.SshKeyExchangeAlgorithms;
+        target.SshTunnelRules = source.SshTunnelRules.Select(SessionEditViewModel.CloneTunnelRule).ToList();
+        target.SshForwardX11 = source.SshForwardX11;
+        target.SshX11UseXmanager = source.SshX11UseXmanager;
+        target.SshX11Display = source.SshX11Display;
+        target.TelnetUseXDisplayLocation = source.TelnetUseXDisplayLocation;
+        target.TelnetXDisplayLocation = source.TelnetXDisplayLocation;
+        target.TelnetOptionMode = source.TelnetOptionMode;
+        target.TelnetForceCharacterAtATime = source.TelnetForceCharacterAtATime;
+        target.TelnetUsernamePrompt = source.TelnetUsernamePrompt;
+        target.TelnetPasswordPrompt = source.TelnetPasswordPrompt;
+        target.RloginPasswordPrompt = source.RloginPasswordPrompt;
+        target.RloginTerminalSpeed = source.RloginTerminalSpeed;
+        target.SftpLocalStartDirectory = source.SftpLocalStartDirectory;
+        target.SftpRemoteStartDirectory = source.SftpRemoteStartDirectory;
+        target.SftpUseCustomServer = source.SftpUseCustomServer;
+        target.SftpCustomServerCommand = source.SftpCustomServerCommand;
+        target.SerialPortName = source.SerialPortName;
+        target.SerialBaudRate = source.SerialBaudRate;
+        target.SerialDataBits = source.SerialDataBits;
+        target.SerialParity = source.SerialParity;
+        target.SerialStopBits = source.SerialStopBits;
+        target.SerialFlowControl = source.SerialFlowControl;
+        target.RdpWindowSize = source.RdpWindowSize;
+        target.RdpDesktopWidth = source.RdpDesktopWidth;
+        target.RdpDesktopHeight = source.RdpDesktopHeight;
+        target.RdpResizeMode = source.RdpResizeMode;
+        target.RdpScreenScale = source.RdpScreenScale;
+        target.RdpColorQuality = source.RdpColorQuality;
+        target.RdpApplyKeyCombinations = source.RdpApplyKeyCombinations;
+        target.RdpRedirectDrives = source.RdpRedirectDrives;
+        target.RdpAudioMode = source.RdpAudioMode;
+        target.RdpAudioCapture = source.RdpAudioCapture;
     }
 
     partial void OnSelectedNodeChanged(SessionNodeViewModel? value)
@@ -68,10 +176,14 @@ public partial class SessionTreeViewModel : ObservableObject
         OnPropertyChanged(nameof(CanUseSelectedSession));
     }
 
+    partial void OnSessionSearchTextChanged(string value)
+    {
+        ApplySessionFilter();
+    }
+
     private void LoadSessions()
     {
         SessionNodes.Clear();
-        SessionRows.Clear();
 
         foreach (var group in _data.Groups.OrderBy(g => g.SortOrder))
         {
@@ -80,7 +192,6 @@ public partial class SessionTreeViewModel : ObservableObject
             {
                 var sessionNode = new SessionNodeViewModel(session);
                 groupNode.Children.Add(sessionNode);
-                SessionRows.Add(sessionNode);
             }
             SessionNodes.Add(groupNode);
         }
@@ -89,10 +200,55 @@ public partial class SessionTreeViewModel : ObservableObject
         {
             var sessionNode = new SessionNodeViewModel(session);
             SessionNodes.Add(sessionNode);
-            SessionRows.Add(sessionNode);
         }
 
         RefreshQuickSessions();
+        ApplySessionFilter();
+    }
+
+    private void ApplySessionFilter()
+    {
+        var selectedSessionId = SelectedSession?.Id;
+        var query = SessionSearchText?.Trim();
+        var rows = string.IsNullOrWhiteSpace(query)
+            ? GetOrderedSessions()
+            : GetOrderedSessions().Where(session => MatchesSessionSearch(session, query));
+
+        SessionRows.Clear();
+        foreach (var session in rows)
+            SessionRows.Add(new SessionNodeViewModel(session));
+
+        if (selectedSessionId.HasValue)
+            SelectedNode = SessionRows.FirstOrDefault(node => node.Session?.Id == selectedSessionId.Value);
+        else
+            SelectedNode = null;
+    }
+
+    private IEnumerable<SessionInfo> GetOrderedSessions()
+    {
+        foreach (var group in _data.Groups.OrderBy(g => g.SortOrder))
+        {
+            foreach (var session in _data.Sessions.Where(s => s.GroupId == group.Id).OrderBy(s => s.SortOrder))
+                yield return session;
+        }
+
+        foreach (var session in _data.Sessions.Where(s => s.GroupId == null).OrderBy(s => s.SortOrder))
+            yield return session;
+    }
+
+    private static bool MatchesSessionSearch(SessionInfo session, string query)
+    {
+        return Contains(session.Name, query) ||
+               Contains(session.Host, query) ||
+               Contains(session.Username, query) ||
+               Contains(session.Protocol.ToString(), query) ||
+               session.Port.ToString().Contains(query, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool Contains(string? value, string query)
+    {
+        return !string.IsNullOrWhiteSpace(value) &&
+               value.Contains(query, StringComparison.OrdinalIgnoreCase);
     }
 
     public void AddSession(SessionInfo session)
@@ -108,161 +264,7 @@ public partial class SessionTreeViewModel : ObservableObject
         if (existing != null)
         {
             existing.Name = session.Name;
-            existing.Host = session.Host;
-            existing.Port = session.Port;
-            existing.Username = session.Username;
-            existing.Proxy = CloneProxy(session.Proxy);
-            existing.ProxyServers = session.ProxyServers.Select(CloneProxy).ToList();
-            existing.SelectedProxyId = session.SelectedProxyId;
-            existing.Protocol = session.Protocol;
-            existing.AuthMethod = session.AuthMethod;
-            existing.PrivateKeyPath = session.PrivateKeyPath;
-            existing.AutoReconnect = session.AutoReconnect;
-            existing.ReconnectIntervalSeconds = session.ReconnectIntervalSeconds;
-            existing.ReconnectLimitMinutes = session.ReconnectLimitMinutes;
-            existing.SendSessionKeepAlive = session.SendSessionKeepAlive;
-            existing.SessionKeepAliveIntervalSeconds = session.SessionKeepAliveIntervalSeconds;
-            existing.SendIdleString = session.SendIdleString;
-            existing.IdleStringIntervalSeconds = session.IdleStringIntervalSeconds;
-            existing.IdleString = session.IdleString;
-            existing.TcpKeepAlive = session.TcpKeepAlive;
-            existing.TerminalType = session.TerminalType;
-            existing.TerminalColumns = session.TerminalColumns;
-            existing.TerminalRows = session.TerminalRows;
-            existing.TerminalFixedSize = session.TerminalFixedSize;
-            existing.TerminalResetSizeOnConnect = session.TerminalResetSizeOnConnect;
-            existing.TerminalScrollbackSize = session.TerminalScrollbackSize;
-            existing.TerminalPushClearedScreenToScrollback = session.TerminalPushClearedScreenToScrollback;
-            existing.TerminalEncoding = session.TerminalEncoding;
-            existing.TerminalTreatAmbiguousAsWide = session.TerminalTreatAmbiguousAsWide;
-            existing.TerminalSendLineEnding = session.TerminalSendLineEnding;
-            existing.TerminalReceiveLineEnding = session.TerminalReceiveLineEnding;
-            existing.TerminalKeyboardFunctionKeyMode = session.TerminalKeyboardFunctionKeyMode;
-            existing.TerminalKeyboardMappingFile = session.TerminalKeyboardMappingFile;
-            existing.TerminalDeleteKeySequence = session.TerminalDeleteKeySequence;
-            existing.TerminalBackspaceKeySequence = session.TerminalBackspaceKeySequence;
-            existing.TerminalLeftAltAsMeta = session.TerminalLeftAltAsMeta;
-            existing.TerminalRightAltAsMeta = session.TerminalRightAltAsMeta;
-            existing.TerminalCtrlAltAsAltGr = session.TerminalCtrlAltAsAltGr;
-            existing.TerminalVtAutoWrapMode = session.TerminalVtAutoWrapMode;
-            existing.TerminalVtOriginMode = session.TerminalVtOriginMode;
-            existing.TerminalVtReverseVideoMode = session.TerminalVtReverseVideoMode;
-            existing.TerminalVtNewLineMode = session.TerminalVtNewLineMode;
-            existing.TerminalVtInsertMode = session.TerminalVtInsertMode;
-            existing.TerminalVtEchoMode = session.TerminalVtEchoMode;
-            existing.TerminalVtCursorKeyMode = session.TerminalVtCursorKeyMode;
-            existing.TerminalVtNumericKeypadMode = session.TerminalVtNumericKeypadMode;
-            existing.TerminalAdvancedUseApplicationCursorMode = session.TerminalAdvancedUseApplicationCursorMode;
-            existing.TerminalAdvancedShiftLimitsApplicationCursorMode = session.TerminalAdvancedShiftLimitsApplicationCursorMode;
-            existing.TerminalAdvancedClearScreenBackground = session.TerminalAdvancedClearScreenBackground;
-            existing.TerminalAdvancedScrollToBottomOnInputOutput = session.TerminalAdvancedScrollToBottomOnInputOutput;
-            existing.TerminalAdvancedSuspendScrollToBottomOnScrollLock = session.TerminalAdvancedSuspendScrollToBottomOnScrollLock;
-            existing.TerminalAdvancedScrollToBottomByKey = session.TerminalAdvancedScrollToBottomByKey;
-            existing.TerminalAdvancedDuplicateSessionCd = session.TerminalAdvancedDuplicateSessionCd;
-            existing.TerminalAdvancedPreinputString = session.TerminalAdvancedPreinputString;
-            existing.TerminalAdvancedUseRxvtHomeEnd = session.TerminalAdvancedUseRxvtHomeEnd;
-            existing.TerminalAdvancedDisableBlinkingText = session.TerminalAdvancedDisableBlinkingText;
-            existing.TerminalAdvancedDisableTitleChange = session.TerminalAdvancedDisableTitleChange;
-            existing.TerminalAdvancedDisableTerminalPrint = session.TerminalAdvancedDisableTerminalPrint;
-            existing.TerminalAdvancedDisableAlternateScreen = session.TerminalAdvancedDisableAlternateScreen;
-            existing.TerminalAdvancedIgnoreResizeRequest = session.TerminalAdvancedIgnoreResizeRequest;
-            existing.TerminalAdvancedAnswerback = session.TerminalAdvancedAnswerback;
-            existing.TerminalAdvancedUseBuiltinLineDrawing = session.TerminalAdvancedUseBuiltinLineDrawing;
-            existing.TerminalAdvancedUseBuiltinPowerline = session.TerminalAdvancedUseBuiltinPowerline;
-            existing.AppearanceColorScheme = session.AppearanceColorScheme;
-            existing.AppearanceForegroundColor = session.AppearanceForegroundColor;
-            existing.AppearanceBoldForegroundColor = session.AppearanceBoldForegroundColor;
-            existing.AppearanceBackgroundColor = session.AppearanceBackgroundColor;
-            existing.AppearanceAnsiColors = session.AppearanceAnsiColors;
-            existing.AppearanceFontFamily = session.AppearanceFontFamily;
-            existing.AppearanceFontStyle = session.AppearanceFontStyle;
-            existing.AppearanceFontSize = session.AppearanceFontSize;
-            existing.AppearanceCjkFontFamily = session.AppearanceCjkFontFamily;
-            existing.AppearanceCjkFontStyle = session.AppearanceCjkFontStyle;
-            existing.AppearanceCjkFontSize = session.AppearanceCjkFontSize;
-            existing.AppearanceUseVariablePitchFont = session.AppearanceUseVariablePitchFont;
-            existing.AppearanceFontQuality = session.AppearanceFontQuality;
-            existing.AppearanceBoldTextMode = session.AppearanceBoldTextMode;
-            existing.AppearanceCursorColor = session.AppearanceCursorColor;
-            existing.AppearanceCursorTextColor = session.AppearanceCursorTextColor;
-            existing.AppearanceUseBlinkingCursor = session.AppearanceUseBlinkingCursor;
-            existing.AppearanceCursorBlinkSpeedMilliseconds = session.AppearanceCursorBlinkSpeedMilliseconds;
-            existing.AppearanceCursorShape = session.AppearanceCursorShape;
-            existing.AppearanceWindowPaddingTop = session.AppearanceWindowPaddingTop;
-            existing.AppearanceWindowPaddingBottom = session.AppearanceWindowPaddingBottom;
-            existing.AppearanceWindowPaddingLeft = session.AppearanceWindowPaddingLeft;
-            existing.AppearanceWindowPaddingRight = session.AppearanceWindowPaddingRight;
-            existing.AppearanceLineSpacing = session.AppearanceLineSpacing;
-            existing.AppearanceCharacterSpacing = session.AppearanceCharacterSpacing;
-            existing.AppearanceTabColorMode = session.AppearanceTabColorMode;
-            existing.AppearanceTabCustomColor = session.AppearanceTabCustomColor;
-            existing.AppearanceBackgroundImagePath = session.AppearanceBackgroundImagePath;
-            existing.AppearanceBackgroundImagePosition = session.AppearanceBackgroundImagePosition;
-            existing.AppearanceHighlightSetId = session.AppearanceHighlightSetId;
-            existing.AppearanceHighlightSets = new(session.AppearanceHighlightSets.Select(SessionEditViewModel.CloneHighlightSet));
-            existing.AdvancedQuickCommandSet = session.AdvancedQuickCommandSet;
-            existing.AdvancedDisableQuickCommandShortcuts = session.AdvancedDisableQuickCommandShortcuts;
-            existing.AdvancedFtpPort = session.AdvancedFtpPort;
-            existing.AdvancedCharacterDelayMilliseconds = session.AdvancedCharacterDelayMilliseconds;
-            existing.AdvancedUseLineDelay = session.AdvancedUseLineDelay;
-            existing.AdvancedLineDelayMilliseconds = session.AdvancedLineDelayMilliseconds;
-            existing.AdvancedUsePromptDelay = session.AdvancedUsePromptDelay;
-            existing.AdvancedPromptText = session.AdvancedPromptText;
-            existing.AdvancedPromptMaxWaitMilliseconds = session.AdvancedPromptMaxWaitMilliseconds;
-            existing.AdvancedUseNagle = session.AdvancedUseNagle;
-            existing.AdvancedIpVersion = session.AdvancedIpVersion;
-            existing.AdvancedTraceSshProtocol = session.AdvancedTraceSshProtocol;
-            existing.AdvancedTraceSshTunneling = session.AdvancedTraceSshTunneling;
-            existing.AdvancedTraceSshPackets = session.AdvancedTraceSshPackets;
-            existing.AdvancedTraceTelnetOptions = session.AdvancedTraceTelnetOptions;
-            existing.EnableLoginScriptRules = session.EnableLoginScriptRules;
-            existing.LoginScriptRules = session.LoginScriptRules.Select(SessionEditViewModel.CloneLoginScriptRule).ToList();
-            existing.RunLoginScriptFile = session.RunLoginScriptFile;
-            existing.LoginScriptFilePath = session.LoginScriptFilePath;
-            existing.LoginScriptParameters = session.LoginScriptParameters;
-            existing.SshRemoteCommand = session.SshRemoteCommand;
-            existing.SshVersionPolicy = session.SshVersionPolicy;
-            existing.SshUseXagent = session.SshUseXagent;
-            existing.SshForwardAgent = session.SshForwardAgent;
-            existing.SshUseCompression = session.SshUseCompression;
-            existing.SshNoTerminal = session.SshNoTerminal;
-            existing.SshAcceptAndSaveHostKey = session.SshAcceptAndSaveHostKey;
-            existing.SshDoNotStartFileManager = session.SshDoNotStartFileManager;
-            existing.SshCipherAlgorithms = session.SshCipherAlgorithms;
-            existing.SshMacAlgorithms = session.SshMacAlgorithms;
-            existing.SshKeyExchangeAlgorithms = session.SshKeyExchangeAlgorithms;
-            existing.SshTunnelRules = session.SshTunnelRules.Select(SessionEditViewModel.CloneTunnelRule).ToList();
-            existing.SshForwardX11 = session.SshForwardX11;
-            existing.SshX11UseXmanager = session.SshX11UseXmanager;
-            existing.SshX11Display = session.SshX11Display;
-            existing.TelnetUseXDisplayLocation = session.TelnetUseXDisplayLocation;
-            existing.TelnetXDisplayLocation = session.TelnetXDisplayLocation;
-            existing.TelnetOptionMode = session.TelnetOptionMode;
-            existing.TelnetForceCharacterAtATime = session.TelnetForceCharacterAtATime;
-            existing.TelnetUsernamePrompt = session.TelnetUsernamePrompt;
-            existing.TelnetPasswordPrompt = session.TelnetPasswordPrompt;
-            existing.RloginPasswordPrompt = session.RloginPasswordPrompt;
-            existing.RloginTerminalSpeed = session.RloginTerminalSpeed;
-            existing.SftpLocalStartDirectory = session.SftpLocalStartDirectory;
-            existing.SftpRemoteStartDirectory = session.SftpRemoteStartDirectory;
-            existing.SftpUseCustomServer = session.SftpUseCustomServer;
-            existing.SftpCustomServerCommand = session.SftpCustomServerCommand;
-            existing.SerialPortName = session.SerialPortName;
-            existing.SerialBaudRate = session.SerialBaudRate;
-            existing.SerialDataBits = session.SerialDataBits;
-            existing.SerialParity = session.SerialParity;
-            existing.SerialStopBits = session.SerialStopBits;
-            existing.SerialFlowControl = session.SerialFlowControl;
-            existing.RdpWindowSize = session.RdpWindowSize;
-            existing.RdpDesktopWidth = session.RdpDesktopWidth;
-            existing.RdpDesktopHeight = session.RdpDesktopHeight;
-            existing.RdpResizeMode = session.RdpResizeMode;
-            existing.RdpScreenScale = session.RdpScreenScale;
-            existing.RdpColorQuality = session.RdpColorQuality;
-            existing.RdpApplyKeyCombinations = session.RdpApplyKeyCombinations;
-            existing.RdpRedirectDrives = session.RdpRedirectDrives;
-            existing.RdpAudioMode = session.RdpAudioMode;
-            existing.RdpAudioCapture = session.RdpAudioCapture;
+            ApplySessionConnectionOverrides(existing, session);
             _storage.Save(_data);
             LoadSessions();
         }
@@ -391,13 +393,58 @@ public partial class SessionTreeViewModel : ObservableObject
             IdleStringIntervalSeconds = source.IdleStringIntervalSeconds,
             IdleString = source.IdleString,
             TcpKeepAlive = source.TcpKeepAlive,
-            TerminalType = source.TerminalType,
+            EnableLoginScriptRules = source.EnableLoginScriptRules,
+            LoginScriptRules = source.LoginScriptRules.Select(SessionEditViewModel.CloneLoginScriptRule).ToList(),
+            RunLoginScriptFile = source.RunLoginScriptFile,
+            LoginScriptFilePath = source.LoginScriptFilePath,
+            LoginScriptParameters = source.LoginScriptParameters,
+            SshRemoteCommand = source.SshRemoteCommand,
+            SshVersionPolicy = source.SshVersionPolicy,
+            SshUseXagent = source.SshUseXagent,
+            SshForwardAgent = source.SshForwardAgent,
+            SshUseCompression = source.SshUseCompression,
+            SshNoTerminal = source.SshNoTerminal,
+            SshAcceptAndSaveHostKey = source.SshAcceptAndSaveHostKey,
+            SshDoNotStartFileManager = source.SshDoNotStartFileManager,
+            SshCipherAlgorithms = source.SshCipherAlgorithms,
+            SshMacAlgorithms = source.SshMacAlgorithms,
+            SshKeyExchangeAlgorithms = source.SshKeyExchangeAlgorithms,
+            SshTunnelRules = source.SshTunnelRules.Select(SessionEditViewModel.CloneTunnelRule).ToList(),
+            SshForwardX11 = source.SshForwardX11,
+            SshX11UseXmanager = source.SshX11UseXmanager,
+            SshX11Display = source.SshX11Display,
+            TelnetUseXDisplayLocation = source.TelnetUseXDisplayLocation,
+            TelnetXDisplayLocation = source.TelnetXDisplayLocation,
+            TelnetOptionMode = source.TelnetOptionMode,
+            TelnetForceCharacterAtATime = source.TelnetForceCharacterAtATime,
+            TelnetUsernamePrompt = source.TelnetUsernamePrompt,
+            TelnetPasswordPrompt = source.TelnetPasswordPrompt,
+            RloginPasswordPrompt = source.RloginPasswordPrompt,
+            RloginTerminalSpeed = source.RloginTerminalSpeed,
+            SftpLocalStartDirectory = source.SftpLocalStartDirectory,
+            SftpRemoteStartDirectory = source.SftpRemoteStartDirectory,
+            SftpUseCustomServer = source.SftpUseCustomServer,
+            SftpCustomServerCommand = source.SftpCustomServerCommand,
+            SerialPortName = source.SerialPortName,
+            SerialBaudRate = source.SerialBaudRate,
+            SerialDataBits = source.SerialDataBits,
+            SerialParity = source.SerialParity,
+            SerialStopBits = source.SerialStopBits,
+            SerialFlowControl = source.SerialFlowControl,
+            RdpWindowSize = source.RdpWindowSize,
+            RdpDesktopWidth = source.RdpDesktopWidth,
+            RdpDesktopHeight = source.RdpDesktopHeight,
+            RdpResizeMode = source.RdpResizeMode,
+            RdpScreenScale = source.RdpScreenScale,
+            RdpColorQuality = source.RdpColorQuality,
+            RdpApplyKeyCombinations = source.RdpApplyKeyCombinations,
+            RdpRedirectDrives = source.RdpRedirectDrives,
+            RdpAudioMode = source.RdpAudioMode,
+            RdpAudioCapture = source.RdpAudioCapture,
+            TerminalFixedSize = source.TerminalFixedSize,
             TerminalColumns = source.TerminalColumns,
             TerminalRows = source.TerminalRows,
-            TerminalFixedSize = source.TerminalFixedSize,
-            TerminalResetSizeOnConnect = source.TerminalResetSizeOnConnect,
-            TerminalScrollbackSize = source.TerminalScrollbackSize,
-            TerminalPushClearedScreenToScrollback = source.TerminalPushClearedScreenToScrollback,
+            TerminalType = source.TerminalType,
             TerminalEncoding = source.TerminalEncoding,
             TerminalTreatAmbiguousAsWide = source.TerminalTreatAmbiguousAsWide,
             TerminalSendLineEnding = source.TerminalSendLineEnding,
@@ -464,70 +511,27 @@ public partial class SessionTreeViewModel : ObservableObject
             AppearanceBackgroundImagePath = source.AppearanceBackgroundImagePath,
             AppearanceBackgroundImagePosition = source.AppearanceBackgroundImagePosition,
             AppearanceHighlightSetId = source.AppearanceHighlightSetId,
-            AppearanceHighlightSets = new(source.AppearanceHighlightSets.Select(SessionEditViewModel.CloneHighlightSet)),
-            AdvancedQuickCommandSet = source.AdvancedQuickCommandSet,
-            AdvancedDisableQuickCommandShortcuts = source.AdvancedDisableQuickCommandShortcuts,
-            AdvancedFtpPort = source.AdvancedFtpPort,
-            AdvancedCharacterDelayMilliseconds = source.AdvancedCharacterDelayMilliseconds,
-            AdvancedUseLineDelay = source.AdvancedUseLineDelay,
-            AdvancedLineDelayMilliseconds = source.AdvancedLineDelayMilliseconds,
-            AdvancedUsePromptDelay = source.AdvancedUsePromptDelay,
-            AdvancedPromptText = source.AdvancedPromptText,
-            AdvancedPromptMaxWaitMilliseconds = source.AdvancedPromptMaxWaitMilliseconds,
-            AdvancedUseNagle = source.AdvancedUseNagle,
-            AdvancedIpVersion = source.AdvancedIpVersion,
-            AdvancedTraceSshProtocol = source.AdvancedTraceSshProtocol,
-            AdvancedTraceSshTunneling = source.AdvancedTraceSshTunneling,
-            AdvancedTraceSshPackets = source.AdvancedTraceSshPackets,
-            AdvancedTraceTelnetOptions = source.AdvancedTraceTelnetOptions,
-            EnableLoginScriptRules = source.EnableLoginScriptRules,
-            LoginScriptRules = source.LoginScriptRules.Select(SessionEditViewModel.CloneLoginScriptRule).ToList(),
-            RunLoginScriptFile = source.RunLoginScriptFile,
-            LoginScriptFilePath = source.LoginScriptFilePath,
-            LoginScriptParameters = source.LoginScriptParameters,
-            SshRemoteCommand = source.SshRemoteCommand,
-            SshVersionPolicy = source.SshVersionPolicy,
-            SshUseXagent = source.SshUseXagent,
-            SshForwardAgent = source.SshForwardAgent,
-            SshUseCompression = source.SshUseCompression,
-            SshNoTerminal = source.SshNoTerminal,
-            SshAcceptAndSaveHostKey = source.SshAcceptAndSaveHostKey,
-            SshDoNotStartFileManager = source.SshDoNotStartFileManager,
-            SshCipherAlgorithms = source.SshCipherAlgorithms,
-            SshMacAlgorithms = source.SshMacAlgorithms,
-            SshKeyExchangeAlgorithms = source.SshKeyExchangeAlgorithms,
-            SshTunnelRules = source.SshTunnelRules.Select(SessionEditViewModel.CloneTunnelRule).ToList(),
-            SshForwardX11 = source.SshForwardX11,
-            SshX11UseXmanager = source.SshX11UseXmanager,
-            SshX11Display = source.SshX11Display,
-            TelnetUseXDisplayLocation = source.TelnetUseXDisplayLocation,
-            TelnetXDisplayLocation = source.TelnetXDisplayLocation,
-            TelnetOptionMode = source.TelnetOptionMode,
-            TelnetForceCharacterAtATime = source.TelnetForceCharacterAtATime,
-            TelnetUsernamePrompt = source.TelnetUsernamePrompt,
-            TelnetPasswordPrompt = source.TelnetPasswordPrompt,
-            RloginPasswordPrompt = source.RloginPasswordPrompt,
-            RloginTerminalSpeed = source.RloginTerminalSpeed,
-            SftpLocalStartDirectory = source.SftpLocalStartDirectory,
-            SftpRemoteStartDirectory = source.SftpRemoteStartDirectory,
-            SftpUseCustomServer = source.SftpUseCustomServer,
-            SftpCustomServerCommand = source.SftpCustomServerCommand,
-            SerialPortName = source.SerialPortName,
-            SerialBaudRate = source.SerialBaudRate,
-            SerialDataBits = source.SerialDataBits,
-            SerialParity = source.SerialParity,
-            SerialStopBits = source.SerialStopBits,
-            SerialFlowControl = source.SerialFlowControl,
-            RdpWindowSize = source.RdpWindowSize,
-            RdpDesktopWidth = source.RdpDesktopWidth,
-            RdpDesktopHeight = source.RdpDesktopHeight,
-            RdpResizeMode = source.RdpResizeMode,
-            RdpScreenScale = source.RdpScreenScale,
-            RdpColorQuality = source.RdpColorQuality,
-            RdpApplyKeyCombinations = source.RdpApplyKeyCombinations,
-            RdpRedirectDrives = source.RdpRedirectDrives,
-            RdpAudioMode = source.RdpAudioMode,
-            RdpAudioCapture = source.RdpAudioCapture,
+            AppearanceHighlightSets = new ObservableCollection<HighlightSet>(
+                source.AppearanceHighlightSets.Select(SessionEditViewModel.CloneHighlightSet)),
+            FileTransferAlwaysAskDownloadFolder = source.FileTransferAlwaysAskDownloadFolder,
+            FileTransferDownloadDirectory = source.FileTransferDownloadDirectory,
+            FileTransferUploadDirectory = source.FileTransferUploadDirectory,
+            FileTransferDuplicateAction = source.FileTransferDuplicateAction,
+            FileTransferUploadProtocol = source.FileTransferUploadProtocol,
+            AdvancedBellMode = source.AdvancedBellMode,
+            AdvancedBellSoundPath = source.AdvancedBellSoundPath,
+            AdvancedBellFlashInactiveWindow = source.AdvancedBellFlashInactiveWindow,
+            AdvancedBellIgnoreRepeatedSeconds = source.AdvancedBellIgnoreRepeatedSeconds,
+            AdvancedBellReactivateAfterSeconds = source.AdvancedBellReactivateAfterSeconds,
+            AdvancedLogFilePath = source.AdvancedLogFilePath,
+            AdvancedLogOverwriteExisting = source.AdvancedLogOverwriteExisting,
+            AdvancedLogStartOnConnect = source.AdvancedLogStartOnConnect,
+            AdvancedLogPromptFileOnStart = source.AdvancedLogPromptFileOnStart,
+            AdvancedLogUseRtf = source.AdvancedLogUseRtf,
+            AdvancedLogIncludeTerminalCodes = source.AdvancedLogIncludeTerminalCodes,
+            AdvancedLogEncoding = source.AdvancedLogEncoding,
+            AdvancedLogWriteTimestamp = source.AdvancedLogWriteTimestamp,
+            AdvancedLogTimestampFormat = source.AdvancedLogTimestampFormat,
             SortOrder = source.SortOrder,
             CreatedAt = DateTime.Now
         };

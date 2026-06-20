@@ -34,6 +34,8 @@ public class AnsiParser
 
     private readonly TerminalBuffer _buffer;
 
+    public event Action? BellReceived;
+
     public AnsiParser(TerminalBuffer buffer)
     {
         _buffer = buffer;
@@ -98,7 +100,8 @@ public class AnsiParser
             case '\t': // TAB
                 _buffer.Tab();
                 break;
-            case '\a': // BEL - ignore
+            case '\a': // BEL
+                BellReceived?.Invoke();
                 break;
             case '\x0E': // SO - shift out G1
                 _useG1 = true;

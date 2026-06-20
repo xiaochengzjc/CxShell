@@ -50,6 +50,7 @@ public sealed class ZmodemTransfer : IDisposable
     private readonly List<byte> _input = new();
     private readonly object _gate = new();
     private readonly string? _downloadDirectory;
+    private readonly string _duplicateAction;
     private readonly IReadOnlyList<string> _uploadFiles;
 
     private ReceiveState _receiveState = ReceiveState.WaitFileHeader;
@@ -65,6 +66,7 @@ public sealed class ZmodemTransfer : IDisposable
     private bool _receiverEscapesControlCharacters;
     private bool _zsinitAcknowledged;
     private bool _isCompleted;
+    private int _receiveSubpacketCrcLength = 2;
 
     public ZmodemTransfer(
         ZmodemTransferDirection direction,
@@ -73,6 +75,7 @@ public sealed class ZmodemTransfer : IDisposable
         Action<string, string> status,
         Action completed,
         string? downloadDirectory = null,
+        string? duplicateAction = null,
         IReadOnlyList<string>? uploadFiles = null)
     {
         _direction = direction;
@@ -81,6 +84,7 @@ public sealed class ZmodemTransfer : IDisposable
         _status = status;
         _completed = completed;
         _downloadDirectory = downloadDirectory;
+        _duplicateAction = string.IsNullOrWhiteSpace(duplicateAction) ? "AutoRename" : duplicateAction;
         _uploadFiles = uploadFiles ?? Array.Empty<string>();
     }
 
@@ -171,6 +175,7 @@ public sealed class ZmodemTransfer : IDisposable
                     if (!TryReadHeader(out var header))
                         return;
                     _pendingReceiveHeaderType = header.Type;
+                    _receiveSubpacketCrcLength = header.CrcLength;
                 }
 
                 switch (_pendingReceiveHeaderType.Value)
@@ -211,6 +216,7 @@ public sealed class ZmodemTransfer : IDisposable
 
                 if (header.Type == Zdata)
                 {
+                    _receiveSubpacketCrcLength = header.CrcLength;
                     _receiveInData = true;
                     _receiveState = ReceiveState.ReadData;
                 }
@@ -463,13 +469,32 @@ public sealed class ZmodemTransfer : IDisposable
         var nameBytes = separator >= 0 ? payload[..separator] : payload;
         var remoteName = Encoding.UTF8.GetString(nameBytes);
         var fileName = SanitizeFileName(remoteName);
-        var path = Path.Combine(_downloadDirectory, fileName);
+        var path = ResolveReceivePath(_downloadDirectory, fileName, _duplicateAction);
+        fileName = Path.GetFileName(path);
 
         _receiveStream?.Dispose();
         _receiveStream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read);
         _receiveFileName = fileName;
         _receiveOffset = 0;
         _status($"[ZMODEM downloading: {fileName}]", "36");
+    }
+
+    private static string ResolveReceivePath(string directory, string fileName, string duplicateAction)
+    {
+        var path = Path.Combine(directory, fileName);
+        if (!File.Exists(path) || string.Equals(duplicateAction, "Overwrite", StringComparison.OrdinalIgnoreCase))
+            return path;
+
+        var name = Path.GetFileNameWithoutExtension(fileName);
+        var extension = Path.GetExtension(fileName);
+        for (var index = 1; index < 10_000; index++)
+        {
+            var candidate = Path.Combine(directory, $"{name} ({index}){extension}");
+            if (!File.Exists(candidate))
+                return candidate;
+        }
+
+        return Path.Combine(directory, $"{name} ({DateTime.Now:yyyyMMddHHmmssfff}){extension}");
     }
 
     private void FinishReceivingFile()
@@ -540,7 +565,7 @@ public sealed class ZmodemTransfer : IDisposable
             consume++;
 
         _input.RemoveRange(0, consume);
-        header = new ZHeader(raw[0], raw[1..5]);
+        header = new ZHeader(raw[0], raw[1..5], 2);
         return true;
     }
 
@@ -551,7 +576,7 @@ public sealed class ZmodemTransfer : IDisposable
             return false;
 
         _input.RemoveRange(0, end);
-        header = new ZHeader(raw[0], raw[1..5]);
+        header = new ZHeader(raw[0], raw[1..5], crcLength);
         return true;
     }
 
@@ -576,7 +601,8 @@ public sealed class ZmodemTransfer : IDisposable
             var next = _input[i + 1];
             if (next is Zcrce or Zcrcg or Zcrcq or Zcrcw)
             {
-                if (!TryDecodeExact(i + 2, 2, out _, out var end))
+                var crcLength = GetSubpacketCrcLength(i + 2, decoded, next);
+                if (crcLength == 0 || !TryDecodeExact(i + 2, crcLength, out _, out var end))
                     return false;
 
                 _input.RemoveRange(0, end);
@@ -589,6 +615,35 @@ public sealed class ZmodemTransfer : IDisposable
         }
 
         return false;
+    }
+
+    private int GetSubpacketCrcLength(int start, IReadOnlyList<byte> payload, byte frameEnd)
+    {
+        if (TryDecodeExact(start, 2, out var crc16, out _) &&
+            SubpacketCrc16Matches(payload, frameEnd, crc16))
+        {
+            return 2;
+        }
+
+        if (TryDecodeExact(start, 4, out _, out _))
+            return 4;
+
+        if (_receiveSubpacketCrcLength != 2 &&
+            TryDecodeExact(start, _receiveSubpacketCrcLength, out _, out _))
+        {
+            return _receiveSubpacketCrcLength;
+        }
+
+        return 0;
+    }
+
+    private static bool SubpacketCrc16Matches(IReadOnlyList<byte> payload, byte frameEnd, byte[] received)
+    {
+        if (received.Length != 2)
+            return false;
+
+        var crc = Crc16(payload.Concat(new[] { frameEnd }).ToArray());
+        return crc.Length == 2 && crc[0] == received[0] && crc[1] == received[1];
     }
 
     private static bool IsHexHeaderTerminator(byte value)
@@ -817,7 +872,7 @@ public sealed class ZmodemTransfer : IDisposable
         WaitFin
     }
 
-    private readonly record struct ZHeader(int Type, byte[] Data)
+    private readonly record struct ZHeader(int Type, byte[] Data, int CrcLength)
     {
         public long Offset => (uint)(Data[0] | (Data[1] << 8) | (Data[2] << 16) | (Data[3] << 24));
     }

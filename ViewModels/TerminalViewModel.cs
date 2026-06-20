@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -35,10 +36,24 @@ public partial class TerminalViewModel : ObservableObject
     private readonly object _zmodemLock = new();
     private readonly List<byte[]> _zmodemPendingBytes = new();
     private readonly List<byte> _zmodemProbeBytes = new();
+    private readonly object _xymodemLock = new();
+    private readonly List<byte[]> _xymodemPendingBytes = new();
+    private readonly StringBuilder _outgoingCommandLine = new();
     private Decoder _terminalByteDecoder = Encoding.UTF8.GetDecoder();
     private ZmodemTransfer? _zmodemTransfer;
     private bool _zmodemStarting;
     private ZmodemTransferDirection _zmodemStartingDirection;
+    private DateTimeOffset _suppressZmodemOverAndOutUntil = DateTimeOffset.MinValue;
+    private bool _pendingZmodemOverAndOutO;
+    private XymodemTransfer? _xymodemTransfer;
+    private bool _xymodemStarting;
+    private XymodemProtocol? _pendingXymodemUploadProtocol;
+    private DateTimeOffset _pendingXymodemUploadAt = DateTimeOffset.MinValue;
+    private XymodemProtocol? _pendingXymodemDownloadProtocol;
+    private string? _pendingXymodemDownloadFileName;
+    private DateTimeOffset _pendingXymodemDownloadAt = DateTimeOffset.MinValue;
+    private int _pendingXymodemDownloadGeneration;
+    private DateTimeOffset _suppressXymodemResidualUntil = DateTimeOffset.MinValue;
     private CancellationTokenSource? _keepAliveCts;
     private Task? _keepAliveTask;
     private DateTimeOffset _lastUserInputAt = DateTimeOffset.UtcNow;
@@ -46,9 +61,14 @@ public partial class TerminalViewModel : ObservableObject
     private List<LoginScriptRule> _pendingLoginScriptRules = new();
     private readonly object _recentOutputLock = new();
     private readonly StringBuilder _recentOutputBuffer = new();
+    private DateTimeOffset _lastBellAt = DateTimeOffset.MinValue;
+    private DateTimeOffset _bellMutedUntil = DateTimeOffset.MinValue;
+    private SessionLogWriter? _sessionLogWriter;
 
     public Func<Task<IReadOnlyList<string>>>? PickZmodemUploadFilesAsync { get; set; }
     public Func<Task<string?>>? PickZmodemDownloadFolderAsync { get; set; }
+    public Func<Task<string?>>? PickSessionLogFileAsync { get; set; }
+    public string ZmodemUploadStartDirectory => _session?.FileTransferUploadDirectory ?? string.Empty;
     public bool IsTerminalSizeFixed => _session?.TerminalFixedSize == true;
     public string KeyboardFunctionKeyMode => _session?.TerminalKeyboardFunctionKeyMode ?? "Default";
     public string KeyboardMappingFile => _session?.TerminalKeyboardMappingFile ?? string.Empty;
@@ -84,6 +104,7 @@ public partial class TerminalViewModel : ObservableObject
     public double AppearanceCharacterSpacing => Math.Clamp(_session?.AppearanceCharacterSpacing ?? 0, -5, 32);
     public string AppearanceBackgroundImagePath => _session?.AppearanceBackgroundImagePath ?? string.Empty;
     public string AppearanceBackgroundImagePosition => _session?.AppearanceBackgroundImagePosition ?? "Center";
+    public bool FlashInactiveWindowOnBell => _session?.AdvancedBellFlashInactiveWindow == true;
     public IReadOnlyList<HighlightRule> AppearanceHighlightRules
     {
         get
@@ -104,9 +125,11 @@ public partial class TerminalViewModel : ObservableObject
     {
         Buffer = new TerminalBuffer(Columns, Rows);
         Parser = new AnsiParser(Buffer);
+        AttachParserBellHandler(Parser);
     }
 
     public event Action? BufferChanged;
+    public event Action? BellRequested;
 
     public async Task ConnectAsync(SessionInfo session, string? password)
     {
@@ -151,6 +174,7 @@ public partial class TerminalViewModel : ObservableObject
             ParseColorOrDefault(session.AppearanceBoldForegroundColor, "#33FF33"),
             ParseAnsiColors(session.AppearanceAnsiColors));
         Parser = new AnsiParser(Buffer);
+        AttachParserBellHandler(Parser);
         _terminalByteDecoder.Reset();
         lock (_recentOutputLock)
             _recentOutputBuffer.Clear();
@@ -186,8 +210,12 @@ public partial class TerminalViewModel : ObservableObject
                         return;
 
                     var terminalData = ProcessAnswerback(data, connection);
+                    terminalData = TerminalSessionOptions.NormalizeReceiveLineEndings(terminalData, _session);
+                    LogTerminalData(terminalData);
                     AppendRecentOutput(terminalData);
                     HandleLoginScriptData(generation, connection, terminalData);
+                    TryDetectPendingXymodemUploadFromOutput(terminalData);
+                    TryStartPendingXymodemDownloadFromOutput(generation, terminalData);
                     Parser.Process(terminalData);
                     Buffer.MarkAllDirty();
                     BufferChanged?.Invoke();
@@ -221,14 +249,110 @@ public partial class TerminalViewModel : ObservableObject
             connection.ResizeTerminal(Columns, Rows);
             IsConnected = true;
             HostInfo = GetHostInfo(_session);
+            await StartSessionLogIfNeededAsync(_session);
             StartKeepAliveLoop(generation, _session, connection, cancellationToken);
             StartLoginScriptFileAsync(generation, _session, connection, cancellationToken);
+            SendPreinputString(connection, _session);
         }
         finally
         {
             _connectGate.Release();
         }
     }
+
+    private void AttachParserBellHandler(AnsiParser parser)
+    {
+        parser.BellReceived += OnBellReceived;
+    }
+
+    private void OnBellReceived()
+    {
+        var session = _session;
+        if (session == null)
+            return;
+
+        var mode = string.IsNullOrWhiteSpace(session.AdvancedBellMode)
+            ? "Default"
+            : session.AdvancedBellMode;
+        if (string.Equals(mode, "None", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var now = DateTimeOffset.UtcNow;
+        if (now < _bellMutedUntil)
+            return;
+
+        var ignoreSeconds = Math.Clamp(session.AdvancedBellIgnoreRepeatedSeconds <= 0
+            ? 3
+            : session.AdvancedBellIgnoreRepeatedSeconds, 1, 3600);
+        var reactivateSeconds = Math.Clamp(session.AdvancedBellReactivateAfterSeconds <= 0
+            ? 3
+            : session.AdvancedBellReactivateAfterSeconds, 1, 3600);
+
+        if (_lastBellAt != DateTimeOffset.MinValue &&
+            now - _lastBellAt <= TimeSpan.FromSeconds(ignoreSeconds))
+        {
+            _bellMutedUntil = now.AddSeconds(reactivateSeconds);
+            return;
+        }
+
+        _lastBellAt = now;
+        BellRequested?.Invoke();
+        PlayBell(mode, session.AdvancedBellSoundPath);
+    }
+
+    private static void PlayBell(string mode, string? soundPath)
+    {
+        try
+        {
+            if (string.Equals(mode, "Sound", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(soundPath) &&
+                File.Exists(soundPath))
+            {
+                PlaySoundFile(soundPath);
+                return;
+            }
+
+            if (string.Equals(mode, "Builtin", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.Beep();
+                return;
+            }
+
+            PlayDefaultSystemBell();
+        }
+        catch
+        {
+            // Bell playback is best-effort; terminal output must continue uninterrupted.
+        }
+    }
+
+    private static void PlayDefaultSystemBell()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            MessageBeep(0xffffffff);
+            return;
+        }
+
+        Console.Beep();
+    }
+
+    private static void PlaySoundFile(string soundPath)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Console.Beep();
+            return;
+        }
+
+        PlaySound(soundPath, IntPtr.Zero, 0x00020000 | 0x0001);
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool MessageBeep(uint uType);
+
+    [DllImport("winmm.dll", CharSet = CharSet.Unicode)]
+    private static extern bool PlaySound(string? pszSound, IntPtr hmod, uint fdwSound);
 
     private void HandleConnectionClosed(int generation, string reason)
     {
@@ -291,6 +415,7 @@ public partial class TerminalViewModel : ObservableObject
 
     private void AppendStatusMessage(string message, string colorCode)
     {
+        LogTerminalData($"\r\n{message}\r\n");
         Parser.Process($"\r\n\x1B[{colorCode}m{message}\x1B[0m\r\n");
         Buffer.MarkAllDirty();
         BufferChanged?.Invoke();
@@ -298,9 +423,66 @@ public partial class TerminalViewModel : ObservableObject
 
     private void AppendPlainStatusMessage(string message)
     {
+        LogTerminalData($"\r\n{message}\r\n");
         Parser.Process($"\r\n{message}\r\n");
         Buffer.MarkAllDirty();
         BufferChanged?.Invoke();
+    }
+
+    private async Task StartSessionLogIfNeededAsync(SessionInfo session)
+    {
+        StopSessionLog();
+        if (!session.AdvancedLogStartOnConnect)
+            return;
+
+        string? chosenPath = null;
+        if (session.AdvancedLogPromptFileOnStart)
+        {
+            if (PickSessionLogFileAsync == null)
+                return;
+
+            chosenPath = await PickSessionLogFileAsync();
+            if (string.IsNullOrWhiteSpace(chosenPath))
+                return;
+        }
+
+        try
+        {
+            _sessionLogWriter = SessionLogWriter.Start(session, chosenPath);
+        }
+        catch (Exception ex)
+        {
+            AppendStatusMessage($"[Session log failed: {ex.Message}]", "31");
+        }
+    }
+
+    private void LogTerminalData(string data)
+    {
+        try
+        {
+            _sessionLogWriter?.Write(data);
+        }
+        catch (Exception ex)
+        {
+            StopSessionLog();
+            AppendStatusMessage($"[Session log stopped: {ex.Message}]", "31");
+        }
+    }
+
+    private void StopSessionLog()
+    {
+        try
+        {
+            _sessionLogWriter?.Dispose();
+        }
+        catch
+        {
+            // Ignore log close failures during disconnect.
+        }
+        finally
+        {
+            _sessionLogWriter = null;
+        }
     }
 
     private void PrepareLoginScript(SessionInfo session)
@@ -387,6 +569,17 @@ public partial class TerminalViewModel : ObservableObject
         }, cancellationToken);
     }
 
+    private static void SendPreinputString(ITerminalConnectionService connection, SessionInfo session)
+    {
+        if (string.IsNullOrWhiteSpace(session.TerminalAdvancedPreinputString) || !connection.IsConnected)
+            return;
+
+        var text = NormalizeScriptSendText(session.TerminalAdvancedPreinputString);
+        text = TerminalSessionOptions.NormalizeSendLineEndings(text, session);
+        if (!string.IsNullOrEmpty(text))
+            connection.SendData(text);
+    }
+
     private static string NormalizeScriptSendText(string text)
     {
         return text
@@ -414,7 +607,14 @@ public partial class TerminalViewModel : ObservableObject
         if (generation != _connectionGeneration)
             return false;
 
+        if (TrySuppressLateZmodemOverAndOut(bytes))
+            return true;
+
+        if (TrySuppressXymodemResidual(bytes))
+            return true;
+
         ZmodemTransfer? transfer = null;
+        XymodemTransfer? xymodemTransfer = null;
         lock (_zmodemLock)
         {
             if (_zmodemTransfer != null)
@@ -432,6 +632,40 @@ public partial class TerminalViewModel : ObservableObject
         {
             transfer.Feed(bytes);
             return true;
+        }
+
+        lock (_xymodemLock)
+        {
+            if (_xymodemTransfer != null)
+            {
+                xymodemTransfer = _xymodemTransfer;
+            }
+            else if (_xymodemStarting)
+            {
+                _xymodemPendingBytes.Add(bytes);
+                return true;
+            }
+        }
+
+        if (xymodemTransfer != null)
+        {
+            xymodemTransfer.Feed(bytes);
+            return true;
+        }
+
+        var pendingDownloadAction = HandlePendingXymodemDownloadBytes(generation, bytes);
+        if (pendingDownloadAction == PendingXymodemDownloadByteAction.Consume)
+        {
+            lock (_zmodemLock)
+                _zmodemProbeBytes.Clear();
+            return true;
+        }
+
+        if (pendingDownloadAction == PendingXymodemDownloadByteAction.DeferToTerminal)
+        {
+            lock (_zmodemLock)
+                _zmodemProbeBytes.Clear();
+            return false;
         }
 
         var probePrefixLength = 0;
@@ -452,6 +686,9 @@ public partial class TerminalViewModel : ObservableObject
 
         if (!ZmodemTransfer.TryFindStartupHeader(scanBytes, out var index, out var direction))
         {
+            if (TryStartPendingXymodemUpload(generation, scanBytes))
+                return true;
+
             var keep = GetZmodemStartupPrefixSuffixLength(scanBytes);
             if (keep == 0 && probePrefixLength == 0)
                 return false;
@@ -486,6 +723,39 @@ public partial class TerminalViewModel : ObservableObject
         return true;
     }
 
+    private PendingXymodemDownloadByteAction HandlePendingXymodemDownloadBytes(int generation, byte[] bytes)
+    {
+        lock (_xymodemLock)
+        {
+            if (_pendingXymodemDownloadProtocol == null)
+                return PendingXymodemDownloadByteAction.None;
+
+            if (generation != _pendingXymodemDownloadGeneration ||
+                DateTimeOffset.UtcNow - _pendingXymodemDownloadAt > TimeSpan.FromMinutes(2))
+            {
+                ClearPendingXymodemDownload();
+                return PendingXymodemDownloadByteAction.None;
+            }
+
+            if (ZmodemTransfer.TryFindStartupHeader(bytes, out _, out _))
+            {
+                ClearPendingXymodemDownload();
+                _connection?.SendBytes(new[] { (byte)24, (byte)24, (byte)24, (byte)24, (byte)24 });
+                PostStatusMessage("[YMODEM download cancelled: remote started ZMODEM; use sz for ZMODEM download]", "33");
+                return PendingXymodemDownloadByteAction.Consume;
+            }
+
+            return PendingXymodemDownloadByteAction.DeferToTerminal;
+        }
+    }
+
+    private enum PendingXymodemDownloadByteAction
+    {
+        None,
+        DeferToTerminal,
+        Consume
+    }
+
     private static int GetZmodemStartupPrefixSuffixLength(byte[] bytes)
     {
         ReadOnlySpan<byte> prefix = stackalloc byte[] { 0x2a, 0x2a, 0x18, 0x42, 0x30 };
@@ -509,6 +779,40 @@ public partial class TerminalViewModel : ObservableObject
         return text == "rz";
     }
 
+    private bool TryStartPendingXymodemUpload(int generation, byte[] bytes)
+    {
+        XymodemProtocol? protocol;
+        lock (_xymodemLock)
+        {
+            protocol = _pendingXymodemUploadProtocol;
+            if (protocol == null || DateTimeOffset.UtcNow - _pendingXymodemUploadAt > TimeSpan.FromMinutes(2))
+            {
+                _pendingXymodemUploadProtocol = null;
+                return false;
+            }
+        }
+
+        if (!XymodemTransfer.TryFindReceiverRequest(bytes, out var index))
+            return false;
+
+        if (index > 0)
+            ProcessTerminalBytes(bytes[..index]);
+
+        lock (_xymodemLock)
+        {
+            if (generation != _connectionGeneration || _xymodemTransfer != null || _xymodemStarting)
+                return true;
+
+            _xymodemStarting = true;
+            _pendingXymodemUploadProtocol = null;
+            _xymodemPendingBytes.Clear();
+            _xymodemPendingBytes.Add(bytes[index..]);
+        }
+
+        _ = BeginXymodemUploadAsync(generation, protocol.Value);
+        return true;
+    }
+
     private async Task BeginZmodemTransferAsync(int generation, ZmodemTransferDirection direction)
     {
         try
@@ -518,10 +822,15 @@ public partial class TerminalViewModel : ObservableObject
 
             if (direction == ZmodemTransferDirection.Download)
             {
-                if (PickZmodemDownloadFolderAsync == null)
-                    throw new InvalidOperationException("Download folder picker is not available.");
+                downloadFolder = GetConfiguredZmodemDownloadFolder();
+                if (string.IsNullOrWhiteSpace(downloadFolder))
+                {
+                    if (PickZmodemDownloadFolderAsync == null)
+                        throw new InvalidOperationException("Download folder picker is not available.");
 
-                downloadFolder = await Dispatcher.UIThread.InvokeAsync(() => PickZmodemDownloadFolderAsync());
+                    downloadFolder = await Dispatcher.UIThread.InvokeAsync(() => PickZmodemDownloadFolderAsync());
+                }
+
                 if (string.IsNullOrWhiteSpace(downloadFolder))
                 {
                     CancelStartingZmodem("[ZMODEM download cancelled]", generation);
@@ -556,6 +865,7 @@ public partial class TerminalViewModel : ObservableObject
                     PostStatusMessage,
                     ClearZmodemTransfer,
                     downloadFolder,
+                    _session?.FileTransferDuplicateAction,
                     uploadFiles);
 
                 _zmodemTransfer = transfer;
@@ -574,6 +884,117 @@ public partial class TerminalViewModel : ObservableObject
         }
     }
 
+    private async Task BeginXymodemUploadAsync(int generation, XymodemProtocol protocol)
+    {
+        try
+        {
+            if (PickZmodemUploadFilesAsync == null)
+                throw new InvalidOperationException("Upload file picker is not available.");
+
+            var uploadFiles = await Dispatcher.UIThread.InvokeAsync(() => PickZmodemUploadFilesAsync());
+            uploadFiles = uploadFiles.Where(path => !string.IsNullOrWhiteSpace(path)).ToList();
+            if (uploadFiles.Count == 0)
+            {
+                CancelStartingXymodem($"[{GetXymodemName(protocol)} upload cancelled]", generation);
+                return;
+            }
+
+            if (protocol == XymodemProtocol.Xmodem && uploadFiles.Count > 1)
+                uploadFiles = uploadFiles.Take(1).ToList();
+
+            List<byte[]> pending;
+            XymodemTransfer transfer;
+            lock (_xymodemLock)
+            {
+                if (generation != _connectionGeneration || !_xymodemStarting)
+                    return;
+
+                transfer = new XymodemTransfer(
+                    protocol,
+                    XymodemTransferDirection.Upload,
+                    SendXymodemBytes,
+                    ProcessTerminalBytes,
+                    PostStatusMessage,
+                    ClearXymodemTransfer,
+                    uploadFiles: uploadFiles);
+
+                _xymodemTransfer = transfer;
+                _xymodemStarting = false;
+                pending = _xymodemPendingBytes.ToList();
+                _xymodemPendingBytes.Clear();
+            }
+
+            transfer.Start();
+            foreach (var chunk in pending)
+                transfer.Feed(chunk);
+        }
+        catch (Exception ex)
+        {
+            CancelStartingXymodem($"[{GetXymodemName(protocol)} failed: {ex.Message}]", generation);
+        }
+    }
+
+    private async Task BeginXymodemDownloadAsync(int generation, XymodemProtocol protocol, string? suggestedFileName)
+    {
+        try
+        {
+            var downloadFolder = GetConfiguredZmodemDownloadFolder();
+            if (string.IsNullOrWhiteSpace(downloadFolder))
+            {
+                if (PickZmodemDownloadFolderAsync == null)
+                    throw new InvalidOperationException("Download folder picker is not available.");
+
+                downloadFolder = await Dispatcher.UIThread.InvokeAsync(() => PickZmodemDownloadFolderAsync());
+            }
+
+            if (string.IsNullOrWhiteSpace(downloadFolder))
+            {
+                PostStatusMessage($"[{GetXymodemName(protocol)} download cancelled]", "33");
+                _connection?.SendBytes(new[] { (byte)24, (byte)24, (byte)24 });
+                return;
+            }
+
+            XymodemTransfer transfer;
+            lock (_xymodemLock)
+            {
+                if (generation != _connectionGeneration || _xymodemTransfer != null || _xymodemStarting)
+                    return;
+
+                transfer = new XymodemTransfer(
+                    protocol,
+                    XymodemTransferDirection.Download,
+                    SendXymodemBytes,
+                    ProcessTerminalBytes,
+                    PostStatusMessage,
+                    ClearXymodemTransfer,
+                    downloadFolder,
+                    _session?.FileTransferDuplicateAction,
+                    suggestedDownloadFileName: suggestedFileName);
+
+                _xymodemTransfer = transfer;
+            }
+
+            transfer.Start();
+        }
+        catch (Exception ex)
+        {
+            PostStatusMessage($"[{GetXymodemName(protocol)} failed: {ex.Message}]", "31");
+            _connection?.SendBytes(new[] { (byte)24, (byte)24, (byte)24 });
+        }
+    }
+
+    private string? GetConfiguredZmodemDownloadFolder()
+    {
+        if (_session == null || _session.FileTransferAlwaysAskDownloadFolder)
+            return null;
+
+        var path = _session.FileTransferDownloadDirectory;
+        if (string.IsNullOrWhiteSpace(path))
+            return null;
+
+        return Directory.Exists(path) ? path : null;
+    }
+
     private void CancelStartingZmodem(string message, int generation)
     {
         if (generation != _connectionGeneration)
@@ -590,6 +1011,22 @@ public partial class TerminalViewModel : ObservableObject
         PostStatusMessage(message, "33");
     }
 
+    private void CancelStartingXymodem(string message, int generation)
+    {
+        if (generation != _connectionGeneration)
+            return;
+
+        lock (_xymodemLock)
+        {
+            _xymodemStarting = false;
+            _xymodemPendingBytes.Clear();
+            _pendingXymodemUploadProtocol = null;
+        }
+
+        _connection?.SendBytes(new[] { (byte)24, (byte)24, (byte)24 });
+        PostStatusMessage(message, "33");
+    }
+
     private void ClearZmodemTransfer()
     {
         lock (_zmodemLock)
@@ -599,12 +1036,145 @@ public partial class TerminalViewModel : ObservableObject
             _zmodemStarting = false;
             _zmodemPendingBytes.Clear();
             _zmodemProbeBytes.Clear();
+            _suppressZmodemOverAndOutUntil = DateTimeOffset.UtcNow.AddSeconds(3);
+            _pendingZmodemOverAndOutO = false;
         }
+    }
+
+    private bool TrySuppressLateZmodemOverAndOut(byte[] bytes)
+    {
+        if (bytes.Length == 0 || DateTimeOffset.UtcNow > _suppressZmodemOverAndOutUntil)
+        {
+            _pendingZmodemOverAndOutO = false;
+            return false;
+        }
+
+        var index = 0;
+        while (index < bytes.Length && IsZmodemPaddingByte(bytes[index]))
+            index++;
+
+        if (_pendingZmodemOverAndOutO)
+        {
+            _pendingZmodemOverAndOutO = false;
+            if (index < bytes.Length && bytes[index] == (byte)'O')
+            {
+                ProcessTerminalBytes(bytes[(index + 1)..]);
+                return true;
+            }
+
+            ProcessTerminalBytes(new[] { (byte)'O' });
+            return false;
+        }
+
+        if (index >= bytes.Length)
+            return index > 0;
+
+        if (bytes[index] != (byte)'O')
+            return false;
+
+        if (index + 1 >= bytes.Length)
+        {
+            _pendingZmodemOverAndOutO = true;
+            return true;
+        }
+
+        if (bytes[index + 1] != (byte)'O')
+            return false;
+
+        ProcessTerminalBytes(bytes[(index + 2)..]);
+        return true;
+    }
+
+    private static bool IsZmodemPaddingByte(byte value)
+    {
+        return value is 0x11 or 0x13 or 0x91 or 0x93 or 0x8a or 0x8d;
+    }
+
+    private void ClearXymodemTransfer()
+    {
+        lock (_xymodemLock)
+        {
+            _xymodemTransfer?.Dispose();
+            _xymodemTransfer = null;
+            _xymodemStarting = false;
+            _xymodemPendingBytes.Clear();
+            _pendingXymodemUploadProtocol = null;
+            ClearPendingXymodemDownload();
+            _suppressXymodemResidualUntil = DateTimeOffset.UtcNow.AddSeconds(3);
+        }
+    }
+
+    private bool TrySuppressXymodemResidual(byte[] bytes)
+    {
+        if (bytes.Length == 0 || DateTimeOffset.UtcNow > _suppressXymodemResidualUntil)
+            return false;
+
+        if (!LooksLikeXymodemResidual(bytes))
+            return false;
+
+        var terminalStart = FindLikelyTerminalTextStart(bytes);
+        if (terminalStart >= 0)
+            ProcessTerminalBytes(bytes[terminalStart..]);
+
+        return true;
+    }
+
+    private static bool LooksLikeXymodemResidual(byte[] bytes)
+    {
+        var protocolControls = 0;
+        var nonPrintable = 0;
+        var repeatedRequests = 0;
+
+        foreach (var value in bytes)
+        {
+            if (value is 0x01 or 0x02 or 0x04 or 0x06 or 0x15 or 0x18)
+                protocolControls++;
+
+            if (value is (byte)'C' or 0x15 or 0x18)
+                repeatedRequests++;
+
+            if ((value < 0x20 && value is not 0x08 and not 0x09 and not 0x0a and not 0x0d) || value >= 0x80)
+                nonPrintable++;
+        }
+
+        return protocolControls > 0 ||
+               (bytes.Length >= 3 && repeatedRequests == bytes.Length) ||
+               nonPrintable * 3 >= bytes.Length;
+    }
+
+    private static int FindLikelyTerminalTextStart(byte[] bytes)
+    {
+        for (var i = 0; i < bytes.Length; i++)
+        {
+            var value = bytes[i];
+            if (value is (byte)'C' or 0x01 or 0x02 or 0x04 or 0x06 or 0x15 or 0x18)
+                continue;
+
+            if (value < 0x20 && value is not 0x08 and not 0x09 and not 0x0a and not 0x0d and not 0x1b)
+                continue;
+
+            if (value >= 0x80)
+                continue;
+
+            return i;
+        }
+
+        return -1;
     }
 
     private void SendZmodemBytes(byte[] bytes)
     {
         _connection?.SendBytes(bytes);
+    }
+
+    private void SendXymodemBytes(byte[] bytes)
+    {
+        _connection?.SendBytes(bytes);
+    }
+
+    private static string GetXymodemName(XymodemProtocol protocol)
+    {
+        return protocol == XymodemProtocol.Ymodem ? "YMODEM" : "XMODEM";
     }
 
     private void ProcessTerminalBytes(byte[] bytes)
@@ -648,6 +1218,7 @@ public partial class TerminalViewModel : ObservableObject
     public void SendInput(string data)
     {
         _lastUserInputAt = DateTimeOffset.UtcNow;
+        ObservePotentialXymodemCommand(data);
         if (_session?.TerminalVtEchoMode == true)
         {
             Parser.Process(data);
@@ -659,6 +1230,295 @@ public partial class TerminalViewModel : ObservableObject
             _ = SendInputWithDelayAsync(data, _session!, _connection);
         else
             _connection?.SendData(data);
+    }
+
+    private void ObservePotentialXymodemCommand(string data)
+    {
+        if (string.IsNullOrEmpty(data))
+            return;
+
+        foreach (var ch in data)
+        {
+            if (ch is '\r' or '\n')
+            {
+                var commandLine = GetVisibleXymodemCommandLine() ?? _outgoingCommandLine.ToString();
+                _outgoingCommandLine.Clear();
+                HandlePotentialXymodemCommand(commandLine);
+                continue;
+            }
+
+            if (ch == '\b' || ch == '\x7f')
+            {
+                if (_outgoingCommandLine.Length > 0)
+                    _outgoingCommandLine.Length--;
+                continue;
+            }
+
+            if (!char.IsControl(ch))
+            {
+                if (_outgoingCommandLine.Length < 1024)
+                    _outgoingCommandLine.Append(ch);
+            }
+        }
+    }
+
+    private void HandlePotentialXymodemCommand(string commandLine)
+    {
+        var command = ExtractXymodemCommandLine(commandLine);
+        if (string.IsNullOrWhiteSpace(command))
+            return;
+
+        var parts = SplitCommandLine(command);
+        if (parts.Count == 0)
+            return;
+
+        var executable = Path.GetFileName(parts[0]).ToLowerInvariant();
+        switch (executable)
+        {
+            case "rx":
+                MarkPendingXymodemUpload(XymodemProtocol.Xmodem);
+                break;
+            case "rb":
+            case "ry":
+                MarkPendingXymodemUpload(XymodemProtocol.Ymodem);
+                break;
+            case "sx":
+                StartXymodemDownloadFromCommand(XymodemProtocol.Xmodem, parts);
+                break;
+            case "sb":
+                StartXymodemDownloadFromCommand(XymodemProtocol.Ymodem, parts);
+                break;
+        }
+    }
+
+    private string? GetVisibleXymodemCommandLine()
+    {
+        var buffer = Buffer;
+        if (buffer.Rows <= 0 || buffer.Columns <= 0)
+            return null;
+
+        var row = Math.Clamp(buffer.CursorRow, 0, buffer.Rows - 1);
+        var line = new StringBuilder(buffer.Columns);
+        for (var col = 0; col < buffer.Columns; col++)
+        {
+            var cell = buffer.GetCell(row, col);
+            if (!cell.IsWideContinuation)
+                line.Append(cell.Character);
+        }
+
+        var text = line.ToString().TrimEnd();
+        return string.IsNullOrWhiteSpace(text) ? null : text;
+    }
+
+    private static string ExtractXymodemCommandLine(string commandLine)
+    {
+        var command = commandLine.Trim();
+        if (string.IsNullOrWhiteSpace(command))
+            return string.Empty;
+
+        var directParts = SplitCommandLine(command);
+        if (directParts.Count > 0 && IsXymodemExecutable(Path.GetFileName(directParts[0])))
+            return command;
+
+        var candidates = new[] { "rx", "rb", "ry", "sx", "sb" };
+        foreach (var candidate in candidates)
+        {
+            var index = FindCommandToken(command, candidate);
+            if (index >= 0)
+                return command[index..].TrimStart();
+        }
+
+        return command;
+    }
+
+    private static int FindCommandToken(string text, string command)
+    {
+        var index = 0;
+        while (index < text.Length)
+        {
+            index = text.IndexOf(command, index, StringComparison.OrdinalIgnoreCase);
+            if (index < 0)
+                return -1;
+
+            var beforeOk = index == 0 || char.IsWhiteSpace(text[index - 1]) || IsShellSeparator(text[index - 1]);
+            var after = index + command.Length;
+            var afterOk = after >= text.Length || char.IsWhiteSpace(text[after]);
+            if (beforeOk && afterOk)
+                return index;
+
+            index += command.Length;
+        }
+
+        return -1;
+    }
+
+    private static bool IsShellSeparator(char ch)
+    {
+        return ch is '$' or '#' or '>' or ';' or '|';
+    }
+
+    private static bool IsXymodemExecutable(string? executable)
+    {
+        return executable?.ToLowerInvariant() is "rx" or "rb" or "ry" or "sx" or "sb";
+    }
+
+    private void MarkPendingXymodemUpload(XymodemProtocol protocol)
+    {
+        lock (_xymodemLock)
+        {
+            if (_xymodemTransfer != null || _xymodemStarting)
+                return;
+
+            _pendingXymodemUploadProtocol = protocol;
+            _pendingXymodemUploadAt = DateTimeOffset.UtcNow;
+        }
+    }
+
+    private void StartXymodemDownloadFromCommand(XymodemProtocol protocol, IReadOnlyList<string> parts)
+    {
+        var suggestedFileName = GetSuggestedXymodemDownloadName(parts);
+        lock (_xymodemLock)
+        {
+            if (_xymodemTransfer != null || _xymodemStarting)
+                return;
+
+            _pendingXymodemDownloadProtocol = protocol;
+            _pendingXymodemDownloadFileName = suggestedFileName;
+            _pendingXymodemDownloadAt = DateTimeOffset.UtcNow;
+            _pendingXymodemDownloadGeneration = _connectionGeneration;
+        }
+    }
+
+    private void TryStartPendingXymodemDownloadFromOutput(int generation, string output)
+    {
+        if (string.IsNullOrEmpty(output))
+            return;
+
+        XymodemProtocol? protocol;
+        string? suggestedFileName;
+        lock (_xymodemLock)
+        {
+            protocol = _pendingXymodemDownloadProtocol;
+            if (protocol == null)
+                return;
+
+            if (generation != _pendingXymodemDownloadGeneration ||
+                DateTimeOffset.UtcNow - _pendingXymodemDownloadAt > TimeSpan.FromMinutes(2))
+            {
+                ClearPendingXymodemDownload();
+                return;
+            }
+
+            if (output.Contains("command not found", StringComparison.OrdinalIgnoreCase) ||
+                output.Contains("No such file", StringComparison.OrdinalIgnoreCase) ||
+                output.Contains("not found", StringComparison.OrdinalIgnoreCase))
+            {
+                ClearPendingXymodemDownload();
+                return;
+            }
+
+            if (!OutputContainsReceivePrompt(output, protocol.Value))
+                return;
+
+            suggestedFileName = _pendingXymodemDownloadFileName;
+            ClearPendingXymodemDownload();
+        }
+
+        _ = BeginXymodemDownloadAsync(generation, protocol.Value, suggestedFileName);
+    }
+
+    private void TryDetectPendingXymodemUploadFromOutput(string output)
+    {
+        if (string.IsNullOrWhiteSpace(output) ||
+            !output.Contains("waiting to receive", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (output.Contains("rb", StringComparison.OrdinalIgnoreCase) ||
+            output.Contains("ry", StringComparison.OrdinalIgnoreCase) ||
+            output.Contains("YMODEM", StringComparison.OrdinalIgnoreCase))
+        {
+            MarkPendingXymodemUpload(XymodemProtocol.Ymodem);
+            return;
+        }
+
+        if (output.Contains("rx", StringComparison.OrdinalIgnoreCase) ||
+            output.Contains("XMODEM", StringComparison.OrdinalIgnoreCase))
+        {
+            MarkPendingXymodemUpload(XymodemProtocol.Xmodem);
+        }
+    }
+
+    private static bool OutputContainsReceivePrompt(string output, XymodemProtocol protocol)
+    {
+        var expected = protocol == XymodemProtocol.Xmodem ? "XMODEM" : "YMODEM";
+        return output.Contains("receive command", StringComparison.OrdinalIgnoreCase) &&
+               output.Contains(expected, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void ClearPendingXymodemDownload()
+    {
+        _pendingXymodemDownloadProtocol = null;
+        _pendingXymodemDownloadFileName = null;
+        _pendingXymodemDownloadAt = DateTimeOffset.MinValue;
+        _pendingXymodemDownloadGeneration = 0;
+    }
+
+    private static string? GetSuggestedXymodemDownloadName(IReadOnlyList<string> parts)
+    {
+        for (var i = parts.Count - 1; i >= 1; i--)
+        {
+            var value = parts[i];
+            if (string.IsNullOrWhiteSpace(value) || value.StartsWith("-", StringComparison.Ordinal))
+                continue;
+
+            return Path.GetFileName(value.Trim('"', '\''));
+        }
+
+        return null;
+    }
+
+    private static List<string> SplitCommandLine(string command)
+    {
+        var result = new List<string>();
+        var current = new StringBuilder();
+        var quote = '\0';
+
+        foreach (var ch in command)
+        {
+            if (quote != '\0')
+            {
+                if (ch == quote)
+                    quote = '\0';
+                else
+                    current.Append(ch);
+                continue;
+            }
+
+            if (ch is '"' or '\'')
+            {
+                quote = ch;
+                continue;
+            }
+
+            if (char.IsWhiteSpace(ch))
+            {
+                if (current.Length > 0)
+                {
+                    result.Add(current.ToString());
+                    current.Clear();
+                }
+                continue;
+            }
+
+            current.Append(ch);
+        }
+
+        if (current.Length > 0)
+            result.Add(current.ToString());
+
+        return result;
     }
 
     private bool ShouldDelayInput(string data)
@@ -894,11 +1754,15 @@ public partial class TerminalViewModel : ObservableObject
         StopKeepAliveLoop();
         connection?.Dispose();
         ClearZmodemTransfer();
+        ClearXymodemTransfer();
+        _outgoingCommandLine.Clear();
         IsConnected = false;
         HostInfo = string.Empty;
 
         if (!string.IsNullOrWhiteSpace(statusMessage))
             AppendStatusMessage(statusMessage, "33");
+
+        StopSessionLog();
     }
 
     private static ITerminalConnectionService CreateConnectionService(SessionProtocol protocol)
@@ -908,7 +1772,6 @@ public partial class TerminalViewModel : ObservableObject
             SessionProtocol.TELNET => new TelnetConnectionService(),
             SessionProtocol.RLOGIN => new RloginConnectionService(),
             SessionProtocol.SERIAL => new SerialConnectionService(),
-            SessionProtocol.LOCAL => new LocalTerminalConnectionService(),
             _ => new SshConnectionService()
         };
     }
@@ -973,7 +1836,6 @@ public partial class TerminalViewModel : ObservableObject
     {
         return session.Protocol switch
         {
-            SessionProtocol.LOCAL => "LOCAL",
             SessionProtocol.SERIAL => session.SerialPortName,
             _ => $"{session.Username}@{session.Host}:{session.Port}"
         };

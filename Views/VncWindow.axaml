@@ -1,0 +1,53 @@
+<atom:Window xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:vm="using:ChiXueSsh.ViewModels"
+             x:Class="ChiXueSsh.Views.VncWindow"
+             x:DataType="vm:VncViewModel"
+             Title="VNC - CxShell"
+             Width="1024"
+             Height="768"
+             MinWidth="640"
+             MinHeight="480"
+             WindowStartupLocation="CenterOwner"
+             Background="{atom:SharedTokenResource ColorBgLayout}">
+    <Grid RowDefinitions="*,Auto">
+        <Border Grid.Row="0"
+                Background="#111111"
+                ClipToBounds="True">
+            <Image x:Name="FramebufferImage"
+                   Source="{Binding Framebuffer}"
+                   Stretch="Uniform"
+                   HorizontalAlignment="Stretch"
+                   VerticalAlignment="Stretch"
+                   Focusable="True"
+                   PointerMoved="OnFramebufferPointerMoved"
+                   PointerPressed="OnFramebufferPointerPressed"
+                   PointerReleased="OnFramebufferPointerReleased"
+                   PointerWheelChanged="OnFramebufferPointerWheelChanged"
+                   KeyDown="OnFramebufferKeyDown"
+                   KeyUp="OnFramebufferKeyUp"/>
+        </Border>
+
+        <Border Grid.Row="1"
+                Padding="8,5"
+                Background="{atom:SharedTokenResource ColorBgContainer}"
+                BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                BorderThickness="0,1,0,0">
+            <StackPanel Orientation="Horizontal" Spacing="14">
+                <atom:TextBlock Text="{Binding StatusText}"/>
+                <atom:TextBlock Opacity="0.7">
+                    <atom:TextBlock.Text>
+                        <MultiBinding StringFormat="{}{0}x{1}">
+                            <Binding Path="RemoteWidth"/>
+                            <Binding Path="RemoteHeight"/>
+                        </MultiBinding>
+                    </atom:TextBlock.Text>
+                </atom:TextBlock>
+                <atom:Button Content="发送剪贴板"
+                             Padding="10,2"
+                             Click="OnSendClipboardClick"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</atom:Window>

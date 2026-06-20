@@ -58,6 +58,19 @@
         </Border>
 
         <!-- 工具栏 -->
+        <Border Grid.Row="1" Background="{atom:SharedTokenResource ColorBgLayout}" Padding="6,4"
+                BorderBrush="{atom:SharedTokenResource ColorSplit}" BorderThickness="0,0,0,1">
+            <atom:LineEdit x:Name="RemotePathInput"
+                           Text="{Binding PathInput, Mode=TwoWay}"
+                           PlaceholderText="/home/user"
+                           IsAllowClear="False"
+                           IsEnabled="{Binding IsConnected}"
+                           FontSize="12"
+                           Height="32"
+                           HorizontalAlignment="Stretch"
+                           KeyDown="OnRemotePathInputKeyDown"/>
+        </Border>
+
         <Border Grid.Row="2" Background="{atom:SharedTokenResource ColorBgContainer}" Padding="6,4"
                 BorderBrush="{atom:SharedTokenResource ColorSplit}" BorderThickness="0,0,0,1">
             <StackPanel Orientation="Horizontal" Spacing="2">

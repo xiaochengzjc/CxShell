@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Text.Json.Serialization;
 
 namespace ChiXueSsh.Models;
@@ -18,9 +19,9 @@ public enum SessionProtocol
     RLOGIN,
     SFTP,
     SERIAL,
-    LOCAL,
     FTP,
-    RDP
+    RDP,
+    VNC
 }
 
 public enum SshTunnelRuleType
@@ -41,8 +42,10 @@ public enum ProxyProtocol
     JumpHost
 }
 
-public class ProxySettings
+public class ProxySettings : INotifyPropertyChanged
 {
+    private string _nextProxyDisplay = string.Empty;
+
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Name { get; set; } = string.Empty;
 
@@ -75,7 +78,20 @@ public class ProxySettings
     public string PortDisplay => Port > 0 ? Port.ToString() : string.Empty;
 
     [JsonIgnore]
-    public string NextProxyDisplay { get; set; } = string.Empty;
+    public string NextProxyDisplay
+    {
+        get => _nextProxyDisplay;
+        set
+        {
+            if (_nextProxyDisplay == value)
+                return;
+
+            _nextProxyDisplay = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(NextProxyDisplay)));
+        }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     public static string GetTypeDisplay(ProxyProtocol protocol)
     {
@@ -130,6 +146,11 @@ public class LoginScriptRule
     public string Send { get; set; } = string.Empty;
     public bool HideText { get; set; }
     public int SortOrder { get; set; }
+
+    [JsonIgnore]
+    public string SendDisplay => HideText
+        ? new string('*', Send.Length)
+        : Send;
 }
 
 public class HighlightRule
@@ -161,6 +182,27 @@ public class HighlightSet
 
     [JsonIgnore]
     public string DisplayName => string.IsNullOrWhiteSpace(Name) ? "Highlight Set" : Name;
+}
+
+public class ApplicationSettings
+{
+    public SessionInfo GlobalDefaults { get; set; } = CreateDefaultSession();
+
+    public static SessionInfo CreateDefaultSession()
+    {
+        return new SessionInfo
+        {
+            Id = Guid.Empty,
+            Name = "Global Defaults",
+            Host = string.Empty,
+            Username = string.Empty,
+            Port = 22,
+            Protocol = SessionProtocol.SSH,
+            AuthMethod = AuthMethod.Password,
+            TerminalFixedSize = false,
+            TerminalResetSizeOnConnect = false
+        };
+    }
 }
 
 public class SessionInfo
@@ -195,7 +237,7 @@ public class SessionInfo
     public int TerminalColumns { get; set; } = 80;
     public int TerminalRows { get; set; } = 24;
     public bool TerminalFixedSize { get; set; }
-    public bool TerminalResetSizeOnConnect { get; set; } = true;
+    public bool TerminalResetSizeOnConnect { get; set; }
     public int TerminalScrollbackSize { get; set; } = 1024;
     public bool TerminalPushClearedScreenToScrollback { get; set; } = true;
     public string TerminalEncoding { get; set; } = "utf-8";
@@ -280,6 +322,20 @@ public class SessionInfo
     public bool AdvancedTraceSshTunneling { get; set; }
     public bool AdvancedTraceSshPackets { get; set; }
     public bool AdvancedTraceTelnetOptions { get; set; }
+    public string AdvancedBellMode { get; set; } = "Default";
+    public string AdvancedBellSoundPath { get; set; } = string.Empty;
+    public bool AdvancedBellFlashInactiveWindow { get; set; }
+    public int AdvancedBellIgnoreRepeatedSeconds { get; set; } = 3;
+    public int AdvancedBellReactivateAfterSeconds { get; set; } = 3;
+    public string AdvancedLogFilePath { get; set; } = "%n_%Y-%m-%d_%t.log";
+    public bool AdvancedLogOverwriteExisting { get; set; } = true;
+    public bool AdvancedLogStartOnConnect { get; set; }
+    public bool AdvancedLogPromptFileOnStart { get; set; }
+    public bool AdvancedLogUseRtf { get; set; }
+    public bool AdvancedLogIncludeTerminalCodes { get; set; }
+    public string AdvancedLogEncoding { get; set; } = "Utf16Le";
+    public bool AdvancedLogWriteTimestamp { get; set; }
+    public string AdvancedLogTimestampFormat { get; set; } = "[%a]";
     public bool EnableLoginScriptRules { get; set; } = true;
     public List<LoginScriptRule> LoginScriptRules { get; set; } = new();
     public bool RunLoginScriptFile { get; set; }
@@ -312,6 +368,11 @@ public class SessionInfo
     public string SftpRemoteStartDirectory { get; set; } = string.Empty;
     public bool SftpUseCustomServer { get; set; }
     public string SftpCustomServerCommand { get; set; } = string.Empty;
+    public bool FileTransferAlwaysAskDownloadFolder { get; set; } = true;
+    public string FileTransferDownloadDirectory { get; set; } = string.Empty;
+    public string FileTransferUploadDirectory { get; set; } = string.Empty;
+    public string FileTransferDuplicateAction { get; set; } = "AutoRename";
+    public string FileTransferUploadProtocol { get; set; } = "Zmodem";
     public string SerialPortName { get; set; } = "COM1";
     public int SerialBaudRate { get; set; } = 9600;
     public int SerialDataBits { get; set; } = 8;

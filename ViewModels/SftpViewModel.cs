@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Threading.Tasks;
 using Avalonia.Threading;
@@ -18,6 +19,7 @@ public partial class SftpViewModel : ObservableObject
 
     [ObservableProperty] private bool _isConnected;
     [ObservableProperty] private string _currentPath = "/";
+    [ObservableProperty] private string _pathInput = "/";
     [ObservableProperty] private string _hostLabel = "Not connected";
     [ObservableProperty] private string _protocolLabel = "SFTP";
     [ObservableProperty] private string _localStartDirectory = string.Empty;
@@ -80,6 +82,7 @@ public partial class SftpViewModel : ObservableObject
             Files.Clear();
             PathSegments.Clear();
             CurrentPath = "/";
+            PathInput = "/";
             ErrorMessage = null;
         });
     }
@@ -135,6 +138,7 @@ public partial class SftpViewModel : ObservableObject
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 CurrentPath = path;
+                PathInput = path;
                 UpdatePathSegments(path);
                 Files.Clear();
                 foreach (var item in items)
@@ -147,6 +151,7 @@ public partial class SftpViewModel : ObservableObject
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 ErrorMessage = $"Load failed: {ex.Message}";
+                PathInput = CurrentPath;
                 IsLoading = false;
             });
         }
@@ -188,6 +193,22 @@ public partial class SftpViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private async Task NavigateToTypedPath()
+    {
+        if (!_service.IsConnected)
+            return;
+
+        var targetPath = NormalizeRemotePath(PathInput);
+        if (string.IsNullOrWhiteSpace(targetPath))
+        {
+            PathInput = CurrentPath;
+            return;
+        }
+
+        await LoadDirectoryAsync(targetPath);
+    }
+
+    [RelayCommand]
     private async Task NavigateUp()
     {
         if (!_service.IsConnected || CurrentPath == "/")
@@ -217,6 +238,58 @@ public partial class SftpViewModel : ObservableObject
             return;
 
         await LoadDirectoryAsync(CurrentPath);
+    }
+
+    private string NormalizeRemotePath(string? path)
+    {
+        var value = path?.Trim();
+        if (string.IsNullOrWhiteSpace(value))
+            return CurrentPath;
+
+        value = value.Replace('\\', '/');
+
+        if (value == "~")
+            return _homeDirectory;
+
+        if (value.StartsWith("~/", StringComparison.Ordinal))
+            return CombineRemotePath(_homeDirectory, value[2..]);
+
+        if (value.StartsWith("/", StringComparison.Ordinal))
+            return CollapseRemotePath(value);
+
+        return CollapseRemotePath(CombineRemotePath(CurrentPath, value));
+    }
+
+    private static string CombineRemotePath(string parent, string child)
+    {
+        if (string.IsNullOrWhiteSpace(parent) || parent == "/")
+            return "/" + child.TrimStart('/');
+
+        return parent.TrimEnd('/') + "/" + child.TrimStart('/');
+    }
+
+    private static string CollapseRemotePath(string path)
+    {
+        var parts = new Stack<string>();
+        foreach (var rawPart in path.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (rawPart == ".")
+                continue;
+
+            if (rawPart == "..")
+            {
+                if (parts.Count > 0)
+                    parts.Pop();
+                continue;
+            }
+
+            parts.Push(rawPart);
+        }
+
+        if (parts.Count == 0)
+            return "/";
+
+        return "/" + string.Join("/", parts.Reverse());
     }
 
     [RelayCommand]

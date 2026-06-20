@@ -43,13 +43,14 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsSftpPanelVisible => IsSftpVisible && !IsTerminalFullScreen;
     public bool IsMonitorPanelVisible => IsMonitorVisible && !IsTerminalFullScreen;
     public bool IsTabHeaderVisible => !IsTerminalFullScreen;
+    public bool IsSelectedTerminalSession => SelectedTab?.IsTerminalSession == true;
+    public bool IsSelectedVncSession => SelectedTab?.IsVncSession == true;
 
     public ServerMonitorViewModel Monitor { get; } = new();
     public SftpViewModel Sftp { get; } = new();
     public ObservableCollection<SessionInfo> QuickSessions => _sessionTreeVm.QuickSessions;
     public string ThemeIcon => IsDarkMode ? "\u263E" : "\u2600";
 
-    // 婵炴潙鍚嬫穱娲儊閻ｅ瞼涓嶉柨娑樺閸婄偤鏌涢敐鍐ㄥ闁绘稏鍎靛畷锝夋晲閸涱厾顦版繛鎾磋壘椤戞垹妲愬┑瀣劶闁割煈鍠栫敮鎶芥⒑閹绘帞孝妞わ附鐓￠獮宥夊箻瀹曞洨锛?
     private Window? _sessionManagerWindow;
 
     public MainWindowViewModel()
@@ -91,6 +92,14 @@ public partial class MainWindowViewModel : ObservableObject
     {
         foreach (var tab in Tabs)
             tab.IsSelected = tab == value;
+        NotifySelectedContentVisibilityChanged();
+        if (value?.Vnc != null)
+        {
+            if (IsSftpVisible)
+                IsSftpVisible = false;
+            if (IsMonitorVisible)
+                IsMonitorVisible = false;
+        }
         UpdateStatusBar();
         UpdateTerminalSize();
         UpdateMonitor(value);
@@ -99,6 +108,12 @@ public partial class MainWindowViewModel : ObservableObject
         CurrentDisconnectCommand.NotifyCanExecuteChanged();
         AddCurrentSessionToQuickBarCommand.NotifyCanExecuteChanged();
         ToggleTerminalFullScreenCommand.NotifyCanExecuteChanged();
+    }
+
+    private void NotifySelectedContentVisibilityChanged()
+    {
+        OnPropertyChanged(nameof(IsSelectedTerminalSession));
+        OnPropertyChanged(nameof(IsSelectedVncSession));
     }
 
     partial void OnIsMonitorVisibleChanged(bool value)
@@ -131,7 +146,7 @@ public partial class MainWindowViewModel : ObservableObject
     private void UpdateMonitor(TerminalTabViewModel? tab)
     {
         if (!IsMonitorVisible) return;
-        if (tab == null || !tab.Terminal.IsConnected || tab.Session.Protocol != SessionProtocol.SSH)
+        if (tab == null || tab.Vnc != null || !tab.Terminal.IsConnected || tab.Session.Protocol != SessionProtocol.SSH)
         {
             Monitor.StopMonitoring();
             return;
@@ -143,6 +158,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (!IsSftpVisible) return;
         if (tab == null ||
+            tab.Vnc != null ||
             !tab.Terminal.IsConnected ||
             tab.Session.Protocol != SessionProtocol.SSH)
         {
@@ -159,7 +175,6 @@ public partial class MainWindowViewModel : ObservableObject
         var owner = lifetime?.MainWindow;
         if (owner == null) return;
 
-        // 婵犵鈧啿鈧綊鎮樻径宀€鐜绘俊銈傚亾鐟滅増绋戦蹇涘箵閹烘梹鎲奸梺闈╄礋閸斿绮弽顓炲珘妞ゅ繐瀚ぐ鐘绘⒒閸屻倕寮跨紒杈ㄧ箞瀹曟艾鈻庨幇顔跨濠电偠灏褔鎮?
         if (_sessionManagerWindow != null)
         {
             _sessionManagerWindow.Activate();
@@ -204,6 +219,17 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void UpdateStatusBar()
     {
+        if (SelectedTab?.Vnc is { } vnc)
+        {
+            ConnectionStatusText = vnc.IsConnected ? "VNC connected" : "VNC disconnected";
+            ConnectionStatusColor = new SolidColorBrush(vnc.IsConnected ? Color.Parse("#52C41A") : Colors.Gray);
+            ConnectedHostInfo = $"{SelectedTab.Session.Host}:{(SelectedTab.Session.Port > 0 ? SelectedTab.Session.Port : 5900)}";
+            TerminalSizeText = vnc.RemoteWidth > 0 && vnc.RemoteHeight > 0
+                ? $"{vnc.RemoteWidth}x{vnc.RemoteHeight}"
+                : string.Empty;
+            return;
+        }
+
         var terminal = SelectedTab?.Terminal;
         if (terminal != null && terminal.IsConnected)
         {
@@ -221,6 +247,14 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void UpdateTerminalSize()
     {
+        if (SelectedTab?.Vnc is { } vnc)
+        {
+            TerminalSizeText = vnc.RemoteWidth > 0 && vnc.RemoteHeight > 0
+                ? $"{vnc.RemoteWidth}x{vnc.RemoteHeight}"
+                : string.Empty;
+            return;
+        }
+
         var terminal = SelectedTab?.Terminal;
         if (terminal != null)
         {
@@ -236,7 +270,7 @@ public partial class MainWindowViewModel : ObservableObject
     private async Task NewSession()
     {
         var dialog = new SessionEditDialog();
-        var vm = new SessionEditViewModel();
+        var vm = new SessionEditViewModel(_sessionTreeVm.CreateSessionFromGlobalDefaults());
         dialog.DataContext = vm;
 
         var lifetime = Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
@@ -353,41 +387,48 @@ public partial class MainWindowViewModel : ObservableObject
 
     public async Task ConnectSession(SessionInfo session)
     {
-        if (session.Protocol is SessionProtocol.SFTP or SessionProtocol.FTP)
+        var effectiveSession = _sessionTreeVm.GetEffectiveSession(session);
+
+        if (effectiveSession.Protocol is SessionProtocol.SFTP or SessionProtocol.FTP)
         {
-            await ConnectFileTransferSession(session);
+            await ConnectFileTransferSession(effectiveSession);
             return;
         }
 
-        if (session.Protocol == SessionProtocol.RDP)
+        if (effectiveSession.Protocol == SessionProtocol.RDP)
         {
-            ConnectRdpSession(session);
+            ConnectRdpSession(effectiveSession);
             return;
         }
 
-        if (session.Protocol is not (SessionProtocol.SSH or SessionProtocol.TELNET or SessionProtocol.RLOGIN or SessionProtocol.SERIAL or SessionProtocol.LOCAL))
+        if (effectiveSession.Protocol == SessionProtocol.VNC)
         {
-            ConnectionStatusText = $"Protocol {session.Protocol} does not support terminal connection yet";
+            await ConnectVncSession(effectiveSession);
+            return;
+        }
+
+        if (effectiveSession.Protocol is not (SessionProtocol.SSH or SessionProtocol.TELNET or SessionProtocol.RLOGIN or SessionProtocol.SERIAL))
+        {
+            ConnectionStatusText = $"Protocol {effectiveSession.Protocol} does not support terminal connection yet";
             ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FAAD14"));
             return;
         }
 
         string? password = null;
 
-        if (session.Protocol is SessionProtocol.SSH or SessionProtocol.TELNET or SessionProtocol.RLOGIN &&
-            SshAgentAuthService.ShouldPromptForPassword(session))
+        if (effectiveSession.Protocol is SessionProtocol.SSH or SessionProtocol.TELNET or SessionProtocol.RLOGIN &&
+            SshAgentAuthService.ShouldPromptForPassword(effectiveSession))
         {
-            password = await ShowPasswordDialog(session);
+            password = await ShowPasswordDialog(effectiveSession);
             if (password == null)
                 return;
         }
 
-        var tab = new TerminalTabViewModel(session);
+        var tab = new TerminalTabViewModel(effectiveSession);
         tab.CloseRequested += CloseTab;
         Tabs.Add(tab);
         SelectedTab = tab;
 
-        // 闁烩晜鍨甸幆澶庛亹閹惧啿顤呴梺顐㈩槷閼?Tab 闁?Terminal 闁告瑦锚鐎靛弶绂掗妷锔界函闁哄倹澹嗘慨鎼佸箑娴ｅ湱鍩?
         tab.Terminal.PropertyChanged += OnActiveTerminalPropertyChanged;
 
         try
@@ -395,16 +436,13 @@ public partial class MainWindowViewModel : ObservableObject
             ConnectionStatusText = "Connecting...";
             ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FAAD14"));
 
-            await tab.Terminal.ConnectAsync(session, password);
+            await tab.Terminal.ConnectAsync(effectiveSession, password);
 
-            // 濞ｅ洦绻傞悺銊р偓闈涙閻栨粍绗熷☉姘＇闁硅矇鍛仾缂佹柨顑堢换娑㈠箳閵夈倕鈻忛柣?
             tab.ConnectedPassword = password;
 
-            // 濠碘€冲€归悘澶愭儎閹寸偛浠橀梻鍫涘灪濠㈡ê顔忛崣澶娾叺鐎殿喒鍋撻柨娑樼灱閻濇盯宕￠崘鍙夊剻闁告柣鍔庡ú鍐箳?
             if (IsMonitorVisible && tab.Session.Protocol == SessionProtocol.SSH)
                 Monitor.SwitchConnection(tab.Session, tab.ConnectedPassword);
 
-            // 濠碘€冲€归悘?SFTP 闂傚牄鍨哄妯侯啅閸欏鈪电€殿喒鍋撻柨娑樼灱閻濇盯宕＄€圭姷绠鹃柟?
             if (IsSftpVisible && tab.Session.Protocol == SessionProtocol.SSH)
                 Sftp.SwitchConnection(tab.Session, tab.ConnectedPassword);
         }
@@ -430,6 +468,38 @@ public partial class MainWindowViewModel : ObservableObject
         {
             ConnectionStatusText = $"RDP launch failed: {ex.Message}";
             ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FF4D4F"));
+        }
+    }
+
+    private async Task ConnectVncSession(SessionInfo session)
+    {
+        var password = await ShowPasswordDialog(session);
+        if (password == null)
+            return;
+
+        var vm = new VncViewModel();
+        var tab = new TerminalTabViewModel(session, vm);
+        tab.CloseRequested += CloseTab;
+        Tabs.Add(tab);
+        SelectedTab = tab;
+        IsSftpVisible = false;
+        IsMonitorVisible = false;
+
+        try
+        {
+            ConnectionStatusText = "VNC connecting...";
+            ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FAAD14"));
+            ConnectedHostInfo = $"{session.Host}:{(session.Port > 0 ? session.Port : 5900)}";
+            await vm.ConnectAsync(session, password);
+            ConnectionStatusText = "VNC connected";
+            ConnectionStatusColor = new SolidColorBrush(Color.Parse("#52C41A"));
+            UpdateTerminalSize();
+        }
+        catch (Exception ex)
+        {
+            ConnectionStatusText = $"VNC failed: {ex.Message}";
+            ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FF4D4F"));
+            vm.StatusText = $"VNC failed: {ex.Message}";
         }
     }
 
@@ -486,6 +556,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         tab.Terminal.PropertyChanged -= OnActiveTerminalPropertyChanged;
         tab.Terminal.Disconnect();
+        tab.Vnc?.Dispose();
         Tabs.Remove(tab);
 
         if (SelectedTab == null && Tabs.Count > 0)
@@ -517,14 +588,47 @@ public partial class MainWindowViewModel : ObservableObject
 
     private bool CanCurrentConnect()
     {
-        return SelectedTab != null && !SelectedTab.Terminal.IsConnected;
+        return SelectedTab != null &&
+               (SelectedTab.Vnc != null
+                   ? !SelectedTab.Vnc.IsConnected
+                   : !SelectedTab.Terminal.IsConnected);
     }
 
     [RelayCommand(CanExecute = nameof(CanCurrentConnect))]
     private async Task CurrentConnect()
     {
         var tab = SelectedTab;
-        if (tab == null || tab.Terminal.IsConnected)
+        if (tab == null)
+            return;
+
+        if (tab.Vnc != null)
+        {
+            if (tab.Vnc.IsConnected)
+                return;
+
+            var vncPassword = tab.ConnectedPassword ?? await ShowPasswordDialog(tab.Session);
+            if (vncPassword == null)
+                return;
+
+            try
+            {
+                ConnectionStatusText = "VNC connecting...";
+                ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FAAD14"));
+                await tab.Vnc.ConnectAsync(tab.Session, vncPassword);
+                tab.ConnectedPassword = vncPassword;
+                UpdateStatusBar();
+                UpdateTerminalSize();
+            }
+            catch (Exception ex)
+            {
+                ConnectionStatusText = $"VNC failed: {ex.Message}";
+                ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FF4D4F"));
+            }
+
+            return;
+        }
+
+        if (tab.Terminal.IsConnected)
             return;
 
         var password = tab.ConnectedPassword;
@@ -555,22 +659,28 @@ public partial class MainWindowViewModel : ObservableObject
 
     private bool CanCurrentDisconnect()
     {
-        return SelectedTab?.Terminal.IsConnected == true;
+        return SelectedTab?.Vnc?.IsConnected == true || SelectedTab?.Terminal.IsConnected == true;
     }
 
     [RelayCommand(CanExecute = nameof(CanCurrentDisconnect))]
     private void CurrentDisconnect()
     {
-        SelectedTab?.Terminal.Disconnect("[Current session disconnected]");
+        if (SelectedTab?.Vnc != null)
+            SelectedTab.Vnc.Disconnect();
+        else
+            SelectedTab?.Terminal.Disconnect("[Current session disconnected]");
+
         Monitor.StopMonitoring();
         Sftp.StopBrowsing();
+        UpdateStatusBar();
+        UpdateTerminalSize();
     }
 
     private async Task<string?> ShowPasswordDialog(SessionInfo session)
     {
         var dialog = new AtomUI.Desktop.Controls.Window
         {
-            Title = $"Enter password - {session.Name}",
+            Title = $"输入密码 - {session.Name}",
             Width = 460,
             Height = 250,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -582,7 +692,7 @@ public partial class MainWindowViewModel : ObservableObject
         var passwordBox = new AtomUI.Desktop.Controls.LineEdit
         {
             PasswordChar = '*',
-            PlaceholderText = "Enter password",
+            PlaceholderText = "请输入密码",
             IsEnableRevealButton = true,
             IsAllowClear = true,
             SizeType = SizeType.Middle,
@@ -601,7 +711,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         var okButton = new AtomUI.Desktop.Controls.Button
         {
-            Content = "OK",
+            Content = "确定",
             Width = 86,
             ButtonType = AtomUI.Desktop.Controls.ButtonType.Primary,
             SizeType = SizeType.Middle
@@ -613,7 +723,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         var cancelButton = new AtomUI.Desktop.Controls.Button
         {
-            Content = "Cancel",
+            Content = "取消",
             Width = 86,
             ButtonType = AtomUI.Desktop.Controls.ButtonType.Default,
             SizeType = SizeType.Middle
@@ -623,7 +733,7 @@ public partial class MainWindowViewModel : ObservableObject
         var panel = new StackPanel { Spacing = 8 };
         panel.Children.Add(new TextBlock
         {
-            Text = $"User: {session.Username}@{session.Host}:{session.Port}",
+            Text = $"用户: {session.Username}@{session.Host}:{session.Port}",
             Margin = new Thickness(20, 20, 20, 0)
         });
         panel.Children.Add(passwordBox);

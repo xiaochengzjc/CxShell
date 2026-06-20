@@ -16,3 +16,5 @@ AtomUI/
 Thumbs.db
 .DS_Store
 .codex-build
+.buildcheck*/
+.tmp/

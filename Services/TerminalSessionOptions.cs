@@ -54,6 +54,9 @@ public static class TerminalSessionOptions
         if (string.IsNullOrEmpty(data))
             return data;
 
+        if (string.Equals(session?.TerminalReceiveLineEnding?.Trim(), "AUTO", StringComparison.OrdinalIgnoreCase))
+            return data;
+
         var ending = ResolveLineEnding(session?.TerminalReceiveLineEnding, defaultValue: "CRLF");
         return NormalizeLineEndings(data, ending);
     }

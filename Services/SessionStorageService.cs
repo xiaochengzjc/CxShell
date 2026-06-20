@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text;
 using System.Text.Json.Serialization;
 using ChiXueSsh.Models;
 
@@ -7,6 +8,7 @@ namespace ChiXueSsh.Services;
 public class SessionData
 {
     public string Version { get; set; } = "1.0";
+    public ApplicationSettings Settings { get; set; } = new();
     public List<SessionGroup> Groups { get; set; } = new();
     public List<SessionInfo> Sessions { get; set; } = new();
     public List<Guid> QuickSessionIds { get; set; } = new();
@@ -32,7 +34,7 @@ public class SessionStorageService
             return new SessionData();
         }
 
-        var json = File.ReadAllText(_storagePath);
+        var json = File.ReadAllText(_storagePath, Encoding.UTF8);
         return System.Text.Json.JsonSerializer.Deserialize<SessionData>(json)
                ?? new SessionData();
     }
@@ -49,6 +51,6 @@ public class SessionStorageService
             WriteIndented = true
         };
         var json = System.Text.Json.JsonSerializer.Serialize(data, options);
-        File.WriteAllText(_storagePath, json);
+        File.WriteAllText(_storagePath, json, Encoding.UTF8);
     }
 }

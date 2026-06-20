@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.Linq;
+using System.Runtime.InteropServices;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
@@ -58,6 +59,7 @@ public partial class TerminalView : UserControl
         MenuCopyBtn.Click += OnCopyClick;
         MenuPasteBtn.Click += OnPasteClick;
         vm.BufferChanged += OnBufferChanged;
+        vm.BellRequested += OnBellRequested;
         vm.PropertyChanged += OnVmPropertyChanged;
         InjectZmodemDelegates(vm);
         SyncTerminalSize();
@@ -81,9 +83,11 @@ public partial class TerminalView : UserControl
         if (_boundVm != null)
         {
             _boundVm.BufferChanged -= OnBufferChanged;
+            _boundVm.BellRequested -= OnBellRequested;
             _boundVm.PropertyChanged -= OnVmPropertyChanged;
             _boundVm.PickZmodemUploadFilesAsync = null;
             _boundVm.PickZmodemDownloadFolderAsync = null;
+            _boundVm.PickSessionLogFileAsync = null;
         }
 
         _boundVm = null;
@@ -96,12 +100,16 @@ public partial class TerminalView : UserControl
 
         vm.PickZmodemUploadFilesAsync = async () =>
         {
-            var files = await topLevel.StorageProvider.OpenFilePickerAsync(
-                new FilePickerOpenOptions
-                {
-                    Title = "选择要通过 rz 上传的文件",
-                    AllowMultiple = true
-                });
+            var options = new FilePickerOpenOptions
+            {
+                Title = "选择要通过 rz 上传的文件",
+                AllowMultiple = true
+            };
+            var startDirectory = vm.ZmodemUploadStartDirectory;
+            if (!string.IsNullOrWhiteSpace(startDirectory) && System.IO.Directory.Exists(startDirectory))
+                options.SuggestedStartLocation = await topLevel.StorageProvider.TryGetFolderFromPathAsync(startDirectory);
+
+            var files = await topLevel.StorageProvider.OpenFilePickerAsync(options);
 
             return files
                 .Select(file => file.Path.LocalPath)
@@ -119,6 +127,26 @@ public partial class TerminalView : UserControl
                 });
 
             return folders.FirstOrDefault()?.Path.LocalPath;
+        };
+
+        vm.PickSessionLogFileAsync = async () =>
+        {
+            var file = await topLevel.StorageProvider.SaveFilePickerAsync(
+                new FilePickerSaveOptions
+                {
+                    Title = "选择日志文件",
+                    SuggestedFileName = "session.log",
+                    FileTypeChoices =
+                    [
+                        new FilePickerFileType("Log files")
+                        {
+                            Patterns = ["*.log", "*.txt", "*.rtf"]
+                        },
+                        FilePickerFileTypes.All
+                    ]
+                });
+
+            return file?.Path.LocalPath;
         };
     }
 
@@ -173,11 +201,55 @@ public partial class TerminalView : UserControl
     }
     private void OnBufferChanged() => _terminal?.InvalidateVisual();
 
+    private void OnBellRequested()
+    {
+        if (_boundVm?.FlashInactiveWindowOnBell != true)
+            return;
+
+        if (TopLevel.GetTopLevel(this) is not Window window || window.IsActive)
+            return;
+
+        FlashWindow(window);
+    }
+
     private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(TerminalViewModel.Buffer))
         {
             _terminal?.InvalidateVisual();
         }
+    }
+
+    private static void FlashWindow(Window window)
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        var handle = window.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+        if (handle == IntPtr.Zero)
+            return;
+
+        var info = new FlashWindowInfo
+        {
+            cbSize = Convert.ToUInt32(Marshal.SizeOf<FlashWindowInfo>()),
+            hwnd = handle,
+            dwFlags = 0x00000003 | 0x0000000C,
+            uCount = 3,
+            dwTimeout = 0
+        };
+        FlashWindowEx(ref info);
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool FlashWindowEx(ref FlashWindowInfo pwfi);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FlashWindowInfo
+    {
+        public uint cbSize;
+        public IntPtr hwnd;
+        public uint dwFlags;
+        public uint uCount;
+        public uint dwTimeout;
     }
 }

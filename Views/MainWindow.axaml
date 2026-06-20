@@ -255,20 +255,12 @@
                                                  CommandParameter="{Binding}">
                                         <Border Padding="12,6"
                                                 BorderThickness="1,1,1,0"
-                                                Margin="2,2,0,0">
-                                            <Border.Background>
-                                                <SolidColorBrush Color="{Binding IsSelected, Converter={x:Static vm:TabSelectedBgConverter.Instance}}"/>
-                                            </Border.Background>
+                                                Margin="2,2,0,0"
+                                                Background="{Binding TabBackgroundBrush}">
                                             <Border.BorderBrush>
                                                 <SolidColorBrush Color="{Binding IsSelected, Converter={x:Static vm:TabSelectedBorderConverter.Instance}}"/>
                                              </Border.BorderBrush>
                                              <StackPanel Orientation="Horizontal" Spacing="6">
-                                                 <Border Width="4"
-                                                         Height="14"
-                                                         CornerRadius="2"
-                                                         Background="{Binding TabColorBrush}"
-                                                         IsVisible="{Binding HasTabColor}"
-                                                         VerticalAlignment="Center"/>
                                                  <atom:TextBlock Text="{Binding Title}" FontSize="12"
                                                                 VerticalAlignment="Center"
                                                                 Foreground="{Binding IsSelected, Converter={x:Static vm:TabSelectedFgConverter.Instance}}"/>
@@ -288,7 +280,11 @@
                     <!-- 当前 Tab 的终端内容 -->
                     <views:TerminalView Grid.Row="1"
                                         x:Name="ActiveTerminalView"
-                                        DataContext="{Binding SelectedTab.Terminal, x:CompileBindings=False}"/>
+                                        DataContext="{Binding SelectedTab.Terminal, x:CompileBindings=False}"
+                                        IsVisible="{Binding $parent[Window].DataContext.IsSelectedTerminalSession, x:CompileBindings=False}"/>
+                    <views:VncView Grid.Row="1"
+                                   DataContext="{Binding SelectedTab.Vnc, x:CompileBindings=False}"
+                                   IsVisible="{Binding $parent[Window].DataContext.IsSelectedVncSession, x:CompileBindings=False}"/>
                     <Grid Grid.RowSpan="2"
                           IsVisible="{Binding IsTerminalFullScreen}"
                           HorizontalAlignment="Stretch"

@@ -13,6 +13,7 @@ using Avalonia.VisualTree;
 using AtomUI.Theme.Styling;
 using ChiXueSsh.ViewModels;
 using AtomButton = AtomUI.Desktop.Controls.Button;
+using AtomLineEdit = AtomUI.Desktop.Controls.LineEdit;
 using AtomPopup = AtomUI.Desktop.Controls.Popup;
 using AtomTextBox = AtomUI.Desktop.Controls.TextBox;
 using AtomWindow = AtomUI.Desktop.Controls.Window;
@@ -58,7 +59,7 @@ public partial class SftpPanelView : UserControl
         {
             Dispatcher.UIThread.Post(() =>
             {
-                var input = this.FindControl<TextBox>("NewDirInput");
+                var input = this.FindControl<AtomTextBox>("NewDirInput");
                 if (input != null)
                 {
                     input.Foreground = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorText, Color.Parse("#000000")));
@@ -76,7 +77,7 @@ public partial class SftpPanelView : UserControl
             var targetItem = vm.RenamingItem;
             Dispatcher.UIThread.Post(() =>
             {
-                // 遍历可视树找到 Tag == targetItem 的 TextBox
+                // 遍历可视树找到 Tag == targetItem 的 AtomUI TextBox
                 var tb = FindRenameTextBox(this, targetItem);
                 if (tb != null)
                 {
@@ -91,11 +92,11 @@ public partial class SftpPanelView : UserControl
         }
     }
 
-    private static TextBox? FindRenameTextBox(Avalonia.Visual root, Models.SftpFileItem target)
+    private static AtomTextBox? FindRenameTextBox(Avalonia.Visual root, Models.SftpFileItem target)
     {
         foreach (var child in root.GetVisualChildren())
         {
-            if (child is TextBox tb && tb.Tag == target)
+            if (child is AtomTextBox tb && tb.Tag == target)
                 return tb;
             var found = FindRenameTextBox(child, target);
             if (found != null) return found;
@@ -106,7 +107,7 @@ public partial class SftpPanelView : UserControl
     public void OnRenameInputKeyDown(object? sender, KeyEventArgs e)
     {
         if (DataContext is not SftpViewModel vm) return;
-        if (sender is not TextBox tb) return;
+        if (sender is not AtomTextBox tb) return;
         var item = tb.Tag as Models.SftpFileItem;
         if (item == null) return;
 
@@ -127,7 +128,7 @@ public partial class SftpPanelView : UserControl
     public void OnRenameInputLostFocus(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not SftpViewModel vm) return;
-        if (sender is not TextBox tb) return;
+        if (sender is not AtomTextBox tb) return;
         var item = tb.Tag as Models.SftpFileItem;
         if (item == null || !item.IsRenaming) return;
         item.RenamingText = tb.Text ?? item.Name;
@@ -141,7 +142,7 @@ public partial class SftpPanelView : UserControl
         if (e.Key == Key.Enter)
         {
             e.Handled = true;
-            var input = this.FindControl<TextBox>("NewDirInput");
+            var input = this.FindControl<AtomTextBox>("NewDirInput");
             if (input != null) vm.NewDirectoryName = input.Text ?? "新目录";
             _ = vm.ConfirmCreateDirectoryCommand.ExecuteAsync(null);
         }
@@ -157,10 +158,23 @@ public partial class SftpPanelView : UserControl
         if (DataContext is not SftpViewModel vm) return;
         if (vm.IsCreatingDirectory)
         {
-            var input = this.FindControl<TextBox>("NewDirInput");
+            var input = this.FindControl<AtomTextBox>("NewDirInput");
             if (input != null) vm.NewDirectoryName = input.Text ?? "新目录";
             _ = vm.ConfirmCreateDirectoryCommand.ExecuteAsync(null);
         }
+    }
+
+    public void OnRemotePathInputKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (DataContext is not SftpViewModel vm) return;
+        if (e.Key != Key.Enter)
+            return;
+
+        e.Handled = true;
+        if (sender is AtomLineEdit input)
+            vm.PathInput = input.Text ?? vm.CurrentPath;
+
+        _ = vm.NavigateToTypedPathCommand.ExecuteAsync(null);
     }
 
     private void InjectDelegates(SftpViewModel vm)

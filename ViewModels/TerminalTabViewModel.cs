@@ -14,8 +14,14 @@ public partial class TerminalTabViewModel : ObservableObject
 
     public SessionInfo Session { get; }
     public TerminalViewModel Terminal { get; }
+    public VncViewModel? Vnc { get; }
+    public bool IsVncSession => Vnc != null;
+    public bool IsTerminalSession => Vnc == null;
     public bool HasTabColor => !string.Equals(Session.AppearanceTabColorMode, "Default", StringComparison.OrdinalIgnoreCase);
     public IBrush TabColorBrush => new SolidColorBrush(ResolveTabColor());
+    public IBrush TabBackgroundBrush => HasTabColor
+        ? new SolidColorBrush(IsSelected ? ResolveTabColor() : ResolveMutedTabColor())
+        : new SolidColorBrush(ResolveDefaultTabBackground());
 
     /// <summary>仅内存保存，不持久化，用于监控独立 SSH 连接</summary>
     public string? ConnectedPassword { get; set; }
@@ -23,8 +29,14 @@ public partial class TerminalTabViewModel : ObservableObject
     public event Action<TerminalTabViewModel>? CloseRequested;
 
     public TerminalTabViewModel(SessionInfo session)
+        : this(session, null)
+    {
+    }
+
+    public TerminalTabViewModel(SessionInfo session, VncViewModel? vnc)
     {
         Session = session;
+        Vnc = vnc;
         _title = session.Name;
         Terminal = new TerminalViewModel();
 
@@ -40,6 +52,16 @@ public partial class TerminalTabViewModel : ObservableObject
                 UpdateTitle();
             }
         };
+
+        if (Vnc != null)
+        {
+            Vnc.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(VncViewModel.IsConnected))
+                    IsConnected = Vnc.IsConnected;
+            };
+            IsConnected = Vnc.IsConnected;
+        }
     }
 
     private void UpdateTitle()
@@ -60,6 +82,12 @@ public partial class TerminalTabViewModel : ObservableObject
         OnPropertyChanged(nameof(IsSelected));
         OnPropertyChanged(nameof(HasTabColor));
         OnPropertyChanged(nameof(TabColorBrush));
+        OnPropertyChanged(nameof(TabBackgroundBrush));
+    }
+
+    partial void OnIsSelectedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(TabBackgroundBrush));
     }
 
     private Color ResolveTabColor()
@@ -74,10 +102,31 @@ public partial class TerminalTabViewModel : ObservableObject
         };
     }
 
+    private Color ResolveMutedTabColor()
+    {
+        var color = ResolveTabColor();
+        return Color.FromArgb(
+            color.A,
+            Blend(color.R, 255, 0.86),
+            Blend(color.G, 255, 0.86),
+            Blend(color.B, 255, 0.86));
+    }
+
+    private static byte Blend(byte source, byte target, double amount)
+        => (byte)Math.Clamp(Math.Round(source + (target - source) * amount), 0, 255);
+
+    private Color ResolveDefaultTabBackground()
+    {
+        return IsSelected
+            ? ThemeTokenColorHelper.GetColor(AtomUI.Theme.Styling.SharedTokenKind.ColorBgContainer, Color.Parse("#1E1E1E"))
+            : ThemeTokenColorHelper.GetColor(AtomUI.Theme.Styling.SharedTokenKind.ColorFillQuaternary, Color.Parse("#151515"));
+    }
+
     [RelayCommand]
     private void CloseTab()
     {
         Terminal.Disconnect();
+        Vnc?.Dispose();
         CloseRequested?.Invoke(this);
     }
 }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -13,6 +14,8 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.TextFormatting;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using ChiXueSsh.Models;
@@ -26,7 +29,6 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
     private bool _isLoaded;
     private bool _saveAndConnectRequested;
     private bool _isInitializingSelections;
-    private bool _isSyncingAppearanceColorPickers;
     private DispatcherTimer? _appearanceBlinkTimer;
     private SessionEditViewModel? _appearanceBlinkViewModel;
     private bool _appearanceBlinkState = true;
@@ -46,6 +48,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             return;
 
         _isLoaded = true;
+        UpdateScopeVisibility();
         SaveBtn.Click += OnSaveClick;
         ConnectBtn.Click += OnConnectClick;
         CancelBtn.Click += OnCancelClick;
@@ -54,27 +57,38 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         SetSelectedProxyOptions();
         SetSelectedSshOptions();
         SetSelectedTelnetOptions();
-        SetSelectedTerminalOptions();
-        SetSelectedAppearanceOptions();
         SetSelectedRloginOptions();
         SetSelectedSerialOptions();
         SetSelectedRdpOptions();
+        SetSelectedSessionDefaultOptions();
         _isInitializingSelections = false;
-        CategoryTree.SelectionChanged += OnCategorySelectionChanged;
         ProxySelect.SelectionChanged += OnProxySelectionChanged;
-        ShowCategoryPage("Connection", "连接");
-        Closed += OnWindowClosed;
         AttachAppearanceBlinkPreview();
+        ShowCategoryPage("Connection");
+        Closed += OnWindowClosed;
     }
 
-    private void OnCategorySelectionChanged(object? sender, Avalonia.Controls.SelectionChangedEventArgs e)
+    private void UpdateScopeVisibility()
     {
-        if (CategoryTree.SelectedItem is not AtomUI.Desktop.Controls.TreeViewItem item)
+        if (DataContext is not SessionEditViewModel vm)
             return;
 
-        var key = item.Value?.ToString() ?? "Connection";
-        var title = item.Header?.ToString() ?? "连接";
-        ShowCategoryPage(key, title);
+        ConnectBtn.IsVisible = vm.IsSessionScope;
+    }
+
+    private void OnCategoryButtonClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not AtomUI.Desktop.Controls.Button button)
+            return;
+
+        ShowCategoryPage(button.Tag?.ToString() ?? "Connection");
+    }
+
+    private void OnSessionNavMenuItemClick(object? sender, NavMenuItemClickEventArgs e)
+    {
+        var key = e.NavMenuItem.ItemKey?.ToString();
+        if (!string.IsNullOrWhiteSpace(key))
+            ShowCategoryPage(key);
     }
 
     private void AttachAppearanceBlinkPreview()
@@ -139,31 +153,14 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         _appearanceBlinkViewModel.AppearancePreviewCursorVisible = _appearanceBlinkState;
     }
 
-    private void ShowCategoryPage(string key, string title)
+    private void ShowCategoryPage(string key)
     {
-        if (key == "SshSftp")
-            title = "连接 > SSH > SFTP (Secure File Transfer)";
-        else if (key == "Rlogin")
-            title = "连接 > RLOGIN";
-        else if (key == "WindowAppearance")
-            title = "外观 > 窗口";
+        if (DataContext is SessionEditViewModel vm)
+            vm.SelectedPage = key;
 
-        if (key == "Proxy")
-            title = "连接 > 代理";
-
-        else if (key == "KeepAlive")
-            title = "连接 > 保持活动状态";
-        if (key == "Highlight")
-            title = "外观 > 突出";
-
-        if (key == "Advanced")
-            title = "高级";
-        else if (key == "Tracing")
-            title = "高级 > 协议跟踪";
-
+        var title = GetSessionCategoryTitle(key);
         PageTitleText.Text = title;
         ConnectionPage.IsVisible = key == "Connection";
-        AuthPage.IsVisible = key == "Auth";
         LoginPromptPage.IsVisible = key == "LoginPrompt";
         SshPage.IsVisible = key == "Ssh";
         LoginScriptPage.IsVisible = key == "LoginScript";
@@ -176,17 +173,63 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         SftpPage.IsVisible = key == "SshSftp";
         SerialPage.IsVisible = key == "Serial";
         RdpPage.IsVisible = key == "Rdp";
-        TerminalPage.IsVisible = key == "Terminal";
-        KeyboardPage.IsVisible = key == "Keyboard";
-        VtModePage.IsVisible = key == "VtMode";
-        TerminalAdvancedPage.IsVisible = key == "TerminalAdvanced";
-        AppearancePage.IsVisible = key == "Appearance";
-        WindowAppearancePage.IsVisible = key == "WindowAppearance";
-        HighlightPage.IsVisible = key == "Highlight";
-        AdvancedPage.IsVisible = key == "Advanced";
         TracingPage.IsVisible = key == "Tracing";
-        PlaceholderPage.IsVisible = key != "Connection" && key != "Auth" && key != "LoginPrompt" && key != "LoginScript" && key != "Ssh" && key != "SshSecurity" && key != "SshTunnel" && key != "Telnet" && key != "Proxy" && key != "KeepAlive" && key != "Rlogin" && key != "SshSftp" && key != "Serial" && key != "Rdp" && key != "Terminal" && key != "Keyboard" && key != "VtMode" && key != "TerminalAdvanced" && key != "Appearance" && key != "WindowAppearance" && key != "Highlight" && key != "Advanced" && key != "Tracing";
+        PlaceholderPage.IsVisible = key != "Connection" && key != "LoginPrompt" && key != "LoginScript" && key != "Ssh" && key != "SshSecurity" && key != "SshTunnel" && key != "Telnet" && key != "Proxy" && key != "KeepAlive" && key != "Rlogin" && key != "SshSftp" && key != "Serial" && key != "Rdp" && key != "Tracing" && key != "Terminal" && key != "Appearance" && key != "AppearanceWindow" && key != "Keyboard" && key != "Transfer" && key != "Logging" && key != "Bell" && key != "Advanced";
         PlaceholderTitleText.Text = title;
+    }
+
+    private static string GetCategoryTitle(string key)
+    {
+        return key switch
+        {
+            "Connection" => "连接",
+            "Auth" => "用户身份验证",
+            "LoginPrompt" => "登录提示符",
+            "LoginScript" => "登录脚本",
+            "Ssh" => "SSH",
+            "SshSecurity" => "SSH > 安全性",
+            "SshTunnel" => "SSH > 隧道",
+            "SshSftp" => "SSH > SFTP (Secure File Transfer)",
+            "Telnet" => "TELNET",
+            "Rlogin" => "RLOGIN",
+            "Serial" => "串口",
+            "Rdp" => "RDP",
+            "Proxy" => "代理",
+            "KeepAlive" => "保持活动",
+            "Terminal" => "终端",
+            "Appearance" => "外观",
+            "AppearanceWindow" => "外观 > 窗口",
+            "Keyboard" => "键盘",
+            "Transfer" => "文件传输",
+            "Logging" => "日志",
+            "Bell" => "响铃",
+            "Advanced" => "高级",
+            "Tracing" => "协议跟踪",
+            _ => "连接"
+        };
+    }
+
+    private static string GetSessionCategoryTitle(string key)
+    {
+        return key switch
+        {
+            "Connection" => "连接",
+            "Auth" => "用户身份验证",
+            "LoginPrompt" => "登录提示符",
+            "LoginScript" => "登录脚本",
+            "Ssh" => "SSH",
+            "SshSecurity" => "SSH > 安全性",
+            "SshTunnel" => "SSH > 隧道",
+            "SshSftp" => "SSH > SFTP (Secure File Transfer)",
+            "Telnet" => "TELNET",
+            "Rlogin" => "RLOGIN",
+            "Serial" => "串口",
+            "Rdp" => "RDP",
+            "Proxy" => "代理",
+            "KeepAlive" => "保持活动",
+            "Tracing" => "协议跟踪",
+            _ => "连接"
+        };
     }
 
     private void OnProtocolSelectionChanged(object? sender, SelectSelectionChangedEventArgs e)
@@ -229,39 +272,12 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             vm.Protocol = GetSelectedProtocolText();
             vm.Host = HostBox?.Text ?? string.Empty;
             vm.Port = PortBox?.Text ?? string.Empty;
-            vm.Username = UsernameBox?.Text ?? string.Empty;
+            vm.Username = ConnectionUsernameBox?.Text ?? string.Empty;
             vm.SshRemoteCommand = SshRemoteCommandBox?.Text ?? vm.SshRemoteCommand;
             vm.SshVersionPolicy = GetSelectedOptionText(SshVersionPolicySelect, vm.SshVersionPolicy);
             vm.SshCipherAlgorithms = GetSelectedAlgorithmText(SshCipherSelect, vm.SshCipherAlgorithms);
             vm.SshMacAlgorithms = GetSelectedAlgorithmText(SshMacSelect, vm.SshMacAlgorithms);
             vm.SshKeyExchangeAlgorithms = GetSelectedAlgorithmText(SshKeyExchangeSelect, vm.SshKeyExchangeAlgorithms);
-            vm.TerminalType = GetSelectedOptionText(TerminalTypeSelect, vm.TerminalType);
-            vm.TerminalEncoding = GetSelectedOptionText(TerminalEncodingSelect, vm.TerminalEncoding);
-            vm.TerminalSendLineEnding = GetSelectedOptionText(TerminalSendLineEndingSelect, vm.TerminalSendLineEnding);
-            vm.TerminalReceiveLineEnding = GetSelectedOptionText(TerminalReceiveLineEndingSelect, vm.TerminalReceiveLineEnding);
-            vm.TerminalKeyboardFunctionKeyMode = GetSelectedOptionText(TerminalKeyboardFunctionKeySelect, vm.TerminalKeyboardFunctionKeyMode);
-            vm.TerminalKeyboardMappingFile = TerminalKeyboardMappingFileBox?.Text ?? vm.TerminalKeyboardMappingFile;
-            vm.TerminalAdvancedPreinputString = TerminalAdvancedPreinputStringBox?.Text ?? vm.TerminalAdvancedPreinputString;
-            vm.TerminalAdvancedAnswerback = TerminalAdvancedAnswerbackBox?.Text ?? vm.TerminalAdvancedAnswerback;
-            vm.AppearanceColorScheme = GetSelectedOptionText(AppearanceColorSchemeSelect, vm.AppearanceColorScheme);
-            vm.AppearanceFontFamily = GetSelectedOptionText(AppearanceFontSelect, vm.AppearanceFontFamily);
-            vm.AppearanceFontStyle = GetSelectedOptionText(AppearanceFontStyleSelect, vm.AppearanceFontStyle);
-            vm.AppearanceFontSize = ParseDecimalOption(AppearanceFontSizeSelect, vm.AppearanceFontSize);
-            vm.AppearanceCjkFontFamily = GetSelectedOptionText(AppearanceCjkFontSelect, vm.AppearanceCjkFontFamily);
-            vm.AppearanceCjkFontStyle = GetSelectedOptionText(AppearanceCjkFontStyleSelect, vm.AppearanceCjkFontStyle);
-            vm.AppearanceCjkFontSize = ParseDecimalOption(AppearanceCjkFontSizeSelect, vm.AppearanceCjkFontSize);
-            vm.AppearanceFontQuality = GetSelectedOptionText(AppearanceFontQualitySelect, vm.AppearanceFontQuality);
-            vm.AppearanceBoldTextMode = GetSelectedOptionText(AppearanceBoldTextModeSelect, vm.AppearanceBoldTextMode);
-            vm.AppearanceForegroundColor = AppearanceForegroundColorPicker.Value ?? vm.AppearanceForegroundColor;
-            vm.AppearanceBoldForegroundColor = AppearanceBoldForegroundColorPicker.Value ?? vm.AppearanceBoldForegroundColor;
-            vm.AppearanceBackgroundColor = AppearanceBackgroundColorPicker.Value ?? vm.AppearanceBackgroundColor;
-            vm.AppearanceCursorColor = AppearanceCursorColorPicker.Value ?? vm.AppearanceCursorColor;
-            vm.AppearanceCursorTextColor = AppearanceCursorTextColorPicker.Value ?? vm.AppearanceCursorTextColor;
-            vm.AppearanceTabCustomColor = AppearanceTabCustomColorPicker.Value ?? vm.AppearanceTabCustomColor;
-            vm.AppearanceBackgroundImagePath = AppearanceBackgroundImagePathBox?.Text ?? vm.AppearanceBackgroundImagePath;
-            vm.AppearanceBackgroundImagePosition = GetSelectedOptionText(AppearanceBackgroundImagePositionSelect, vm.AppearanceBackgroundImagePosition);
-            vm.AppearanceHighlightSetId = GetSelectedOptionText(AppearanceHighlightSetSelect, vm.AppearanceHighlightSetId);
-            vm.AdvancedQuickCommandSet = AdvancedQuickCommandSetBox?.Text ?? vm.AdvancedQuickCommandSet;
             vm.SshX11UseXmanager = SshX11XmanagerButton.IsChecked == true;
             vm.SshX11Display = SshX11DisplayBox?.Text ?? vm.SshX11Display;
             vm.TelnetXDisplayLocation = TelnetXDisplayLocationBox?.Text ?? vm.TelnetXDisplayLocation;
@@ -288,8 +304,34 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             vm.RdpScreenScale = GetSelectedOptionText(RdpScreenScaleSelect, vm.RdpScreenScale);
             vm.RdpColorQuality = GetSelectedOptionText(RdpColorQualitySelect, vm.RdpColorQuality);
             vm.RdpAudioMode = GetSelectedOptionText(RdpAudioModeSelect, vm.RdpAudioMode);
+            vm.TerminalType = GetSelectedOptionText(SessionTerminalTypeSelect, vm.TerminalType);
+            vm.TerminalEncoding = GetSelectedOptionText(SessionTerminalEncodingSelect, vm.TerminalEncoding);
+            vm.TerminalSendLineEnding = GetSelectedOptionText(SessionTerminalSendLineEndingSelect, vm.TerminalSendLineEnding);
+            vm.TerminalReceiveLineEnding = GetSelectedOptionText(SessionTerminalReceiveLineEndingSelect, vm.TerminalReceiveLineEnding);
+            vm.AppearanceColorScheme = GetSelectedOptionText(SessionAppearanceColorSchemeSelect, vm.AppearanceColorScheme);
+            vm.AppearanceFontFamily = GetSelectedOptionText(SessionAppearanceFontSelect, vm.AppearanceFontFamily);
+            vm.AppearanceFontStyle = GetSelectedOptionText(SessionAppearanceFontStyleSelect, vm.AppearanceFontStyle);
+            vm.AppearanceCjkFontFamily = GetSelectedOptionText(SessionAppearanceCjkFontSelect, vm.AppearanceCjkFontFamily);
+            vm.AppearanceCjkFontStyle = GetSelectedOptionText(SessionAppearanceCjkFontStyleSelect, vm.AppearanceCjkFontStyle);
+            vm.AppearanceFontQuality = GetSelectedOptionText(SessionAppearanceFontQualitySelect, vm.AppearanceFontQuality);
+            vm.AppearanceBoldTextMode = GetSelectedOptionText(SessionAppearanceBoldTextModeSelect, vm.AppearanceBoldTextMode);
+            vm.AppearanceBackgroundImagePosition = GetSelectedOptionText(SessionAppearanceBackgroundImagePositionSelect, vm.AppearanceBackgroundImagePosition);
+            vm.AppearanceHighlightSetId = GetSelectedOptionText(SessionAppearanceHighlightSetSelect, vm.AppearanceHighlightSetId);
+            vm.TerminalKeyboardFunctionKeyMode = GetSelectedOptionText(SessionFunctionKeySelect, vm.TerminalKeyboardFunctionKeyMode);
+            vm.TerminalVtCursorKeyMode = GetSelectedOptionText(SessionTerminalVtCursorKeyModeSelect, vm.TerminalVtCursorKeyMode);
+            vm.TerminalVtNumericKeypadMode = GetSelectedOptionText(SessionTerminalVtNumericKeypadModeSelect, vm.TerminalVtNumericKeypadMode);
+            vm.AdvancedLogEncoding = GetSelectedOptionText(SessionLogEncodingSelect, vm.AdvancedLogEncoding);
+            vm.AdvancedIpVersion = GetSelectedOptionText(SessionAdvancedIpVersionSelect, vm.AdvancedIpVersion);
 
             vm.SaveCommand.Execute(null);
+            if (vm.SavedSettings != null)
+            {
+                ShouldConnect = false;
+                _saveAndConnectRequested = false;
+                Close();
+                return;
+            }
+
             if (vm.SavedSession != null)
             {
                 ShouldConnect = _saveAndConnectRequested;
@@ -303,7 +345,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
             if (vm.HasValidationError)
             {
-                ShowCategoryPage("Connection", "连接");
+                ShowCategoryPage("Connection");
                 FocusFirstInvalidField(vm);
             }
         }
@@ -322,7 +364,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
         var options = new FolderPickerOpenOptions
         {
-            Title = "Select local SFTP start folder",
+            Title = "选择本地 SFTP 起始文件夹",
             AllowMultiple = false
         };
 
@@ -430,7 +472,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             LoginScriptFilePathBox.Text = file.Path.LocalPath;
     }
 
-    private async void OnBrowseAppearanceBackgroundImageClick(object? sender, RoutedEventArgs e)
+    private async void OnBrowseSessionAppearanceBackgroundImageClick(object? sender, RoutedEventArgs e)
     {
         var topLevel = TopLevel.GetTopLevel(this);
         if (topLevel == null)
@@ -442,7 +484,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             AllowMultiple = false,
             FileTypeFilter =
             [
-                new FilePickerFileType("Image files")
+                new FilePickerFileType("图片文件")
                 {
                     Patterns = ["*.png", "*.jpg", "*.jpeg", "*.bmp", "*.gif", "*.webp"]
                 },
@@ -452,31 +494,35 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
         var file = files.FirstOrDefault();
         if (file != null)
-            AppearanceBackgroundImagePathBox.Text = file.Path.LocalPath;
+            SessionAppearanceBackgroundImagePathBox.Text = file.Path.LocalPath;
     }
 
-    private async void OnBrowseHighlightSetsClick(object? sender, RoutedEventArgs e)
+    private async void OnBrowseSessionAppearanceHighlightSetsClick(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not SessionEditViewModel vm)
             return;
 
-        vm.AppearanceHighlightSetId = GetSelectedOptionText(AppearanceHighlightSetSelect, vm.AppearanceHighlightSetId);
+        vm.AppearanceHighlightSetId = GetSelectedOptionText(SessionAppearanceHighlightSetSelect, vm.AppearanceHighlightSetId);
         await ShowHighlightSetsDialogAsync(vm);
         vm.RefreshHighlightSetOptions();
-        SelectOption(AppearanceHighlightSetSelect, vm.AppearanceHighlightSetId);
+        SelectOption(SessionAppearanceHighlightSetSelect, vm.AppearanceHighlightSetId);
     }
 
-    private async void OnBrowseAdvancedQuickCommandSetClick(object? sender, RoutedEventArgs e)
+    private void OnSessionAppearanceSelectionChanged(object? sender, SelectSelectionChangedEventArgs e)
     {
-        var result = await ShowQuickCommandSetDialogAsync(AdvancedQuickCommandSetBox.Text);
-        if (!string.IsNullOrWhiteSpace(result))
-            AdvancedQuickCommandSetBox.Text = result;
-    }
+        if (_isInitializingSelections || DataContext is not SessionEditViewModel vm)
+            return;
 
-    private void OnResetAdvancedFtpPortClick(object? sender, RoutedEventArgs e)
-    {
-        if (DataContext is SessionEditViewModel vm)
-            vm.AdvancedFtpPort = 21;
+        vm.AppearanceColorScheme = GetSelectedOptionText(SessionAppearanceColorSchemeSelect, vm.AppearanceColorScheme);
+        vm.AppearanceFontFamily = GetSelectedOptionText(SessionAppearanceFontSelect, vm.AppearanceFontFamily);
+        vm.AppearanceFontStyle = GetSelectedOptionText(SessionAppearanceFontStyleSelect, vm.AppearanceFontStyle);
+        vm.AppearanceCjkFontFamily = GetSelectedOptionText(SessionAppearanceCjkFontSelect, vm.AppearanceCjkFontFamily);
+        vm.AppearanceCjkFontStyle = GetSelectedOptionText(SessionAppearanceCjkFontStyleSelect, vm.AppearanceCjkFontStyle);
+        vm.AppearanceFontQuality = GetSelectedOptionText(SessionAppearanceFontQualitySelect, vm.AppearanceFontQuality);
+        vm.AppearanceBoldTextMode = GetSelectedOptionText(SessionAppearanceBoldTextModeSelect, vm.AppearanceBoldTextMode);
+        vm.AppearanceBackgroundImagePosition = GetSelectedOptionText(SessionAppearanceBackgroundImagePositionSelect, vm.AppearanceBackgroundImagePosition);
+        vm.AppearanceHighlightSetId = GetSelectedOptionText(SessionAppearanceHighlightSetSelect, vm.AppearanceHighlightSetId);
+        ApplyAppearancePreviewTextOptions(vm.AppearanceFontQuality);
     }
 
     private async Task<string?> ShowQuickCommandSetDialogAsync(string? current)
@@ -1132,7 +1178,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
         if (vm.IsSerialPortInvalid)
         {
-            ShowCategoryPage("Serial", "Serial");
+            ShowCategoryPage("Serial");
             SerialPortSelect.Focus();
         }
     }
@@ -1546,7 +1592,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             var isSocks4 = protocol is ProxyProtocol.Socks4 or ProxyProtocol.Socks4A;
             var isJumpHost = protocol == ProxyProtocol.JumpHost;
             Guid? nextProxyId = null;
-            if (isJumpHost && Guid.TryParse(nextProxySelect.SelectedOption?.Content?.ToString(), out var parsedNextProxyId))
+            if (isJumpHost && Guid.TryParse(GetSelectedOptionContent(nextProxySelect), out var parsedNextProxyId))
                 nextProxyId = parsedNextProxyId;
 
             result = new ProxySettings
@@ -1750,252 +1796,6 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         SelectOption(RloginTerminalSpeedSelect, vm.RloginTerminalSpeed);
     }
 
-    private void SetSelectedTerminalOptions()
-    {
-        if (DataContext is not SessionEditViewModel vm)
-            return;
-
-        SelectOption(TerminalTypeSelect, vm.TerminalType);
-        SelectOption(TerminalEncodingSelect, vm.TerminalEncoding);
-        SelectOption(TerminalSendLineEndingSelect, vm.TerminalSendLineEnding);
-        SelectOption(TerminalReceiveLineEndingSelect, vm.TerminalReceiveLineEnding);
-        SelectOption(TerminalKeyboardFunctionKeySelect, vm.TerminalKeyboardFunctionKeyMode);
-    }
-
-    private void SetSelectedAppearanceOptions()
-    {
-        if (DataContext is not SessionEditViewModel vm)
-            return;
-
-        SelectOption(AppearanceColorSchemeSelect, vm.AppearanceColorScheme);
-        SelectOption(AppearanceFontSelect, vm.AppearanceFontFamily);
-        SelectOption(AppearanceFontStyleSelect, vm.AppearanceFontStyle);
-        SelectOption(AppearanceFontSizeSelect, ((int)vm.AppearanceFontSize).ToString());
-        SelectOption(AppearanceCjkFontSelect, vm.AppearanceCjkFontFamily);
-        SelectOption(AppearanceCjkFontStyleSelect, vm.AppearanceCjkFontStyle);
-        SelectOption(AppearanceCjkFontSizeSelect, ((int)vm.AppearanceCjkFontSize).ToString());
-        SelectOption(AppearanceFontQualitySelect, vm.AppearanceFontQuality);
-        SelectOption(AppearanceBoldTextModeSelect, vm.AppearanceBoldTextMode);
-        SelectOption(AppearanceBackgroundImagePositionSelect, vm.AppearanceBackgroundImagePosition);
-        SelectOption(AppearanceHighlightSetSelect, vm.AppearanceHighlightSetId);
-    }
-
-    private void OnAppearanceSelectionChanged(object? sender, SelectSelectionChangedEventArgs e)
-    {
-        if (_isInitializingSelections || _isSyncingAppearanceColorPickers || DataContext is not SessionEditViewModel vm)
-            return;
-
-        vm.AppearanceColorScheme = GetSelectedOptionText(AppearanceColorSchemeSelect, vm.AppearanceColorScheme);
-        vm.AppearanceFontFamily = GetSelectedOptionText(AppearanceFontSelect, vm.AppearanceFontFamily);
-        vm.AppearanceFontStyle = GetSelectedOptionText(AppearanceFontStyleSelect, vm.AppearanceFontStyle);
-        vm.AppearanceFontSize = ParseDecimalOption(AppearanceFontSizeSelect, vm.AppearanceFontSize);
-        vm.AppearanceCjkFontFamily = GetSelectedOptionText(AppearanceCjkFontSelect, vm.AppearanceCjkFontFamily);
-        vm.AppearanceCjkFontStyle = GetSelectedOptionText(AppearanceCjkFontStyleSelect, vm.AppearanceCjkFontStyle);
-        vm.AppearanceCjkFontSize = ParseDecimalOption(AppearanceCjkFontSizeSelect, vm.AppearanceCjkFontSize);
-        vm.AppearanceFontQuality = GetSelectedOptionText(AppearanceFontQualitySelect, vm.AppearanceFontQuality);
-        vm.AppearanceBoldTextMode = GetSelectedOptionText(AppearanceBoldTextModeSelect, vm.AppearanceBoldTextMode);
-        vm.AppearanceBackgroundImagePosition = GetSelectedOptionText(AppearanceBackgroundImagePositionSelect, vm.AppearanceBackgroundImagePosition);
-        vm.AppearanceHighlightSetId = GetSelectedOptionText(AppearanceHighlightSetSelect, vm.AppearanceHighlightSetId);
-
-        if (ReferenceEquals(sender, AppearanceColorSchemeSelect))
-            SyncAppearanceColorPickersFromViewModel(vm);
-    }
-
-    private void OnAppearanceColorPickerValueChanged(object? sender, AtomUI.Desktop.Controls.ColorChangedEventArgs e)
-    {
-        if (_isInitializingSelections || _isSyncingAppearanceColorPickers || DataContext is not SessionEditViewModel vm)
-            return;
-
-        vm.AppearanceForegroundColor = AppearanceForegroundColorPicker.Value ?? vm.AppearanceForegroundColor;
-        vm.AppearanceBoldForegroundColor = AppearanceBoldForegroundColorPicker.Value ?? vm.AppearanceBoldForegroundColor;
-        vm.AppearanceBackgroundColor = AppearanceBackgroundColorPicker.Value ?? vm.AppearanceBackgroundColor;
-        vm.AppearanceCursorColor = AppearanceCursorColorPicker.Value ?? vm.AppearanceCursorColor;
-        vm.AppearanceCursorTextColor = AppearanceCursorTextColorPicker.Value ?? vm.AppearanceCursorTextColor;
-    }
-
-    private void SyncAppearanceColorPickersFromViewModel(SessionEditViewModel vm)
-    {
-        _isSyncingAppearanceColorPickers = true;
-        try
-        {
-            AppearanceForegroundColorPicker.SetCurrentValue(AtomUI.Desktop.Controls.ColorPicker.ValueProperty, vm.AppearanceForegroundColor);
-            AppearanceBoldForegroundColorPicker.SetCurrentValue(AtomUI.Desktop.Controls.ColorPicker.ValueProperty, vm.AppearanceBoldForegroundColor);
-            AppearanceBackgroundColorPicker.SetCurrentValue(AtomUI.Desktop.Controls.ColorPicker.ValueProperty, vm.AppearanceBackgroundColor);
-            AppearanceCursorColorPicker.SetCurrentValue(AtomUI.Desktop.Controls.ColorPicker.ValueProperty, vm.AppearanceCursorColor);
-            AppearanceCursorTextColorPicker.SetCurrentValue(AtomUI.Desktop.Controls.ColorPicker.ValueProperty, vm.AppearanceCursorTextColor);
-        }
-        finally
-        {
-            _isSyncingAppearanceColorPickers = false;
-        }
-    }
-
-    private async void OnEditAppearanceColorSchemeClick(object? sender, RoutedEventArgs e)
-    {
-        if (DataContext is not SessionEditViewModel vm)
-            return;
-
-        var updated = await ShowAppearanceColorSchemeDialogAsync(vm);
-        if (!updated)
-            return;
-
-        SyncAppearanceColorPickersFromViewModel(vm);
-    }
-
-    private async Task<bool> ShowAppearanceColorSchemeDialogAsync(SessionEditViewModel vm)
-    {
-        var result = false;
-        var schemeName = GetSelectedOptionHeader(AppearanceColorSchemeSelect, vm.AppearanceColorScheme);
-        var dialog = new AtomUI.Desktop.Controls.Window
-        {
-            Title = $"{schemeName}编辑",
-            Width = 404,
-            Height = 570,
-            MinWidth = 404,
-            MinHeight = 570,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            CanResize = false,
-            ShowInTaskbar = false
-        };
-
-        var foregroundPicker = CreateAppearanceColorPicker(vm.AppearanceForegroundColor, 176, true);
-        var boldForegroundPicker = CreateAppearanceColorPicker(vm.AppearanceBoldForegroundColor, 176, true);
-        var backgroundPicker = CreateAppearanceColorPicker(vm.AppearanceBackgroundColor, 176, true);
-        var ansiPickers = CreateAnsiColorPickers(vm.AppearanceAnsiColors);
-
-        var resetButton = CreateDialogButton("还原至默认值(S)", 324);
-        resetButton.HorizontalAlignment = HorizontalAlignment.Stretch;
-        resetButton.Click += (_, _) =>
-        {
-            var defaults = SessionEditViewModel.GetAppearanceColorSchemePalette(vm.AppearanceColorScheme);
-            SetColorPickerValue(foregroundPicker, Avalonia.Media.Color.Parse(defaults.Foreground));
-            SetColorPickerValue(boldForegroundPicker, Avalonia.Media.Color.Parse(defaults.BoldForeground));
-            SetColorPickerValue(backgroundPicker, Avalonia.Media.Color.Parse(defaults.Background));
-            var defaultAnsi = ParseAnsiColors(defaults.AnsiColors);
-            for (var i = 0; i < ansiPickers.Count && i < defaultAnsi.Count; i++)
-                SetColorPickerValue(ansiPickers[i], defaultAnsi[i]);
-        };
-
-        var okButton = CreateDialogButton("确定", 140);
-        okButton.ButtonType = AtomUI.Desktop.Controls.ButtonType.Primary;
-        var cancelButton = CreateDialogButton("取消", 140);
-
-        okButton.Click += (_, _) =>
-        {
-            vm.AppearanceForegroundColor = foregroundPicker.Value ?? vm.AppearanceForegroundColor;
-            vm.AppearanceBoldForegroundColor = boldForegroundPicker.Value ?? vm.AppearanceBoldForegroundColor;
-            vm.AppearanceBackgroundColor = backgroundPicker.Value ?? vm.AppearanceBackgroundColor;
-            vm.AppearanceAnsiColors = string.Join(';', ansiPickers.Select(picker => ToHex(picker.Value ?? Avalonia.Media.Colors.Black)));
-            result = true;
-            dialog.Close();
-        };
-        cancelButton.Click += (_, _) => dialog.Close();
-
-        var colorGroup = new Border
-        {
-            BorderBrush = Avalonia.Media.Brushes.LightGray,
-            BorderThickness = new Thickness(1),
-            Padding = new Thickness(10),
-            Child = CreateAppearanceColorForm(foregroundPicker, boldForegroundPicker, backgroundPicker)
-        };
-
-        var ansiGrid = new Grid
-        {
-            ColumnDefinitions = new ColumnDefinitions("36,6,36,6,36,6,36,6,36,6,36,6,36,6,36"),
-            RowDefinitions = new RowDefinitions("34,8,34"),
-            HorizontalAlignment = HorizontalAlignment.Center
-        };
-        for (var i = 0; i < ansiPickers.Count; i++)
-        {
-            var picker = ansiPickers[i];
-            ansiGrid.Children.Add(picker);
-            Grid.SetColumn(picker, (i % 8) * 2);
-            Grid.SetRow(picker, i / 8 * 2);
-        }
-
-        var ansiPanel = new StackPanel { Spacing = 12 };
-        ansiPanel.Children.Add(new Avalonia.Controls.TextBlock { Text = "ANSI 颜色", FontWeight = Avalonia.Media.FontWeight.SemiBold });
-        ansiPanel.Children.Add(ansiGrid);
-        ansiPanel.Children.Add(resetButton);
-
-        var ansiGroup = new Border
-        {
-            BorderBrush = Avalonia.Media.Brushes.LightGray,
-            BorderThickness = new Thickness(1),
-            Padding = new Thickness(10),
-            Child = ansiPanel
-        };
-
-        var contentPanel = new StackPanel
-        {
-            Spacing = 16,
-            Margin = new Thickness(20, 18, 20, 12)
-        };
-        contentPanel.Children.Add(new Avalonia.Controls.TextBlock { Text = "文本和背景颜色", FontWeight = Avalonia.Media.FontWeight.SemiBold });
-        contentPanel.Children.Add(colorGroup);
-        contentPanel.Children.Add(ansiGroup);
-
-        var buttons = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Spacing = 10,
-            Margin = new Thickness(20, 8, 20, 18)
-        };
-        buttons.Children.Add(okButton);
-        buttons.Children.Add(cancelButton);
-
-        var content = new DockPanel();
-        DockPanel.SetDock(buttons, Dock.Bottom);
-        content.Children.Add(buttons);
-        content.Children.Add(contentPanel);
-        dialog.Content = content;
-
-        await dialog.ShowDialog(this);
-        return result;
-    }
-
-    private static Grid CreateAppearanceColorForm(
-        AtomUI.Desktop.Controls.ColorPicker foregroundPicker,
-        AtomUI.Desktop.Controls.ColorPicker boldForegroundPicker,
-        AtomUI.Desktop.Controls.ColorPicker backgroundPicker)
-    {
-        var form = new Grid
-        {
-            ColumnDefinitions = new ColumnDefinitions("132,*"),
-            RowDefinitions = new RowDefinitions("Auto,12,Auto,12,Auto")
-        };
-
-        AddFormLabel(form, "正常文本(N):", 0);
-        form.Children.Add(foregroundPicker);
-        Grid.SetRow(foregroundPicker, 0);
-        Grid.SetColumn(foregroundPicker, 1);
-
-        AddFormLabel(form, "\"加粗\"文本(B):", 2);
-        form.Children.Add(boldForegroundPicker);
-        Grid.SetRow(boldForegroundPicker, 2);
-        Grid.SetColumn(boldForegroundPicker, 1);
-
-        AddFormLabel(form, "背景(A):", 4);
-        form.Children.Add(backgroundPicker);
-        Grid.SetRow(backgroundPicker, 4);
-        Grid.SetColumn(backgroundPicker, 1);
-
-        return form;
-    }
-
-    private static List<AtomUI.Desktop.Controls.ColorPicker> CreateAnsiColorPickers(string ansiColors)
-    {
-        var colors = ParseAnsiColors(ansiColors);
-        while (colors.Count < 16)
-            colors.Add(Avalonia.Media.Colors.Black);
-
-        return colors
-            .Take(16)
-            .Select(color => CreateAppearanceColorPicker(color, 36, false))
-            .ToList();
-    }
-
     private static AtomUI.Desktop.Controls.ColorPicker CreateAppearanceColorPicker(
         Avalonia.Media.Color color,
         double width,
@@ -2040,33 +1840,6 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             : Avalonia.Media.Color.Parse(fallback);
     }
 
-    private void OnTerminalKeyboardFunctionKeySelectionChanged(object? sender, SelectSelectionChangedEventArgs e)
-    {
-        if (_isInitializingSelections || DataContext is not SessionEditViewModel vm)
-            return;
-
-        vm.TerminalKeyboardFunctionKeyMode = GetSelectedOptionText(
-            TerminalKeyboardFunctionKeySelect,
-            vm.TerminalKeyboardFunctionKeyMode);
-    }
-
-    private async void OnBrowseTerminalKeyboardMappingFileClick(object? sender, RoutedEventArgs e)
-    {
-        var topLevel = TopLevel.GetTopLevel(this);
-        if (topLevel == null)
-            return;
-
-        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-        {
-            Title = "Select keyboard mapping file",
-            AllowMultiple = false
-        });
-
-        var file = files.FirstOrDefault();
-        if (file != null)
-            TerminalKeyboardMappingFileBox.Text = file.Path.LocalPath;
-    }
-
     private async Task<LoginScriptRule?> ShowLoginScriptRuleDialogAsync(LoginScriptRule? source)
     {
         var rule = source ?? new LoginScriptRule();
@@ -2103,6 +1876,13 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             IsChecked = rule.HideText
         };
 
+        void UpdateSendTextVisibility()
+        {
+            var isHidden = hideTextBox.IsChecked == true;
+            sendBox.PasswordChar = isHidden ? '*' : '\0';
+            sendBox.RevealPassword = !isHidden;
+        }
+
         var okButton = CreateDialogButton("确定", 126);
         okButton.ButtonType = AtomUI.Desktop.Controls.ButtonType.Primary;
         var cancelButton = CreateDialogButton("取消", 126);
@@ -2113,7 +1893,10 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         }
 
         expectBox.GetObservable(LineEdit.TextProperty).Subscribe(_ => UpdateOkButton());
+        hideTextBox.GetObservable(AtomUI.Desktop.Controls.CheckBox.IsCheckedProperty)
+            .Subscribe(_ => UpdateSendTextVisibility());
         UpdateOkButton();
+        UpdateSendTextVisibility();
 
         okButton.Click += (_, _) =>
         {
@@ -2446,6 +2229,32 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         SelectOption(RdpAudioModeSelect, vm.RdpAudioMode);
     }
 
+    private void SetSelectedSessionDefaultOptions()
+    {
+        if (DataContext is not SessionEditViewModel vm)
+            return;
+
+        SelectOption(SessionTerminalTypeSelect, vm.TerminalType);
+        SelectOption(SessionTerminalEncodingSelect, vm.TerminalEncoding);
+        SelectOption(SessionTerminalSendLineEndingSelect, vm.TerminalSendLineEnding);
+        SelectOption(SessionTerminalReceiveLineEndingSelect, vm.TerminalReceiveLineEnding);
+        SelectOption(SessionAppearanceColorSchemeSelect, vm.AppearanceColorScheme);
+        SelectOption(SessionAppearanceFontSelect, vm.AppearanceFontFamily);
+        SelectOption(SessionAppearanceFontStyleSelect, vm.AppearanceFontStyle);
+        SelectOption(SessionAppearanceCjkFontSelect, vm.AppearanceCjkFontFamily);
+        SelectOption(SessionAppearanceCjkFontStyleSelect, vm.AppearanceCjkFontStyle);
+        SelectOption(SessionAppearanceFontQualitySelect, vm.AppearanceFontQuality);
+        SelectOption(SessionAppearanceBoldTextModeSelect, vm.AppearanceBoldTextMode);
+        SelectOption(SessionAppearanceBackgroundImagePositionSelect, vm.AppearanceBackgroundImagePosition);
+        SelectOption(SessionAppearanceHighlightSetSelect, vm.AppearanceHighlightSetId);
+        SelectOption(SessionFunctionKeySelect, vm.TerminalKeyboardFunctionKeyMode);
+        SelectOption(SessionTerminalVtCursorKeyModeSelect, vm.TerminalVtCursorKeyMode);
+        SelectOption(SessionTerminalVtNumericKeypadModeSelect, vm.TerminalVtNumericKeypadMode);
+        SelectOption(SessionLogEncodingSelect, vm.AdvancedLogEncoding);
+        SelectOption(SessionAdvancedIpVersionSelect, vm.AdvancedIpVersion);
+        ApplyAppearancePreviewTextOptions(vm.AppearanceFontQuality);
+    }
+
     private void ApplyRdpPresetSize(SessionEditViewModel vm)
     {
         var size = vm.RdpWindowSize;
@@ -2465,6 +2274,45 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         select.SelectedOption = select.OptionsSource?
             .FirstOrDefault(option => string.Equals(option.Content?.ToString(), value, StringComparison.OrdinalIgnoreCase));
     }
+
+    private void ApplyAppearancePreviewTextOptions(string fontQuality)
+    {
+        TextOptions.SetTextRenderingMode(SessionAppearancePreviewBorder, GetTextRenderingMode(fontQuality));
+        TextOptions.SetTextHintingMode(SessionAppearancePreviewBorder, GetTextHintingMode(fontQuality));
+        TextOptions.SetBaselinePixelAlignment(SessionAppearancePreviewBorder, GetBaselinePixelAlignment(fontQuality));
+    }
+
+    private static TextRenderingMode GetTextRenderingMode(string? value)
+        => value switch
+        {
+            "NonAntiAliased" => TextRenderingMode.Alias,
+            "AntiAliased" => TextRenderingMode.Antialias,
+            "ClearType" => TextRenderingMode.SubpixelAntialias,
+            "NaturalClearType" => TextRenderingMode.SubpixelAntialias,
+            _ => TextRenderingMode.Unspecified
+        };
+
+    private static TextHintingMode GetTextHintingMode(string? value)
+        => value switch
+        {
+            "Draft" => TextHintingMode.None,
+            "Proof" => TextHintingMode.Strong,
+            "NonAntiAliased" => TextHintingMode.None,
+            "AntiAliased" => TextHintingMode.Light,
+            "ClearType" => TextHintingMode.Strong,
+            "NaturalClearType" => TextHintingMode.Strong,
+            _ => TextHintingMode.Unspecified
+        };
+
+    private static BaselinePixelAlignment GetBaselinePixelAlignment(string? value)
+        => value switch
+        {
+            "NonAntiAliased" => BaselinePixelAlignment.Aligned,
+            "AntiAliased" => BaselinePixelAlignment.Aligned,
+            "ClearType" => BaselinePixelAlignment.Aligned,
+            "NaturalClearType" => BaselinePixelAlignment.Aligned,
+            _ => BaselinePixelAlignment.Unspecified
+        };
 
     private static string GetSelectedOptionText(Select select, string fallback)
     {
@@ -2667,10 +2515,16 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
     private static ProxyProtocol GetSelectedProxyProtocol(Select select)
     {
-        var value = select.SelectedOption?.Content?.ToString();
+        var value = GetSelectedOptionContent(select);
         return Enum.TryParse<ProxyProtocol>(value, out var protocol)
             ? protocol
             : ProxyProtocol.Socks5;
+    }
+
+    private static string? GetSelectedOptionContent(Select select)
+    {
+        var selectedOption = select.SelectedOption ?? select.SelectedOptions?.FirstOrDefault();
+        return selectedOption?.Content?.ToString();
     }
 
     private static ObservableCollection<ISelectOption> CreateNextProxyOptions(
@@ -2961,4 +2815,5 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             ? []
             : value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
+
 }
