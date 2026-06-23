@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-ChiXueSsh is a single-project Avalonia desktop SSH client targeting .NET 10. The application entry points are `Program.cs`, `App.axaml`, and `App.axaml.cs`.
+CxShell is a single-project Avalonia desktop terminal and remote session client targeting .NET 10. The application entry points are `Program.cs`, `App.axaml`, and `App.axaml.cs`.
 
 - `Views/`: Avalonia `.axaml` views and their code-behind files.
 - `ViewModels/`: MVVM presentation logic, commands, and observable state.

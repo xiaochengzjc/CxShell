@@ -187,6 +187,7 @@ public class HighlightSet
 public class ApplicationSettings
 {
     public SessionInfo GlobalDefaults { get; set; } = CreateDefaultSession();
+    public string UiLanguage { get; set; } = "zh-CN";
 
     public static SessionInfo CreateDefaultSession()
     {
@@ -223,6 +224,7 @@ public class SessionInfo
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public AuthMethod AuthMethod { get; set; } = AuthMethod.Password;
 
+    public string Password { get; set; } = string.Empty;
     public string? PrivateKeyPath { get; set; }
     public bool AutoReconnect { get; set; } = true;
     public int ReconnectIntervalSeconds { get; set; } = 30;
@@ -243,7 +245,7 @@ public class SessionInfo
     public string TerminalEncoding { get; set; } = "utf-8";
     public bool TerminalTreatAmbiguousAsWide { get; set; }
     public string TerminalSendLineEnding { get; set; } = "CR";
-    public string TerminalReceiveLineEnding { get; set; } = "CRLF";
+    public string TerminalReceiveLineEnding { get; set; } = "AUTO";
     public string TerminalKeyboardFunctionKeyMode { get; set; } = "Default";
     public string TerminalKeyboardMappingFile { get; set; } = string.Empty;
     public string TerminalDeleteKeySequence { get; set; } = "VT220";
@@ -265,6 +267,7 @@ public class SessionInfo
     public bool TerminalAdvancedScrollToBottomOnInputOutput { get; set; } = true;
     public bool TerminalAdvancedSuspendScrollToBottomOnScrollLock { get; set; }
     public bool TerminalAdvancedScrollToBottomByKey { get; set; }
+    public bool TerminalAdvancedDestructiveBackspace { get; set; }
     public bool TerminalAdvancedDuplicateSessionCd { get; set; } = true;
     public string TerminalAdvancedPreinputString { get; set; } = string.Empty;
     public bool TerminalAdvancedUseRxvtHomeEnd { get; set; }
@@ -373,6 +376,11 @@ public class SessionInfo
     public string FileTransferUploadDirectory { get; set; } = string.Empty;
     public string FileTransferDuplicateAction { get; set; } = "AutoRename";
     public string FileTransferUploadProtocol { get; set; } = "Zmodem";
+    public int FileTransferXymodemBlockSize { get; set; } = 128;
+    public string FileTransferXmodemUploadCommand { get; set; } = "rx";
+    public string FileTransferYmodemUploadCommand { get; set; } = "rb -E";
+    public bool FileTransferZmodemAutoActivate { get; set; } = true;
+    public string FileTransferZmodemUploadCommand { get; set; } = "rz -E";
     public string SerialPortName { get; set; } = "COM1";
     public int SerialBaudRate { get; set; } = 9600;
     public int SerialDataBits { get; set; } = 8;

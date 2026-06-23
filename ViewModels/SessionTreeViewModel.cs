@@ -53,9 +53,35 @@ public partial class SessionTreeViewModel : ObservableObject
     public SessionInfo? SelectedSession => SelectedNode?.Session;
     public bool CanUseSelectedSession => SelectedSession != null;
     public bool CanPaste => _copiedSession != null;
+    public bool CanMoveSelectedSessionUp => GetSelectedVisibleSessionIndex() > 0;
+    public bool CanMoveSelectedSessionDown
+    {
+        get
+        {
+            var index = GetSelectedVisibleSessionIndex();
+            return index >= 0 && index < SessionRows.Count - 1;
+        }
+    }
 
     public MainWindowViewModel MainWindow => _mainWindow;
     public ApplicationSettings Settings => _data.Settings;
+    private LocalizationService L => LocalizationService.Shared;
+    public string SessionManagerTitle => L.Text("SessionManager.Title");
+    public string NewText => L.Text("SessionManager.New");
+    public string CopyText => L.Text("SessionManager.Copy");
+    public string PasteText => L.Text("SessionManager.Paste");
+    public string PropertiesText => L.Text("SessionManager.Properties");
+    public string DeleteText => L.Text("SessionManager.Delete");
+    public string MoveUpText => L.Text("SessionManager.MoveUp");
+    public string MoveDownText => L.Text("SessionManager.MoveDown");
+    public string SearchPlaceholderText => L.Text("SessionManager.SearchPlaceholder");
+    public string ConnectText => L.Text("Toolbar.Connect");
+    public string CloseText => L.Text("SessionManager.Close");
+    public string ColumnNameText => L.Text("SessionManager.ColumnName");
+    public string ColumnHostText => L.Text("SessionManager.ColumnHost");
+    public string ColumnUsernameText => L.Text("SessionManager.ColumnUsername");
+    public string ColumnProtocolText => L.Text("SessionManager.ColumnProtocol");
+    public string ColumnPortText => L.Text("SessionManager.ColumnPort");
 
     public SessionTreeViewModel(MainWindowViewModel mainWindow)
     {
@@ -64,7 +90,29 @@ public partial class SessionTreeViewModel : ObservableObject
         _data = _storage.Load();
         _data.Settings ??= new ApplicationSettings();
         _data.Settings.GlobalDefaults ??= ApplicationSettings.CreateDefaultSession();
+        LocalizationService.Shared.SetLanguage(_data.Settings.UiLanguage);
+        LocalizationService.Shared.LanguageChanged += (_, _) => NotifyLocalizationChanged();
         LoadSessions();
+    }
+
+    private void NotifyLocalizationChanged()
+    {
+        OnPropertyChanged(nameof(SessionManagerTitle));
+        OnPropertyChanged(nameof(NewText));
+        OnPropertyChanged(nameof(CopyText));
+        OnPropertyChanged(nameof(PasteText));
+        OnPropertyChanged(nameof(PropertiesText));
+        OnPropertyChanged(nameof(DeleteText));
+        OnPropertyChanged(nameof(MoveUpText));
+        OnPropertyChanged(nameof(MoveDownText));
+        OnPropertyChanged(nameof(SearchPlaceholderText));
+        OnPropertyChanged(nameof(ConnectText));
+        OnPropertyChanged(nameof(CloseText));
+        OnPropertyChanged(nameof(ColumnNameText));
+        OnPropertyChanged(nameof(ColumnHostText));
+        OnPropertyChanged(nameof(ColumnUsernameText));
+        OnPropertyChanged(nameof(ColumnProtocolText));
+        OnPropertyChanged(nameof(ColumnPortText));
     }
 
     public SessionInfo CreateSessionFromGlobalDefaults()
@@ -96,11 +144,11 @@ public partial class SessionTreeViewModel : ObservableObject
         var effective = CloneSession(defaults, session.Name);
         effective.Id = session.Id;
         effective.GroupId = session.GroupId;
-        ApplySessionConnectionOverrides(effective, session);
+        CopySessionValues(effective, session);
         return effective;
     }
 
-    private static void ApplySessionConnectionOverrides(SessionInfo target, SessionInfo source)
+    public static void CopySessionValues(SessionInfo target, SessionInfo source)
     {
         target.Proxy = CloneProxy(source.Proxy);
         target.ProxyServers = source.ProxyServers.Select(CloneProxy).ToList();
@@ -110,6 +158,7 @@ public partial class SessionTreeViewModel : ObservableObject
         target.Username = source.Username;
         target.Protocol = source.Protocol;
         target.AuthMethod = source.AuthMethod;
+        target.Password = source.Password;
         target.PrivateKeyPath = source.PrivateKeyPath;
         target.AutoReconnect = source.AutoReconnect;
         target.ReconnectIntervalSeconds = source.ReconnectIntervalSeconds;
@@ -168,12 +217,129 @@ public partial class SessionTreeViewModel : ObservableObject
         target.RdpRedirectDrives = source.RdpRedirectDrives;
         target.RdpAudioMode = source.RdpAudioMode;
         target.RdpAudioCapture = source.RdpAudioCapture;
+        target.TerminalFixedSize = source.TerminalFixedSize;
+        target.TerminalResetSizeOnConnect = source.TerminalResetSizeOnConnect;
+        target.TerminalColumns = source.TerminalColumns;
+        target.TerminalRows = source.TerminalRows;
+        target.TerminalType = source.TerminalType;
+        target.TerminalScrollbackSize = source.TerminalScrollbackSize;
+        target.TerminalPushClearedScreenToScrollback = source.TerminalPushClearedScreenToScrollback;
+        target.TerminalEncoding = source.TerminalEncoding;
+        target.TerminalTreatAmbiguousAsWide = source.TerminalTreatAmbiguousAsWide;
+        target.TerminalSendLineEnding = source.TerminalSendLineEnding;
+        target.TerminalReceiveLineEnding = source.TerminalReceiveLineEnding;
+        target.TerminalKeyboardFunctionKeyMode = source.TerminalKeyboardFunctionKeyMode;
+        target.TerminalKeyboardMappingFile = source.TerminalKeyboardMappingFile;
+        target.TerminalDeleteKeySequence = source.TerminalDeleteKeySequence;
+        target.TerminalBackspaceKeySequence = source.TerminalBackspaceKeySequence;
+        target.TerminalLeftAltAsMeta = source.TerminalLeftAltAsMeta;
+        target.TerminalRightAltAsMeta = source.TerminalRightAltAsMeta;
+        target.TerminalCtrlAltAsAltGr = source.TerminalCtrlAltAsAltGr;
+        target.TerminalVtAutoWrapMode = source.TerminalVtAutoWrapMode;
+        target.TerminalVtOriginMode = source.TerminalVtOriginMode;
+        target.TerminalVtReverseVideoMode = source.TerminalVtReverseVideoMode;
+        target.TerminalVtNewLineMode = source.TerminalVtNewLineMode;
+        target.TerminalVtInsertMode = source.TerminalVtInsertMode;
+        target.TerminalVtEchoMode = source.TerminalVtEchoMode;
+        target.TerminalVtCursorKeyMode = source.TerminalVtCursorKeyMode;
+        target.TerminalVtNumericKeypadMode = source.TerminalVtNumericKeypadMode;
+        target.TerminalAdvancedUseApplicationCursorMode = source.TerminalAdvancedUseApplicationCursorMode;
+        target.TerminalAdvancedShiftLimitsApplicationCursorMode = source.TerminalAdvancedShiftLimitsApplicationCursorMode;
+        target.TerminalAdvancedClearScreenBackground = source.TerminalAdvancedClearScreenBackground;
+        target.TerminalAdvancedScrollToBottomOnInputOutput = source.TerminalAdvancedScrollToBottomOnInputOutput;
+        target.TerminalAdvancedSuspendScrollToBottomOnScrollLock = source.TerminalAdvancedSuspendScrollToBottomOnScrollLock;
+        target.TerminalAdvancedScrollToBottomByKey = source.TerminalAdvancedScrollToBottomByKey;
+        target.TerminalAdvancedDestructiveBackspace = source.TerminalAdvancedDestructiveBackspace;
+        target.TerminalAdvancedDuplicateSessionCd = source.TerminalAdvancedDuplicateSessionCd;
+        target.TerminalAdvancedPreinputString = source.TerminalAdvancedPreinputString;
+        target.TerminalAdvancedUseRxvtHomeEnd = source.TerminalAdvancedUseRxvtHomeEnd;
+        target.TerminalAdvancedDisableBlinkingText = source.TerminalAdvancedDisableBlinkingText;
+        target.TerminalAdvancedDisableTitleChange = source.TerminalAdvancedDisableTitleChange;
+        target.TerminalAdvancedDisableTerminalPrint = source.TerminalAdvancedDisableTerminalPrint;
+        target.TerminalAdvancedDisableAlternateScreen = source.TerminalAdvancedDisableAlternateScreen;
+        target.TerminalAdvancedIgnoreResizeRequest = source.TerminalAdvancedIgnoreResizeRequest;
+        target.TerminalAdvancedAnswerback = source.TerminalAdvancedAnswerback;
+        target.TerminalAdvancedUseBuiltinLineDrawing = source.TerminalAdvancedUseBuiltinLineDrawing;
+        target.TerminalAdvancedUseBuiltinPowerline = source.TerminalAdvancedUseBuiltinPowerline;
+        target.AppearanceColorScheme = source.AppearanceColorScheme;
+        target.AppearanceForegroundColor = source.AppearanceForegroundColor;
+        target.AppearanceBoldForegroundColor = source.AppearanceBoldForegroundColor;
+        target.AppearanceBackgroundColor = source.AppearanceBackgroundColor;
+        target.AppearanceAnsiColors = source.AppearanceAnsiColors;
+        target.AppearanceFontFamily = source.AppearanceFontFamily;
+        target.AppearanceFontStyle = source.AppearanceFontStyle;
+        target.AppearanceFontSize = source.AppearanceFontSize;
+        target.AppearanceCjkFontFamily = source.AppearanceCjkFontFamily;
+        target.AppearanceCjkFontStyle = source.AppearanceCjkFontStyle;
+        target.AppearanceCjkFontSize = source.AppearanceCjkFontSize;
+        target.AppearanceUseVariablePitchFont = source.AppearanceUseVariablePitchFont;
+        target.AppearanceFontQuality = source.AppearanceFontQuality;
+        target.AppearanceBoldTextMode = source.AppearanceBoldTextMode;
+        target.AppearanceCursorColor = source.AppearanceCursorColor;
+        target.AppearanceCursorTextColor = source.AppearanceCursorTextColor;
+        target.AppearanceUseBlinkingCursor = source.AppearanceUseBlinkingCursor;
+        target.AppearanceCursorBlinkSpeedMilliseconds = source.AppearanceCursorBlinkSpeedMilliseconds;
+        target.AppearanceCursorShape = source.AppearanceCursorShape;
+        target.AppearanceWindowPaddingTop = source.AppearanceWindowPaddingTop;
+        target.AppearanceWindowPaddingBottom = source.AppearanceWindowPaddingBottom;
+        target.AppearanceWindowPaddingLeft = source.AppearanceWindowPaddingLeft;
+        target.AppearanceWindowPaddingRight = source.AppearanceWindowPaddingRight;
+        target.AppearanceLineSpacing = source.AppearanceLineSpacing;
+        target.AppearanceCharacterSpacing = source.AppearanceCharacterSpacing;
+        target.AppearanceTabColorMode = source.AppearanceTabColorMode;
+        target.AppearanceTabCustomColor = source.AppearanceTabCustomColor;
+        target.AppearanceBackgroundImagePath = source.AppearanceBackgroundImagePath;
+        target.AppearanceBackgroundImagePosition = source.AppearanceBackgroundImagePosition;
+        target.AppearanceHighlightSetId = source.AppearanceHighlightSetId;
+        target.AppearanceHighlightSets = new ObservableCollection<HighlightSet>(
+            source.AppearanceHighlightSets.Select(SessionEditViewModel.CloneHighlightSet));
+        target.FileTransferAlwaysAskDownloadFolder = source.FileTransferAlwaysAskDownloadFolder;
+        target.FileTransferDownloadDirectory = source.FileTransferDownloadDirectory;
+        target.FileTransferUploadDirectory = source.FileTransferUploadDirectory;
+        target.FileTransferDuplicateAction = source.FileTransferDuplicateAction;
+        target.FileTransferUploadProtocol = source.FileTransferUploadProtocol;
+        target.FileTransferXymodemBlockSize = source.FileTransferXymodemBlockSize;
+        target.FileTransferXmodemUploadCommand = source.FileTransferXmodemUploadCommand;
+        target.FileTransferYmodemUploadCommand = source.FileTransferYmodemUploadCommand;
+        target.FileTransferZmodemAutoActivate = source.FileTransferZmodemAutoActivate;
+        target.FileTransferZmodemUploadCommand = source.FileTransferZmodemUploadCommand;
+        target.AdvancedQuickCommandSet = source.AdvancedQuickCommandSet;
+        target.AdvancedDisableQuickCommandShortcuts = source.AdvancedDisableQuickCommandShortcuts;
+        target.AdvancedFtpPort = source.AdvancedFtpPort;
+        target.AdvancedCharacterDelayMilliseconds = source.AdvancedCharacterDelayMilliseconds;
+        target.AdvancedUseLineDelay = source.AdvancedUseLineDelay;
+        target.AdvancedLineDelayMilliseconds = source.AdvancedLineDelayMilliseconds;
+        target.AdvancedUsePromptDelay = source.AdvancedUsePromptDelay;
+        target.AdvancedPromptText = source.AdvancedPromptText;
+        target.AdvancedPromptMaxWaitMilliseconds = source.AdvancedPromptMaxWaitMilliseconds;
+        target.AdvancedUseNagle = source.AdvancedUseNagle;
+        target.AdvancedIpVersion = source.AdvancedIpVersion;
+        target.AdvancedTraceSshProtocol = source.AdvancedTraceSshProtocol;
+        target.AdvancedTraceSshTunneling = source.AdvancedTraceSshTunneling;
+        target.AdvancedTraceSshPackets = source.AdvancedTraceSshPackets;
+        target.AdvancedTraceTelnetOptions = source.AdvancedTraceTelnetOptions;
+        target.AdvancedBellMode = source.AdvancedBellMode;
+        target.AdvancedBellSoundPath = source.AdvancedBellSoundPath;
+        target.AdvancedBellFlashInactiveWindow = source.AdvancedBellFlashInactiveWindow;
+        target.AdvancedBellIgnoreRepeatedSeconds = source.AdvancedBellIgnoreRepeatedSeconds;
+        target.AdvancedBellReactivateAfterSeconds = source.AdvancedBellReactivateAfterSeconds;
+        target.AdvancedLogFilePath = source.AdvancedLogFilePath;
+        target.AdvancedLogOverwriteExisting = source.AdvancedLogOverwriteExisting;
+        target.AdvancedLogStartOnConnect = source.AdvancedLogStartOnConnect;
+        target.AdvancedLogPromptFileOnStart = source.AdvancedLogPromptFileOnStart;
+        target.AdvancedLogUseRtf = source.AdvancedLogUseRtf;
+        target.AdvancedLogIncludeTerminalCodes = source.AdvancedLogIncludeTerminalCodes;
+        target.AdvancedLogEncoding = source.AdvancedLogEncoding;
+        target.AdvancedLogWriteTimestamp = source.AdvancedLogWriteTimestamp;
+        target.AdvancedLogTimestampFormat = source.AdvancedLogTimestampFormat;
     }
 
     partial void OnSelectedNodeChanged(SessionNodeViewModel? value)
     {
         OnPropertyChanged(nameof(SelectedSession));
         OnPropertyChanged(nameof(CanUseSelectedSession));
+        OnPropertyChanged(nameof(CanMoveSelectedSessionUp));
+        OnPropertyChanged(nameof(CanMoveSelectedSessionDown));
     }
 
     partial void OnSessionSearchTextChanged(string value)
@@ -222,6 +388,24 @@ public partial class SessionTreeViewModel : ObservableObject
             SelectedNode = SessionRows.FirstOrDefault(node => node.Session?.Id == selectedSessionId.Value);
         else
             SelectedNode = null;
+
+        OnPropertyChanged(nameof(CanMoveSelectedSessionUp));
+        OnPropertyChanged(nameof(CanMoveSelectedSessionDown));
+    }
+
+    private int GetSelectedVisibleSessionIndex()
+    {
+        var selectedSessionId = SelectedSession?.Id;
+        if (!selectedSessionId.HasValue)
+            return -1;
+
+        for (var i = 0; i < SessionRows.Count; i++)
+        {
+            if (SessionRows[i].Session?.Id == selectedSessionId.Value)
+                return i;
+        }
+
+        return -1;
     }
 
     private IEnumerable<SessionInfo> GetOrderedSessions()
@@ -264,7 +448,7 @@ public partial class SessionTreeViewModel : ObservableObject
         if (existing != null)
         {
             existing.Name = session.Name;
-            ApplySessionConnectionOverrides(existing, session);
+            CopySessionValues(existing, session);
             _storage.Save(_data);
             LoadSessions();
         }
@@ -277,6 +461,52 @@ public partial class SessionTreeViewModel : ObservableObject
         _storage.Save(_data);
         LoadSessions();
         SelectedNode = null;
+    }
+
+    public void MoveSelectedSessionUp()
+    {
+        MoveSelectedSession(-1);
+    }
+
+    public void MoveSelectedSessionDown()
+    {
+        MoveSelectedSession(1);
+    }
+
+    private void MoveSelectedSession(int direction)
+    {
+        var selected = SelectedSession;
+        if (selected == null)
+            return;
+
+        var visibleSessions = SessionRows
+            .Select(row => row.Session)
+            .Where(session => session != null)
+            .Cast<SessionInfo>()
+            .ToList();
+        var visibleIndex = visibleSessions.FindIndex(session => session.Id == selected.Id);
+        var targetVisibleIndex = visibleIndex + direction;
+        if (visibleIndex < 0 || targetVisibleIndex < 0 || targetVisibleIndex >= visibleSessions.Count)
+            return;
+
+        var target = visibleSessions[targetVisibleIndex];
+        var selectedIndex = _data.Sessions.FindIndex(session => session.Id == selected.Id);
+        var targetIndex = _data.Sessions.FindIndex(session => session.Id == target.Id);
+        if (selectedIndex < 0 || targetIndex < 0)
+            return;
+
+        (_data.Sessions[selectedIndex], _data.Sessions[targetIndex]) =
+            (_data.Sessions[targetIndex], _data.Sessions[selectedIndex]);
+        NormalizeSessionSortOrders();
+        _storage.Save(_data);
+        LoadSessions();
+        SelectedNode = SessionRows.FirstOrDefault(node => node.Session?.Id == selected.Id);
+    }
+
+    private void NormalizeSessionSortOrders()
+    {
+        for (var i = 0; i < _data.Sessions.Count; i++)
+            _data.Sessions[i].SortOrder = i;
     }
 
     public bool IsQuickSession(SessionInfo session)
@@ -356,7 +586,7 @@ public partial class SessionTreeViewModel : ObservableObject
 
     private string CreateUniqueCopyName(string sourceName)
     {
-        var baseName = $"{sourceName} - 副本";
+        var baseName = string.Format(LocalizationService.Shared.Text("Session.CopySuffix"), sourceName);
         var name = baseName;
         var suffix = 2;
 
@@ -383,6 +613,7 @@ public partial class SessionTreeViewModel : ObservableObject
             SelectedProxyId = source.SelectedProxyId,
             Protocol = source.Protocol,
             AuthMethod = source.AuthMethod,
+            Password = source.Password,
             PrivateKeyPath = source.PrivateKeyPath,
             AutoReconnect = source.AutoReconnect,
             ReconnectIntervalSeconds = source.ReconnectIntervalSeconds,
@@ -518,6 +749,11 @@ public partial class SessionTreeViewModel : ObservableObject
             FileTransferUploadDirectory = source.FileTransferUploadDirectory,
             FileTransferDuplicateAction = source.FileTransferDuplicateAction,
             FileTransferUploadProtocol = source.FileTransferUploadProtocol,
+            FileTransferXymodemBlockSize = source.FileTransferXymodemBlockSize,
+            FileTransferXmodemUploadCommand = source.FileTransferXmodemUploadCommand,
+            FileTransferYmodemUploadCommand = source.FileTransferYmodemUploadCommand,
+            FileTransferZmodemAutoActivate = source.FileTransferZmodemAutoActivate,
+            FileTransferZmodemUploadCommand = source.FileTransferZmodemUploadCommand,
             AdvancedBellMode = source.AdvancedBellMode,
             AdvancedBellSoundPath = source.AdvancedBellSoundPath,
             AdvancedBellFlashInactiveWindow = source.AdvancedBellFlashInactiveWindow,

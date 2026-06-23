@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:services="using:ChiXueSsh.Services"
              xmlns:atom="https://atomui.net"
              xmlns:vm="using:ChiXueSsh.ViewModels"
              xmlns:controls="using:ChiXueSsh.Controls"
@@ -7,7 +8,7 @@
              x:DataType="vm:TerminalViewModel">
     <Grid>
         <!-- 连接中提示 -->
-        <atom:TextBlock Text="正在连接..."
+        <atom:TextBlock Text="{Binding ConnectingText}"
                         HorizontalAlignment="Center" VerticalAlignment="Center"
                         Opacity="0.5" FontSize="16"
                         IsVisible="{Binding !IsConnected}"/>
@@ -33,10 +34,16 @@
                                   ScrollToBottomOnInputOutput="{Binding ScrollToBottomOnInputOutput}"
                                   SuspendScrollToBottomOnScrollLock="{Binding SuspendScrollToBottomOnScrollLock}"
                                   ScrollToBottomByKey="{Binding ScrollToBottomByKey}"
+                                  DestructiveBackspace="{Binding DestructiveBackspace}"
                                   UseRxvtHomeEnd="{Binding UseRxvtHomeEnd}"
                                   TerminalFontFamily="{Binding AppearanceFontFamily}"
                                   TerminalFontStyle="{Binding AppearanceFontStyle}"
                                   TerminalFontSize="{Binding AppearanceFontSize}"
+                                  TerminalCjkFontFamily="{Binding AppearanceCjkFontFamily}"
+                                  TerminalCjkFontStyle="{Binding AppearanceCjkFontStyle}"
+                                  TerminalCjkFontSize="{Binding AppearanceCjkFontSize}"
+                                  UseVariablePitchFont="{Binding AppearanceUseVariablePitchFont}"
+                                  TerminalFontQuality="{Binding AppearanceFontQuality}"
                                   CursorColor="{Binding AppearanceCursorColor}"
                                   CursorTextColor="{Binding AppearanceCursorTextColor}"
                                   CursorShape="{Binding AppearanceCursorShape}"
@@ -60,13 +67,13 @@
                     Padding="0,4"
                     MinWidth="120">
                 <StackPanel Spacing="0">
-                    <atom:Button x:Name="MenuCopyBtn" Content="复制"
+                    <atom:Button x:Name="MenuCopyBtn" Content="{Binding CopyText}"
                                  Background="Transparent" BorderThickness="0"
                                  HorizontalAlignment="Stretch"
                                  HorizontalContentAlignment="Left"
                                  Padding="16,6" FontSize="13"
                                  Foreground="{atom:SharedTokenResource ColorText}"/>
-                    <atom:Button x:Name="MenuPasteBtn" Content="粘贴"
+                    <atom:Button x:Name="MenuPasteBtn" Content="{Binding PasteText}"
                                  Background="Transparent" BorderThickness="0"
                                  HorizontalAlignment="Stretch"
                                  HorizontalContentAlignment="Left"

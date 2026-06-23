@@ -11,6 +11,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
 using ChiXueSsh.Models;
 using ChiXueSsh.Services;
 using ChiXueSsh.Views;
@@ -19,9 +20,18 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace ChiXueSsh.ViewModels;
 
+public enum TabArrangementMode
+{
+    Single,
+    Vertical,
+    Horizontal,
+    Tile
+}
+
 public partial class MainWindowViewModel : ObservableObject
 {
     private readonly SessionTreeViewModel _sessionTreeVm;
+    private readonly LocalizationService _localization = LocalizationService.Shared;
 
     [ObservableProperty] private SessionTreeViewModel _sessionTree;
     [ObservableProperty] private bool _isMonitorVisible = false;
@@ -33,35 +43,99 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty] private bool _isDarkMode;
     [ObservableProperty] private bool _isTerminalFullScreen;
     [ObservableProperty] private bool _isFullScreenHintVisible;
+    [ObservableProperty] private TabArrangementMode _tabArrangementMode = TabArrangementMode.Single;
 
     public ObservableCollection<TerminalTabViewModel> Tabs { get; } = new();
+    public ObservableCollection<TerminalTabGroupViewModel> TabGroups { get; } = new();
+    public ObservableCollection<TileTabGroupRowViewModel> TileRows { get; } = new();
 
     [ObservableProperty] private TerminalTabViewModel? _selectedTab;
+    [ObservableProperty] private TerminalTabGroupViewModel? _selectedTabGroup;
 
     public bool HasTabs => Tabs.Count > 0;
     public bool IsMainChromeVisible => !IsTerminalFullScreen;
     public bool IsSftpPanelVisible => IsSftpVisible && !IsTerminalFullScreen;
     public bool IsMonitorPanelVisible => IsMonitorVisible && !IsTerminalFullScreen;
     public bool IsTabHeaderVisible => !IsTerminalFullScreen;
+    public bool IsMainTabHeaderVisible => IsTabHeaderVisible && !IsTabArrangementEnabled;
+    public bool IsSingleTabContentVisible => HasTabs && (!IsTabArrangementEnabled || IsTerminalFullScreen);
+    public bool IsArrangedTabsVisible => HasTabs && IsTabArrangementEnabled && !IsTerminalFullScreen;
+    public bool IsTabArrangementEnabled => TabArrangementMode != TabArrangementMode.Single;
+    public bool IsVerticalTabArrangement => TabArrangementMode == TabArrangementMode.Vertical;
+    public bool IsHorizontalTabArrangement => TabArrangementMode == TabArrangementMode.Horizontal;
+    public bool IsTileTabArrangement => TabArrangementMode == TabArrangementMode.Tile;
+    public bool CanArrangeTabs => Tabs.Count >= 2;
+    public bool CanMergeTabGroups => IsTabArrangementEnabled;
     public bool IsSelectedTerminalSession => SelectedTab?.IsTerminalSession == true;
     public bool IsSelectedVncSession => SelectedTab?.IsVncSession == true;
+    public bool IsSelectedFileTransferSession => SelectedTab?.IsFileTransferSession == true;
 
     public ServerMonitorViewModel Monitor { get; } = new();
     public SftpViewModel Sftp { get; } = new();
     public ObservableCollection<SessionInfo> QuickSessions => _sessionTreeVm.QuickSessions;
     public string ThemeIcon => IsDarkMode ? "\u263E" : "\u2600";
+    public string LanguageIcon => _localization.IsEnglish ? "EN" : "中";
+    public string NewSessionText => _localization.Text("Toolbar.New");
+    public string NewSessionToolTip => _localization.Text("Toolbar.NewTip");
+    public string SessionManagerText => _localization.Text("Toolbar.Sessions");
+    public string SessionManagerToolTip => _localization.Text("Toolbar.SessionsTip");
+    public string ConnectText => _localization.Text("Toolbar.Connect");
+    public string ConnectToolTip => _localization.Text("Toolbar.ConnectTip");
+    public string DisconnectText => _localization.Text("Toolbar.Disconnect");
+    public string DisconnectToolTip => _localization.Text("Toolbar.DisconnectTip");
+    public string SftpToolTip => _localization.Text("Toolbar.SftpTip");
+    public string MonitorText => _localization.Text("Toolbar.Monitor");
+    public string MonitorToolTip => _localization.Text("Toolbar.MonitorTip");
+    public string ThemeToolTip => _localization.Text("Toolbar.ThemeTip");
+    public string FullScreenToolTip => _localization.Text("Toolbar.FullScreenTip");
+    public string ArrangeText => _localization.Text("Toolbar.Arrange");
+    public string ArrangeToolTip => _localization.Text("Toolbar.ArrangeTip");
+    public string LanguageToolTip => _localization.Text("Toolbar.LanguageTip");
+    public string AddQuickSessionToolTip => _localization.Text("Toolbar.AddQuickSessionTip");
+    public string ArrangeVerticalText => _localization.Text("Arrange.Vertical");
+    public string ArrangeHorizontalText => _localization.Text("Arrange.Horizontal");
+    public string ArrangeTileText => _localization.Text("Arrange.Tile");
+    public string ArrangeMergeText => _localization.Text("Arrange.Merge");
+    public string QuickPropertiesText => _localization.Text("Quick.Properties");
+    public string QuickDeleteText => _localization.Text("Quick.Delete");
+    public string WelcomeSelectSessionText => _localization.Text("Welcome.SelectSession");
+    public string WelcomeBuiltWithAtomUiText => _localization.Text("Welcome.BuiltWithAtomUI");
+    public string FullScreenEscBackText => _localization.Text("FullScreen.EscBack");
+    public string ChineseLanguageText => _localization.Text("Language.Chinese");
+    public string EnglishLanguageText => _localization.Text("Language.English");
 
     private Window? _sessionManagerWindow;
+    private Guid? _activeRdpSessionId;
 
     public MainWindowViewModel()
     {
         _sessionTreeVm = new SessionTreeViewModel(this);
         _sessionTree = _sessionTreeVm;
+        _localization.SetLanguage(_sessionTreeVm.Settings.UiLanguage);
 
         Tabs.CollectionChanged += (_, _) =>
         {
+            if (Tabs.Count < 2 && TabArrangementMode != TabArrangementMode.Single)
+                MergeTabGroups();
+
             OnPropertyChanged(nameof(HasTabs));
+            OnPropertyChanged(nameof(CanArrangeTabs));
+            RebuildTileRows();
+            OnPropertyChanged(nameof(IsSingleTabContentVisible));
+            OnPropertyChanged(nameof(IsArrangedTabsVisible));
+            OnPropertyChanged(nameof(IsVerticalTabArrangement));
+            OnPropertyChanged(nameof(IsHorizontalTabArrangement));
+            OnPropertyChanged(nameof(IsTileTabArrangement));
             ToggleTerminalFullScreenCommand.NotifyCanExecuteChanged();
+            ArrangeTabsVerticalCommand.NotifyCanExecuteChanged();
+            ArrangeTabsHorizontalCommand.NotifyCanExecuteChanged();
+            ArrangeTabsTileCommand.NotifyCanExecuteChanged();
+            MergeTabGroupsCommand.NotifyCanExecuteChanged();
+        };
+
+        TabGroups.CollectionChanged += (_, _) =>
+        {
+            RebuildTileRows();
         };
 
         // Initialize theme state
@@ -88,12 +162,64 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(ThemeIcon));
     }
 
+    [RelayCommand]
+    private void SetLanguage(string? language)
+    {
+        _localization.SetLanguage(language);
+        _sessionTreeVm.Settings.UiLanguage = _localization.Language;
+        _sessionTreeVm.SaveSettings(_sessionTreeVm.Settings);
+        NotifyLocalizationChanged();
+    }
+
+    private void NotifyLocalizationChanged()
+    {
+        OnPropertyChanged(nameof(LanguageIcon));
+        OnPropertyChanged(nameof(NewSessionText));
+        OnPropertyChanged(nameof(NewSessionToolTip));
+        OnPropertyChanged(nameof(SessionManagerText));
+        OnPropertyChanged(nameof(SessionManagerToolTip));
+        OnPropertyChanged(nameof(ConnectText));
+        OnPropertyChanged(nameof(ConnectToolTip));
+        OnPropertyChanged(nameof(DisconnectText));
+        OnPropertyChanged(nameof(DisconnectToolTip));
+        OnPropertyChanged(nameof(SftpToolTip));
+        OnPropertyChanged(nameof(MonitorText));
+        OnPropertyChanged(nameof(MonitorToolTip));
+        OnPropertyChanged(nameof(ThemeToolTip));
+        OnPropertyChanged(nameof(FullScreenToolTip));
+        OnPropertyChanged(nameof(ArrangeText));
+        OnPropertyChanged(nameof(ArrangeToolTip));
+        OnPropertyChanged(nameof(LanguageToolTip));
+        OnPropertyChanged(nameof(AddQuickSessionToolTip));
+        OnPropertyChanged(nameof(ArrangeVerticalText));
+        OnPropertyChanged(nameof(ArrangeHorizontalText));
+        OnPropertyChanged(nameof(ArrangeTileText));
+        OnPropertyChanged(nameof(ArrangeMergeText));
+        OnPropertyChanged(nameof(QuickPropertiesText));
+        OnPropertyChanged(nameof(QuickDeleteText));
+        OnPropertyChanged(nameof(WelcomeSelectSessionText));
+        OnPropertyChanged(nameof(WelcomeBuiltWithAtomUiText));
+        OnPropertyChanged(nameof(FullScreenEscBackText));
+        OnPropertyChanged(nameof(ChineseLanguageText));
+        OnPropertyChanged(nameof(EnglishLanguageText));
+    }
+
     partial void OnSelectedTabChanged(TerminalTabViewModel? value)
     {
         foreach (var tab in Tabs)
             tab.IsSelected = tab == value;
+
+        ActivateTabGroupForSelectedTab(value);
+
         NotifySelectedContentVisibilityChanged();
         if (value?.Vnc != null)
+        {
+            if (IsSftpVisible)
+                IsSftpVisible = false;
+            if (IsMonitorVisible)
+                IsMonitorVisible = false;
+        }
+        if (value?.FileTransfer != null)
         {
             if (IsSftpVisible)
                 IsSftpVisible = false;
@@ -110,10 +236,25 @@ public partial class MainWindowViewModel : ObservableObject
         ToggleTerminalFullScreenCommand.NotifyCanExecuteChanged();
     }
 
+    partial void OnTabArrangementModeChanged(TabArrangementMode value)
+    {
+        OnPropertyChanged(nameof(IsTabArrangementEnabled));
+        OnPropertyChanged(nameof(CanMergeTabGroups));
+        OnPropertyChanged(nameof(IsMainTabHeaderVisible));
+        OnPropertyChanged(nameof(IsSingleTabContentVisible));
+        OnPropertyChanged(nameof(IsArrangedTabsVisible));
+        OnPropertyChanged(nameof(IsVerticalTabArrangement));
+        OnPropertyChanged(nameof(IsHorizontalTabArrangement));
+        OnPropertyChanged(nameof(IsTileTabArrangement));
+        RebuildTileRows();
+        MergeTabGroupsCommand.NotifyCanExecuteChanged();
+    }
+
     private void NotifySelectedContentVisibilityChanged()
     {
         OnPropertyChanged(nameof(IsSelectedTerminalSession));
         OnPropertyChanged(nameof(IsSelectedVncSession));
+        OnPropertyChanged(nameof(IsSelectedFileTransferSession));
     }
 
     partial void OnIsMonitorVisibleChanged(bool value)
@@ -140,7 +281,53 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsSftpPanelVisible));
         OnPropertyChanged(nameof(IsMonitorPanelVisible));
         OnPropertyChanged(nameof(IsTabHeaderVisible));
+        OnPropertyChanged(nameof(IsMainTabHeaderVisible));
+        OnPropertyChanged(nameof(IsSingleTabContentVisible));
+        OnPropertyChanged(nameof(IsArrangedTabsVisible));
         IsFullScreenHintVisible = value;
+    }
+
+    private bool CanArrangeTabsCore() => CanArrangeTabs;
+
+    [RelayCommand(CanExecute = nameof(CanArrangeTabsCore))]
+    private void ArrangeTabsVertical()
+    {
+        if (!IsTabArrangementEnabled || TabGroups.Count == 0)
+            BuildTabGroupsFromTabs();
+
+        TabArrangementMode = TabArrangementMode.Vertical;
+        ActivateTabGroupForSelectedTab(SelectedTab);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanArrangeTabsCore))]
+    private void ArrangeTabsHorizontal()
+    {
+        if (!IsTabArrangementEnabled || TabGroups.Count == 0)
+            BuildTabGroupsFromTabs();
+
+        TabArrangementMode = TabArrangementMode.Horizontal;
+        ActivateTabGroupForSelectedTab(SelectedTab);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanArrangeTabsCore))]
+    private void ArrangeTabsTile()
+    {
+        if (!IsTabArrangementEnabled || TabGroups.Count == 0)
+            BuildTabGroupsFromTabs();
+
+        TabArrangementMode = TabArrangementMode.Tile;
+        ActivateTabGroupForSelectedTab(SelectedTab);
+    }
+
+    private bool CanMergeTabGroupsCore() => CanMergeTabGroups;
+
+    [RelayCommand(CanExecute = nameof(CanMergeTabGroupsCore))]
+    private void MergeTabGroups()
+    {
+        TabArrangementMode = TabArrangementMode.Single;
+        TabGroups.Clear();
+        TileRows.Clear();
+        SetSelectedTabGroup(null);
     }
 
     private void UpdateMonitor(TerminalTabViewModel? tab)
@@ -159,6 +346,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (!IsSftpVisible) return;
         if (tab == null ||
             tab.Vnc != null ||
+            tab.FileTransfer != null ||
             !tab.Terminal.IsConnected ||
             tab.Session.Protocol != SessionProtocol.SSH)
         {
@@ -217,6 +405,139 @@ public partial class MainWindowViewModel : ObservableObject
         IsTerminalFullScreen = false;
     }
 
+    private TerminalTabGroupViewModel? FindTabGroup(TerminalTabViewModel tab)
+    {
+        return TabGroups.FirstOrDefault(group => group.Tabs.Contains(tab));
+    }
+
+    private void ActivateTabGroupForSelectedTab(TerminalTabViewModel? tab)
+    {
+        if (!IsTabArrangementEnabled || tab == null)
+        {
+            SetSelectedTabGroup(null);
+            return;
+        }
+
+        var group = FindTabGroup(tab);
+        if (group == null)
+            return;
+
+        group.SelectedTab = tab;
+        SetSelectedTabGroup(group);
+    }
+
+    private void SetSelectedTabGroup(TerminalTabGroupViewModel? group)
+    {
+        foreach (var tabGroup in TabGroups)
+            tabGroup.IsSelected = tabGroup == group;
+
+        if (SelectedTabGroup != group)
+            SelectedTabGroup = group;
+    }
+
+    private void BuildTabGroupsFromTabs()
+    {
+        TabGroups.Clear();
+
+        foreach (var tab in Tabs)
+            TabGroups.Add(new TerminalTabGroupViewModel(tab));
+
+        RebuildTileRows();
+        ActivateTabGroupForSelectedTab(SelectedTab ?? Tabs.LastOrDefault());
+    }
+
+    private void RebuildTileRows()
+    {
+        TileRows.Clear();
+        if (!IsTileTabArrangement || TabGroups.Count == 0)
+            return;
+
+        foreach (var row in BuildTileRows(TabGroups.ToArray()))
+            TileRows.Add(row);
+    }
+
+    private static IEnumerable<TileTabGroupRowViewModel> BuildTileRows(IReadOnlyList<TerminalTabGroupViewModel> groups)
+    {
+        var count = groups.Count;
+        if (count == 0)
+            yield break;
+
+        if (count <= 2)
+        {
+            yield return new TileTabGroupRowViewModel(groups);
+            yield break;
+        }
+
+        if (count == 3)
+        {
+            yield return new TileTabGroupRowViewModel(groups.Take(1));
+            yield return new TileTabGroupRowViewModel(groups.Skip(1));
+            yield break;
+        }
+
+        var rowCount = Math.Max(1, (int)Math.Floor(Math.Sqrt(count)));
+        var baseColumns = count / rowCount;
+        var remainder = count % rowCount;
+        var index = 0;
+        while (index < count)
+        {
+            var remainingRows = rowCount - (TileRowsBefore(index, baseColumns, remainder, rowCount));
+            var take = baseColumns;
+            if (remainder > 0 && remainingRows <= remainder)
+                take++;
+
+            take = Math.Min(take, count - index);
+            yield return new TileTabGroupRowViewModel(groups.Skip(index).Take(take));
+            index += take;
+        }
+    }
+
+    private static int TileRowsBefore(int itemIndex, int baseColumns, int remainder, int rowCount)
+    {
+        var rowsBefore = 0;
+        var consumed = 0;
+        while (rowsBefore < rowCount && consumed < itemIndex)
+        {
+            var rowsLeft = rowCount - rowsBefore;
+            var rowSize = baseColumns + (remainder > 0 && rowsLeft <= remainder ? 1 : 0);
+            consumed += rowSize;
+            rowsBefore++;
+        }
+
+        return rowsBefore;
+    }
+
+    private void AddTabToActiveGroup(TerminalTabViewModel tab)
+    {
+        if (!IsTabArrangementEnabled)
+        {
+            Tabs.Add(tab);
+            return;
+        }
+
+        var group = SelectedTabGroup ?? TabGroups.FirstOrDefault();
+        if (group == null)
+        {
+            Tabs.Add(tab);
+            BuildTabGroupsFromTabs();
+            return;
+        }
+
+        var insertIndex = group.Tabs
+            .Select(existingTab => Tabs.IndexOf(existingTab))
+            .Where(index => index >= 0)
+            .DefaultIfEmpty(Tabs.Count - 1)
+            .Max() + 1;
+
+        if (insertIndex >= 0 && insertIndex <= Tabs.Count)
+            Tabs.Insert(insertIndex, tab);
+        else
+            Tabs.Add(tab);
+
+        group.AddTab(tab);
+        SetSelectedTabGroup(group);
+    }
+
     private void UpdateStatusBar()
     {
         if (SelectedTab?.Vnc is { } vnc)
@@ -227,6 +548,17 @@ public partial class MainWindowViewModel : ObservableObject
             TerminalSizeText = vnc.RemoteWidth > 0 && vnc.RemoteHeight > 0
                 ? $"{vnc.RemoteWidth}x{vnc.RemoteHeight}"
                 : string.Empty;
+            return;
+        }
+
+        if (SelectedTab?.FileTransfer is { } fileTransfer)
+        {
+            ConnectionStatusText = fileTransfer.IsConnected
+                ? $"{SelectedTab.Session.Protocol} connected"
+                : $"{SelectedTab.Session.Protocol} disconnected";
+            ConnectionStatusColor = new SolidColorBrush(fileTransfer.IsConnected ? Color.Parse("#52C41A") : Colors.Gray);
+            ConnectedHostInfo = BuildFileTransferHostInfo(SelectedTab.Session);
+            TerminalSizeText = string.Empty;
             return;
         }
 
@@ -252,6 +584,12 @@ public partial class MainWindowViewModel : ObservableObject
             TerminalSizeText = vnc.RemoteWidth > 0 && vnc.RemoteHeight > 0
                 ? $"{vnc.RemoteWidth}x{vnc.RemoteHeight}"
                 : string.Empty;
+            return;
+        }
+
+        if (SelectedTab?.FileTransfer != null)
+        {
+            TerminalSizeText = string.Empty;
             return;
         }
 
@@ -315,11 +653,25 @@ public partial class MainWindowViewModel : ObservableObject
         if (vm.SavedSession != null)
         {
             _sessionTreeVm.UpdateSession(vm.SavedSession);
+            RefreshOpenTabsForSession(vm.SavedSession);
             if (dialog.ShouldConnect)
             {
                 CloseSessionManagerWindow();
                 await ConnectSession(vm.SavedSession);
             }
+        }
+    }
+
+    private void RefreshOpenTabsForSession(SessionInfo session)
+    {
+        var effectiveSession = _sessionTreeVm.GetEffectiveSession(session);
+        foreach (var tab in Tabs.Where(tab => tab.Session.Id == session.Id))
+        {
+            tab.Session.Name = effectiveSession.Name;
+            SessionTreeViewModel.CopySessionValues(tab.Session, effectiveSession);
+            tab.Title = tab.Session.Name;
+            tab.NotifyThemeChanged();
+            tab.Terminal.RefreshSessionOptions();
         }
     }
 
@@ -414,9 +766,10 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        string? password = null;
+        string? password = GetSavedPassword(effectiveSession);
 
         if (effectiveSession.Protocol is SessionProtocol.SSH or SessionProtocol.TELNET or SessionProtocol.RLOGIN &&
+            string.IsNullOrEmpty(password) &&
             SshAgentAuthService.ShouldPromptForPassword(effectiveSession))
         {
             password = await ShowPasswordDialog(effectiveSession);
@@ -426,7 +779,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         var tab = new TerminalTabViewModel(effectiveSession);
         tab.CloseRequested += CloseTab;
-        Tabs.Add(tab);
+        AddTabToActiveGroup(tab);
         SelectedTab = tab;
 
         tab.Terminal.PropertyChanged += OnActiveTerminalPropertyChanged;
@@ -457,12 +810,30 @@ public partial class MainWindowViewModel : ObservableObject
     {
         try
         {
-            var filePath = RdpLaunchService.Launch(session);
+            var launch = PlatformServices.LaunchRdp(session);
+            var sessionId = session.Id;
+            var hostInfo = BuildRdpHostInfo(session);
+            _activeRdpSessionId = sessionId;
+
+            var exitHandled = false;
+            void HandleExited()
+            {
+                if (exitHandled)
+                    return;
+
+                exitHandled = true;
+                Dispatcher.UIThread.Post(() => OnRdpProcessExited(sessionId, hostInfo, launch));
+            }
+
+            launch.Process.Exited += (_, _) => HandleExited();
+            if (launch.Process.HasExited)
+                HandleExited();
+
             IsTerminalFullScreen = false;
             ConnectionStatusText = "RDP launched";
             ConnectionStatusColor = new SolidColorBrush(Color.Parse("#52C41A"));
-            ConnectedHostInfo = $"{session.Username}@{session.Host}:{session.Port}";
-            System.Diagnostics.Debug.WriteLine($"RDP file: {filePath}");
+            ConnectedHostInfo = hostInfo;
+            System.Diagnostics.Debug.WriteLine($"RDP file: {launch.FilePath}");
         }
         catch (Exception ex)
         {
@@ -471,16 +842,59 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
+    private void OnRdpProcessExited(Guid sessionId, string hostInfo, RdpLaunchResult launch)
+    {
+        if (_activeRdpSessionId == sessionId)
+        {
+            ConnectionStatusText = "RDP disconnected";
+            ConnectionStatusColor = new SolidColorBrush(Colors.Gray);
+            ConnectedHostInfo = hostInfo;
+            _activeRdpSessionId = null;
+        }
+
+        try
+        {
+            if (File.Exists(launch.FilePath))
+                File.Delete(launch.FilePath);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"RDP temp file cleanup failed: {ex.Message}");
+        }
+
+        launch.Process.Dispose();
+    }
+
+    private static string BuildRdpHostInfo(SessionInfo session)
+    {
+        var host = string.IsNullOrWhiteSpace(session.Host) ? "RDP" : session.Host.Trim();
+        var port = session.Port > 0 ? session.Port : 3389;
+        return string.IsNullOrWhiteSpace(session.Username)
+            ? $"{host}:{port}"
+            : $"{session.Username}@{host}:{port}";
+    }
+
+    private static string BuildFileTransferHostInfo(SessionInfo session)
+    {
+        var host = string.IsNullOrWhiteSpace(session.Host) ? session.Protocol.ToString() : session.Host.Trim();
+        var port = session.Port > 0 ? session.Port : (session.Protocol == SessionProtocol.FTP ? 21 : 22);
+        return string.IsNullOrWhiteSpace(session.Username)
+            ? $"{host}:{port}"
+            : $"{session.Username}@{host}:{port}";
+    }
+
     private async Task ConnectVncSession(SessionInfo session)
     {
-        var password = await ShowPasswordDialog(session);
+        var password = GetSavedPassword(session);
+        if (string.IsNullOrEmpty(password))
+            password = await ShowPasswordDialog(session);
         if (password == null)
             return;
 
         var vm = new VncViewModel();
         var tab = new TerminalTabViewModel(session, vm);
         tab.CloseRequested += CloseTab;
-        Tabs.Add(tab);
+        AddTabToActiveGroup(tab);
         SelectedTab = tab;
         IsSftpVisible = false;
         IsMonitorVisible = false;
@@ -505,9 +919,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     private async Task ConnectFileTransferSession(SessionInfo session)
     {
-        string? password = null;
+        string? password = GetSavedPassword(session);
 
-        if (SshAgentAuthService.ShouldPromptForPassword(session))
+        if (string.IsNullOrEmpty(password) && SshAgentAuthService.ShouldPromptForPassword(session))
         {
             password = await ShowPasswordDialog(session);
             if (password == null)
@@ -515,12 +929,20 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         IsTerminalFullScreen = false;
-        IsSftpVisible = true;
+        IsSftpVisible = false;
+        IsMonitorVisible = false;
         ConnectionStatusText = $"{session.Protocol} connecting...";
         ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FAAD14"));
         ConnectedHostInfo = $"{session.Username}@{session.Host}:{session.Port}";
 
-        var connected = await Sftp.SwitchConnectionAsync(session, password);
+        var fileTransfer = new SftpViewModel();
+        var tab = new TerminalTabViewModel(session, fileTransfer);
+        tab.CloseRequested += CloseTab;
+        AddTabToActiveGroup(tab);
+        SelectedTab = tab;
+
+        var connected = await fileTransfer.SwitchConnectionAsync(session, password);
+        tab.ConnectedPassword = password;
         if (connected)
         {
             ConnectionStatusText = $"{session.Protocol} connected";
@@ -554,30 +976,82 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void CloseTab(TerminalTabViewModel tab)
     {
-        tab.Terminal.PropertyChanged -= OnActiveTerminalPropertyChanged;
-        tab.Terminal.Disconnect();
-        tab.Vnc?.Dispose();
-        Tabs.Remove(tab);
+        var wasSelected = SelectedTab == tab;
+        var group = IsTabArrangementEnabled ? FindTabGroup(tab) : null;
 
-        if (SelectedTab == null && Tabs.Count > 0)
+        tab.Terminal.PropertyChanged -= OnActiveTerminalPropertyChanged;
+
+        group?.RemoveTab(tab);
+        if (group is { HasTabs: false })
+            TabGroups.Remove(group);
+
+        Tabs.Remove(tab);
+        CleanupClosedTabResources(tab);
+
+        if (wasSelected && Tabs.Count > 0)
         {
-            SelectedTab = Tabs.Last();
+            SelectedTab = group?.SelectedTab ?? SelectedTabGroup?.SelectedTab ?? Tabs.Last();
         }
 
         if (Tabs.Count == 0)
         {
             IsTerminalFullScreen = false;
+            TabGroups.Clear();
+            SetSelectedTabGroup(null);
             Monitor.StopMonitoring();
             Sftp.StopBrowsing();
             UpdateStatusBar();
             UpdateTerminalSize();
+            return;
         }
+
+        if (IsTabArrangementEnabled)
+        {
+            if (TabGroups.Count < 2)
+            {
+                MergeTabGroups();
+            }
+            else
+            {
+                ActivateTabGroupForSelectedTab(SelectedTab);
+            }
+        }
+    }
+
+    private static void CleanupClosedTabResources(TerminalTabViewModel tab)
+    {
+        tab.Terminal.CloseDetached();
+        if (tab.Vnc != null)
+        {
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    tab.Vnc.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"VNC close cleanup failed: {ex.Message}");
+                }
+            });
+        }
+        tab.FileTransfer?.StopBrowsing();
     }
 
     [RelayCommand]
     private void SelectTab(TerminalTabViewModel tab)
     {
         SelectedTab = tab;
+    }
+
+    [RelayCommand]
+    private void SelectTabGroup(TerminalTabGroupViewModel? group)
+    {
+        if (group?.SelectedTab == null)
+            return;
+
+        SetSelectedTabGroup(group);
+        SelectedTab = group.SelectedTab;
     }
 
     [RelayCommand]
@@ -591,6 +1065,8 @@ public partial class MainWindowViewModel : ObservableObject
         return SelectedTab != null &&
                (SelectedTab.Vnc != null
                    ? !SelectedTab.Vnc.IsConnected
+                   : SelectedTab.FileTransfer != null
+                       ? !SelectedTab.FileTransfer.IsConnected
                    : !SelectedTab.Terminal.IsConnected);
     }
 
@@ -606,7 +1082,7 @@ public partial class MainWindowViewModel : ObservableObject
             if (tab.Vnc.IsConnected)
                 return;
 
-            var vncPassword = tab.ConnectedPassword ?? await ShowPasswordDialog(tab.Session);
+            var vncPassword = tab.ConnectedPassword ?? GetSavedPassword(tab.Session) ?? await ShowPasswordDialog(tab.Session);
             if (vncPassword == null)
                 return;
 
@@ -628,10 +1104,27 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
+        if (tab.FileTransfer != null)
+        {
+            if (tab.FileTransfer.IsConnected)
+                return;
+
+            var filePassword = tab.ConnectedPassword ?? GetSavedPassword(tab.Session) ?? await ShowPasswordDialog(tab.Session);
+            if (filePassword == null)
+                return;
+
+            ConnectionStatusText = $"{tab.Session.Protocol} connecting...";
+            ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FAAD14"));
+            await tab.FileTransfer.SwitchConnectionAsync(tab.Session, filePassword);
+            tab.ConnectedPassword = filePassword;
+            UpdateStatusBar();
+            return;
+        }
+
         if (tab.Terminal.IsConnected)
             return;
 
-        var password = tab.ConnectedPassword;
+        var password = tab.ConnectedPassword ?? GetSavedPassword(tab.Session);
         if (tab.Session.Protocol is SessionProtocol.SSH or SessionProtocol.TELNET or SessionProtocol.RLOGIN &&
             SshAgentAuthService.ShouldPromptForPassword(tab.Session) &&
             password == null)
@@ -659,7 +1152,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     private bool CanCurrentDisconnect()
     {
-        return SelectedTab?.Vnc?.IsConnected == true || SelectedTab?.Terminal.IsConnected == true;
+        return SelectedTab?.Vnc?.IsConnected == true ||
+               SelectedTab?.FileTransfer?.IsConnected == true ||
+               SelectedTab?.Terminal.IsConnected == true;
     }
 
     [RelayCommand(CanExecute = nameof(CanCurrentDisconnect))]
@@ -667,6 +1162,8 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (SelectedTab?.Vnc != null)
             SelectedTab.Vnc.Disconnect();
+        else if (SelectedTab?.FileTransfer != null)
+            SelectedTab.FileTransfer.StopBrowsing();
         else
             SelectedTab?.Terminal.Disconnect("[Current session disconnected]");
 
@@ -676,11 +1173,17 @@ public partial class MainWindowViewModel : ObservableObject
         UpdateTerminalSize();
     }
 
+    private static string? GetSavedPassword(SessionInfo session)
+    {
+        var password = PasswordEncryptionService.Decrypt(session.Password);
+        return string.IsNullOrEmpty(password) ? null : password;
+    }
+
     private async Task<string?> ShowPasswordDialog(SessionInfo session)
     {
         var dialog = new AtomUI.Desktop.Controls.Window
         {
-            Title = $"输入密码 - {session.Name}",
+            Title = string.Format(_localization.Text("PasswordDialog.Title"), session.Name),
             Width = 460,
             Height = 250,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -692,7 +1195,7 @@ public partial class MainWindowViewModel : ObservableObject
         var passwordBox = new AtomUI.Desktop.Controls.LineEdit
         {
             PasswordChar = '*',
-            PlaceholderText = "请输入密码",
+            PlaceholderText = _localization.Text("PasswordDialog.Placeholder"),
             IsEnableRevealButton = true,
             IsAllowClear = true,
             SizeType = SizeType.Middle,
@@ -711,7 +1214,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         var okButton = new AtomUI.Desktop.Controls.Button
         {
-            Content = "确定",
+            Content = _localization.Text("PasswordDialog.Ok"),
             Width = 86,
             ButtonType = AtomUI.Desktop.Controls.ButtonType.Primary,
             SizeType = SizeType.Middle
@@ -723,7 +1226,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         var cancelButton = new AtomUI.Desktop.Controls.Button
         {
-            Content = "取消",
+            Content = _localization.Text("PasswordDialog.Cancel"),
             Width = 86,
             ButtonType = AtomUI.Desktop.Controls.ButtonType.Default,
             SizeType = SizeType.Middle
@@ -733,7 +1236,7 @@ public partial class MainWindowViewModel : ObservableObject
         var panel = new StackPanel { Spacing = 8 };
         panel.Children.Add(new TextBlock
         {
-            Text = $"用户: {session.Username}@{session.Host}:{session.Port}",
+            Text = string.Format(_localization.Text("PasswordDialog.User"), session.Username, session.Host, session.Port),
             Margin = new Thickness(20, 20, 20, 0)
         });
         panel.Children.Add(passwordBox);

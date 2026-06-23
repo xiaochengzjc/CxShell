@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
@@ -14,6 +15,9 @@ public partial class TerminalView : UserControl
 {
     private TerminalViewModel? _boundVm;
     private Controls.TerminalControl? _terminal;
+    private int _suppressRemoteResizeDepth;
+    private int _suppressNextRemoteResizeEvents;
+    private int _remoteResizeVersion;
 
     public TerminalView()
     {
@@ -52,6 +56,7 @@ public partial class TerminalView : UserControl
         if (DataContext is not TerminalViewModel vm) return;
 
         _boundVm = vm;
+        _suppressNextRemoteResizeEvents = 2;
 
         _terminal.InputReceived += OnInputReceived;
         _terminal.SizeChanged2 += OnSizeChanged;
@@ -62,8 +67,9 @@ public partial class TerminalView : UserControl
         vm.BellRequested += OnBellRequested;
         vm.PropertyChanged += OnVmPropertyChanged;
         InjectZmodemDelegates(vm);
-        SyncTerminalSize();
-        Dispatcher.UIThread.Post(SyncTerminalSize, DispatcherPriority.Loaded);
+        SyncTerminalSize(notifyRemote: false);
+        Dispatcher.UIThread.Post(() => SyncTerminalSize(notifyRemote: false), DispatcherPriority.Loaded);
+        Dispatcher.UIThread.Post(() => SyncTerminalSize(notifyRemote: true), DispatcherPriority.Background);
 
         // 立即刷新一次
         _terminal.InvalidateVisual();
@@ -151,11 +157,26 @@ public partial class TerminalView : UserControl
     }
 
     private void OnInputReceived(string data) => _boundVm?.SendInput(data);
-    private void OnSizeChanged(int cols, int rows) => _boundVm?.Resize(cols, rows);
+    private void OnSizeChanged(int cols, int rows)
+    {
+        if (!IsActuallyVisible())
+            return;
 
-    private void SyncTerminalSize()
+        var notifyRemote = _suppressRemoteResizeDepth == 0 && _suppressNextRemoteResizeEvents <= 0;
+        if (_suppressNextRemoteResizeEvents > 0)
+            _suppressNextRemoteResizeEvents--;
+
+        _boundVm?.Resize(cols, rows, notifyRemote: false);
+        if (notifyRemote)
+            ScheduleRemoteResize(cols, rows);
+    }
+
+    private void SyncTerminalSize(bool notifyRemote)
     {
         if (_terminal == null || _boundVm == null)
+            return;
+
+        if (!IsActuallyVisible())
             return;
 
         if (_boundVm.IsTerminalSizeFixed)
@@ -164,8 +185,52 @@ public partial class TerminalView : UserControl
             return;
         }
 
-        _terminal.SyncSizeToBounds();
-        _boundVm.Resize(_terminal.Columns, _terminal.Rows);
+        if (!notifyRemote)
+            _suppressRemoteResizeDepth++;
+
+        try
+        {
+            _terminal.SyncSizeToBounds();
+            _boundVm.Resize(_terminal.Columns, _terminal.Rows, notifyRemote);
+        }
+        finally
+        {
+            if (!notifyRemote)
+                _suppressRemoteResizeDepth--;
+        }
+    }
+
+    private void ScheduleRemoteResize(int cols, int rows)
+    {
+        var version = ++_remoteResizeVersion;
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(150);
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (version != _remoteResizeVersion || _boundVm == null || !IsActuallyVisible())
+                    return;
+
+                _boundVm.Resize(cols, rows, notifyRemote: true);
+            }, DispatcherPriority.Background);
+        });
+    }
+
+    private bool IsActuallyVisible()
+    {
+        if (!IsLoaded || _terminal == null)
+            return false;
+
+        Avalonia.Controls.Control? current = this;
+        while (current != null)
+        {
+            if (!current.IsVisible)
+                return false;
+
+            current = current.Parent as Avalonia.Controls.Control;
+        }
+
+        return true;
     }
 
     private void OnPointerPressed(object? s, Avalonia.Input.PointerPressedEventArgs e)
@@ -217,6 +282,13 @@ public partial class TerminalView : UserControl
         if (e.PropertyName == nameof(TerminalViewModel.Buffer))
         {
             _terminal?.InvalidateVisual();
+        }
+        else if (e.PropertyName == nameof(TerminalViewModel.IsConnected) &&
+                 _boundVm?.IsConnected == true)
+        {
+            Dispatcher.UIThread.Post(
+                () => SyncTerminalSize(notifyRemote: true),
+                DispatcherPriority.Background);
         }
     }
 

@@ -8,8 +8,11 @@ namespace ChiXueSsh.Services;
 
 public static class RdpLaunchService
 {
-    public static string Launch(SessionInfo session)
+    public static RdpLaunchResult Launch(SessionInfo session)
     {
+        if (!OperatingSystem.IsWindows())
+            throw new PlatformNotSupportedException("RDP launch currently requires the Windows Remote Desktop client.");
+
         if (string.IsNullOrWhiteSpace(session.Host))
             throw new InvalidOperationException("RDP host is required.");
 
@@ -22,14 +25,21 @@ public static class RdpLaunchService
         Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
         File.WriteAllText(filePath, BuildRdpFile(session), Encoding.Unicode);
 
-        Process.Start(new ProcessStartInfo
+        var process = new Process
         {
-            FileName = "mstsc.exe",
-            Arguments = Quote(filePath),
-            UseShellExecute = true
-        });
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "mstsc.exe",
+                Arguments = Quote(filePath),
+                UseShellExecute = false
+            },
+            EnableRaisingEvents = true
+        };
 
-        return filePath;
+        if (!process.Start())
+            throw new InvalidOperationException("Failed to start mstsc.exe.");
+
+        return new RdpLaunchResult(filePath, process);
     }
 
     private static string BuildRdpFile(SessionInfo session)
@@ -117,3 +127,5 @@ public static class RdpLaunchService
         return "\"" + value.Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
     }
 }
+
+public sealed record RdpLaunchResult(string FilePath, Process Process);

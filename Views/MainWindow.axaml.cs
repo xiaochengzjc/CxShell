@@ -41,6 +41,7 @@ public partial class MainWindow : Window
         };
         DataContext = vm;
         AddHandler(KeyDownEvent, OnPreviewKeyDown, RoutingStrategies.Tunnel);
+        AddHandler(PointerPressedEvent, OnPreviewPointerPressed, RoutingStrategies.Tunnel);
     }
 
     protected override void OnLoaded(RoutedEventArgs e)
@@ -70,6 +71,34 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnPreviewPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm ||
+            !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed ||
+            e.Source is not Avalonia.Controls.Control source)
+        {
+            return;
+        }
+
+        Avalonia.Controls.Control? current = source;
+        while (current != null)
+        {
+            if (current.DataContext is TerminalTabViewModel tab)
+            {
+                vm.SelectTabCommand.Execute(tab);
+                return;
+            }
+
+            if (current.DataContext is TerminalTabGroupViewModel group)
+            {
+                vm.SelectTabGroupCommand.Execute(group);
+                return;
+            }
+
+            current = current.Parent as Avalonia.Controls.Control;
+        }
+    }
+
     private void OnQuickSessionTagPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (!e.GetCurrentPoint(this).Properties.IsRightButtonPressed)
@@ -81,6 +110,37 @@ public partial class MainWindow : Window
             QuickSessionContextMenuPopup.PlacementTarget = sender as Avalonia.Controls.Control;
             QuickSessionContextMenuPopup.IsOpen = true;
             e.Handled = true;
+        }
+    }
+
+    private void OnTabArrangeButtonClick(object? sender, RoutedEventArgs e)
+    {
+        TabArrangePopup.PlacementTarget = TabArrangeButton;
+        TabArrangePopup.IsOpen = true;
+    }
+
+    private void OnTabArrangeMenuItemClick(object? sender, RoutedEventArgs e)
+    {
+        TabArrangePopup.Close();
+    }
+
+    private void OnLanguageButtonClick(object? sender, RoutedEventArgs e)
+    {
+        LanguagePopup.PlacementTarget = LanguageButton;
+        LanguagePopup.IsOpen = true;
+    }
+
+    private void OnLanguageMenuItemClick(object? sender, RoutedEventArgs e)
+    {
+        LanguagePopup.Close();
+    }
+
+    private void OnTabGroupPanePointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is Avalonia.Controls.Control { DataContext: TerminalTabGroupViewModel group } &&
+            DataContext is MainWindowViewModel vm)
+        {
+            vm.SelectTabGroupCommand.Execute(group);
         }
     }
 

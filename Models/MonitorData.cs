@@ -1,12 +1,15 @@
 using System;
 using System.Collections.Generic;
+using ChiXueSsh.Services;
 
 namespace ChiXueSsh.Models;
 
 public class CpuCoreInfo
 {
     public int CoreIndex { get; set; }
-    public string Label => CoreIndex == 0 ? "总计" : $"核心 {CoreIndex}";
+    public string Label => CoreIndex == 0
+        ? LocalizationService.Shared.Text("Monitor.CpuTotal")
+        : string.Format(LocalizationService.Shared.Text("Monitor.CpuCore"), CoreIndex);
     public double UsagePercent { get; set; }
 }
 

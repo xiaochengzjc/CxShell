@@ -31,6 +31,8 @@ public class AnsiParser
     private bool _g0LineDrawing;
     private bool _g1LineDrawing;
     private bool _useG1;
+    private int _savedCursorRow;
+    private int _savedCursorCol;
 
     private readonly TerminalBuffer _buffer;
 
@@ -149,6 +151,14 @@ public class AnsiParser
             case 'E': // Next line
                 _buffer.CarriageReturn();
                 _buffer.LineFeed();
+                _state = State.Ground;
+                break;
+            case '7': // DECSC - Save cursor
+                SaveCursor();
+                _state = State.Ground;
+                break;
+            case '8': // DECRC - Restore cursor
+                RestoreCursor();
                 _state = State.Ground;
                 break;
             default:
@@ -270,11 +280,22 @@ public class AnsiParser
             case 'D': // CUB - Cursor Back
                 _buffer.MoveCursorBack(GetParam(0, 1));
                 break;
+            case 'E': // CNL - Cursor Next Line
+                _buffer.MoveCursorDown(GetParam(0, 1));
+                _buffer.CarriageReturn();
+                break;
+            case 'F': // CPL - Cursor Previous Line
+                _buffer.MoveCursorUp(GetParam(0, 1));
+                _buffer.CarriageReturn();
+                break;
             case 'H': // CUP - Cursor Position
             case 'f':
                 int row = GetParam(0, 1) - 1;
                 int col = GetParam(1, 1) - 1;
                 _buffer.MoveCursor(row, col);
+                break;
+            case 'a': // HPR - Horizontal Position Relative
+                _buffer.MoveCursorForward(GetParam(0, 1));
                 break;
             case 'J': // ED - Erase in Display
                 int mode = GetParam(0, 0);
@@ -284,8 +305,7 @@ public class AnsiParser
                         _buffer.ClearToEndOfScreen();
                         break;
                     case 1: // Clear to beginning
-                        // Simplified: clear entire screen
-                        _buffer.ClearScreen();
+                        _buffer.ClearToBeginningOfScreen();
                         break;
                     case 2: // Clear entire screen
                         _buffer.ClearScreen();
@@ -305,6 +325,8 @@ public class AnsiParser
                         _buffer.ClearToEndOfLine();
                         break;
                     case 1: // Clear to beginning of line
+                        _buffer.ClearToBeginningOfLine();
+                        break;
                     case 2: // Clear entire line
                         _buffer.ClearLine();
                         break;
@@ -324,15 +346,17 @@ public class AnsiParser
             case 'd': // VPA - Vertical Position Absolute
                 _buffer.MoveCursor(GetParam(0, 1) - 1, _buffer.CursorCol);
                 break;
+            case 'e': // VPR - Vertical Position Relative
+                _buffer.MoveCursorDown(GetParam(0, 1));
+                break;
             case 'G': // HPA - Horizontal Position Absolute
                 _buffer.MoveCursor(_buffer.CursorRow, GetParam(0, 1) - 1);
                 break;
             case 'L': // IL - Insert Lines
-                // Simplified: scroll down from current line
-                _buffer.ScrollDown();
+                _buffer.InsertLines(GetParam(0, 1));
                 break;
             case 'M': // DL - Delete Lines
-                _buffer.ScrollUp();
+                _buffer.DeleteLines(GetParam(0, 1));
                 break;
             case 'P': // DCH - Delete Characters
                 _buffer.DeleteCharacters(GetParam(0, 1));
@@ -347,8 +371,10 @@ public class AnsiParser
                 // Ignored in basic implementation
                 break;
             case 's': // SCP - Save cursor position
+                SaveCursor();
                 break;
             case 'u': // RCP - Restore cursor position
+                RestoreCursor();
                 break;
             case 'n': // DSR - Device Status Report
                 // Could report cursor position back
@@ -364,6 +390,17 @@ public class AnsiParser
             case 't': // Window manipulation
                 break;
         }
+    }
+
+    private void SaveCursor()
+    {
+        _savedCursorRow = _buffer.CursorRow;
+        _savedCursorCol = _buffer.CursorCol;
+    }
+
+    private void RestoreCursor()
+    {
+        _buffer.MoveCursor(_savedCursorRow, _savedCursorCol);
     }
 
     private void ProcessCharsetDesignation(char ch)

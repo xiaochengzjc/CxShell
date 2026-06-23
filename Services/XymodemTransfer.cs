@@ -41,6 +41,7 @@ public sealed class XymodemTransfer : IDisposable
     private readonly string _duplicateAction;
     private readonly IReadOnlyList<string> _uploadFiles;
     private readonly string? _suggestedDownloadFileName;
+    private readonly int _uploadBlockSize;
     private readonly List<byte> _input = new();
     private readonly object _gate = new();
     private CancellationTokenSource _receiverPromptCts = new();
@@ -74,7 +75,8 @@ public sealed class XymodemTransfer : IDisposable
         string? downloadDirectory = null,
         string? duplicateAction = null,
         IReadOnlyList<string>? uploadFiles = null,
-        string? suggestedDownloadFileName = null)
+        string? suggestedDownloadFileName = null,
+        int uploadBlockSize = 128)
     {
         _protocol = protocol;
         _direction = direction;
@@ -86,6 +88,7 @@ public sealed class XymodemTransfer : IDisposable
         _duplicateAction = string.IsNullOrWhiteSpace(duplicateAction) ? "AutoRename" : duplicateAction;
         _uploadFiles = uploadFiles ?? Array.Empty<string>();
         _suggestedDownloadFileName = suggestedDownloadFileName;
+        _uploadBlockSize = uploadBlockSize == 1024 ? 1024 : 128;
     }
 
     public static bool TryFindReceiverRequest(byte[] bytes, out int index)
@@ -341,7 +344,7 @@ public sealed class XymodemTransfer : IDisposable
         if (_uploadFile == null)
             throw new InvalidOperationException("Upload file is not open.");
 
-        var blockSize = _protocol == XymodemProtocol.Ymodem ? 1024 : 128;
+        var blockSize = _uploadBlockSize;
         var offset = (long)(_sendBlockIndex - 1) * blockSize;
         if (offset >= _uploadFile.Length)
         {

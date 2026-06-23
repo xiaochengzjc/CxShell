@@ -5,6 +5,7 @@ using Avalonia.Data.Converters;
 using Avalonia.Media;
 using ChiXueSsh.Controls;
 using ChiXueSsh.Models;
+using ChiXueSsh.Services;
 
 namespace ChiXueSsh.Controls;
 
@@ -22,7 +23,9 @@ public class MonitorStatusConverter : IValueConverter
 {
     public static readonly MonitorStatusConverter Instance = new();
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-        => value is true ? "监控中" : "已停止";
+        => value is true
+            ? LocalizationService.Shared.Text("Monitor.StatusRunning")
+            : LocalizationService.Shared.Text("Monitor.StatusStopped");
     public object ConvertBack(object? value, Type t, object? p, CultureInfo c) => throw new NotSupportedException();
 }
 
@@ -84,9 +87,9 @@ public class MemoryToPieConverter : IValueConverter
 
         return new List<PieSegment>
         {
-            new() { Value = mem.UsedKB,   Color = Color.Parse("#FF7875"), Label = "已用" },
-            new() { Value = mem.CachedKB, Color = Color.Parse("#69B1FF"), Label = "缓存" },
-            new() { Value = mem.FreeKB,   Color = Color.Parse("#95DE64"), Label = "空闲" },
+            new() { Value = mem.UsedKB,   Color = Color.Parse("#FF7875"), Label = LocalizationService.Shared.Text("Monitor.MemoryUsed") },
+            new() { Value = mem.CachedKB, Color = Color.Parse("#69B1FF"), Label = LocalizationService.Shared.Text("Monitor.MemoryCached") },
+            new() { Value = mem.FreeKB,   Color = Color.Parse("#95DE64"), Label = LocalizationService.Shared.Text("Monitor.MemoryFree") },
         };
     }
     public object ConvertBack(object? value, Type t, object? p, CultureInfo c) => throw new NotSupportedException();

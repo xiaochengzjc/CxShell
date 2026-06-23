@@ -1,5 +1,6 @@
 <atom:Window xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:services="using:ChiXueSsh.Services"
              xmlns:atom="https://atomui.net"
              xmlns:vm="using:ChiXueSsh.ViewModels"
              x:Class="ChiXueSsh.Views.VncWindow"
@@ -44,7 +45,7 @@
                         </MultiBinding>
                     </atom:TextBlock.Text>
                 </atom:TextBlock>
-                <atom:Button Content="发送剪贴板"
+                <atom:Button Content="{Binding [UiText.259], Source={x:Static services:LocalizationService.Shared}}"
                              Padding="10,2"
                              Click="OnSendClipboardClick"/>
             </StackPanel>

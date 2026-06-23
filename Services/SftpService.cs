@@ -134,6 +134,14 @@ public class SftpService : IFileTransferService, IDisposable
         });
     }
 
+    public Stream OpenReadStream(string remotePath)
+    {
+        if (_client == null || !_client.IsConnected)
+            throw new InvalidOperationException("SFTP 未连接");
+
+        return _client.OpenRead(remotePath);
+    }
+
     public async Task DeleteAsync(string remotePath, bool isDirectory)
     {
         if (_client == null || !_client.IsConnected)

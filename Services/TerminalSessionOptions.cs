@@ -54,11 +54,48 @@ public static class TerminalSessionOptions
         if (string.IsNullOrEmpty(data))
             return data;
 
-        if (string.Equals(session?.TerminalReceiveLineEnding?.Trim(), "AUTO", StringComparison.OrdinalIgnoreCase))
+        var mode = session?.TerminalReceiveLineEnding?.Trim();
+        if (string.IsNullOrWhiteSpace(mode) ||
+            string.Equals(mode, "AUTO", StringComparison.OrdinalIgnoreCase))
+        {
+            return data;
+        }
+
+        if (string.Equals(mode, "CRLF", StringComparison.OrdinalIgnoreCase))
+            return NormalizeReceiveToCrLf(data);
+
+        var ending = ResolveLineEnding(mode, defaultValue: "AUTO");
+        if (string.Equals(ending, "AUTO", StringComparison.OrdinalIgnoreCase))
             return data;
 
-        var ending = ResolveLineEnding(session?.TerminalReceiveLineEnding, defaultValue: "CRLF");
         return NormalizeLineEndings(data, ending);
+    }
+
+    private static string NormalizeReceiveToCrLf(string data)
+    {
+        var builder = new StringBuilder(data.Length);
+        for (var i = 0; i < data.Length; i++)
+        {
+            var ch = data[i];
+            if (ch == '\r')
+            {
+                builder.Append(ch);
+                if (i + 1 < data.Length && data[i + 1] == '\n')
+                    builder.Append(data[++i]);
+                continue;
+            }
+
+            if (ch == '\n')
+            {
+                builder.Append('\r');
+                builder.Append('\n');
+                continue;
+            }
+
+            builder.Append(ch);
+        }
+
+        return builder.ToString();
     }
 
     public static string ResolveLineEnding(string? value, string defaultValue)
@@ -72,7 +109,9 @@ public static class TerminalSessionOptions
                 ? "\n"
                 : defaultValue.Equals("CRLF", StringComparison.OrdinalIgnoreCase)
                     ? "\r\n"
-                    : "\r"
+                    : defaultValue.Equals("AUTO", StringComparison.OrdinalIgnoreCase)
+                        ? "AUTO"
+                        : "\r"
         };
     }
 

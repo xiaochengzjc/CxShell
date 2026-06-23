@@ -6,7 +6,7 @@
              xmlns:views="using:ChiXueSsh.Views"
              x:Class="ChiXueSsh.Views.SessionManagerWindow"
              x:DataType="vm:SessionTreeViewModel"
-             Title="会话管理器"
+             Title="{Binding SessionManagerTitle}"
              Width="820"
              Height="680"
              MinWidth="640"
@@ -28,11 +28,11 @@
                 <atom:Button x:Name="ConnectButton"
                              ButtonType="Primary"
                              Icon="{antdicons:AntDesignIconProvider Kind=LinkOutlined}"
-                             Content="连接"
+                             Content="{Binding ConnectText}"
                              IsEnabled="{Binding CanUseSelectedSession}"
                              Click="OnConnectClick"/>
                 <atom:Button Icon="{antdicons:AntDesignIconProvider Kind=CloseOutlined}"
-                             Content="关闭"
+                             Content="{Binding CloseText}"
                              Click="OnCloseClick"/>
             </StackPanel>
         </Border>

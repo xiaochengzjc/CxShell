@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:services="using:ChiXueSsh.Services"
              xmlns:atom="https://atomui.net"
              xmlns:vm="using:ChiXueSsh.ViewModels"
              xmlns:models="using:ChiXueSsh.Models"
@@ -17,7 +18,7 @@
             <Border Padding="12,10" Background="{atom:SharedTokenResource ColorBgContainer}">
                 <Grid ColumnDefinitions="*,Auto">
                     <StackPanel Grid.Column="0" Spacing="2">
-                        <TextBlock Text="服务器监控"
+                        <TextBlock Text="{Binding [UiText.001], Source={x:Static services:LocalizationService.Shared}}"
                                    FontSize="11" Foreground="{atom:SharedTokenResource ColorTextTertiary}"
                                    FontWeight="Bold"/>
                         <TextBlock Text="{Binding HostLabel}"
@@ -96,7 +97,7 @@
             <Border Padding="12,10,12,6"
                     IsVisible="{Binding Memory, Converter={x:Static controls:NullToBoolConverter.Instance}}">
                 <StackPanel Spacing="8">
-                    <TextBlock Text="内存" FontSize="11"
+                    <TextBlock Text="{Binding [UiText.002], Source={x:Static services:LocalizationService.Shared}}" FontSize="11"
                                Foreground="{atom:SharedTokenResource ColorTextTertiary}" FontWeight="Bold"/>
                     <Grid ColumnDefinitions="120,*">
                         <!-- 饼图 -->
@@ -152,17 +153,17 @@
             <!-- 网络区域 -->
             <Border Padding="12,10,12,6">
                 <StackPanel Spacing="6">
-                    <TextBlock Text="网络" FontSize="11"
+                    <TextBlock Text="{Binding [UiText.003], Source={x:Static services:LocalizationService.Shared}}" FontSize="11"
                                Foreground="{atom:SharedTokenResource ColorTextTertiary}" FontWeight="Bold"/>
                     <!-- 当前速度 -->
                     <Grid ColumnDefinitions="*,*">
                         <StackPanel Grid.Column="0" Spacing="2">
-                            <TextBlock Text="↓ 下载" FontSize="10" Foreground="{atom:SharedTokenResource ColorInfo}"/>
+                            <TextBlock Text="{Binding [UiText.004], Source={x:Static services:LocalizationService.Shared}}" FontSize="10" Foreground="{atom:SharedTokenResource ColorInfo}"/>
                             <TextBlock FontSize="11" Foreground="{atom:SharedTokenResource ColorText}"
                                        Text="{Binding CurrentNetworkSpeed.RxFormatted, FallbackValue='0 B/s'}"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Spacing="2">
-                            <TextBlock Text="↑ 上传" FontSize="10" Foreground="{atom:SharedTokenResource ColorSuccess}"/>
+                            <TextBlock Text="{Binding [UiText.005], Source={x:Static services:LocalizationService.Shared}}" FontSize="10" Foreground="{atom:SharedTokenResource ColorSuccess}"/>
                             <TextBlock FontSize="11" Foreground="{atom:SharedTokenResource ColorText}"
                                        Text="{Binding CurrentNetworkSpeed.TxFormatted, FallbackValue='0 B/s'}"/>
                         </StackPanel>
@@ -182,7 +183,7 @@
             <Border Padding="12,10,12,6"
                     IsVisible="{Binding DiskPartitions.Count, Converter={x:Static controls:CountToBoolConverter.Instance}}">
                 <StackPanel Spacing="6">
-                    <TextBlock Text="磁盘" FontSize="11"
+                    <TextBlock Text="{Binding [UiText.006], Source={x:Static services:LocalizationService.Shared}}" FontSize="11"
                                Foreground="{atom:SharedTokenResource ColorTextTertiary}" FontWeight="Bold"/>
                     <ItemsControl ItemsSource="{Binding DiskPartitions}">
                         <ItemsControl.ItemTemplate>
@@ -220,7 +221,7 @@
             <Border Padding="12,6,12,10"
                     IsVisible="{Binding DiskIo.Count, Converter={x:Static controls:CountToBoolConverter.Instance}}">
                 <StackPanel Spacing="4">
-                    <TextBlock Text="磁盘 I/O" FontSize="11"
+                    <TextBlock Text="{Binding [UiText.007], Source={x:Static services:LocalizationService.Shared}}" FontSize="11"
                                Foreground="{atom:SharedTokenResource ColorTextTertiary}" FontWeight="Bold"/>
                     <ItemsControl ItemsSource="{Binding DiskIo}">
                         <ItemsControl.ItemTemplate>
@@ -231,12 +232,12 @@
                                                FontSize="10" Foreground="{atom:SharedTokenResource ColorTextSecondary}"
                                                VerticalAlignment="Center"/>
                                     <StackPanel Grid.Column="1" Spacing="1">
-                                        <TextBlock Text="读" FontSize="9" Foreground="{atom:SharedTokenResource ColorInfo}"/>
+                                        <TextBlock Text="{Binding [UiText.008], Source={x:Static services:LocalizationService.Shared}}" FontSize="9" Foreground="{atom:SharedTokenResource ColorInfo}"/>
                                         <TextBlock FontSize="10" Foreground="{atom:SharedTokenResource ColorTextSecondary}"
                                                    Text="{Binding ReadFormatted}"/>
                                     </StackPanel>
                                     <StackPanel Grid.Column="2" Spacing="1">
-                                        <TextBlock Text="写" FontSize="9" Foreground="{atom:SharedTokenResource ColorSuccess}"/>
+                                        <TextBlock Text="{Binding [UiText.009], Source={x:Static services:LocalizationService.Shared}}" FontSize="9" Foreground="{atom:SharedTokenResource ColorSuccess}"/>
                                         <TextBlock FontSize="10" Foreground="{atom:SharedTokenResource ColorTextSecondary}"
                                                    Text="{Binding WriteFormatted}"/>
                                     </StackPanel>

@@ -24,6 +24,7 @@ public class TerminalControl : Control
     private double _cellWidth;
     private double _cellHeight;
     private Typeface _typeface;
+    private Typeface _cjkTypeface;
     private CellPosition? _selectionAnchor;
     private CellPosition? _selectionEnd;
     private bool _isSelecting;
@@ -97,6 +98,9 @@ public class TerminalControl : Control
     public static readonly StyledProperty<bool> ScrollToBottomByKeyProperty =
         AvaloniaProperty.Register<TerminalControl, bool>(nameof(ScrollToBottomByKey));
 
+    public static readonly StyledProperty<bool> DestructiveBackspaceProperty =
+        AvaloniaProperty.Register<TerminalControl, bool>(nameof(DestructiveBackspace));
+
     public static readonly StyledProperty<bool> SuspendScrollToBottomOnScrollLockProperty =
         AvaloniaProperty.Register<TerminalControl, bool>(nameof(SuspendScrollToBottomOnScrollLock));
 
@@ -111,6 +115,21 @@ public class TerminalControl : Control
 
     public static readonly StyledProperty<double> TerminalFontSizeProperty =
         AvaloniaProperty.Register<TerminalControl, double>(nameof(TerminalFontSize), 14);
+
+    public static readonly StyledProperty<string> TerminalCjkFontFamilyProperty =
+        AvaloniaProperty.Register<TerminalControl, string>(nameof(TerminalCjkFontFamily), "DejaVu Sans Mono");
+
+    public static readonly StyledProperty<string> TerminalCjkFontStyleProperty =
+        AvaloniaProperty.Register<TerminalControl, string>(nameof(TerminalCjkFontStyle), "Normal");
+
+    public static readonly StyledProperty<double> TerminalCjkFontSizeProperty =
+        AvaloniaProperty.Register<TerminalControl, double>(nameof(TerminalCjkFontSize), 14);
+
+    public static readonly StyledProperty<bool> UseVariablePitchFontProperty =
+        AvaloniaProperty.Register<TerminalControl, bool>(nameof(UseVariablePitchFont));
+
+    public static readonly StyledProperty<string> TerminalFontQualityProperty =
+        AvaloniaProperty.Register<TerminalControl, string>(nameof(TerminalFontQuality), "Default");
 
     public static readonly StyledProperty<Color> CursorColorProperty =
         AvaloniaProperty.Register<TerminalControl, Color>(nameof(CursorColor), Color.Parse("#00FF00"));
@@ -253,6 +272,12 @@ public class TerminalControl : Control
         set => SetValue(ScrollToBottomByKeyProperty, value);
     }
 
+    public bool DestructiveBackspace
+    {
+        get => GetValue(DestructiveBackspaceProperty);
+        set => SetValue(DestructiveBackspaceProperty, value);
+    }
+
     public bool SuspendScrollToBottomOnScrollLock
     {
         get => GetValue(SuspendScrollToBottomOnScrollLockProperty);
@@ -281,6 +306,36 @@ public class TerminalControl : Control
     {
         get => GetValue(TerminalFontSizeProperty);
         set => SetValue(TerminalFontSizeProperty, value);
+    }
+
+    public string TerminalCjkFontFamily
+    {
+        get => GetValue(TerminalCjkFontFamilyProperty);
+        set => SetValue(TerminalCjkFontFamilyProperty, value);
+    }
+
+    public string TerminalCjkFontStyle
+    {
+        get => GetValue(TerminalCjkFontStyleProperty);
+        set => SetValue(TerminalCjkFontStyleProperty, value);
+    }
+
+    public double TerminalCjkFontSize
+    {
+        get => GetValue(TerminalCjkFontSizeProperty);
+        set => SetValue(TerminalCjkFontSizeProperty, value);
+    }
+
+    public bool UseVariablePitchFont
+    {
+        get => GetValue(UseVariablePitchFontProperty);
+        set => SetValue(UseVariablePitchFontProperty, value);
+    }
+
+    public string TerminalFontQuality
+    {
+        get => GetValue(TerminalFontQualityProperty);
+        set => SetValue(TerminalFontQualityProperty, value);
     }
 
     public Color CursorColor
@@ -374,6 +429,8 @@ public class TerminalControl : Control
         _cursorBlinkTimer = new DispatcherTimer();
         _cursorBlinkTimer.Tick += OnCursorBlinkTimerTick;
         _typeface = CreateTypeface();
+        _cjkTypeface = CreateCjkTypeface();
+        ApplyTextQuality();
         CalculateCellSize();
         UpdateCursorBlinkTimer();
     }
@@ -419,16 +476,23 @@ public class TerminalControl : Control
 
     private void CalculateCellSize()
     {
-        var formattedText = new FormattedText(
+        var primaryText = new FormattedText(
             "M",
             System.Globalization.CultureInfo.CurrentCulture,
             FlowDirection.LeftToRight,
             _typeface,
             TerminalFontSize,
             Brushes.White);
+        var cjkText = new FormattedText(
+            "中",
+            System.Globalization.CultureInfo.CurrentCulture,
+            FlowDirection.LeftToRight,
+            _cjkTypeface,
+            TerminalCjkFontSize,
+            Brushes.White);
 
-        _cellWidth = Math.Max(1, formattedText.Width + CharacterSpacing);
-        _cellHeight = Math.Max(1, formattedText.Height + LineSpacing);
+        _cellWidth = Math.Max(1, primaryText.Width + CharacterSpacing);
+        _cellHeight = Math.Max(1, Math.Max(primaryText.Height, cjkText.Height) + LineSpacing);
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -470,13 +534,23 @@ public class TerminalControl : Control
         else if (change.Property == TerminalFontFamilyProperty ||
                   change.Property == TerminalFontStyleProperty ||
                   change.Property == TerminalFontSizeProperty ||
+                  change.Property == TerminalCjkFontFamilyProperty ||
+                  change.Property == TerminalCjkFontStyleProperty ||
+                  change.Property == TerminalCjkFontSizeProperty ||
+                  change.Property == UseVariablePitchFontProperty ||
                   change.Property == LineSpacingProperty ||
                   change.Property == CharacterSpacingProperty)
         {
             _typeface = CreateTypeface();
+            _cjkTypeface = CreateCjkTypeface();
             CalculateCellSize();
             UpdateTerminalSize(Bounds.Size, notify: true);
             InvalidateMeasure();
+            InvalidateVisual();
+        }
+        else if (change.Property == TerminalFontQualityProperty)
+        {
+            ApplyTextQuality();
             InvalidateVisual();
         }
         else if (change.Property == TerminalPaddingProperty)
@@ -974,12 +1048,15 @@ public class TerminalControl : Control
         }
         if (allSpaces) return;
 
+        var useCjk = ContainsCjk(text);
         var ft = new FormattedText(
             text,
             System.Globalization.CultureInfo.CurrentCulture,
             FlowDirection.LeftToRight,
-            bold || italic ? CreateTypeface(forceBold: bold, forceItalic: italic) : _typeface,
-            TerminalFontSize,
+            useCjk
+                ? CreateCjkTypeface(forceBold: bold, forceItalic: italic)
+                : bold || italic ? CreateTypeface(forceBold: bold, forceItalic: italic) : _typeface,
+            useCjk ? TerminalCjkFontSize : TerminalFontSize,
             new SolidColorBrush(color));
 
         context.DrawText(ft, new Point(x, y));
@@ -1008,7 +1085,94 @@ public class TerminalControl : Control
         var family = string.IsNullOrWhiteSpace(TerminalFontFamily)
             ? "DejaVu Sans Mono"
             : TerminalFontFamily;
-        return new Typeface($"{family}, Cascadia Mono, Consolas, Courier New, monospace", fontStyle, fontWeight);
+        var fallback = UseVariablePitchFont
+            ? family
+            : $"{family}, Cascadia Mono, Consolas, Courier New, monospace";
+        return new Typeface(fallback, fontStyle, fontWeight);
+    }
+
+    private Typeface CreateCjkTypeface(bool forceBold = false, bool forceItalic = false)
+    {
+        var styleText = TerminalCjkFontStyle ?? "Normal";
+        var fontStyle = forceItalic || styleText.Contains("Italic", StringComparison.OrdinalIgnoreCase)
+            ? FontStyle.Italic
+            : FontStyle.Normal;
+        var fontWeight = forceBold || styleText.Contains("Bold", StringComparison.OrdinalIgnoreCase)
+            ? FontWeight.Bold
+            : FontWeight.Normal;
+        var family = string.IsNullOrWhiteSpace(TerminalCjkFontFamily)
+            ? TerminalFontFamily
+            : TerminalCjkFontFamily;
+        var fallback = UseVariablePitchFont
+            ? family
+            : $"{family}, Microsoft YaHei UI, SimSun, Noto Sans CJK SC, Cascadia Mono, Consolas, monospace";
+        return new Typeface(fallback, fontStyle, fontWeight);
+    }
+
+    private void ApplyTextQuality()
+    {
+        TextOptions.SetTextRenderingMode(this, GetTextRenderingMode(TerminalFontQuality));
+        TextOptions.SetTextHintingMode(this, GetTextHintingMode(TerminalFontQuality));
+        TextOptions.SetBaselinePixelAlignment(this, GetBaselinePixelAlignment(TerminalFontQuality));
+    }
+
+    private static bool ContainsCjk(string text)
+    {
+        foreach (var ch in text)
+        {
+            if (IsCjkCharacter(ch))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsCjkCharacter(char ch)
+    {
+        var code = (int)ch;
+        return code >= 0x2E80 && code <= 0xA4CF
+               || code >= 0xAC00 && code <= 0xD7A3
+               || code >= 0xF900 && code <= 0xFAFF
+               || code >= 0xFE10 && code <= 0xFE6F
+               || code >= 0xFF00 && code <= 0xFFEF;
+    }
+
+    private static TextRenderingMode GetTextRenderingMode(string? value)
+    {
+        return value switch
+        {
+            "NonAntiAliased" => TextRenderingMode.Alias,
+            "AntiAliased" => TextRenderingMode.Antialias,
+            "ClearType" => TextRenderingMode.SubpixelAntialias,
+            "NaturalClearType" => TextRenderingMode.SubpixelAntialias,
+            _ => TextRenderingMode.Unspecified
+        };
+    }
+
+    private static TextHintingMode GetTextHintingMode(string? value)
+    {
+        return value switch
+        {
+            "Draft" => TextHintingMode.None,
+            "Proof" => TextHintingMode.Strong,
+            "NonAntiAliased" => TextHintingMode.None,
+            "AntiAliased" => TextHintingMode.Light,
+            "ClearType" => TextHintingMode.Strong,
+            "NaturalClearType" => TextHintingMode.Strong,
+            _ => TextHintingMode.Unspecified
+        };
+    }
+
+    private static BaselinePixelAlignment GetBaselinePixelAlignment(string? value)
+    {
+        return value switch
+        {
+            "NonAntiAliased" => BaselinePixelAlignment.Aligned,
+            "AntiAliased" => BaselinePixelAlignment.Aligned,
+            "ClearType" => BaselinePixelAlignment.Aligned,
+            "NaturalClearType" => BaselinePixelAlignment.Aligned,
+            _ => BaselinePixelAlignment.Unspecified
+        };
     }
 
     private sealed record CompiledHighlightRule(
@@ -1131,16 +1295,20 @@ public class TerminalControl : Control
         base.OnPointerWheelChanged(e);
 
         var buffer = TerminalBuffer;
-        if (buffer == null || buffer.ScrollbackCount == 0)
+        if (buffer == null || GetMaxScrollOffset(buffer) == 0)
             return;
 
         var rows = Math.Max(1, (int)Math.Round(Math.Abs(e.Delta.Y) * 3));
+        var oldOffset = _scrollOffset;
         if (e.Delta.Y > 0)
             _scrollOffset += rows;
         else if (e.Delta.Y < 0)
             _scrollOffset -= rows;
 
         ClampScrollOffset();
+        if (_scrollOffset == oldOffset)
+            return;
+
         _selectionAnchor = null;
         _selectionEnd = null;
         InvalidateVisual();
@@ -1313,7 +1481,7 @@ public class TerminalControl : Control
         return key switch
         {
             Key.Enter => NewLineMode ? "\r\n" : "\r",
-            Key.Back => ResolveEraseSequence(BackspaceKeySequence),
+            Key.Back => DestructiveBackspace ? ResolveEraseSequence(DeleteKeySequence) : ResolveEraseSequence(BackspaceKeySequence),
             Key.Tab => "\t",
             Key.Escape => "\x1B",
             Key.Up => GetCursorKeySequence('A', modifiers),
@@ -1527,12 +1695,12 @@ public class TerminalControl : Control
 
     private void ClampScrollOffset()
     {
-        _scrollOffset = Math.Clamp(_scrollOffset, 0, TerminalBuffer?.ScrollbackCount ?? 0);
+        _scrollOffset = Math.Clamp(_scrollOffset, 0, TerminalBuffer == null ? 0 : GetMaxScrollOffset(TerminalBuffer));
     }
 
     private bool ShouldShowScrollbar(TerminalBuffer buffer)
     {
-        return buffer.ScrollbackCount > 0 && GetContentRect(Bounds.Size).Height > ScrollbarMinThumbHeight;
+        return GetMaxScrollOffset(buffer) > 0 && GetContentRect(Bounds.Size).Height > ScrollbarMinThumbHeight;
     }
 
     private Rect GetContentRect(Size size)
@@ -1557,13 +1725,14 @@ public class TerminalControl : Control
 
     private Rect GetScrollbarThumbRect(TerminalBuffer buffer, Rect track)
     {
-        var totalRows = buffer.ScrollbackCount + buffer.Rows;
+        var maxOffset = GetMaxScrollOffset(buffer);
+        var totalRows = maxOffset + buffer.Rows;
         var thumbHeight = Math.Clamp(
             track.Height * buffer.Rows / Math.Max(buffer.Rows, totalRows),
             ScrollbarMinThumbHeight,
             track.Height);
         var travel = Math.Max(0, track.Height - thumbHeight);
-        var maxOffset = Math.Max(1, buffer.ScrollbackCount);
+        maxOffset = Math.Max(1, maxOffset);
         var topRatio = (maxOffset - _scrollOffset) / (double)maxOffset;
         var thumbY = track.Y + travel * topRatio;
         return new Rect(track.X + 2, thumbY, Math.Max(4, track.Width - 4), thumbHeight);
@@ -1592,8 +1761,13 @@ public class TerminalControl : Control
         var travel = Math.Max(1, track.Height - thumb.Height);
         var thumbY = Math.Clamp(pointerY - _scrollbarDragOffsetY, track.Y, track.Bottom - thumb.Height);
         var topRatio = (thumbY - track.Y) / travel;
-        _scrollOffset = (int)Math.Round(buffer.ScrollbackCount * (1 - topRatio));
+        _scrollOffset = (int)Math.Round(GetMaxScrollOffset(buffer) * (1 - topRatio));
         ClampScrollOffset();
+    }
+
+    private static int GetMaxScrollOffset(TerminalBuffer buffer)
+    {
+        return Math.Min(buffer.ScrollbackCount, buffer.MaxMeaningfulScrollOffset);
     }
 
     private Rect GetCursorRectangle()

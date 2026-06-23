@@ -17,30 +17,36 @@
                         Spacing="8">
                 <atom:Button x:Name="NewSessionBtn"
                              Icon="{antdicons:AntDesignIconProvider Kind=PlusOutlined}"
-                             Content="新建"/>
+                             Content="{Binding NewText}"/>
                 <atom:Button x:Name="CopySessionBtn"
                              Icon="{antdicons:AntDesignIconProvider Kind=CopyOutlined}"
-                             Content="复制"
+                             Content="{Binding CopyText}"
                              IsEnabled="{Binding CanUseSelectedSession}"/>
                 <atom:Button x:Name="PasteSessionBtn"
                              Icon="{antdicons:AntDesignIconProvider Kind=SnippetsOutlined}"
-                             Content="粘贴"
+                             Content="{Binding PasteText}"
                              IsEnabled="{Binding CanPaste}"/>
                 <atom:Button x:Name="PropertiesSessionBtn"
                              Icon="{antdicons:AntDesignIconProvider Kind=SettingOutlined}"
-                             Content="属性"
+                             Content="{Binding PropertiesText}"
                              IsEnabled="{Binding CanUseSelectedSession}"/>
                 <atom:Button x:Name="DeleteSessionBtn"
                              Icon="{antdicons:AntDesignIconProvider Kind=DeleteOutlined}"
-                             Content="删除"
+                             Content="{Binding DeleteText}"
                              IsEnabled="{Binding CanUseSelectedSession}"/>
+                <atom:Button x:Name="MoveSessionUpBtn"
+                             Content="{Binding MoveUpText}"
+                             IsEnabled="{Binding CanMoveSelectedSessionUp}"/>
+                <atom:Button x:Name="MoveSessionDownBtn"
+                             Content="{Binding MoveDownText}"
+                             IsEnabled="{Binding CanMoveSelectedSessionDown}"/>
             </StackPanel>
 
             <atom:SearchEdit Grid.Row="2"
                              Width="320"
                              HorizontalAlignment="Left"
                              Text="{Binding SessionSearchText, Mode=TwoWay}"
-                             PlaceholderText="搜索名称、主机、用户名"
+                             PlaceholderText="{Binding SearchPlaceholderText}"
                              IsAllowClear="True"/>
 
             <atom:DataGrid x:Name="SessionTree"
@@ -76,24 +82,33 @@
                     Padding="0,4"
                     MinWidth="120">
                 <StackPanel Spacing="0">
-                    <atom:Button x:Name="MenuEditBtn" Content="属性"
-                                 Background="Transparent" BorderThickness="0"
+                    <atom:Button x:Name="MenuEditBtn"
+                                 Content="{Binding PropertiesText}"
+                                 Background="Transparent"
+                                 BorderThickness="0"
                                  HorizontalAlignment="Stretch"
                                  HorizontalContentAlignment="Left"
-                                 Padding="16,6" FontSize="13"
+                                 Padding="16,6"
+                                 FontSize="13"
                                  Foreground="{atom:SharedTokenResource ColorText}"/>
-                    <atom:Button x:Name="MenuConnectBtn" Content="连接"
-                                 Background="Transparent" BorderThickness="0"
+                    <atom:Button x:Name="MenuConnectBtn"
+                                 Content="{Binding ConnectText}"
+                                 Background="Transparent"
+                                 BorderThickness="0"
                                  HorizontalAlignment="Stretch"
                                  HorizontalContentAlignment="Left"
-                                 Padding="16,6" FontSize="13"
+                                 Padding="16,6"
+                                 FontSize="13"
                                  Foreground="{atom:SharedTokenResource ColorText}"/>
                     <Border Height="1" Background="{atom:SharedTokenResource ColorSplit}" Margin="8,4"/>
-                    <atom:Button x:Name="MenuDeleteBtn" Content="删除"
-                                 Background="Transparent" BorderThickness="0"
+                    <atom:Button x:Name="MenuDeleteBtn"
+                                 Content="{Binding DeleteText}"
+                                 Background="Transparent"
+                                 BorderThickness="0"
                                  HorizontalAlignment="Stretch"
                                  HorizontalContentAlignment="Left"
-                                 Padding="16,6" FontSize="13"
+                                 Padding="16,6"
+                                 FontSize="13"
                                  Foreground="{atom:SharedTokenResource ColorError}"/>
                 </StackPanel>
             </Border>

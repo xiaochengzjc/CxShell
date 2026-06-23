@@ -15,8 +15,14 @@ public partial class TerminalTabViewModel : ObservableObject
     public SessionInfo Session { get; }
     public TerminalViewModel Terminal { get; }
     public VncViewModel? Vnc { get; }
+    public SftpViewModel? FileTransfer { get; }
     public bool IsVncSession => Vnc != null;
-    public bool IsTerminalSession => Vnc == null;
+    public bool IsFileTransferSession => FileTransfer != null;
+    public bool IsTerminalSession => Vnc == null && FileTransfer == null;
+    public IBrush ConnectionIndicatorBrush => new SolidColorBrush(IsConnected
+        ? Color.Parse("#18C914")
+        : Color.Parse("#F5222D"));
+    public string ConnectionIndicatorText => IsConnected ? "已连接" : "已断开";
     public bool HasTabColor => !string.Equals(Session.AppearanceTabColorMode, "Default", StringComparison.OrdinalIgnoreCase);
     public IBrush TabColorBrush => new SolidColorBrush(ResolveTabColor());
     public IBrush TabBackgroundBrush => HasTabColor
@@ -29,14 +35,25 @@ public partial class TerminalTabViewModel : ObservableObject
     public event Action<TerminalTabViewModel>? CloseRequested;
 
     public TerminalTabViewModel(SessionInfo session)
-        : this(session, null)
+        : this(session, null, null)
     {
     }
 
     public TerminalTabViewModel(SessionInfo session, VncViewModel? vnc)
+        : this(session, vnc, null)
+    {
+    }
+
+    public TerminalTabViewModel(SessionInfo session, SftpViewModel fileTransfer)
+        : this(session, null, fileTransfer)
+    {
+    }
+
+    private TerminalTabViewModel(SessionInfo session, VncViewModel? vnc, SftpViewModel? fileTransfer)
     {
         Session = session;
         Vnc = vnc;
+        FileTransfer = fileTransfer;
         _title = session.Name;
         Terminal = new TerminalViewModel();
 
@@ -45,6 +62,7 @@ public partial class TerminalTabViewModel : ObservableObject
             if (e.PropertyName == nameof(TerminalViewModel.IsConnected))
             {
                 IsConnected = Terminal.IsConnected;
+                NotifyConnectionIndicatorChanged();
                 UpdateTitle();
             }
             if (e.PropertyName == nameof(TerminalViewModel.HostInfo))
@@ -58,10 +76,34 @@ public partial class TerminalTabViewModel : ObservableObject
             Vnc.PropertyChanged += (_, e) =>
             {
                 if (e.PropertyName == nameof(VncViewModel.IsConnected))
+                {
                     IsConnected = Vnc.IsConnected;
+                    NotifyConnectionIndicatorChanged();
+                }
             };
             IsConnected = Vnc.IsConnected;
+            NotifyConnectionIndicatorChanged();
         }
+
+        if (FileTransfer != null)
+        {
+            FileTransfer.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(SftpViewModel.IsConnected))
+                {
+                    IsConnected = FileTransfer.IsConnected;
+                    NotifyConnectionIndicatorChanged();
+                }
+            };
+            IsConnected = FileTransfer.IsConnected;
+            NotifyConnectionIndicatorChanged();
+        }
+    }
+
+    private void NotifyConnectionIndicatorChanged()
+    {
+        OnPropertyChanged(nameof(ConnectionIndicatorBrush));
+        OnPropertyChanged(nameof(ConnectionIndicatorText));
     }
 
     private void UpdateTitle()
@@ -88,6 +130,11 @@ public partial class TerminalTabViewModel : ObservableObject
     partial void OnIsSelectedChanged(bool value)
     {
         OnPropertyChanged(nameof(TabBackgroundBrush));
+    }
+
+    partial void OnIsConnectedChanged(bool value)
+    {
+        NotifyConnectionIndicatorChanged();
     }
 
     private Color ResolveTabColor()
@@ -125,8 +172,6 @@ public partial class TerminalTabViewModel : ObservableObject
     [RelayCommand]
     private void CloseTab()
     {
-        Terminal.Disconnect();
-        Vnc?.Dispose();
         CloseRequested?.Invoke(this);
     }
 }

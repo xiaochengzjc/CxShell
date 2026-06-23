@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Threading;
 using ChiXueSsh.Models;
@@ -12,6 +14,14 @@ namespace ChiXueSsh.ViewModels;
 
 public partial class SftpViewModel : ObservableObject
 {
+    private LocalizationService L => LocalizationService.Shared;
+
+    public string UploadText => L.Text("Sftp.Upload");
+    public string DownloadText => L.Text("Sftp.Download");
+    public string NewDirectoryText => L.Text("Sftp.NewDirectory");
+    public string ConnectHintText => L.Text("Sftp.ConnectHint");
+    public string LoadingText => L.Text("Sftp.Loading");
+
     private IFileTransferService _service;
     private SessionInfo? _currentSession;
     private string? _currentPassword;
@@ -42,6 +52,16 @@ public partial class SftpViewModel : ObservableObject
     {
         _service = CreateService(SessionProtocol.SFTP);
         _service.ErrorOccurred += OnServiceError;
+        LocalizationService.Shared.LanguageChanged += (_, _) => RefreshLocalization();
+    }
+
+    private void RefreshLocalization()
+    {
+        OnPropertyChanged(nameof(UploadText));
+        OnPropertyChanged(nameof(DownloadText));
+        OnPropertyChanged(nameof(NewDirectoryText));
+        OnPropertyChanged(nameof(ConnectHintText));
+        OnPropertyChanged(nameof(LoadingText));
     }
 
     partial void OnSelectedFileChanged(SftpFileItem? oldValue, SftpFileItem? newValue)
@@ -334,6 +354,271 @@ public partial class SftpViewModel : ObservableObject
                 IsLoading = false;
             });
         }
+    }
+
+    public async Task UploadDroppedPathsAsync(IEnumerable<string> localPaths)
+    {
+        if (!_service.IsConnected)
+            return;
+
+        var paths = localPaths
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (paths.Count == 0)
+            return;
+
+        UpdateLocalDirectoryFromDroppedPath(paths[0]);
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            IsLoading = true;
+            ErrorMessage = null;
+        });
+
+        try
+        {
+            var targetDirectory = CurrentPath;
+            foreach (var path in paths)
+                await UploadLocalPathAsync(path, targetDirectory);
+
+            await LoadDirectoryAsync(CurrentPath);
+        }
+        catch (Exception ex)
+        {
+            await ShowDropUploadErrorAsync(ex.Message);
+        }
+    }
+
+    public async Task ShowDropUploadErrorAsync(string message)
+    {
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            ErrorMessage = $"Upload failed: {message}";
+            IsLoading = false;
+        });
+    }
+
+    private async Task UploadLocalPathAsync(string localPath, string remoteDirectory)
+    {
+        if (File.Exists(localPath))
+        {
+            var fileName = Path.GetFileName(localPath);
+            if (string.IsNullOrWhiteSpace(fileName))
+                return;
+
+            await _service.UploadFileAsync(localPath, CombineRemotePath(remoteDirectory, fileName));
+            return;
+        }
+
+        if (!Directory.Exists(localPath))
+            return;
+
+        var directoryName = GetLocalDirectoryName(localPath);
+        if (string.IsNullOrWhiteSpace(directoryName))
+            return;
+
+        var remotePath = CombineRemotePath(remoteDirectory, directoryName);
+        await EnsureRemoteDirectoryAsync(remotePath);
+
+        foreach (var file in Directory.EnumerateFiles(localPath))
+        {
+            var fileName = Path.GetFileName(file);
+            if (!string.IsNullOrWhiteSpace(fileName))
+                await _service.UploadFileAsync(file, CombineRemotePath(remotePath, fileName));
+        }
+
+        foreach (var directory in Directory.EnumerateDirectories(localPath))
+            await UploadLocalPathAsync(directory, remotePath);
+    }
+
+    private async Task EnsureRemoteDirectoryAsync(string remotePath)
+    {
+        try
+        {
+            await _service.CreateDirectoryAsync(remotePath);
+        }
+        catch
+        {
+            // Continue so dropping an existing local folder can merge into an existing remote folder.
+        }
+    }
+
+    private void UpdateLocalDirectoryFromDroppedPath(string localPath)
+    {
+        if (Directory.Exists(localPath))
+        {
+            LocalStartDirectory = localPath;
+            return;
+        }
+
+        var directory = Path.GetDirectoryName(localPath);
+        if (!string.IsNullOrWhiteSpace(directory))
+            LocalStartDirectory = directory;
+    }
+
+    private static string GetLocalDirectoryName(string localPath)
+    {
+        return Path.GetFileName(localPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+    }
+
+    public bool CanStreamDragOut(SftpFileItem item)
+    {
+        return _service is SftpService && _service.IsConnected;
+    }
+
+    public Stream OpenRemoteReadStream(SftpFileItem item)
+    {
+        if (_service is not SftpService sftpService)
+            throw new NotSupportedException("Only SFTP supports streaming drag-out.");
+
+        return sftpService.OpenReadStream(item.FullPath);
+    }
+
+    public async Task<List<VirtualDragFile>> CreateVirtualDragFilesAsync(SftpFileItem item)
+    {
+        if (_service is not SftpService sftpService)
+            throw new NotSupportedException("Only SFTP supports streaming drag-out.");
+
+        if (!item.IsDirectory)
+        {
+            return
+            [
+                new VirtualDragFile(
+                    item.Name,
+                    item.Size,
+                    item.LastModified,
+                    () => sftpService.OpenReadStream(item.FullPath))
+            ];
+        }
+
+        var files = new List<VirtualDragFile>();
+        var rootName = SanitizeLocalName(item.Name);
+        await AddVirtualDragDirectoryFilesAsync(sftpService, item.FullPath, rootName, files);
+        return files;
+    }
+
+    private async Task AddVirtualDragDirectoryFilesAsync(
+        SftpService sftpService,
+        string remoteDirectory,
+        string relativeDirectory,
+        List<VirtualDragFile> files)
+    {
+        var children = await _service.ListDirectoryAsync(remoteDirectory);
+        foreach (var child in children)
+        {
+            var relativePath = relativeDirectory + "\\" + SanitizeLocalName(child.Name);
+            if (child.IsDirectory)
+            {
+                await AddVirtualDragDirectoryFilesAsync(sftpService, child.FullPath, relativePath, files);
+                continue;
+            }
+
+            var remotePath = child.FullPath;
+            files.Add(new VirtualDragFile(
+                relativePath,
+                child.Size,
+                child.LastModified,
+                () => sftpService.OpenReadStream(remotePath)));
+        }
+    }
+
+    public async Task<string?> ExportItemForDragAsync(SftpFileItem item)
+    {
+        if (!_service.IsConnected)
+            return null;
+
+        return await ExportItemForDragCoreAsync(item, true);
+    }
+
+    public string? ExportItemForDragBlocking(SftpFileItem item)
+    {
+        if (!_service.IsConnected)
+            return null;
+
+        try
+        {
+            return Task.Run(() => ExportItemForDragCoreAsync(item, false)).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                ErrorMessage = $"Drag export failed: {ex.Message}";
+                IsLoading = false;
+            });
+            return null;
+        }
+    }
+
+    private async Task<string?> ExportItemForDragCoreAsync(SftpFileItem item, bool useInvoke)
+    {
+        var exportRoot = Path.Combine(Path.GetTempPath(), "ChiXueSsh", "SftpDrag", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(exportRoot);
+
+        await SetDragExportLoadingAsync(useInvoke, true, null);
+
+        try
+        {
+            var localPath = Path.Combine(exportRoot, SanitizeLocalName(item.Name));
+            if (item.IsDirectory)
+                await DownloadRemoteDirectoryAsync(item.FullPath, localPath);
+            else
+                await _service.DownloadFileAsync(item.FullPath, localPath);
+
+            await SetDragExportLoadingAsync(useInvoke, false, null);
+            return localPath;
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                if (Directory.Exists(exportRoot))
+                    Directory.Delete(exportRoot, true);
+            }
+            catch
+            {
+            }
+
+            await SetDragExportLoadingAsync(useInvoke, false, $"Drag export failed: {ex.Message}");
+            return null;
+        }
+    }
+
+    private async Task SetDragExportLoadingAsync(bool useInvoke, bool isLoading, string? errorMessage)
+    {
+        void Update()
+        {
+            IsLoading = isLoading;
+            ErrorMessage = errorMessage;
+        }
+
+        if (useInvoke)
+            await Dispatcher.UIThread.InvokeAsync(Update);
+        else
+            Dispatcher.UIThread.Post(Update);
+    }
+
+    private async Task DownloadRemoteDirectoryAsync(string remotePath, string localPath)
+    {
+        Directory.CreateDirectory(localPath);
+
+        var children = await _service.ListDirectoryAsync(remotePath);
+        foreach (var child in children)
+        {
+            var childLocalPath = Path.Combine(localPath, SanitizeLocalName(child.Name));
+            if (child.IsDirectory)
+                await DownloadRemoteDirectoryAsync(child.FullPath, childLocalPath);
+            else
+                await _service.DownloadFileAsync(child.FullPath, childLocalPath);
+        }
+    }
+
+    private static string SanitizeLocalName(string name)
+    {
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var cleaned = new string(name.Select(ch => invalidChars.Contains(ch) ? '_' : ch).ToArray()).Trim();
+        return string.IsNullOrWhiteSpace(cleaned) ? "download" : cleaned;
     }
 
     [RelayCommand]

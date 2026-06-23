@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.IO.Ports;
 using System.Linq;
 using System.Threading.Tasks;
 using AtomUI.Controls;
@@ -26,6 +25,59 @@ public partial class SessionEditViewModel : ObservableObject
         Session,
         GlobalDefaults
     }
+
+    private LocalizationService L => LocalizationService.Shared;
+    public string NavTitleText => L.Text("SessionEdit.NavTitle");
+    public string NavSubtitleText => L.Text("SessionEdit.NavSubtitle");
+    public string ConnectionText => L.Text("SessionEdit.Connection");
+    public string LoginPromptText => L.Text("SessionEdit.LoginPrompt");
+    public string LoginScriptText => L.Text("SessionEdit.LoginScript");
+    public string ProxyText => L.Text("SessionEdit.Proxy");
+    public string KeepAliveText => L.Text("SessionEdit.KeepAlive");
+    public string SerialText => L.Text("SessionEdit.Serial");
+    public string SecurityText => L.Text("SessionEdit.Security");
+    public string TunnelText => L.Text("SessionEdit.Tunnel");
+    public string TerminalText => L.Text("SessionEdit.Terminal");
+    public string KeyboardText => L.Text("SessionEdit.Keyboard");
+    public string VtModeText => L.Text("SessionEdit.VtMode");
+    public string AdvancedText => L.Text("SessionEdit.Advanced");
+    public string AppearanceText => L.Text("SessionEdit.Appearance");
+    public string WindowText => L.Text("SessionEdit.Window");
+    public string HighlightText => L.Text("SessionEdit.Highlight");
+    public string TransferText => L.Text("SessionEdit.Transfer");
+    public string XymodemText => L.Text("SessionEdit.Xymodem");
+    public string ZmodemText => L.Text("SessionEdit.Zmodem");
+    public string LoggingText => L.Text("SessionEdit.Logging");
+    public string BellText => L.Text("SessionEdit.Bell");
+    public string TracingText => L.Text("SessionEdit.Tracing");
+    public string GeneralText => L.Text("SessionEdit.General");
+    public string NameText => L.Text("SessionEdit.Name");
+    public string NamePlaceholderText => L.Text("SessionEdit.NamePlaceholder");
+    public string ProtocolText => L.Text("SessionEdit.Protocol");
+    public string ProtocolPlaceholderText => L.Text("SessionEdit.ProtocolPlaceholder");
+    public string HostText => L.Text("SessionEdit.Host");
+    public string HostPlaceholderText => L.Text("SessionEdit.HostPlaceholder");
+    public string PortText => L.Text("SessionEdit.Port");
+    public string UserAuthText => L.Text("SessionEdit.UserAuth");
+    public string UsernameText => L.Text("SessionEdit.Username");
+    public string AuthMethodText => L.Text("SessionEdit.AuthMethod");
+    public string PasswordText => L.Text("SessionEdit.Password");
+    public string PrivateKeyText => L.Text("SessionEdit.PrivateKey");
+    public string PromptPasswordText => L.Text("SessionEdit.PromptPassword");
+    public string PasswordNotSavedText => L.Text("SessionEdit.PasswordNotSaved");
+    public string PasswordSavedEncryptedText => L.Text("SessionEdit.PasswordSavedEncrypted");
+    public string PrivateKeyPathText => L.Text("SessionEdit.PrivateKeyPath");
+    public string BrowseText => L.Text("SessionEdit.Browse");
+    public string ReconnectText => L.Text("SessionEdit.Reconnect");
+    public string AutoReconnectText => L.Text("SessionEdit.AutoReconnect");
+    public string IntervalText => L.Text("SessionEdit.Interval");
+    public string LimitText => L.Text("SessionEdit.Limit");
+    public string SecondsText => L.Text("SessionEdit.Seconds");
+    public string MinutesText => L.Text("SessionEdit.Minutes");
+    public string SaveText => L.Text("SessionEdit.Save");
+    public string ConnectText => L.Text("Toolbar.Connect");
+    public string CancelText => L.Text("SessionEdit.Cancel");
+    public string PlaceholderText => L.Text("SessionEdit.Placeholder");
     public readonly record struct AppearanceColorPalette(
         string Foreground,
         string BoldForeground,
@@ -49,6 +101,7 @@ public partial class SessionEditViewModel : ObservableObject
     [ObservableProperty] private string _selectedProxyKey = "None";
     [ObservableProperty] private bool _isPasswordAuth = true;
     [ObservableProperty] private bool _isPrivateKeyAuth;
+    [ObservableProperty] private string _password = string.Empty;
     [ObservableProperty] private string _privateKeyPath = string.Empty;
     [ObservableProperty] private bool _autoReconnect = true;
     [ObservableProperty] private decimal _reconnectIntervalSeconds = 30;
@@ -69,7 +122,7 @@ public partial class SessionEditViewModel : ObservableObject
     [ObservableProperty] private string _terminalEncoding = "utf-8";
     [ObservableProperty] private bool _terminalTreatAmbiguousAsWide;
     [ObservableProperty] private string _terminalSendLineEnding = "CR";
-    [ObservableProperty] private string _terminalReceiveLineEnding = "CRLF";
+    [ObservableProperty] private string _terminalReceiveLineEnding = "AUTO";
     [ObservableProperty] private string _terminalKeyboardFunctionKeyMode = "Default";
     [ObservableProperty] private string _terminalKeyboardMappingFile = string.Empty;
     [ObservableProperty] private string _terminalDeleteKeySequence = "VT220";
@@ -91,6 +144,7 @@ public partial class SessionEditViewModel : ObservableObject
     [ObservableProperty] private bool _terminalAdvancedScrollToBottomOnInputOutput = true;
     [ObservableProperty] private bool _terminalAdvancedSuspendScrollToBottomOnScrollLock;
     [ObservableProperty] private bool _terminalAdvancedScrollToBottomByKey;
+    [ObservableProperty] private bool _terminalAdvancedDestructiveBackspace;
     [ObservableProperty] private bool _terminalAdvancedDuplicateSessionCd = true;
     [ObservableProperty] private string _terminalAdvancedPreinputString = string.Empty;
     [ObservableProperty] private bool _terminalAdvancedUseRxvtHomeEnd;
@@ -207,6 +261,11 @@ public partial class SessionEditViewModel : ObservableObject
     [ObservableProperty] private string _fileTransferUploadDirectory = string.Empty;
     [ObservableProperty] private string _fileTransferDuplicateAction = "AutoRename";
     [ObservableProperty] private string _fileTransferUploadProtocol = "Zmodem";
+    [ObservableProperty] private int _fileTransferXymodemBlockSize = 128;
+    [ObservableProperty] private string _fileTransferXmodemUploadCommand = "rx";
+    [ObservableProperty] private string _fileTransferYmodemUploadCommand = "rb -E";
+    [ObservableProperty] private bool _fileTransferZmodemAutoActivate = true;
+    [ObservableProperty] private string _fileTransferZmodemUploadCommand = "rz -E";
     [ObservableProperty] private InputControlStatus _serialPortStatus = InputControlStatus.Default;
     [ObservableProperty] private string _serialPortName = "COM1";
     [ObservableProperty] private string _serialBaudRate = "115200";
@@ -237,11 +296,17 @@ public partial class SessionEditViewModel : ObservableObject
     public bool IsTerminalPage => SelectedPage == "Terminal";
     public bool IsAppearancePage => SelectedPage == "Appearance";
     public bool IsAppearanceWindowPage => SelectedPage == "AppearanceWindow";
+    public bool IsAppearanceHighlightPage => SelectedPage == "AppearanceHighlight";
     public bool IsKeyboardPage => SelectedPage == "Keyboard";
+    public bool IsVtModePage => SelectedPage == "VtMode";
+    public bool IsTerminalAdvancedPage => SelectedPage == "TerminalAdvanced";
     public bool IsTransferPage => SelectedPage == "Transfer";
+    public bool IsFileTransferXymodemPage => SelectedPage == "FileTransferXymodem";
+    public bool IsFileTransferZmodemPage => SelectedPage == "FileTransferZmodem";
     public bool IsLoggingPage => SelectedPage == "Logging";
     public bool IsBellPage => SelectedPage == "Bell";
     public bool IsAdvancedPage => SelectedPage == "Advanced";
+    public bool IsTracingPage => SelectedPage == "Tracing";
     public bool IsSessionScope => Scope == EditScope.Session;
     public bool IsGlobalDefaultsScope => Scope == EditScope.GlobalDefaults;
     public bool IsSftpCustomServerCommandEnabled => SftpUseCustomServer;
@@ -249,6 +314,7 @@ public partial class SessionEditViewModel : ObservableObject
     public bool IsIdleStringSettingsEnabled => SendIdleString;
     public bool IsLoginScriptFileEnabled => RunLoginScriptFile;
     public bool IsKeyboardMappingFileEnabled => string.Equals(TerminalKeyboardFunctionKeyMode, "UserCustom", StringComparison.OrdinalIgnoreCase);
+    public bool IsCtrlAltAsAltGrEnabled => TerminalLeftAltAsMeta;
     public bool IsFileTransferPathSettingsEnabled => !FileTransferAlwaysAskDownloadFolder;
     public bool IsFileTransferUseConfiguredFolders
     {
@@ -285,6 +351,16 @@ public partial class SessionEditViewModel : ObservableObject
         get => string.Equals(FileTransferUploadProtocol, "Ftp", StringComparison.OrdinalIgnoreCase);
         set { if (value) FileTransferUploadProtocol = "Ftp"; }
     }
+    public bool IsFileTransferXymodemBlockSize128
+    {
+        get => FileTransferXymodemBlockSize != 1024;
+        set { if (value) FileTransferXymodemBlockSize = 128; }
+    }
+    public bool IsFileTransferXymodemBlockSize1024
+    {
+        get => FileTransferXymodemBlockSize == 1024;
+        set { if (value) FileTransferXymodemBlockSize = 1024; }
+    }
     public bool IsAdvancedLineDelay => AdvancedUseLineDelay;
     public bool IsAdvancedPromptDelay => AdvancedUsePromptDelay;
     public bool IsAdvancedBellModeNone
@@ -308,6 +384,7 @@ public partial class SessionEditViewModel : ObservableObject
         set { if (value) AdvancedBellMode = "Sound"; }
     }
     public bool IsAdvancedBellSoundPathEnabled => IsAdvancedBellModeSound;
+    public bool IsAdvancedBellFlashInactiveWindowEnabled => !IsAdvancedBellModeNone;
     public bool IsAdvancedLogPromptFileOnStartEnabled => AdvancedLogStartOnConnect;
     public bool IsAdvancedLogTimestampSettingsEnabled => AdvancedLogWriteTimestamp;
     public FontFamily AppearancePreviewFontFamily => new(NormalizeFontFamilyName(AppearanceFontFamily));
@@ -745,18 +822,17 @@ public partial class SessionEditViewModel : ObservableObject
     ];
     public ObservableCollection<ISelectOption> SerialParityOptions { get; } =
     [
-        new SelectOption { Header = "None", Content = "None" },
-        new SelectOption { Header = "Odd", Content = "Odd" },
-        new SelectOption { Header = "Even", Content = "Even" },
-        new SelectOption { Header = "Mark", Content = "Mark" },
-        new SelectOption { Header = "Space", Content = "Space" }
+        new SelectOption { Header = "无", Content = "None" },
+        new SelectOption { Header = "奇", Content = "Odd" },
+        new SelectOption { Header = "偶", Content = "Even" },
+        new SelectOption { Header = "标记", Content = "Mark" },
+        new SelectOption { Header = "空格", Content = "Space" }
     ];
     public ObservableCollection<ISelectOption> SerialFlowControlOptions { get; } =
     [
-        new SelectOption { Header = "None", Content = "None" },
+        new SelectOption { Header = "无", Content = "None" },
         new SelectOption { Header = "RTS/CTS", Content = "RTS/CTS" },
-        new SelectOption { Header = "XON/XOFF", Content = "XON/XOFF" },
-        new SelectOption { Header = "Both", Content = "Both" }
+        new SelectOption { Header = "XON/XOFF", Content = "XON/XOFF" }
     ];
     public ObservableCollection<ISelectOption> RdpWindowSizeOptions { get; } =
     [
@@ -777,10 +853,10 @@ public partial class SessionEditViewModel : ObservableObject
     ];
     public ObservableCollection<ISelectOption> RdpResizeModeOptions { get; } =
     [
-        new SelectOption { Header = "Not Used", Content = "NotUsed" },
-        new SelectOption { Header = "Smart sizing", Content = "SmartSizing" },
-        new SelectOption { Header = "Smart reconnect", Content = "SmartReconnect" },
-        new SelectOption { Header = "Legacy reconnect", Content = "LegacyReconnect" }
+        new SelectOption { Header = "不使用", Content = "NotUsed" },
+        new SelectOption { Header = "使用智能调整大小", Content = "SmartSizing" },
+        new SelectOption { Header = "使用智能重新连接", Content = "SmartReconnect" },
+        new SelectOption { Header = "使用旧版重新连接", Content = "LegacyReconnect" }
     ];
     public ObservableCollection<ISelectOption> RdpScreenScaleOptions { get; } =
     [
@@ -830,6 +906,146 @@ public partial class SessionEditViewModel : ObservableObject
     public ObservableCollection<ISelectOption> FunctionKeyOptions => TerminalKeyboardFunctionKeyOptions;
     public ObservableCollection<ISelectOption> LogEncodingOptions => AdvancedLogEncodingOptions;
 
+    public void RefreshLocalization()
+    {
+        RefreshLocalizedOptionHeaders();
+        DialogTitle = Scope == EditScope.GlobalDefaults
+            ? L.Text("SessionEdit.TitleGlobal")
+            : _editingSession == null
+                ? L.Text("SessionEdit.TitleNew")
+                : L.Text("SessionEdit.TitleProperties");
+
+        OnPropertyChanged(nameof(NavTitleText));
+        OnPropertyChanged(nameof(NavSubtitleText));
+        OnPropertyChanged(nameof(ConnectionText));
+        OnPropertyChanged(nameof(LoginPromptText));
+        OnPropertyChanged(nameof(LoginScriptText));
+        OnPropertyChanged(nameof(ProxyText));
+        OnPropertyChanged(nameof(KeepAliveText));
+        OnPropertyChanged(nameof(SerialText));
+        OnPropertyChanged(nameof(SecurityText));
+        OnPropertyChanged(nameof(TunnelText));
+        OnPropertyChanged(nameof(TerminalText));
+        OnPropertyChanged(nameof(KeyboardText));
+        OnPropertyChanged(nameof(VtModeText));
+        OnPropertyChanged(nameof(AdvancedText));
+        OnPropertyChanged(nameof(AppearanceText));
+        OnPropertyChanged(nameof(WindowText));
+        OnPropertyChanged(nameof(HighlightText));
+        OnPropertyChanged(nameof(TransferText));
+        OnPropertyChanged(nameof(XymodemText));
+        OnPropertyChanged(nameof(ZmodemText));
+        OnPropertyChanged(nameof(LoggingText));
+        OnPropertyChanged(nameof(BellText));
+        OnPropertyChanged(nameof(TracingText));
+        OnPropertyChanged(nameof(GeneralText));
+        OnPropertyChanged(nameof(NameText));
+        OnPropertyChanged(nameof(NamePlaceholderText));
+        OnPropertyChanged(nameof(ProtocolText));
+        OnPropertyChanged(nameof(ProtocolPlaceholderText));
+        OnPropertyChanged(nameof(HostText));
+        OnPropertyChanged(nameof(HostPlaceholderText));
+        OnPropertyChanged(nameof(PortText));
+        OnPropertyChanged(nameof(UserAuthText));
+        OnPropertyChanged(nameof(UsernameText));
+        OnPropertyChanged(nameof(AuthMethodText));
+        OnPropertyChanged(nameof(PasswordText));
+        OnPropertyChanged(nameof(PrivateKeyText));
+        OnPropertyChanged(nameof(PromptPasswordText));
+        OnPropertyChanged(nameof(PasswordNotSavedText));
+        OnPropertyChanged(nameof(PasswordSavedEncryptedText));
+        OnPropertyChanged(nameof(PrivateKeyPathText));
+        OnPropertyChanged(nameof(BrowseText));
+        OnPropertyChanged(nameof(ReconnectText));
+        OnPropertyChanged(nameof(AutoReconnectText));
+        OnPropertyChanged(nameof(IntervalText));
+        OnPropertyChanged(nameof(LimitText));
+        OnPropertyChanged(nameof(SecondsText));
+        OnPropertyChanged(nameof(MinutesText));
+        OnPropertyChanged(nameof(SaveText));
+        OnPropertyChanged(nameof(ConnectText));
+        OnPropertyChanged(nameof(CancelText));
+        OnPropertyChanged(nameof(PlaceholderText));
+    }
+
+    private void RefreshLocalizedOptionHeaders()
+    {
+        SetOptionHeader(ProxyOptions, "None", "Option.None");
+        SetOptionHeader(TerminalEncodingOptions, "default", "Option.DefaultLanguage");
+        SetOptionHeader(TerminalKeyboardFunctionKeyOptions, "Default", "Option.Default");
+        SetOptionHeader(TerminalKeyboardFunctionKeyOptions, "UserCustom", "Option.UserCustom");
+        SetOptionHeader(TerminalVtCursorKeyModeOptions, "Normal", "Option.Normal");
+        SetOptionHeader(TerminalVtCursorKeyModeOptions, "Application", "Option.Application");
+        SetOptionHeader(TerminalVtNumericKeypadModeOptions, "Normal", "Option.Normal");
+        SetOptionHeader(TerminalVtNumericKeypadModeOptions, "Application", "Option.Application");
+        SetOptionHeader(TerminalVtNumericKeypadModeOptions, "ForceNormal", "Option.ForceNormal");
+        SetOptionHeader(AppearanceFontQualityOptions, "Default", "Option.Default");
+        SetOptionHeader(AppearanceFontQualityOptions, "Draft", "Option.Draft");
+        SetOptionHeader(AppearanceFontQualityOptions, "Proof", "Option.Proof");
+        SetOptionHeader(AppearanceFontQualityOptions, "NonAntiAliased", "Option.NonAntiAliased");
+        SetOptionHeader(AppearanceFontQualityOptions, "AntiAliased", "Option.AntiAliased");
+        SetOptionHeader(AppearanceFontQualityOptions, "NaturalClearType", "Option.NaturalClearType");
+        SetOptionHeader(AppearanceBoldTextModeOptions, "Color", "Option.BoldColor");
+        SetOptionHeader(AppearanceBoldTextModeOptions, "Font", "Option.BoldFont");
+        SetOptionHeader(AppearanceBoldTextModeOptions, "ColorAndFont", "Option.BoldColorAndFont");
+        SetOptionHeader(AppearanceCursorShapeOptions, "Block", "Option.Block");
+        SetOptionHeader(AppearanceCursorShapeOptions, "Vertical", "Option.Vertical");
+        SetOptionHeader(AppearanceCursorShapeOptions, "Underline", "Option.Underline");
+        SetOptionHeader(AppearanceBackgroundImagePositionOptions, "Center", "Option.Center");
+        SetOptionHeader(AppearanceBackgroundImagePositionOptions, "Tile", "Option.Tile");
+        SetOptionHeader(AppearanceBackgroundImagePositionOptions, "Stretch", "Option.Stretch");
+        SetOptionHeader(AppearanceBackgroundImagePositionOptions, "TopLeft", "Option.TopLeft");
+        SetOptionHeader(AppearanceBackgroundImagePositionOptions, "TopRight", "Option.TopRight");
+        SetOptionHeader(AppearanceBackgroundImagePositionOptions, "BottomLeft", "Option.BottomLeft");
+        SetOptionHeader(AppearanceBackgroundImagePositionOptions, "BottomRight", "Option.BottomRight");
+        SetOptionHeader(SshVersionOptions, "Ssh2ThenSsh1", "Option.Ssh2ThenSsh1");
+        SetOptionHeader(SshVersionOptions, "Ssh1ThenSsh2", "Option.Ssh1ThenSsh2");
+        SetOptionHeader(SshVersionOptions, "Ssh2Only", "Option.Ssh2Only");
+        SetOptionHeader(SshVersionOptions, "Ssh1Only", "Option.Ssh1Only");
+        SetOptionHeader(SerialParityOptions, "None", "Option.None");
+        SetOptionHeader(SerialParityOptions, "Odd", "Option.Odd");
+        SetOptionHeader(SerialParityOptions, "Even", "Option.Even");
+        SetOptionHeader(SerialParityOptions, "Mark", "Option.Mark");
+        SetOptionHeader(SerialParityOptions, "Space", "Option.Space");
+        SetOptionHeader(SerialFlowControlOptions, "None", "Option.None");
+        SetOptionHeader(RdpResizeModeOptions, "NotUsed", "Option.NotUsed");
+        SetOptionHeader(RdpResizeModeOptions, "SmartSizing", "Option.SmartSizing");
+        SetOptionHeader(RdpResizeModeOptions, "SmartReconnect", "Option.SmartReconnect");
+        SetOptionHeader(RdpResizeModeOptions, "LegacyReconnect", "Option.LegacyReconnect");
+        SetOptionHeader(AdvancedIpVersionOptions, "Auto", "Option.Auto");
+
+        OnPropertyChanged(nameof(ProxyOptions));
+        OnPropertyChanged(nameof(TerminalEncodingOptions));
+        OnPropertyChanged(nameof(TerminalKeyboardFunctionKeyOptions));
+        OnPropertyChanged(nameof(TerminalVtCursorKeyModeOptions));
+        OnPropertyChanged(nameof(TerminalVtNumericKeypadModeOptions));
+        OnPropertyChanged(nameof(AppearanceFontQualityOptions));
+        OnPropertyChanged(nameof(AppearanceBoldTextModeOptions));
+        OnPropertyChanged(nameof(AppearanceCursorShapeOptions));
+        OnPropertyChanged(nameof(AppearanceBackgroundImagePositionOptions));
+        OnPropertyChanged(nameof(SshVersionOptions));
+        OnPropertyChanged(nameof(SerialParityOptions));
+        OnPropertyChanged(nameof(SerialFlowControlOptions));
+        OnPropertyChanged(nameof(RdpResizeModeOptions));
+        OnPropertyChanged(nameof(AdvancedIpVersionOptions));
+    }
+
+    private void SetOptionHeader(ObservableCollection<ISelectOption> options, string content, string key)
+    {
+        for (var i = 0; i < options.Count; i++)
+        {
+            if (!string.Equals(options[i].Content?.ToString(), content, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            options[i] = new SelectOption
+            {
+                Header = L.Text(key),
+                Content = content
+            };
+            return;
+        }
+    }
+
     public SessionInfo? SavedSession { get; private set; }
     public ApplicationSettings? SavedSettings { get; private set; }
 
@@ -840,6 +1056,9 @@ public partial class SessionEditViewModel : ObservableObject
     public SessionEditViewModel()
     {
         Scope = EditScope.Session;
+        DialogTitle = L.Text("SessionEdit.TitleNew");
+        LocalizationService.Shared.LanguageChanged += (_, _) => RefreshLocalization();
+        RefreshLocalizedOptionHeaders();
         LoadHighlightSets(null, "None");
         RefreshSerialPortOptions();
     }
@@ -848,7 +1067,9 @@ public partial class SessionEditViewModel : ObservableObject
     {
         Scope = EditScope.Session;
         _editingSession = session;
-        DialogTitle = "会话属性";
+        DialogTitle = L.Text("SessionEdit.TitleProperties");
+        LocalizationService.Shared.LanguageChanged += (_, _) => RefreshLocalization();
+        RefreshLocalizedOptionHeaders();
         SessionName = session.Name;
         Protocol = session.Protocol.ToString();
         Host = session.Host;
@@ -863,6 +1084,7 @@ public partial class SessionEditViewModel : ObservableObject
             SelectProxy(session.SelectedProxyId.Value);
         IsPasswordAuth = session.AuthMethod == AuthMethod.Password;
         IsPrivateKeyAuth = session.AuthMethod == AuthMethod.PrivateKey;
+        Password = PasswordEncryptionService.Decrypt(session.Password);
         PrivateKeyPath = session.PrivateKeyPath ?? string.Empty;
         AutoReconnect = session.AutoReconnect;
         ReconnectIntervalSeconds = Math.Max(1, session.ReconnectIntervalSeconds);
@@ -883,7 +1105,7 @@ public partial class SessionEditViewModel : ObservableObject
         TerminalEncoding = string.IsNullOrWhiteSpace(session.TerminalEncoding) ? "utf-8" : session.TerminalEncoding;
         TerminalTreatAmbiguousAsWide = session.TerminalTreatAmbiguousAsWide;
         TerminalSendLineEnding = string.IsNullOrWhiteSpace(session.TerminalSendLineEnding) ? "CR" : session.TerminalSendLineEnding;
-        TerminalReceiveLineEnding = string.IsNullOrWhiteSpace(session.TerminalReceiveLineEnding) ? "CRLF" : session.TerminalReceiveLineEnding;
+        TerminalReceiveLineEnding = string.IsNullOrWhiteSpace(session.TerminalReceiveLineEnding) ? "AUTO" : session.TerminalReceiveLineEnding;
         TerminalKeyboardFunctionKeyMode = string.IsNullOrWhiteSpace(session.TerminalKeyboardFunctionKeyMode) ? "Default" : session.TerminalKeyboardFunctionKeyMode;
         TerminalKeyboardMappingFile = session.TerminalKeyboardMappingFile ?? string.Empty;
         TerminalDeleteKeySequence = string.IsNullOrWhiteSpace(session.TerminalDeleteKeySequence) ? "VT220" : session.TerminalDeleteKeySequence;
@@ -905,6 +1127,7 @@ public partial class SessionEditViewModel : ObservableObject
         TerminalAdvancedScrollToBottomOnInputOutput = session.TerminalAdvancedScrollToBottomOnInputOutput;
         TerminalAdvancedSuspendScrollToBottomOnScrollLock = session.TerminalAdvancedSuspendScrollToBottomOnScrollLock;
         TerminalAdvancedScrollToBottomByKey = session.TerminalAdvancedScrollToBottomByKey;
+        TerminalAdvancedDestructiveBackspace = session.TerminalAdvancedDestructiveBackspace;
         TerminalAdvancedDuplicateSessionCd = session.TerminalAdvancedDuplicateSessionCd;
         TerminalAdvancedPreinputString = session.TerminalAdvancedPreinputString ?? string.Empty;
         TerminalAdvancedUseRxvtHomeEnd = session.TerminalAdvancedUseRxvtHomeEnd;
@@ -1017,6 +1240,11 @@ public partial class SessionEditViewModel : ObservableObject
         FileTransferUploadDirectory = session.FileTransferUploadDirectory ?? string.Empty;
         FileTransferDuplicateAction = string.IsNullOrWhiteSpace(session.FileTransferDuplicateAction) ? "AutoRename" : session.FileTransferDuplicateAction;
         FileTransferUploadProtocol = string.IsNullOrWhiteSpace(session.FileTransferUploadProtocol) ? "Zmodem" : session.FileTransferUploadProtocol;
+        FileTransferXymodemBlockSize = session.FileTransferXymodemBlockSize == 1024 ? 1024 : 128;
+        FileTransferXmodemUploadCommand = string.IsNullOrWhiteSpace(session.FileTransferXmodemUploadCommand) ? "rx" : session.FileTransferXmodemUploadCommand;
+        FileTransferYmodemUploadCommand = string.IsNullOrWhiteSpace(session.FileTransferYmodemUploadCommand) ? "rb -E" : session.FileTransferYmodemUploadCommand;
+        FileTransferZmodemAutoActivate = session.FileTransferZmodemAutoActivate;
+        FileTransferZmodemUploadCommand = string.IsNullOrWhiteSpace(session.FileTransferZmodemUploadCommand) ? "rz -E" : session.FileTransferZmodemUploadCommand;
         SerialPortName = string.IsNullOrWhiteSpace(session.SerialPortName) ? "COM1" : session.SerialPortName;
         SerialBaudRate = Math.Max(1, session.SerialBaudRate).ToString();
         SerialDataBits = Math.Clamp(session.SerialDataBits, 5, 8).ToString();
@@ -1041,8 +1269,9 @@ public partial class SessionEditViewModel : ObservableObject
     {
         Scope = EditScope.GlobalDefaults;
         _editingSettings = settings;
-        DialogTitle = "全局配置";
+        DialogTitle = L.Text("SessionEdit.TitleGlobal");
         SessionName = "Global Defaults";
+        RefreshLocalizedOptionHeaders();
         OnPropertyChanged(nameof(IsSessionScope));
         OnPropertyChanged(nameof(IsGlobalDefaultsScope));
     }
@@ -1086,6 +1315,7 @@ public partial class SessionEditViewModel : ObservableObject
         session.ProxyServers = ProxyServers.Select(CloneProxy).ToList();
         session.SelectedProxyId = session.Proxy.IsEnabled ? session.Proxy.Id : null;
         session.AuthMethod = IsPrivateKeyAuth ? AuthMethod.PrivateKey : AuthMethod.Password;
+        session.Password = IsPasswordAuth ? PasswordEncryptionService.Encrypt(Password) : string.Empty;
         session.PrivateKeyPath = IsPrivateKeyAuth ? PrivateKeyPath : null;
         session.AutoReconnect = AutoReconnect;
         session.ReconnectIntervalSeconds = Math.Max(1, (int)ReconnectIntervalSeconds);
@@ -1147,6 +1377,90 @@ public partial class SessionEditViewModel : ObservableObject
         session.SerialStopBits = SerialStopBits;
         session.SerialParity = SerialParity;
         session.SerialFlowControl = SerialFlowControl;
+        session.TerminalType = string.IsNullOrWhiteSpace(TerminalType) ? "xterm" : TerminalType;
+        session.TerminalColumns = Math.Clamp((int)TerminalColumns, 20, 500);
+        session.TerminalRows = Math.Clamp((int)TerminalRows, 5, 200);
+        session.TerminalFixedSize = TerminalFixedSize;
+        session.TerminalResetSizeOnConnect = TerminalResetSizeOnConnect;
+        session.TerminalScrollbackSize = Math.Clamp((int)TerminalScrollbackSize, 0, 200000);
+        session.TerminalPushClearedScreenToScrollback = TerminalPushClearedScreenToScrollback;
+        session.TerminalEncoding = string.IsNullOrWhiteSpace(TerminalEncoding) ? "utf-8" : TerminalEncoding;
+        session.TerminalTreatAmbiguousAsWide = TerminalTreatAmbiguousAsWide;
+        session.TerminalSendLineEnding = string.IsNullOrWhiteSpace(TerminalSendLineEnding) ? "CR" : TerminalSendLineEnding;
+        session.TerminalReceiveLineEnding = string.IsNullOrWhiteSpace(TerminalReceiveLineEnding) ? "AUTO" : TerminalReceiveLineEnding;
+        session.TerminalKeyboardFunctionKeyMode = string.IsNullOrWhiteSpace(TerminalKeyboardFunctionKeyMode) ? "Default" : TerminalKeyboardFunctionKeyMode;
+        session.TerminalKeyboardMappingFile = TerminalKeyboardMappingFile.Trim();
+        session.TerminalDeleteKeySequence = string.IsNullOrWhiteSpace(TerminalDeleteKeySequence) ? "VT220" : TerminalDeleteKeySequence;
+        session.TerminalBackspaceKeySequence = string.IsNullOrWhiteSpace(TerminalBackspaceKeySequence) ? "Backspace" : TerminalBackspaceKeySequence;
+        session.TerminalLeftAltAsMeta = TerminalLeftAltAsMeta;
+        session.TerminalRightAltAsMeta = TerminalRightAltAsMeta;
+        session.TerminalCtrlAltAsAltGr = TerminalCtrlAltAsAltGr;
+        session.TerminalVtAutoWrapMode = TerminalVtAutoWrapMode;
+        session.TerminalVtOriginMode = TerminalVtOriginMode;
+        session.TerminalVtReverseVideoMode = TerminalVtReverseVideoMode;
+        session.TerminalVtNewLineMode = TerminalVtNewLineMode;
+        session.TerminalVtInsertMode = TerminalVtInsertMode;
+        session.TerminalVtEchoMode = TerminalVtEchoMode;
+        session.TerminalVtCursorKeyMode = TerminalVtCursorKeyMode;
+        session.TerminalVtNumericKeypadMode = TerminalVtNumericKeypadMode;
+        session.TerminalAdvancedUseApplicationCursorMode = TerminalAdvancedUseApplicationCursorMode;
+        session.TerminalAdvancedShiftLimitsApplicationCursorMode = TerminalAdvancedShiftLimitsApplicationCursorMode;
+        session.TerminalAdvancedClearScreenBackground = TerminalAdvancedClearScreenBackground;
+        session.TerminalAdvancedScrollToBottomOnInputOutput = TerminalAdvancedScrollToBottomOnInputOutput;
+        session.TerminalAdvancedSuspendScrollToBottomOnScrollLock = TerminalAdvancedSuspendScrollToBottomOnScrollLock;
+        session.TerminalAdvancedScrollToBottomByKey = TerminalAdvancedScrollToBottomByKey;
+        session.TerminalAdvancedDestructiveBackspace = TerminalAdvancedDestructiveBackspace;
+        session.TerminalAdvancedDuplicateSessionCd = TerminalAdvancedDuplicateSessionCd;
+        session.TerminalAdvancedPreinputString = TerminalAdvancedPreinputString.Trim();
+        session.TerminalAdvancedUseRxvtHomeEnd = TerminalAdvancedUseRxvtHomeEnd;
+        session.TerminalAdvancedDisableBlinkingText = TerminalAdvancedDisableBlinkingText;
+        session.TerminalAdvancedDisableTitleChange = TerminalAdvancedDisableTitleChange;
+        session.TerminalAdvancedDisableTerminalPrint = TerminalAdvancedDisableTerminalPrint;
+        session.TerminalAdvancedDisableAlternateScreen = TerminalAdvancedDisableAlternateScreen;
+        session.TerminalAdvancedIgnoreResizeRequest = TerminalAdvancedIgnoreResizeRequest;
+        session.TerminalAdvancedAnswerback = string.IsNullOrWhiteSpace(TerminalAdvancedAnswerback) ? "CxShell" : TerminalAdvancedAnswerback.Trim();
+        session.TerminalAdvancedUseBuiltinLineDrawing = TerminalAdvancedUseBuiltinLineDrawing;
+        session.TerminalAdvancedUseBuiltinPowerline = TerminalAdvancedUseBuiltinPowerline;
+        session.AppearanceColorScheme = string.IsNullOrWhiteSpace(AppearanceColorScheme) ? "XTerm" : AppearanceColorScheme;
+        session.AppearanceForegroundColor = ToHex(AppearanceForegroundColor);
+        session.AppearanceBoldForegroundColor = ToHex(AppearanceBoldForegroundColor);
+        session.AppearanceBackgroundColor = ToHex(AppearanceBackgroundColor);
+        session.AppearanceAnsiColors = string.IsNullOrWhiteSpace(AppearanceAnsiColors)
+            ? new SessionInfo().AppearanceAnsiColors
+            : AppearanceAnsiColors;
+        session.AppearanceFontFamily = string.IsNullOrWhiteSpace(AppearanceFontFamily) ? "DejaVu Sans Mono" : AppearanceFontFamily;
+        session.AppearanceFontStyle = string.IsNullOrWhiteSpace(AppearanceFontStyle) ? "Normal" : AppearanceFontStyle;
+        session.AppearanceFontSize = Math.Clamp((int)AppearanceFontSize, 6, 96);
+        session.AppearanceCjkFontFamily = string.IsNullOrWhiteSpace(AppearanceCjkFontFamily)
+            ? session.AppearanceFontFamily
+            : AppearanceCjkFontFamily;
+        session.AppearanceCjkFontStyle = string.IsNullOrWhiteSpace(AppearanceCjkFontStyle) ? "Normal" : AppearanceCjkFontStyle;
+        session.AppearanceCjkFontSize = Math.Clamp((int)AppearanceCjkFontSize, 6, 96);
+        session.AppearanceUseVariablePitchFont = AppearanceUseVariablePitchFont;
+        session.AppearanceFontQuality = string.IsNullOrWhiteSpace(AppearanceFontQuality) ? "Default" : AppearanceFontQuality;
+        session.AppearanceBoldTextMode = string.IsNullOrWhiteSpace(AppearanceBoldTextMode) ? "ColorAndFont" : AppearanceBoldTextMode;
+        session.AppearanceCursorColor = ToHex(AppearanceCursorColor);
+        session.AppearanceCursorTextColor = ToHex(AppearanceCursorTextColor);
+        session.AppearanceUseBlinkingCursor = AppearanceUseBlinkingCursor;
+        session.AppearanceCursorBlinkSpeedMilliseconds = Math.Clamp((int)AppearanceCursorBlinkSpeedMilliseconds, 1, 5000);
+        session.AppearanceCursorShape = string.IsNullOrWhiteSpace(AppearanceCursorShape) ? "Block" : AppearanceCursorShape;
+        session.AppearanceWindowPaddingTop = Math.Clamp((int)AppearanceWindowPaddingTop, 0, 200);
+        session.AppearanceWindowPaddingBottom = Math.Clamp((int)AppearanceWindowPaddingBottom, 0, 200);
+        session.AppearanceWindowPaddingLeft = Math.Clamp((int)AppearanceWindowPaddingLeft, 0, 200);
+        session.AppearanceWindowPaddingRight = Math.Clamp((int)AppearanceWindowPaddingRight, 0, 200);
+        session.AppearanceLineSpacing = Math.Clamp((int)AppearanceLineSpacing, -5, 32);
+        session.AppearanceCharacterSpacing = Math.Clamp((int)AppearanceCharacterSpacing, -5, 32);
+        session.AppearanceTabColorMode = string.IsNullOrWhiteSpace(AppearanceTabColorMode) ? "Default" : AppearanceTabColorMode;
+        session.AppearanceTabCustomColor = ToHex(AppearanceTabCustomColor);
+        session.AppearanceBackgroundImagePath = AppearanceBackgroundImagePath.Trim();
+        session.AppearanceBackgroundImagePosition = string.IsNullOrWhiteSpace(AppearanceBackgroundImagePosition)
+            ? "Center"
+            : AppearanceBackgroundImagePosition;
+        session.AppearanceHighlightSetId = string.IsNullOrWhiteSpace(AppearanceHighlightSetId)
+            ? "None"
+            : AppearanceHighlightSetId;
+        session.AppearanceHighlightSets = new ObservableCollection<HighlightSet>(
+            AppearanceHighlightSets.Select(CloneHighlightSet));
         session.RdpWindowSize = RdpWindowSize;
         session.RdpDesktopWidth = int.TryParse(RdpDesktopWidth, out var rdpWidth) ? Math.Max(1, rdpWidth) : 1920;
         session.RdpDesktopHeight = int.TryParse(RdpDesktopHeight, out var rdpHeight) ? Math.Max(1, rdpHeight) : 1080;
@@ -1157,6 +1471,45 @@ public partial class SessionEditViewModel : ObservableObject
         session.RdpRedirectDrives = RdpRedirectDrives;
         session.RdpAudioMode = RdpAudioMode;
         session.RdpAudioCapture = RdpAudioCapture;
+        session.FileTransferAlwaysAskDownloadFolder = FileTransferAlwaysAskDownloadFolder;
+        session.FileTransferDownloadDirectory = FileTransferDownloadDirectory.Trim();
+        session.FileTransferUploadDirectory = FileTransferUploadDirectory.Trim();
+        session.FileTransferDuplicateAction = string.IsNullOrWhiteSpace(FileTransferDuplicateAction)
+            ? "AutoRename"
+            : FileTransferDuplicateAction;
+        session.FileTransferUploadProtocol = string.IsNullOrWhiteSpace(FileTransferUploadProtocol)
+            ? "Zmodem"
+            : FileTransferUploadProtocol;
+        session.FileTransferXymodemBlockSize = FileTransferXymodemBlockSize == 1024 ? 1024 : 128;
+        session.FileTransferXmodemUploadCommand = string.IsNullOrWhiteSpace(FileTransferXmodemUploadCommand) ? "rx" : FileTransferXmodemUploadCommand.Trim();
+        session.FileTransferYmodemUploadCommand = string.IsNullOrWhiteSpace(FileTransferYmodemUploadCommand) ? "rb -E" : FileTransferYmodemUploadCommand.Trim();
+        session.FileTransferZmodemAutoActivate = FileTransferZmodemAutoActivate;
+        session.FileTransferZmodemUploadCommand = string.IsNullOrWhiteSpace(FileTransferZmodemUploadCommand) ? "rz -E" : FileTransferZmodemUploadCommand.Trim();
+        session.AdvancedQuickCommandSet = string.IsNullOrWhiteSpace(AdvancedQuickCommandSet) ? "<<所有命令>>" : AdvancedQuickCommandSet.Trim();
+        session.AdvancedDisableQuickCommandShortcuts = AdvancedDisableQuickCommandShortcuts;
+        session.AdvancedFtpPort = Math.Clamp((int)AdvancedFtpPort, 1, 65535);
+        session.AdvancedCharacterDelayMilliseconds = Math.Clamp((int)AdvancedCharacterDelayMilliseconds, 0, 60000);
+        session.AdvancedUseLineDelay = AdvancedUseLineDelay;
+        session.AdvancedLineDelayMilliseconds = Math.Clamp((int)AdvancedLineDelayMilliseconds, 0, 60000);
+        session.AdvancedUsePromptDelay = AdvancedUsePromptDelay;
+        session.AdvancedPromptText = AdvancedPromptText.Trim();
+        session.AdvancedPromptMaxWaitMilliseconds = Math.Clamp((int)AdvancedPromptMaxWaitMilliseconds, 0, 600000);
+        session.AdvancedUseNagle = AdvancedUseNagle;
+        session.AdvancedIpVersion = string.IsNullOrWhiteSpace(AdvancedIpVersion) ? "Auto" : AdvancedIpVersion;
+        session.AdvancedBellMode = string.IsNullOrWhiteSpace(AdvancedBellMode) ? "Default" : AdvancedBellMode;
+        session.AdvancedBellSoundPath = AdvancedBellSoundPath.Trim();
+        session.AdvancedBellFlashInactiveWindow = AdvancedBellFlashInactiveWindow;
+        session.AdvancedBellIgnoreRepeatedSeconds = Math.Clamp((int)AdvancedBellIgnoreRepeatedSeconds, 1, 3600);
+        session.AdvancedBellReactivateAfterSeconds = Math.Clamp((int)AdvancedBellReactivateAfterSeconds, 1, 3600);
+        session.AdvancedLogFilePath = string.IsNullOrWhiteSpace(AdvancedLogFilePath) ? "%n_%Y-%m-%d_%t.log" : AdvancedLogFilePath.Trim();
+        session.AdvancedLogOverwriteExisting = AdvancedLogOverwriteExisting;
+        session.AdvancedLogStartOnConnect = AdvancedLogStartOnConnect;
+        session.AdvancedLogPromptFileOnStart = AdvancedLogPromptFileOnStart;
+        session.AdvancedLogUseRtf = AdvancedLogUseRtf;
+        session.AdvancedLogIncludeTerminalCodes = AdvancedLogIncludeTerminalCodes;
+        session.AdvancedLogEncoding = string.IsNullOrWhiteSpace(AdvancedLogEncoding) ? "Utf16Le" : AdvancedLogEncoding;
+        session.AdvancedLogWriteTimestamp = AdvancedLogWriteTimestamp;
+        session.AdvancedLogTimestampFormat = string.IsNullOrWhiteSpace(AdvancedLogTimestampFormat) ? "[%a]" : AdvancedLogTimestampFormat.Trim();
 
         if (Scope == EditScope.GlobalDefaults && _editingSettings != null)
         {
@@ -1247,11 +1600,17 @@ public partial class SessionEditViewModel : ObservableObject
         OnPropertyChanged(nameof(IsTerminalPage));
         OnPropertyChanged(nameof(IsAppearancePage));
         OnPropertyChanged(nameof(IsAppearanceWindowPage));
+        OnPropertyChanged(nameof(IsAppearanceHighlightPage));
         OnPropertyChanged(nameof(IsKeyboardPage));
+        OnPropertyChanged(nameof(IsVtModePage));
+        OnPropertyChanged(nameof(IsTerminalAdvancedPage));
         OnPropertyChanged(nameof(IsTransferPage));
+        OnPropertyChanged(nameof(IsFileTransferXymodemPage));
+        OnPropertyChanged(nameof(IsFileTransferZmodemPage));
         OnPropertyChanged(nameof(IsLoggingPage));
         OnPropertyChanged(nameof(IsBellPage));
         OnPropertyChanged(nameof(IsAdvancedPage));
+        OnPropertyChanged(nameof(IsTracingPage));
     }
 
     partial void OnAppearanceHighlightSetIdChanged(string value)
@@ -1290,6 +1649,7 @@ public partial class SessionEditViewModel : ObservableObject
         OnPropertyChanged(nameof(IsAdvancedBellModeBuiltin));
         OnPropertyChanged(nameof(IsAdvancedBellModeSound));
         OnPropertyChanged(nameof(IsAdvancedBellSoundPathEnabled));
+        OnPropertyChanged(nameof(IsAdvancedBellFlashInactiveWindowEnabled));
     }
 
     partial void OnAdvancedLogStartOnConnectChanged(bool value)
@@ -1363,6 +1723,12 @@ public partial class SessionEditViewModel : ObservableObject
         OnPropertyChanged(nameof(IsFileTransferUploadProtocolFtp));
     }
 
+    partial void OnFileTransferXymodemBlockSizeChanged(int value)
+    {
+        OnPropertyChanged(nameof(IsFileTransferXymodemBlockSize128));
+        OnPropertyChanged(nameof(IsFileTransferXymodemBlockSize1024));
+    }
+
     partial void OnSendSessionKeepAliveChanged(bool value)
     {
         OnPropertyChanged(nameof(IsSessionKeepAliveIntervalEnabled));
@@ -1381,6 +1747,15 @@ public partial class SessionEditViewModel : ObservableObject
     partial void OnTerminalKeyboardFunctionKeyModeChanged(string value)
     {
         OnPropertyChanged(nameof(IsKeyboardMappingFileEnabled));
+    }
+
+    partial void OnTerminalLeftAltAsMetaChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsCtrlAltAsAltGrEnabled));
+    }
+
+    partial void OnTerminalRightAltAsMetaChanged(bool value)
+    {
     }
 
     partial void OnTerminalDeleteKeySequenceChanged(string value)
@@ -1585,14 +1960,14 @@ public partial class SessionEditViewModel : ObservableObject
         if (Scope == EditScope.Session && string.IsNullOrWhiteSpace(SessionName))
         {
             NameStatus = InputControlStatus.Error;
-            ValidationMessage = "请输入会话名称。";
+            ValidationMessage = L.Text("Validation.SessionNameRequired");
             return false;
         }
 
         if (RequiresHost(protocol) && string.IsNullOrWhiteSpace(Host))
         {
             HostStatus = InputControlStatus.Error;
-            ValidationMessage = "请输入主机地址。";
+            ValidationMessage = L.Text("Validation.HostRequired");
             return false;
         }
 
@@ -1601,14 +1976,14 @@ public partial class SessionEditViewModel : ObservableObject
             if (string.IsNullOrWhiteSpace(Port))
             {
                 PortStatus = InputControlStatus.Error;
-                ValidationMessage = "请输入端口号。";
+                ValidationMessage = L.Text("Validation.PortRequired");
                 return false;
             }
 
             if (!int.TryParse(Port.Trim(), out port) || port < 1 || port > 65535)
             {
                 PortStatus = InputControlStatus.Error;
-                ValidationMessage = "端口必须是 1 到 65535 之间的整数。";
+                ValidationMessage = L.Text("Validation.PortRange");
                 return false;
             }
         }
@@ -1616,7 +1991,7 @@ public partial class SessionEditViewModel : ObservableObject
         if (protocol == SessionProtocol.SERIAL && string.IsNullOrWhiteSpace(SerialPortName))
         {
             SerialPortStatus = InputControlStatus.Error;
-            ValidationMessage = "请输入串口名称。";
+            ValidationMessage = L.Text("Validation.SerialPortRequired");
             return false;
         }
 
@@ -1651,9 +2026,9 @@ public partial class SessionEditViewModel : ObservableObject
     private void RefreshSerialPortOptions()
     {
         SerialPortOptions.Clear();
-        var portNames = SerialPort.GetPortNames();
+        var portNames = PlatformServices.GetSerialPortNames();
         if (portNames.Length == 0)
-            portNames = ["COM1", "COM2", "COM3", "COM4"];
+            portNames = PlatformServices.GetDefaultSerialPortNames();
 
         foreach (var portName in portNames.Order(StringComparer.OrdinalIgnoreCase))
             SerialPortOptions.Add(new SelectOption { Header = portName, Content = portName });

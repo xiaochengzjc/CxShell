@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Collections.ObjectModel;
@@ -32,6 +32,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
     private DispatcherTimer? _appearanceBlinkTimer;
     private SessionEditViewModel? _appearanceBlinkViewModel;
     private bool _appearanceBlinkState = true;
+    private string _currentCategoryKey = "Connection";
 
     public bool ShouldConnect { get; private set; }
 
@@ -64,6 +65,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         _isInitializingSelections = false;
         ProxySelect.SelectionChanged += OnProxySelectionChanged;
         AttachAppearanceBlinkPreview();
+        LocalizationService.Shared.LanguageChanged += OnLanguageChanged;
         ShowCategoryPage("Connection");
         Closed += OnWindowClosed;
     }
@@ -113,6 +115,15 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             _appearanceBlinkTimer.Stop();
             _appearanceBlinkTimer.Tick -= OnAppearanceBlinkTimerTick;
         }
+
+        LocalizationService.Shared.LanguageChanged -= OnLanguageChanged;
+    }
+
+    private void OnLanguageChanged(object? sender, EventArgs e)
+    {
+        var title = GetSessionCategoryTitle(_currentCategoryKey);
+        PageTitleText.Text = title;
+        PlaceholderTitleText.Text = title;
     }
 
     private void OnAppearanceBlinkPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -155,6 +166,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
     private void ShowCategoryPage(string key)
     {
+        _currentCategoryKey = key;
         if (DataContext is SessionEditViewModel vm)
             vm.SelectedPage = key;
 
@@ -174,61 +186,76 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         SerialPage.IsVisible = key == "Serial";
         RdpPage.IsVisible = key == "Rdp";
         TracingPage.IsVisible = key == "Tracing";
-        PlaceholderPage.IsVisible = key != "Connection" && key != "LoginPrompt" && key != "LoginScript" && key != "Ssh" && key != "SshSecurity" && key != "SshTunnel" && key != "Telnet" && key != "Proxy" && key != "KeepAlive" && key != "Rlogin" && key != "SshSftp" && key != "Serial" && key != "Rdp" && key != "Tracing" && key != "Terminal" && key != "Appearance" && key != "AppearanceWindow" && key != "Keyboard" && key != "Transfer" && key != "Logging" && key != "Bell" && key != "Advanced";
+        PlaceholderPage.IsVisible = !IsImplementedCategoryPage(key);
         PlaceholderTitleText.Text = title;
     }
 
-    private static string GetCategoryTitle(string key)
+    private static bool IsImplementedCategoryPage(string key)
     {
-        return key switch
-        {
-            "Connection" => "连接",
-            "Auth" => "用户身份验证",
-            "LoginPrompt" => "登录提示符",
-            "LoginScript" => "登录脚本",
-            "Ssh" => "SSH",
-            "SshSecurity" => "SSH > 安全性",
-            "SshTunnel" => "SSH > 隧道",
-            "SshSftp" => "SSH > SFTP (Secure File Transfer)",
-            "Telnet" => "TELNET",
-            "Rlogin" => "RLOGIN",
-            "Serial" => "串口",
-            "Rdp" => "RDP",
-            "Proxy" => "代理",
-            "KeepAlive" => "保持活动",
-            "Terminal" => "终端",
-            "Appearance" => "外观",
-            "AppearanceWindow" => "外观 > 窗口",
-            "Keyboard" => "键盘",
-            "Transfer" => "文件传输",
-            "Logging" => "日志",
-            "Bell" => "响铃",
-            "Advanced" => "高级",
-            "Tracing" => "协议跟踪",
-            _ => "连接"
-        };
+        return key is
+            "Connection" or
+            "LoginPrompt" or
+            "LoginScript" or
+            "Proxy" or
+            "KeepAlive" or
+            "Telnet" or
+            "Rlogin" or
+            "Serial" or
+            "Rdp" or
+            "Ssh" or
+            "SshSecurity" or
+            "SshTunnel" or
+            "SshSftp" or
+            "Terminal" or
+            "Keyboard" or
+            "VtMode" or
+            "TerminalAdvanced" or
+            "Appearance" or
+            "AppearanceWindow" or
+            "AppearanceHighlight" or
+            "Transfer" or
+            "FileTransferXymodem" or
+            "FileTransferZmodem" or
+            "Logging" or
+            "Bell" or
+            "Advanced" or
+            "Tracing";
     }
 
     private static string GetSessionCategoryTitle(string key)
     {
+        var l = LocalizationService.Shared;
         return key switch
         {
-            "Connection" => "连接",
-            "Auth" => "用户身份验证",
-            "LoginPrompt" => "登录提示符",
-            "LoginScript" => "登录脚本",
+            "Connection" => l.Text("SessionEdit.Connection"),
+            "Auth" => l.Text("SessionEdit.UserAuth"),
+            "LoginPrompt" => l.Text("SessionEdit.LoginPrompt"),
+            "LoginScript" => l.Text("SessionEdit.LoginScript"),
             "Ssh" => "SSH",
-            "SshSecurity" => "SSH > 安全性",
-            "SshTunnel" => "SSH > 隧道",
+            "SshSecurity" => $"SSH > {l.Text("SessionEdit.Security")}",
+            "SshTunnel" => $"SSH > {l.Text("SessionEdit.Tunnel")}",
             "SshSftp" => "SSH > SFTP (Secure File Transfer)",
             "Telnet" => "TELNET",
             "Rlogin" => "RLOGIN",
-            "Serial" => "串口",
+            "Serial" => l.Text("SessionEdit.Serial"),
             "Rdp" => "RDP",
-            "Proxy" => "代理",
-            "KeepAlive" => "保持活动",
-            "Tracing" => "协议跟踪",
-            _ => "连接"
+            "Proxy" => l.Text("SessionEdit.Proxy"),
+            "KeepAlive" => l.Text("SessionEdit.KeepAlive"),
+            "Terminal" => l.Text("SessionEdit.Terminal"),
+            "Keyboard" => l.Text("SessionEdit.Keyboard"),
+            "VtMode" => $"{l.Text("SessionEdit.Terminal")} > {l.Text("SessionEdit.VtMode")}",
+            "TerminalAdvanced" => $"{l.Text("SessionEdit.Terminal")} > {l.Text("SessionEdit.Advanced")}",
+            "Appearance" => l.Text("SessionEdit.Appearance"),
+            "AppearanceWindow" => $"{l.Text("SessionEdit.Appearance")} > {l.Text("SessionEdit.Window")}",
+            "AppearanceHighlight" => $"{l.Text("SessionEdit.Appearance")} > {l.Text("SessionEdit.Highlight")}",
+            "Transfer" => l.Text("SessionEdit.Transfer"),
+            "FileTransferXymodem" => $"{l.Text("SessionEdit.Transfer")} > {l.Text("SessionEdit.Xymodem")}",
+            "FileTransferZmodem" => $"{l.Text("SessionEdit.Transfer")} > {l.Text("SessionEdit.Zmodem")}",
+            "Logging" => $"{l.Text("SessionEdit.Advanced")} > {l.Text("SessionEdit.Logging")}",
+            "Bell" => $"{l.Text("SessionEdit.Advanced")} > {l.Text("SessionEdit.Bell")}",
+            "Advanced" => l.Text("SessionEdit.Advanced"),
+            "Tracing" => $"{l.Text("SessionEdit.Advanced")} > {l.Text("SessionEdit.Tracing")}",
+            _ => l.Text("SessionEdit.Connection")
         };
     }
 
@@ -318,10 +345,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             vm.AppearanceBackgroundImagePosition = GetSelectedOptionText(SessionAppearanceBackgroundImagePositionSelect, vm.AppearanceBackgroundImagePosition);
             vm.AppearanceHighlightSetId = GetSelectedOptionText(SessionAppearanceHighlightSetSelect, vm.AppearanceHighlightSetId);
             vm.TerminalKeyboardFunctionKeyMode = GetSelectedOptionText(SessionFunctionKeySelect, vm.TerminalKeyboardFunctionKeyMode);
-            vm.TerminalVtCursorKeyMode = GetSelectedOptionText(SessionTerminalVtCursorKeyModeSelect, vm.TerminalVtCursorKeyMode);
-            vm.TerminalVtNumericKeypadMode = GetSelectedOptionText(SessionTerminalVtNumericKeypadModeSelect, vm.TerminalVtNumericKeypadMode);
             vm.AdvancedLogEncoding = GetSelectedOptionText(SessionLogEncodingSelect, vm.AdvancedLogEncoding);
-            vm.AdvancedIpVersion = GetSelectedOptionText(SessionAdvancedIpVersionSelect, vm.AdvancedIpVersion);
 
             vm.SaveCommand.Execute(null);
             if (vm.SavedSettings != null)
@@ -523,6 +547,195 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         vm.AppearanceBackgroundImagePosition = GetSelectedOptionText(SessionAppearanceBackgroundImagePositionSelect, vm.AppearanceBackgroundImagePosition);
         vm.AppearanceHighlightSetId = GetSelectedOptionText(SessionAppearanceHighlightSetSelect, vm.AppearanceHighlightSetId);
         ApplyAppearancePreviewTextOptions(vm.AppearanceFontQuality);
+    }
+
+    private void OnSessionFunctionKeySelectionChanged(object? sender, SelectSelectionChangedEventArgs e)
+    {
+        if (_isInitializingSelections || DataContext is not SessionEditViewModel vm)
+            return;
+
+        vm.TerminalKeyboardFunctionKeyMode = GetSelectedOptionText(SessionFunctionKeySelect, vm.TerminalKeyboardFunctionKeyMode);
+    }
+
+    private async void OnBrowseKeyboardMappingFileClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SessionEditViewModel vm)
+            return;
+
+        var filePath = await PickFileAsync("选择键盘映射文件", vm.TerminalKeyboardMappingFile);
+        if (!string.IsNullOrWhiteSpace(filePath))
+            vm.TerminalKeyboardMappingFile = filePath;
+    }
+
+    private async void OnBrowseFileTransferDownloadDirectoryClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SessionEditViewModel vm)
+            return;
+
+        var directory = await PickFolderAsync("选择下载路径", vm.FileTransferDownloadDirectory);
+        if (!string.IsNullOrWhiteSpace(directory))
+            vm.FileTransferDownloadDirectory = directory;
+    }
+
+    private void OnOpenFileTransferDownloadDirectoryClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is SessionEditViewModel vm)
+            OpenDirectory(vm.FileTransferDownloadDirectory);
+    }
+
+    private async void OnBrowseFileTransferUploadDirectoryClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SessionEditViewModel vm)
+            return;
+
+        var directory = await PickFolderAsync("选择加载路径", vm.FileTransferUploadDirectory);
+        if (!string.IsNullOrWhiteSpace(directory))
+            vm.FileTransferUploadDirectory = directory;
+    }
+
+    private void OnOpenFileTransferUploadDirectoryClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is SessionEditViewModel vm)
+            OpenDirectory(vm.FileTransferUploadDirectory);
+    }
+
+    private async void OnBrowseAdvancedLogFileClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SessionEditViewModel vm)
+            return;
+
+        var filePath = await PickSaveFileAsync("选择日志文件", vm.AdvancedLogFilePath);
+        if (!string.IsNullOrWhiteSpace(filePath))
+            vm.AdvancedLogFilePath = filePath;
+    }
+
+    private async void OnBrowseAdvancedBellSoundClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SessionEditViewModel vm)
+            return;
+
+        var filePath = await PickFileAsync("选择声音文件", vm.AdvancedBellSoundPath, new[]
+        {
+            new FilePickerFileType("声音文件")
+            {
+                Patterns = ["*.wav", "*.mp3", "*.ogg", "*.flac", "*.aac", "*.wma"]
+            },
+            FilePickerFileTypes.All
+        });
+        if (!string.IsNullOrWhiteSpace(filePath))
+            vm.AdvancedBellSoundPath = filePath;
+    }
+
+    private async void OnBrowseQuickCommandSetClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SessionEditViewModel vm)
+            return;
+
+        var selected = await ShowQuickCommandSetDialogAsync(vm.AdvancedQuickCommandSet);
+        if (!string.IsNullOrWhiteSpace(selected))
+            vm.AdvancedQuickCommandSet = selected;
+    }
+
+    private void OnResetAdvancedFtpPortClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is SessionEditViewModel vm)
+            vm.AdvancedFtpPort = 21;
+    }
+
+    private async Task<string?> PickFileAsync(
+        string title,
+        string? currentPath,
+        IReadOnlyList<FilePickerFileType>? fileTypes = null)
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel == null)
+            return null;
+
+        var options = new FilePickerOpenOptions
+        {
+            Title = title,
+            AllowMultiple = false,
+            FileTypeFilter = fileTypes
+        };
+
+        var currentDirectory = GetExistingDirectoryFromPath(currentPath);
+        if (!string.IsNullOrWhiteSpace(currentDirectory))
+            options.SuggestedStartLocation = await topLevel.StorageProvider.TryGetFolderFromPathAsync(currentDirectory);
+
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(options);
+        return files.FirstOrDefault()?.Path.LocalPath;
+    }
+
+    private async Task<string?> PickSaveFileAsync(string title, string? currentPath)
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel == null)
+            return null;
+
+        var options = new FilePickerSaveOptions
+        {
+            Title = title,
+            SuggestedFileName = string.IsNullOrWhiteSpace(currentPath) ? null : Path.GetFileName(currentPath)
+        };
+
+        var currentDirectory = GetExistingDirectoryFromPath(currentPath);
+        if (!string.IsNullOrWhiteSpace(currentDirectory))
+            options.SuggestedStartLocation = await topLevel.StorageProvider.TryGetFolderFromPathAsync(currentDirectory);
+
+        var file = await topLevel.StorageProvider.SaveFilePickerAsync(options);
+        return file?.Path.LocalPath;
+    }
+
+    private async Task<string?> PickFolderAsync(string title, string? currentPath)
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel == null)
+            return null;
+
+        var options = new FolderPickerOpenOptions
+        {
+            Title = title,
+            AllowMultiple = false
+        };
+
+        if (!string.IsNullOrWhiteSpace(currentPath) && Directory.Exists(currentPath))
+            options.SuggestedStartLocation = await topLevel.StorageProvider.TryGetFolderFromPathAsync(currentPath);
+
+        var folders = await topLevel.StorageProvider.OpenFolderPickerAsync(options);
+        return folders.FirstOrDefault()?.Path.LocalPath;
+    }
+
+    private static string? GetExistingDirectoryFromPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return null;
+
+        if (Directory.Exists(path))
+            return path;
+
+        var directory = Path.GetDirectoryName(path);
+        return !string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory)
+            ? directory
+            : null;
+    }
+
+    private static void OpenDirectory(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+            return;
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = path,
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            // Ignore shell integration failures; the path remains editable.
+        }
     }
 
     private async Task<string?> ShowQuickCommandSetDialogAsync(string? current)
@@ -2248,10 +2461,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         SelectOption(SessionAppearanceBackgroundImagePositionSelect, vm.AppearanceBackgroundImagePosition);
         SelectOption(SessionAppearanceHighlightSetSelect, vm.AppearanceHighlightSetId);
         SelectOption(SessionFunctionKeySelect, vm.TerminalKeyboardFunctionKeyMode);
-        SelectOption(SessionTerminalVtCursorKeyModeSelect, vm.TerminalVtCursorKeyMode);
-        SelectOption(SessionTerminalVtNumericKeypadModeSelect, vm.TerminalVtNumericKeypadMode);
         SelectOption(SessionLogEncodingSelect, vm.AdvancedLogEncoding);
-        SelectOption(SessionAdvancedIpVersionSelect, vm.AdvancedIpVersion);
         ApplyAppearancePreviewTextOptions(vm.AppearanceFontQuality);
     }
 

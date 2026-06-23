@@ -37,7 +37,9 @@ public static class SshAgentAuthService
 
     public static bool ShouldPromptForPassword(SessionInfo session)
     {
-        return session.AuthMethod == AuthMethod.Password && !CanUseAgent(session);
+        return session.AuthMethod == AuthMethod.Password &&
+               !CanUseAgent(session) &&
+               !PasswordEncryptionService.HasSavedPassword(session.Password);
     }
 
     private static bool CanUseAgent(SessionInfo session)

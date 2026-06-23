@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:services="using:ChiXueSsh.Services"
              xmlns:atom="https://atomui.net"
              xmlns:vm="using:ChiXueSsh.ViewModels"
              xmlns:models="using:ChiXueSsh.Models"
@@ -93,17 +94,17 @@
                 <atom:Button Background="{atom:SharedTokenResource ColorSuccessBg}" BorderThickness="0" Padding="8,5"
                              Command="{Binding UploadCommand}"
                              IsEnabled="{Binding IsConnected}" CornerRadius="4">
-                    <TextBlock Text="↑ 上传" FontSize="12" Foreground="{atom:SharedTokenResource ColorSuccess}" FontWeight="Bold"/>
+                    <TextBlock Text="{Binding UploadText}" FontSize="12" Foreground="{atom:SharedTokenResource ColorSuccess}" FontWeight="Bold"/>
                 </atom:Button>
                 <atom:Button Background="{atom:SharedTokenResource ColorInfoBg}" BorderThickness="0" Padding="8,5"
                              Command="{Binding DownloadCommand}"
                              IsEnabled="{Binding IsConnected}" CornerRadius="4">
-                    <TextBlock Text="↓ 下载" FontSize="12" Foreground="{atom:SharedTokenResource ColorInfo}" FontWeight="Bold"/>
+                    <TextBlock Text="{Binding DownloadText}" FontSize="12" Foreground="{atom:SharedTokenResource ColorInfo}" FontWeight="Bold"/>
                 </atom:Button>
                 <atom:Button Background="{atom:SharedTokenResource ColorWarningBg}" BorderThickness="0" Padding="8,5"
                              Command="{Binding CreateDirectoryCommand}"
                              IsEnabled="{Binding IsConnected}" CornerRadius="4">
-                    <TextBlock Text="+ 目录" FontSize="12" Foreground="{atom:SharedTokenResource ColorWarning}" FontWeight="Bold"/>
+                    <TextBlock Text="{Binding NewDirectoryText}" FontSize="12" Foreground="{atom:SharedTokenResource ColorWarning}" FontWeight="Bold"/>
                 </atom:Button>
             </StackPanel>
         </Border>
@@ -116,17 +117,20 @@
         </Border>
 
         <!-- 文件列表：ScrollViewer + ItemsControl 绕开 AtomUI ListBox 样式覆盖问题 -->
-        <Grid Grid.Row="4">
+        <Grid Grid.Row="4"
+              DragDrop.AllowDrop="{Binding IsConnected}"
+              DragDrop.DragOver="OnFileListDragOver"
+              DragDrop.Drop="OnFileListDrop">
             <!-- 未连接提示 -->
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
                         Spacing="8" IsVisible="{Binding !IsConnected}">
                 <TextBlock Text="📁" FontSize="32" HorizontalAlignment="Center" Opacity="0.3"/>
-                <TextBlock Text="连接 SSH 会话后自动打开" FontSize="12"
+                <TextBlock Text="{Binding ConnectHintText}" FontSize="12"
                            Foreground="{atom:SharedTokenResource ColorTextTertiary}" HorizontalAlignment="Center"/>
             </StackPanel>
 
             <!-- 加载中 -->
-            <TextBlock Text="正在加载..." Foreground="{atom:SharedTokenResource ColorTextSecondary}" FontSize="12"
+            <TextBlock Text="{Binding LoadingText}" Foreground="{atom:SharedTokenResource ColorTextSecondary}" FontSize="12"
                        HorizontalAlignment="Center" VerticalAlignment="Center"
                        IsVisible="{Binding IsLoading}"/>
 
@@ -164,6 +168,7 @@
                                         Cursor="Hand"
                                         Background="{Binding IsSelected, Converter={x:Static vm:SftpSelectedColorConverter.Instance}}"
                                         PointerPressed="OnFileItemPressed"
+                                        PointerMoved="OnFileItemPointerMoved"
                                         PointerReleased="OnFileItemReleased">
                                     <Border.Styles>
                                         <Style Selector="Border:pointerover">

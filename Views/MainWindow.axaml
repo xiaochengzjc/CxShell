@@ -1,13 +1,15 @@
 ﻿<atom:Window xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:services="using:ChiXueSsh.Services"
              xmlns:atom="https://atomui.net"
              xmlns:antdicons="https://atomui.net/icons/antdesign"
              xmlns:models="using:ChiXueSsh.Models"
+             xmlns:controls="using:ChiXueSsh.Controls"
              xmlns:vm="using:ChiXueSsh.ViewModels"
              xmlns:views="using:ChiXueSsh.Views"
              x:Class="ChiXueSsh.Views.MainWindow"
              x:DataType="vm:MainWindowViewModel"
-             Title="CxShell - SSH Client"
+             Title="CxShell"
              Icon="/Assets/ChiXueSshLogo.png"
              Width="1200"
              Height="800"
@@ -42,6 +44,89 @@
         </Style>
     </atom:Window.Styles>
 
+    <atom:Window.Resources>
+        <DataTemplate x:Key="ArrangedTabPaneTemplate" DataType="vm:TerminalTabGroupViewModel">
+            <Border Margin="1"
+                    Background="{atom:SharedTokenResource ColorBgLayout}"
+                    BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                    BorderThickness="1"
+                    ClipToBounds="True"
+                    PointerPressed="OnTabGroupPanePointerPressed">
+                <Grid RowDefinitions="32,*">
+                    <Border Grid.Row="0"
+                            Background="{atom:SharedTokenResource ColorBgLayout}"
+                            BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                            BorderThickness="0,0,0,1">
+                        <ItemsControl ItemsSource="{Binding Tabs}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="vm:TerminalTabViewModel">
+                                    <atom:Button Background="Transparent"
+                                                 BorderThickness="0"
+                                                 Padding="0"
+                                                 Command="{Binding $parent[Window].DataContext.SelectTabCommand, x:CompileBindings=False}"
+                                                 CommandParameter="{Binding}">
+                                        <Border Padding="10,5"
+                                                MinWidth="110"
+                                                BorderThickness="1,1,1,0"
+                                                Margin="2,2,0,0"
+                                                Background="{Binding TabBackgroundBrush}">
+                                            <Border.BorderBrush>
+                                                <SolidColorBrush Color="{Binding IsSelected, Converter={x:Static vm:TabSelectedBorderConverter.Instance}}"/>
+                                            </Border.BorderBrush>
+                                            <DockPanel LastChildFill="True">
+                                                <atom:Button DockPanel.Dock="Right"
+                                                             Command="{Binding CloseTabCommand}"
+                                                             Width="22"
+                                                             Height="20"
+                                                             Padding="0"
+                                                             Background="Transparent"
+                                                             BorderThickness="0"
+                                                             HorizontalContentAlignment="Center"
+                                                             VerticalContentAlignment="Center"
+                                                             Opacity="0.65">
+                                                    <atom:TextBlock Text="✕" FontSize="10"/>
+                                                </atom:Button>
+                                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                                    <Ellipse Width="8"
+                                                             Height="8"
+                                                             Fill="{Binding ConnectionIndicatorBrush}"
+                                                             VerticalAlignment="Center"
+                                                             atom:ToolTip.Tip="{Binding ConnectionIndicatorText}"/>
+                                                    <atom:TextBlock Text="{Binding Title}"
+                                                                    FontSize="12"
+                                                                    MaxWidth="180"
+                                                                    VerticalAlignment="Center"
+                                                                    TextTrimming="CharacterEllipsis"
+                                                                    Foreground="{Binding IsSelected, Converter={x:Static vm:TabSelectedFgConverter.Instance}}"/>
+                                                </StackPanel>
+                                            </DockPanel>
+                                        </Border>
+                                    </atom:Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Border>
+                    <Grid Grid.Row="1" Background="#141414">
+                        <Grid IsVisible="{Binding IsSelectedTerminalSession}">
+                            <views:TerminalView DataContext="{Binding SelectedTab.Terminal, x:CompileBindings=False}"/>
+                        </Grid>
+                        <Grid IsVisible="{Binding IsSelectedVncSession}">
+                            <views:VncView DataContext="{Binding SelectedTab.Vnc, x:CompileBindings=False}"/>
+                        </Grid>
+                        <Grid IsVisible="{Binding IsSelectedFileTransferSession}">
+                            <views:SftpPanelView DataContext="{Binding SelectedTab.FileTransfer, x:CompileBindings=False}"/>
+                        </Grid>
+                    </Grid>
+                </Grid>
+            </Border>
+        </DataTemplate>
+    </atom:Window.Resources>
+
 
 
     <DockPanel>
@@ -51,43 +136,51 @@
                 Background="{atom:SharedTokenResource ColorBgContainer}">
             <StackPanel Orientation="Horizontal" Spacing="4">
                 <atom:Button Command="{Binding NewSessionCommand}"
-                             ButtonType="Default">
+                             ButtonType="Default"
+                             atom:ToolTip.Tip="{Binding NewSessionToolTip}"
+                             atom:ToolTip.Placement="Bottom">
                     <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
                         <atom:TextBlock Text="+" FontSize="16" FontWeight="Bold" Width="18"
                                         TextAlignment="Center" VerticalAlignment="Center"/>
-                        <atom:TextBlock Text="新建会话" VerticalAlignment="Center"/>
+                        <atom:TextBlock Text="{Binding NewSessionText}" VerticalAlignment="Center"/>
                     </StackPanel>
                 </atom:Button>
                 <atom:Button Command="{Binding ShowSessionManagerCommand}"
-                             ButtonType="Default">
+                             ButtonType="Default"
+                             atom:ToolTip.Tip="{Binding SessionManagerToolTip}"
+                             atom:ToolTip.Placement="Bottom">
                     <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
                         <atom:TextBlock Text="☰" FontSize="16" Width="18"
                                         TextAlignment="Center" VerticalAlignment="Center"/>
-                        <atom:TextBlock Text="会话管理" VerticalAlignment="Center"/>
+                        <atom:TextBlock Text="{Binding SessionManagerText}" VerticalAlignment="Center"/>
                     </StackPanel>
                 </atom:Button>
                 <Border Width="1" Background="{atom:SharedTokenResource ColorSplit}" Margin="8,4" Opacity="0.6"/>
                 <atom:Button Command="{Binding CurrentConnectCommand}"
                              ButtonType="Default"
-                             ToolTip.Tip="连接当前会话">
+                             atom:ToolTip.Tip="{Binding ConnectToolTip}"
+                             atom:ToolTip.Placement="Bottom">
                     <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
                         <atom:TextBlock Text="▶" FontSize="12" Width="18"
                                         TextAlignment="Center" VerticalAlignment="Center"/>
-                        <atom:TextBlock Text="连接" VerticalAlignment="Center"/>
+                        <atom:TextBlock Text="{Binding ConnectText}" VerticalAlignment="Center"/>
                     </StackPanel>
                 </atom:Button>
                 <atom:Button Command="{Binding CurrentDisconnectCommand}"
                              ButtonType="Default"
-                             ToolTip.Tip="断开当前会话">
+                             atom:ToolTip.Tip="{Binding DisconnectToolTip}"
+                             atom:ToolTip.Placement="Bottom">
                     <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
                         <atom:TextBlock Text="■" FontSize="11" Width="18"
                                         TextAlignment="Center" VerticalAlignment="Center"/>
-                        <atom:TextBlock Text="断开" VerticalAlignment="Center"/>
+                        <atom:TextBlock Text="{Binding DisconnectText}" VerticalAlignment="Center"/>
                     </StackPanel>
                 </atom:Button>
                 <Border Width="1" Background="{atom:SharedTokenResource ColorSplit}" Margin="8,4" Opacity="0.6"/>
                 <atom:Button Command="{Binding ToggleSftpCommand}"
-                             ButtonType="Default">
+                             ButtonType="Default"
+                             atom:ToolTip.Tip="{Binding SftpToolTip}"
+                             atom:ToolTip.Placement="Bottom">
                     <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
                         <atom:TextBlock Text="⇅" FontSize="14" Width="18"
                                         TextAlignment="Center" VerticalAlignment="Center"/>
@@ -95,28 +188,141 @@
                     </StackPanel>
                 </atom:Button>
                 <atom:Button Command="{Binding ToggleMonitorCommand}"
-                             ButtonType="Default">
+                             ButtonType="Default"
+                             atom:ToolTip.Tip="{Binding MonitorToolTip}"
+                             atom:ToolTip.Placement="Bottom">
                     <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
                         <atom:TextBlock Text="▦" FontSize="14" Width="18"
                                         TextAlignment="Center" VerticalAlignment="Center"/>
-                        <atom:TextBlock Text="监控" VerticalAlignment="Center"/>
+                        <atom:TextBlock Text="{Binding MonitorText}" VerticalAlignment="Center"/>
                     </StackPanel>
                 </atom:Button>
                 <!-- 主题切换 -->
                 <Border Width="1" Background="{atom:SharedTokenResource ColorSplit}" Margin="8,4" Opacity="0.6"/>
                 <atom:Button ButtonType="Default" Command="{Binding ToggleThemeCommand}"
-                             ToolTip.Tip="切换亮色/暗色主题">
+                             atom:ToolTip.Tip="{Binding ThemeToolTip}"
+                             atom:ToolTip.Placement="Bottom">
                     <atom:TextBlock Text="{Binding ThemeIcon}" FontSize="14"
                                     TextAlignment="Center" VerticalAlignment="Center"/>
                 </atom:Button>
                 <atom:Button ButtonType="Default" Command="{Binding ToggleTerminalFullScreenCommand}"
-                             ToolTip.Tip="全屏显示当前终端">
+                             atom:ToolTip.Tip="{Binding FullScreenToolTip}"
+                             atom:ToolTip.Placement="Bottom">
+                    <atom:TextBlock Text="⛶"
+                                    FontSize="14"
+                                    Width="18"
+                                    TextAlignment="Center"
+                                    VerticalAlignment="Center"/>
+                </atom:Button>
+                <atom:Button x:Name="TabArrangeButton"
+                             ButtonType="Default"
+                             Icon="{antdicons:AntDesignIconProvider Kind=LayoutOutlined}"
+                             Click="OnTabArrangeButtonClick"
+                             atom:ToolTip.Tip="{Binding ArrangeToolTip}"
+                             atom:ToolTip.Placement="Bottom">
                     <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                        <atom:TextBlock Text="⛶" FontSize="14" Width="18"
-                                        TextAlignment="Center" VerticalAlignment="Center"/>
-                        <atom:TextBlock Text="全屏" VerticalAlignment="Center"/>
+                        <atom:TextBlock Text="{Binding ArrangeText}" VerticalAlignment="Center"/>
+                        <atom:TextBlock Text="▾" FontSize="10" VerticalAlignment="Center" Opacity="0.75"/>
                     </StackPanel>
                 </atom:Button>
+                <atom:Button x:Name="LanguageButton"
+                             ButtonType="Default"
+                             Click="OnLanguageButtonClick"
+                             atom:ToolTip.Tip="{Binding LanguageToolTip}"
+                             atom:ToolTip.Placement="Bottom">
+                    <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                        <atom:TextBlock Text="{Binding LanguageIcon}"
+                                        FontSize="12"
+                                        FontWeight="Bold"
+                                        MinWidth="18"
+                                        TextAlignment="Center"
+                                        VerticalAlignment="Center"/>
+                        <atom:TextBlock Text="▾" FontSize="10" VerticalAlignment="Center" Opacity="0.75"/>
+                    </StackPanel>
+                </atom:Button>
+                <atom:Popup x:Name="LanguagePopup"
+                            Placement="Bottom"
+                            IsLightDismissEnabled="True">
+                    <Border Background="{atom:SharedTokenResource ColorBgElevated}"
+                            BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="0,4"
+                            MinWidth="120">
+                        <StackPanel Spacing="0">
+                            <atom:Button Content="{Binding ChineseLanguageText}"
+                                         Command="{Binding SetLanguageCommand}"
+                                         CommandParameter="zh-CN"
+                                         Click="OnLanguageMenuItemClick"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         HorizontalAlignment="Stretch"
+                                         HorizontalContentAlignment="Left"
+                                         Padding="16,7"
+                                         FontSize="13"/>
+                            <atom:Button Content="{Binding EnglishLanguageText}"
+                                         Command="{Binding SetLanguageCommand}"
+                                         CommandParameter="en-US"
+                                         Click="OnLanguageMenuItemClick"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         HorizontalAlignment="Stretch"
+                                         HorizontalContentAlignment="Left"
+                                         Padding="16,7"
+                                         FontSize="13"/>
+                        </StackPanel>
+                    </Border>
+                </atom:Popup>
+                <atom:Popup x:Name="TabArrangePopup"
+                            Placement="Bottom"
+                            IsLightDismissEnabled="True">
+                    <Border Background="{atom:SharedTokenResource ColorBgElevated}"
+                            BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="0,4"
+                            MinWidth="170">
+                        <StackPanel Spacing="0">
+                            <atom:Button Content="{Binding ArrangeVerticalText}"
+                                         Command="{Binding ArrangeTabsVerticalCommand}"
+                                         Click="OnTabArrangeMenuItemClick"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         HorizontalAlignment="Stretch"
+                                         HorizontalContentAlignment="Left"
+                                         Padding="16,7"
+                                         FontSize="13"/>
+                            <atom:Button Content="{Binding ArrangeHorizontalText}"
+                                         Command="{Binding ArrangeTabsHorizontalCommand}"
+                                         Click="OnTabArrangeMenuItemClick"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         HorizontalAlignment="Stretch"
+                                         HorizontalContentAlignment="Left"
+                                         Padding="16,7"
+                                         FontSize="13"/>
+                            <atom:Button Content="{Binding ArrangeTileText}"
+                                         Command="{Binding ArrangeTabsTileCommand}"
+                                         Click="OnTabArrangeMenuItemClick"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         HorizontalAlignment="Stretch"
+                                         HorizontalContentAlignment="Left"
+                                         Padding="16,7"
+                                         FontSize="13"/>
+                            <Border Height="1" Background="{atom:SharedTokenResource ColorSplit}" Margin="8,4"/>
+                            <atom:Button Content="{Binding ArrangeMergeText}"
+                                         Command="{Binding MergeTabGroupsCommand}"
+                                         Click="OnTabArrangeMenuItemClick"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         HorizontalAlignment="Stretch"
+                                         HorizontalContentAlignment="Left"
+                                         Padding="16,7"
+                                         FontSize="13"/>
+                        </StackPanel>
+                    </Border>
+                </atom:Popup>
             </StackPanel>
         </Border>
 
@@ -146,7 +352,8 @@
                              HorizontalContentAlignment="Center"
                              VerticalContentAlignment="Center"
                              Command="{Binding AddCurrentSessionToQuickBarCommand}"
-                             ToolTip.Tip="将当前会话加入快捷标签栏"/>
+                             atom:ToolTip.Tip="{Binding AddQuickSessionToolTip}"
+                             atom:ToolTip.Placement="Bottom"/>
                 <ScrollViewer HorizontalScrollBarVisibility="Auto"
                               VerticalScrollBarVisibility="Disabled"
                               Height="34"
@@ -225,10 +432,10 @@
                     <atom:TextBlock Text="CxShell" FontSize="32" FontWeight="Bold"
                                    HorizontalAlignment="Center" Opacity="0.3"
                                    Foreground="{atom:SharedTokenResource ColorTextLightSolid}"/>
-                    <atom:TextBlock Text="点击「会话管理」选择会话并连接，或点击「新建会话」开始"
+                    <atom:TextBlock Text="{Binding WelcomeSelectSessionText}"
                                    HorizontalAlignment="Center" Opacity="0.5"
                                    Foreground="{atom:SharedTokenResource ColorTextLightSolid}"/>
-                    <atom:TextBlock Text="基于 AtomUI 开发"
+                    <atom:TextBlock Text="{Binding WelcomeBuiltWithAtomUiText}"
                                    HorizontalAlignment="Center" Opacity="0.25"
                                    Foreground="{atom:SharedTokenResource ColorTextLightSolid}"
                                    FontSize="11"/>
@@ -238,7 +445,7 @@
                 <Grid IsVisible="{Binding HasTabs}" RowDefinitions="Auto,*">
                     <!-- Tab 标题栏 -->
                     <Border Grid.Row="0"
-                            IsVisible="{Binding IsTabHeaderVisible}"
+                            IsVisible="{Binding IsMainTabHeaderVisible}"
                             Background="{atom:SharedTokenResource ColorBgLayout}"
                             BorderBrush="{atom:SharedTokenResource ColorBorder}" BorderThickness="0,0,0,1">
                         <ItemsControl ItemsSource="{Binding Tabs}">
@@ -261,6 +468,11 @@
                                                 <SolidColorBrush Color="{Binding IsSelected, Converter={x:Static vm:TabSelectedBorderConverter.Instance}}"/>
                                              </Border.BorderBrush>
                                              <StackPanel Orientation="Horizontal" Spacing="6">
+                                                 <Ellipse Width="8"
+                                                          Height="8"
+                                                          Fill="{Binding ConnectionIndicatorBrush}"
+                                                          VerticalAlignment="Center"
+                                                          atom:ToolTip.Tip="{Binding ConnectionIndicatorText}"/>
                                                  <atom:TextBlock Text="{Binding Title}" FontSize="12"
                                                                 VerticalAlignment="Center"
                                                                 Foreground="{Binding IsSelected, Converter={x:Static vm:TabSelectedFgConverter.Instance}}"/>
@@ -278,13 +490,62 @@
                         </ItemsControl>
                     </Border>
                     <!-- 当前 Tab 的终端内容 -->
-                    <views:TerminalView Grid.Row="1"
-                                        x:Name="ActiveTerminalView"
-                                        DataContext="{Binding SelectedTab.Terminal, x:CompileBindings=False}"
-                                        IsVisible="{Binding $parent[Window].DataContext.IsSelectedTerminalSession, x:CompileBindings=False}"/>
-                    <views:VncView Grid.Row="1"
-                                   DataContext="{Binding SelectedTab.Vnc, x:CompileBindings=False}"
-                                   IsVisible="{Binding $parent[Window].DataContext.IsSelectedVncSession, x:CompileBindings=False}"/>
+                    <Grid Grid.Row="1"
+                          IsVisible="{Binding IsSingleTabContentVisible}">
+                        <views:TerminalView x:Name="ActiveTerminalView"
+                                            DataContext="{Binding SelectedTab.Terminal, x:CompileBindings=False}"
+                                            IsVisible="{Binding $parent[Window].DataContext.IsSelectedTerminalSession, x:CompileBindings=False}"/>
+                        <views:VncView DataContext="{Binding SelectedTab.Vnc, x:CompileBindings=False}"
+                                       IsVisible="{Binding $parent[Window].DataContext.IsSelectedVncSession, x:CompileBindings=False}"/>
+                        <views:SftpPanelView DataContext="{Binding SelectedTab.FileTransfer, x:CompileBindings=False}"
+                                             IsVisible="{Binding $parent[Window].DataContext.IsSelectedFileTransferSession, x:CompileBindings=False}"/>
+                    </Grid>
+
+                    <!-- 多标签排列内容 -->
+                    <Grid Grid.Row="1"
+                          Background="{atom:SharedTokenResource ColorBgLayout}"
+                          IsVisible="{Binding IsArrangedTabsVisible}">
+                        <ItemsControl ItemsSource="{Binding TabGroups}"
+                                      ItemTemplate="{StaticResource ArrangedTabPaneTemplate}"
+                                      IsVisible="{Binding IsVerticalTabArrangement}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <controls:ResizableStackPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+
+                        <ItemsControl ItemsSource="{Binding TabGroups}"
+                                      ItemTemplate="{StaticResource ArrangedTabPaneTemplate}"
+                                      IsVisible="{Binding IsHorizontalTabArrangement}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <controls:ResizableStackPanel Orientation="Vertical"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+
+                        <ItemsControl ItemsSource="{Binding TileRows}"
+                                      IsVisible="{Binding IsTileTabArrangement}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <controls:ResizableStackPanel Orientation="Vertical"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="vm:TileTabGroupRowViewModel">
+                                    <ItemsControl ItemsSource="{Binding Groups}"
+                                                  ItemTemplate="{StaticResource ArrangedTabPaneTemplate}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <controls:ResizableStackPanel Orientation="Horizontal"/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Grid>
                     <Grid Grid.RowSpan="2"
                           IsVisible="{Binding IsTerminalFullScreen}"
                           HorizontalAlignment="Stretch"
@@ -308,7 +569,7 @@
                                 Background="#CC1F2933"
                                 BorderBrush="#4464D8FF"
                                 BorderThickness="1">
-                            <atom:TextBlock Text="ESC 返回"
+                            <atom:TextBlock Text="{Binding FullScreenEscBackText}"
                                             Foreground="White"
                                             FontSize="13"/>
                         </Border>
@@ -335,7 +596,7 @@
                     MinWidth="120">
                 <StackPanel Spacing="0">
                     <atom:Button x:Name="QuickSessionPropertiesBtn"
-                                 Content="属性"
+                                 Content="{Binding QuickPropertiesText}"
                                  Background="Transparent"
                                  BorderThickness="0"
                                  HorizontalAlignment="Stretch"
@@ -345,7 +606,7 @@
                                  Foreground="{atom:SharedTokenResource ColorText}"/>
                     <Border Height="1" Background="{atom:SharedTokenResource ColorSplit}" Margin="8,4"/>
                     <atom:Button x:Name="QuickSessionDeleteBtn"
-                                 Content="删除"
+                                 Content="{Binding QuickDeleteText}"
                                  Background="Transparent"
                                  BorderThickness="0"
                                  HorizontalAlignment="Stretch"

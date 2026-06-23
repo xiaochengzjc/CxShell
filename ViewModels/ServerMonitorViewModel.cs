@@ -16,7 +16,7 @@ public partial class ServerMonitorViewModel : ObservableObject, IDisposable
     [ObservableProperty] private double _cpuTotalUsage;
     [ObservableProperty] private MemoryInfo? _memory;
     [ObservableProperty] private NetworkSpeed? _currentNetworkSpeed;
-    [ObservableProperty] private string _hostLabel = "未连接";
+    [ObservableProperty] private string _hostLabel = LocalizationService.Shared.Text("Monitor.NotConnected");
 
     public ObservableCollection<CpuCoreInfo> CpuCores { get; } = new();
     public ObservableCollection<NetworkSpeed> NetworkHistory { get; } = new();
@@ -31,6 +31,7 @@ public partial class ServerMonitorViewModel : ObservableObject, IDisposable
     {
         _service.DataUpdated += OnDataUpdated;
         _service.ErrorOccurred += OnError;
+        LocalizationService.Shared.LanguageChanged += OnLanguageChanged;
     }
 
     public void SwitchConnection(SessionInfo session, string? password)
@@ -50,8 +51,14 @@ public partial class ServerMonitorViewModel : ObservableObject, IDisposable
     {
         _service.Stop();
         IsMonitoring = false;
-        HostLabel = "未连接";
+        HostLabel = LocalizationService.Shared.Text("Monitor.NotConnected");
         ClearData();
+    }
+
+    private void OnLanguageChanged(object? sender, EventArgs e)
+    {
+        if (!IsMonitoring)
+            HostLabel = LocalizationService.Shared.Text("Monitor.NotConnected");
     }
 
     private void ClearData()
@@ -123,6 +130,7 @@ public partial class ServerMonitorViewModel : ObservableObject, IDisposable
     {
         _service.DataUpdated -= OnDataUpdated;
         _service.ErrorOccurred -= OnError;
+        LocalizationService.Shared.LanguageChanged -= OnLanguageChanged;
         _service.Dispose();
     }
 }

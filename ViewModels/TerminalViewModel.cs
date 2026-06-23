@@ -18,6 +18,12 @@ namespace ChiXueSsh.ViewModels;
 
 public partial class TerminalViewModel : ObservableObject
 {
+    private LocalizationService L => LocalizationService.Shared;
+
+    public string ConnectingText => L.Text("Terminal.Connecting");
+    public string CopyText => L.Text("Terminal.Copy");
+    public string PasteText => L.Text("Terminal.Paste");
+
     [ObservableProperty] private bool _isConnected;
     [ObservableProperty] private string _hostInfo = string.Empty;
     [ObservableProperty] private int _columns = 80;
@@ -86,10 +92,16 @@ public partial class TerminalViewModel : ObservableObject
     public bool ScrollToBottomOnInputOutput => _session?.TerminalAdvancedScrollToBottomOnInputOutput ?? true;
     public bool SuspendScrollToBottomOnScrollLock => _session?.TerminalAdvancedSuspendScrollToBottomOnScrollLock == true;
     public bool ScrollToBottomByKey => _session?.TerminalAdvancedScrollToBottomByKey == true;
+    public bool DestructiveBackspace => _session?.TerminalAdvancedDestructiveBackspace == true;
     public bool UseRxvtHomeEnd => _session?.TerminalAdvancedUseRxvtHomeEnd == true;
     public string AppearanceFontFamily => _session?.AppearanceFontFamily ?? "DejaVu Sans Mono";
     public string AppearanceFontStyle => _session?.AppearanceFontStyle ?? "Normal";
     public double AppearanceFontSize => Math.Clamp(_session?.AppearanceFontSize ?? 14, 6, 96);
+    public string AppearanceCjkFontFamily => _session?.AppearanceCjkFontFamily ?? AppearanceFontFamily;
+    public string AppearanceCjkFontStyle => _session?.AppearanceCjkFontStyle ?? "Normal";
+    public double AppearanceCjkFontSize => Math.Clamp(_session?.AppearanceCjkFontSize ?? 14, 6, 96);
+    public bool AppearanceUseVariablePitchFont => _session?.AppearanceUseVariablePitchFont == true;
+    public string AppearanceFontQuality => _session?.AppearanceFontQuality ?? "Default";
     public Color AppearanceCursorColor => ParseColorOrDefault(_session?.AppearanceCursorColor, "#00FF00");
     public Color AppearanceCursorTextColor => ParseColorOrDefault(_session?.AppearanceCursorTextColor, "#000000");
     public string AppearanceCursorShape => _session?.AppearanceCursorShape ?? "Block";
@@ -126,6 +138,29 @@ public partial class TerminalViewModel : ObservableObject
         Buffer = new TerminalBuffer(Columns, Rows);
         Parser = new AnsiParser(Buffer);
         AttachParserBellHandler(Parser);
+        LocalizationService.Shared.LanguageChanged += (_, _) => RefreshLocalization();
+    }
+
+    private void RefreshLocalization()
+    {
+        OnPropertyChanged(nameof(ConnectingText));
+        OnPropertyChanged(nameof(CopyText));
+        OnPropertyChanged(nameof(PasteText));
+    }
+
+    public void RefreshSessionOptions()
+    {
+        if (_session != null)
+        {
+            Buffer.ApplyColorScheme(
+                ParseColorOrDefault(_session.AppearanceForegroundColor, "#CCCCCC"),
+                ParseColorOrDefault(_session.AppearanceBackgroundColor, "#000000"),
+                ParseColorOrDefault(_session.AppearanceBoldForegroundColor, "#33FF33"),
+                ParseAnsiColors(_session.AppearanceAnsiColors));
+        }
+
+        NotifyKeyboardOptionsChanged();
+        BufferChanged?.Invoke();
     }
 
     public event Action? BufferChanged;
@@ -668,6 +703,9 @@ public partial class TerminalViewModel : ObservableObject
             return false;
         }
 
+        if (_session?.FileTransferZmodemAutoActivate == false)
+            return false;
+
         var probePrefixLength = 0;
         byte[] scanBytes;
         lock (_zmodemLock)
@@ -916,7 +954,8 @@ public partial class TerminalViewModel : ObservableObject
                     ProcessTerminalBytes,
                     PostStatusMessage,
                     ClearXymodemTransfer,
-                    uploadFiles: uploadFiles);
+                    uploadFiles: uploadFiles,
+                    uploadBlockSize: _session?.FileTransferXymodemBlockSize ?? 128);
 
                 _xymodemTransfer = transfer;
                 _xymodemStarting = false;
@@ -1638,18 +1677,23 @@ public partial class TerminalViewModel : ObservableObject
         }
     }
 
-    public void Resize(int columns, int rows)
+    public void Resize(int columns, int rows, bool notifyRemote = true)
     {
         if (_session?.TerminalFixedSize == true)
             return;
 
         if (columns == Columns && rows == Rows)
+        {
+            if (notifyRemote)
+                _connection?.ResizeTerminal(columns, rows);
             return;
+        }
 
         Columns = columns;
         Rows = rows;
         Buffer.Resize(columns, rows);
-        _connection?.ResizeTerminal(columns, rows);
+        if (notifyRemote)
+            _connection?.ResizeTerminal(columns, rows);
     }
 
     public void ApplyConfiguredTerminalSize()
@@ -1765,6 +1809,41 @@ public partial class TerminalViewModel : ObservableObject
         StopSessionLog();
     }
 
+    public void CloseDetached()
+    {
+        _manualDisconnect = true;
+        _session = null;
+        _connectionCts?.Cancel();
+        _connectionCts?.Dispose();
+        _connectionCts = null;
+        _connectionGeneration++;
+
+        var connection = _connection;
+        _connection = null;
+        StopKeepAliveLoop();
+        ClearZmodemTransfer();
+        ClearXymodemTransfer();
+        _outgoingCommandLine.Clear();
+        IsConnected = false;
+        HostInfo = string.Empty;
+        StopSessionLog();
+
+        if (connection == null)
+            return;
+
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                connection.Dispose();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Terminal close cleanup failed: {ex.Message}");
+            }
+        });
+    }
+
     private static ITerminalConnectionService CreateConnectionService(SessionProtocol protocol)
     {
         return protocol switch
@@ -1794,10 +1873,16 @@ public partial class TerminalViewModel : ObservableObject
         OnPropertyChanged(nameof(ScrollToBottomOnInputOutput));
         OnPropertyChanged(nameof(SuspendScrollToBottomOnScrollLock));
         OnPropertyChanged(nameof(ScrollToBottomByKey));
+        OnPropertyChanged(nameof(DestructiveBackspace));
         OnPropertyChanged(nameof(UseRxvtHomeEnd));
         OnPropertyChanged(nameof(AppearanceFontFamily));
         OnPropertyChanged(nameof(AppearanceFontStyle));
         OnPropertyChanged(nameof(AppearanceFontSize));
+        OnPropertyChanged(nameof(AppearanceCjkFontFamily));
+        OnPropertyChanged(nameof(AppearanceCjkFontStyle));
+        OnPropertyChanged(nameof(AppearanceCjkFontSize));
+        OnPropertyChanged(nameof(AppearanceUseVariablePitchFont));
+        OnPropertyChanged(nameof(AppearanceFontQuality));
         OnPropertyChanged(nameof(AppearanceCursorColor));
         OnPropertyChanged(nameof(AppearanceCursorTextColor));
         OnPropertyChanged(nameof(AppearanceCursorShape));

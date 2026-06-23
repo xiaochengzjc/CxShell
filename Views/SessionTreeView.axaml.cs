@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
+using ChiXueSsh.Services;
 using ChiXueSsh.ViewModels;
 
 namespace ChiXueSsh.Views;
@@ -33,6 +34,8 @@ public partial class SessionTreeView : UserControl
         {
             SessionTree.AddHandler(PointerPressedEvent, OnTreePointerPressed, RoutingStrategies.Tunnel);
         }
+        UpdateColumnHeaders();
+        LocalizationService.Shared.LanguageChanged += OnLanguageChanged;
 
         // 绑定弹出菜单按钮事件
         if (MenuEditBtn != null) MenuEditBtn.Click += OnEditClick;
@@ -43,6 +46,31 @@ public partial class SessionTreeView : UserControl
         if (PasteSessionBtn != null) PasteSessionBtn.Click += OnPasteClick;
         if (PropertiesSessionBtn != null) PropertiesSessionBtn.Click += OnEditClick;
         if (DeleteSessionBtn != null) DeleteSessionBtn.Click += OnDeleteClick;
+        if (MoveSessionUpBtn != null) MoveSessionUpBtn.Click += OnMoveUpClick;
+        if (MoveSessionDownBtn != null) MoveSessionDownBtn.Click += OnMoveDownClick;
+    }
+
+    protected override void OnUnloaded(RoutedEventArgs e)
+    {
+        LocalizationService.Shared.LanguageChanged -= OnLanguageChanged;
+        base.OnUnloaded(e);
+    }
+
+    private void OnLanguageChanged(object? sender, EventArgs e)
+    {
+        UpdateColumnHeaders();
+    }
+
+    private void UpdateColumnHeaders()
+    {
+        if (SessionTree?.Columns.Count >= 5)
+        {
+            SessionTree.Columns[0].Header = LocalizationService.Shared.Text("SessionManager.ColumnName");
+            SessionTree.Columns[1].Header = LocalizationService.Shared.Text("SessionManager.ColumnHost");
+            SessionTree.Columns[2].Header = LocalizationService.Shared.Text("SessionManager.ColumnUsername");
+            SessionTree.Columns[3].Header = LocalizationService.Shared.Text("SessionManager.ColumnProtocol");
+            SessionTree.Columns[4].Header = LocalizationService.Shared.Text("SessionManager.ColumnPort");
+        }
     }
 
     private void OnTreePointerPressed(object? sender, PointerPressedEventArgs e)
@@ -186,6 +214,18 @@ public partial class SessionTreeView : UserControl
 
         var mainVm = GetMainWindowViewModel();
         mainVm?.DeleteSession(session);
+    }
+
+    private void OnMoveUpClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is SessionTreeViewModel vm)
+            vm.MoveSelectedSessionUp();
+    }
+
+    private void OnMoveDownClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is SessionTreeViewModel vm)
+            vm.MoveSelectedSessionDown();
     }
 
     private static async System.Threading.Tasks.Task<bool> ShowDeleteConfirmWindow(

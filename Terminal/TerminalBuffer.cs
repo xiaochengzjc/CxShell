@@ -291,7 +291,30 @@ public class TerminalBuffer
         {
             CursorCol--;
             DirtyRows.Add(CursorRow);
+            return;
         }
+
+        if (CursorRow > 0 && IsLikelyWrappedFromPreviousLine(CursorRow))
+        {
+            DirtyRows.Add(CursorRow);
+            CursorRow--;
+            CursorCol = Math.Max(0, Columns - 1);
+            DirtyRows.Add(CursorRow);
+        }
+    }
+
+    private bool IsLikelyWrappedFromPreviousLine(int row)
+    {
+        if (row <= 0 || row >= Rows)
+            return false;
+
+        for (var col = Columns - 1; col >= Math.Max(0, Columns - 4); col--)
+        {
+            if (_cells[row - 1, col].Character != ' ' || _cells[row - 1, col].IsWideContinuation)
+                return true;
+        }
+
+        return false;
     }
 
     public void Tab()
@@ -302,8 +325,9 @@ public class TerminalBuffer
 
     public void ScrollUp()
     {
-        // Save top row to scroll back
-        AddScrollbackRow(0, includeBlank: true);
+        // Do not preserve pure empty rows in normal scrollback; otherwise a fresh
+        // terminal can be wheel-scrolled into a large blank historical viewport.
+        AddScrollbackRow(0, includeBlank: false);
 
         // Shift all rows up
         for (int r = 0; r < Rows - 1; r++)
@@ -396,15 +420,41 @@ public class TerminalBuffer
         for (var c = 0; c < Columns; c++)
         {
             var cell = _cells[row, c];
-            if (cell.Character != ' ' ||
-                cell.Background != TerminalColors.DefaultBackground ||
-                cell.IsWideContinuation)
+            if (cell.Character != ' ' || cell.IsWideContinuation)
             {
                 return false;
             }
         }
 
         return true;
+    }
+
+    private bool IsScrollbackRowBlank(TerminalCell[] row)
+    {
+        for (var c = 0; c < row.Length; c++)
+        {
+            var cell = row[c];
+            if (cell.Character != ' ' || cell.IsWideContinuation)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public int MaxMeaningfulScrollOffset
+    {
+        get
+        {
+            for (var i = 0; i < _scrollback.Count; i++)
+            {
+                if (!IsScrollbackRowBlank(_scrollback[i]))
+                    return _scrollback.Count - i;
+            }
+
+            return 0;
+        }
     }
 
     public void ClearLine()
@@ -433,6 +483,21 @@ public class TerminalBuffer
             }
             DirtyRows.Add(CursorRow);
         }
+    }
+
+    public void ClearToBeginningOfLine()
+    {
+        if (CursorRow < 0 || CursorRow >= Rows)
+            return;
+
+        var endCol = Math.Clamp(CursorCol, 0, Columns - 1);
+        if (endCol + 1 < Columns && _cells[CursorRow, endCol + 1].IsWideContinuation)
+            endCol++;
+
+        for (int c = 0; c <= endCol; c++)
+            _cells[CursorRow, c] = CreateClearedCell();
+
+        DirtyRows.Add(CursorRow);
     }
 
     public void EraseCharacters(int count)
@@ -521,6 +586,15 @@ public class TerminalBuffer
 
     public void ClearToEndOfScreen()
     {
+        var startRow = FindWrappedInputStartRow(CursorRow);
+        for (int r = startRow; r < CursorRow; r++)
+        {
+            for (int c = 0; c < Columns; c++)
+                _cells[r, c] = CreateClearedCell();
+
+            DirtyRows.Add(r);
+        }
+
         ClearToEndOfLine();
         for (int r = CursorRow + 1; r < Rows; r++)
         {
@@ -533,30 +607,141 @@ public class TerminalBuffer
         Changed?.Invoke();
     }
 
+    private int FindWrappedInputStartRow(int row)
+    {
+        row = Math.Clamp(row, 0, Rows - 1);
+        while (row > 0 && IsLikelyContinuationRow(row))
+            row--;
+
+        return row;
+    }
+
+    private bool IsLikelyContinuationRow(int row)
+    {
+        if (row <= 0 || row >= Rows)
+            return false;
+
+        var previous = row - 1;
+        var previousLastNonBlank = -1;
+        for (var col = Columns - 1; col >= 0; col--)
+        {
+            if (_cells[previous, col].Character != ' ' || _cells[previous, col].IsWideContinuation)
+            {
+                previousLastNonBlank = col;
+                break;
+            }
+        }
+
+        if (previousLastNonBlank < Math.Max(0, Columns - 4))
+            return false;
+
+        for (var col = 0; col < Math.Min(Columns, 16); col++)
+        {
+            if (_cells[row, col].Character != ' ' || _cells[row, col].IsWideContinuation)
+                return true;
+        }
+
+        return false;
+    }
+
+    public void ClearToBeginningOfScreen()
+    {
+        for (int r = 0; r < CursorRow; r++)
+        {
+            for (int c = 0; c < Columns; c++)
+                _cells[r, c] = CreateClearedCell();
+
+            DirtyRows.Add(r);
+        }
+
+        ClearToBeginningOfLine();
+        Changed?.Invoke();
+    }
+
+    public void InsertLines(int count)
+    {
+        if (CursorRow < 0 || CursorRow >= Rows)
+            return;
+
+        count = Math.Clamp(count, 1, Rows - CursorRow);
+        for (int r = Rows - 1; r >= CursorRow + count; r--)
+        {
+            for (int c = 0; c < Columns; c++)
+                _cells[r, c] = _cells[r - count, c];
+
+            DirtyRows.Add(r);
+        }
+
+        for (int r = CursorRow; r < CursorRow + count; r++)
+        {
+            for (int c = 0; c < Columns; c++)
+                _cells[r, c] = CreateClearedCell();
+
+            DirtyRows.Add(r);
+        }
+
+        Changed?.Invoke();
+    }
+
+    public void DeleteLines(int count)
+    {
+        if (CursorRow < 0 || CursorRow >= Rows)
+            return;
+
+        count = Math.Clamp(count, 1, Rows - CursorRow);
+        for (int r = CursorRow; r < Rows - count; r++)
+        {
+            for (int c = 0; c < Columns; c++)
+                _cells[r, c] = _cells[r + count, c];
+
+            DirtyRows.Add(r);
+        }
+
+        for (int r = Math.Max(CursorRow, Rows - count); r < Rows; r++)
+        {
+            for (int c = 0; c < Columns; c++)
+                _cells[r, c] = CreateClearedCell();
+
+            DirtyRows.Add(r);
+        }
+
+        Changed?.Invoke();
+    }
+
     public void MoveCursor(int row, int col)
     {
+        DirtyRows.Add(CursorRow);
         CursorRow = Math.Clamp(row, 0, Rows - 1);
         CursorCol = Math.Clamp(col, 0, Columns - 1);
+        DirtyRows.Add(CursorRow);
     }
 
     public void MoveCursorUp(int n)
     {
+        DirtyRows.Add(CursorRow);
         CursorRow = Math.Max(0, CursorRow - n);
+        DirtyRows.Add(CursorRow);
     }
 
     public void MoveCursorDown(int n)
     {
+        DirtyRows.Add(CursorRow);
         CursorRow = Math.Min(Rows - 1, CursorRow + n);
+        DirtyRows.Add(CursorRow);
     }
 
     public void MoveCursorForward(int n)
     {
+        DirtyRows.Add(CursorRow);
         CursorCol = Math.Min(Columns - 1, CursorCol + n);
+        DirtyRows.Add(CursorRow);
     }
 
     public void MoveCursorBack(int n)
     {
+        DirtyRows.Add(CursorRow);
         CursorCol = Math.Max(0, CursorCol - n);
+        DirtyRows.Add(CursorRow);
     }
 
     public void Resize(int newColumns, int newRows)
@@ -629,6 +814,61 @@ public class TerminalBuffer
         CurrentBold = false;
         CurrentUnderline = false;
         CurrentBlinking = false;
+    }
+
+    public void ApplyColorScheme(Color defaultForeground, Color defaultBackground, Color boldForeground, Color[] ansiColors)
+    {
+        var oldDefaultForeground = DefaultForegroundColor;
+        var oldDefaultBackground = DefaultBackgroundColor;
+        var oldBoldForeground = BoldForegroundColor;
+        var oldAnsiColors = AnsiColors.ToArray();
+
+        DefaultForegroundColor = defaultForeground;
+        DefaultBackgroundColor = defaultBackground;
+        BoldForegroundColor = boldForeground;
+        AnsiColors = ansiColors is { Length: >= 16 } ? ansiColors.Take(16).ToArray() : TerminalColors.Standard16.ToArray();
+
+        CurrentForeground = MapColor(CurrentForeground, oldDefaultForeground, oldDefaultBackground, oldBoldForeground, oldAnsiColors);
+        CurrentBackground = MapColor(CurrentBackground, oldDefaultForeground, oldDefaultBackground, oldBoldForeground, oldAnsiColors);
+
+        for (int row = 0; row < Rows; row++)
+        {
+            for (int col = 0; col < Columns; col++)
+            {
+                _cells[row, col].Foreground = MapColor(_cells[row, col].Foreground, oldDefaultForeground, oldDefaultBackground, oldBoldForeground, oldAnsiColors);
+                _cells[row, col].Background = MapColor(_cells[row, col].Background, oldDefaultForeground, oldDefaultBackground, oldBoldForeground, oldAnsiColors);
+            }
+            DirtyRows.Add(row);
+        }
+
+        foreach (var scrollbackRow in _scrollback)
+        {
+            for (int col = 0; col < scrollbackRow.Length; col++)
+            {
+                scrollbackRow[col].Foreground = MapColor(scrollbackRow[col].Foreground, oldDefaultForeground, oldDefaultBackground, oldBoldForeground, oldAnsiColors);
+                scrollbackRow[col].Background = MapColor(scrollbackRow[col].Background, oldDefaultForeground, oldDefaultBackground, oldBoldForeground, oldAnsiColors);
+            }
+        }
+
+        Changed?.Invoke();
+    }
+
+    private Color MapColor(Color color, Color oldDefaultForeground, Color oldDefaultBackground, Color oldBoldForeground, Color[] oldAnsiColors)
+    {
+        if (color == oldDefaultForeground)
+            return DefaultForegroundColor;
+        if (color == oldDefaultBackground)
+            return DefaultBackgroundColor;
+        if (color == oldBoldForeground)
+            return BoldForegroundColor;
+
+        for (int i = 0; i < oldAnsiColors.Length && i < AnsiColors.Length; i++)
+        {
+            if (color == oldAnsiColors[i])
+                return AnsiColors[i];
+        }
+
+        return color;
     }
 
     public Color GetAnsiColor(int index)
