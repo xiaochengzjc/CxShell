@@ -38,6 +38,10 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
     protected override Type StyleKeyOverride { get; } = typeof(AtomUI.Desktop.Controls.Window);
 
+    private static string T(string key) => LocalizationService.Shared.Text(key);
+
+    private static string Tf(string key, params object[] args) => string.Format(T(key), args);
+
     public SessionEditDialog()
     {
         InitializeComponent();
@@ -348,14 +352,6 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             vm.AdvancedLogEncoding = GetSelectedOptionText(SessionLogEncodingSelect, vm.AdvancedLogEncoding);
 
             vm.SaveCommand.Execute(null);
-            if (vm.SavedSettings != null)
-            {
-                ShouldConnect = false;
-                _saveAndConnectRequested = false;
-                Close();
-                return;
-            }
-
             if (vm.SavedSession != null)
             {
                 ShouldConnect = _saveAndConnectRequested;
@@ -388,7 +384,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
         var options = new FolderPickerOpenOptions
         {
-            Title = "选择本地 SFTP 起始文件夹",
+            Title = T("Dialog.FilePicker.SftpLocalStart"),
             AllowMultiple = false
         };
 
@@ -488,7 +484,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
         var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "选择登录脚本文件",
+            Title = T("Dialog.FilePicker.LoginScript"),
             AllowMultiple = false
         });
         var file = files.FirstOrDefault();
@@ -504,11 +500,11 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
         var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "选择背景图片",
+            Title = T("Dialog.FilePicker.BackgroundImage"),
             AllowMultiple = false,
             FileTypeFilter =
             [
-                new FilePickerFileType("图片文件")
+                new FilePickerFileType(T("Dialog.FilePicker.ImageFiles"))
                 {
                     Patterns = ["*.png", "*.jpg", "*.jpeg", "*.bmp", "*.gif", "*.webp"]
                 },
@@ -562,7 +558,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         if (DataContext is not SessionEditViewModel vm)
             return;
 
-        var filePath = await PickFileAsync("选择键盘映射文件", vm.TerminalKeyboardMappingFile);
+        var filePath = await PickFileAsync(T("Dialog.FilePicker.KeyboardMapping"), vm.TerminalKeyboardMappingFile);
         if (!string.IsNullOrWhiteSpace(filePath))
             vm.TerminalKeyboardMappingFile = filePath;
     }
@@ -572,7 +568,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         if (DataContext is not SessionEditViewModel vm)
             return;
 
-        var directory = await PickFolderAsync("选择下载路径", vm.FileTransferDownloadDirectory);
+        var directory = await PickFolderAsync(T("Dialog.FilePicker.DownloadDirectory"), vm.FileTransferDownloadDirectory);
         if (!string.IsNullOrWhiteSpace(directory))
             vm.FileTransferDownloadDirectory = directory;
     }
@@ -588,7 +584,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         if (DataContext is not SessionEditViewModel vm)
             return;
 
-        var directory = await PickFolderAsync("选择加载路径", vm.FileTransferUploadDirectory);
+        var directory = await PickFolderAsync(T("Dialog.FilePicker.UploadDirectory"), vm.FileTransferUploadDirectory);
         if (!string.IsNullOrWhiteSpace(directory))
             vm.FileTransferUploadDirectory = directory;
     }
@@ -604,7 +600,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         if (DataContext is not SessionEditViewModel vm)
             return;
 
-        var filePath = await PickSaveFileAsync("选择日志文件", vm.AdvancedLogFilePath);
+        var filePath = await PickSaveFileAsync(T("Dialog.FilePicker.LogFile"), vm.AdvancedLogFilePath);
         if (!string.IsNullOrWhiteSpace(filePath))
             vm.AdvancedLogFilePath = filePath;
     }
@@ -614,9 +610,9 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         if (DataContext is not SessionEditViewModel vm)
             return;
 
-        var filePath = await PickFileAsync("选择声音文件", vm.AdvancedBellSoundPath, new[]
+        var filePath = await PickFileAsync(T("Dialog.FilePicker.SoundFile"), vm.AdvancedBellSoundPath, new[]
         {
-            new FilePickerFileType("声音文件")
+            new FilePickerFileType(T("Dialog.FilePicker.SoundFiles"))
             {
                 Patterns = ["*.wav", "*.mp3", "*.ogg", "*.flac", "*.aac", "*.wma"]
             },
@@ -743,7 +739,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         string? result = null;
         var dialog = new AtomUI.Desktop.Controls.Window
         {
-            Title = "选择快速命令集",
+            Title = T("Dialog.QuickCommandSet.Title"),
             Width = 660,
             Height = 708,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -753,7 +749,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
         var allCommandsItem = new AtomUI.Desktop.Controls.TreeViewItem
         {
-            Header = "所有命令",
+            Header = T("Dialog.QuickCommandSet.AllCommands"),
             Value = "<<所有命令>>",
             IsExpanded = true
         };
@@ -785,9 +781,9 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         else
             defaultSetItem.IsSelected = true;
 
-        var okButton = CreateDialogButton("确定", 136);
+        var okButton = CreateDialogButton(T("Common.Ok"), 136);
         okButton.ButtonType = AtomUI.Desktop.Controls.ButtonType.Primary;
-        var cancelButton = CreateDialogButton("取消", 136);
+        var cancelButton = CreateDialogButton(T("Common.Cancel"), 136);
         okButton.Click += (_, _) =>
         {
             result = GetSelectedQuickCommandSetValue(tree) ?? "Default Quick Command Set";
@@ -836,7 +832,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
     {
         var dialog = new AtomUI.Desktop.Controls.Window
         {
-            Title = "突出显示集",
+            Title = T("Dialog.Highlight.Title"),
             Width = 938,
             Height = 790,
             MinWidth = 780,
@@ -874,20 +870,20 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
         ruleGrid.Columns.Add(new DataGridCheckBoxColumn { Header = string.Empty, Binding = new Avalonia.Data.Binding(nameof(HighlightRule.IsEnabled)), Width = new DataGridLength(42), CanUserResize = true });
-        ruleGrid.Columns.Add(new DataGridTextColumn { Header = "关键字", Binding = new Avalonia.Data.Binding(nameof(HighlightRule.Keyword)), Width = new DataGridLength(250), CanUserResize = true });
-        ruleGrid.Columns.Add(new DataGridTextColumn { Header = "预览", Binding = new Avalonia.Data.Binding(nameof(HighlightRule.Preview)), Width = new DataGridLength(110), CanUserResize = true });
-        ruleGrid.Columns.Add(new DataGridTextColumn { Header = "说明", Binding = new Avalonia.Data.Binding(nameof(HighlightRule.Description)), Width = new DataGridLength(360), CanUserResize = true });
+        ruleGrid.Columns.Add(new DataGridTextColumn { Header = T("Dialog.Highlight.Keyword"), Binding = new Avalonia.Data.Binding(nameof(HighlightRule.Keyword)), Width = new DataGridLength(250), CanUserResize = true });
+        ruleGrid.Columns.Add(new DataGridTextColumn { Header = T("Dialog.Highlight.Preview"), Binding = new Avalonia.Data.Binding(nameof(HighlightRule.Preview)), Width = new DataGridLength(110), CanUserResize = true });
+        ruleGrid.Columns.Add(new DataGridTextColumn { Header = T("Dialog.Highlight.Description"), Binding = new Avalonia.Data.Binding(nameof(HighlightRule.Description)), Width = new DataGridLength(360), CanUserResize = true });
 
-        var newSetButton = CreateDialogButton("新建(N)", 184);
-        var saveAsSetButton = CreateDialogButton("另存为(S)", 184);
-        var deleteSetButton = CreateDialogButton("删除(D)", 184);
-        var currentSetButton = CreateDialogButton("设置为当前组(C)", 184);
-        var addRuleButton = CreateDialogButton("添加(A)", 184);
-        var deleteRuleButton = CreateDialogButton("删除(L)", 184);
-        var editRuleButton = CreateDialogButton("编辑(E)", 184);
-        var moveUpRuleButton = CreateDialogButton("上移(U)", 184);
-        var moveDownRuleButton = CreateDialogButton("下移(O)", 184);
-        var closeButton = CreateDialogButton("关闭", 164);
+        var newSetButton = CreateDialogButton($"{T("SessionManager.New")}(N)", 184);
+        var saveAsSetButton = CreateDialogButton($"{T("Dialog.Highlight.SaveAs")}(S)", 184);
+        var deleteSetButton = CreateDialogButton($"{T("Common.Delete")}(D)", 184);
+        var currentSetButton = CreateDialogButton($"{T("Dialog.Highlight.SetCurrent")}(C)", 184);
+        var addRuleButton = CreateDialogButton($"{T("Common.Add")}(A)", 184);
+        var deleteRuleButton = CreateDialogButton($"{T("Common.Delete")}(L)", 184);
+        var editRuleButton = CreateDialogButton($"{T("Common.Edit")}(E)", 184);
+        var moveUpRuleButton = CreateDialogButton($"{T("Common.MoveUp")}(U)", 184);
+        var moveDownRuleButton = CreateDialogButton($"{T("Common.MoveDown")}(O)", 184);
+        var closeButton = CreateDialogButton(T("Common.Close"), 164);
         closeButton.ButtonType = AtomUI.Desktop.Controls.ButtonType.Primary;
 
         HighlightSet? selectedSet = vm.SelectedHighlightSet ?? vm.AppearanceHighlightSets.FirstOrDefault();
@@ -933,7 +929,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
         newSetButton.Click += (_, _) =>
         {
-            var set = new HighlightSet { Name = $"新的突出显示集 {vm.AppearanceHighlightSets.Count + 1}" };
+            var set = new HighlightSet { Name = Tf("Dialog.Highlight.NewSetName", vm.AppearanceHighlightSets.Count + 1) };
             vm.AppearanceHighlightSets.Add(set);
             setGrid.SelectedItem = set;
             ApplySelectedSet(set);
@@ -959,7 +955,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             if (selectedSet == null)
                 return;
 
-            if (!await ShowConfirmDialogAsync(dialog, "删除突出显示集", $"确定删除“{selectedSet.Name}”吗？"))
+            if (!await ShowConfirmDialogAsync(dialog, T("Dialog.Highlight.DeleteSetTitle"), Tf("Dialog.Highlight.DeleteSetMessage", selectedSet.Name)))
                 return;
 
             var deletedId = selectedSet.Id.ToString();
@@ -1072,9 +1068,9 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         Grid.SetColumn(ruleButtons, 2);
 
         var contentPanel = new StackPanel { Spacing = 18, Margin = new Thickness(20, 18, 20, 10) };
-        contentPanel.Children.Add(new Avalonia.Controls.TextBlock { Text = "集", FontWeight = Avalonia.Media.FontWeight.SemiBold });
+        contentPanel.Children.Add(new Avalonia.Controls.TextBlock { Text = T("Dialog.Highlight.Set"), FontWeight = Avalonia.Media.FontWeight.SemiBold });
         contentPanel.Children.Add(setSection);
-        contentPanel.Children.Add(new Avalonia.Controls.TextBlock { Text = "关键字", FontWeight = Avalonia.Media.FontWeight.SemiBold });
+        contentPanel.Children.Add(new Avalonia.Controls.TextBlock { Text = T("Dialog.Highlight.Keyword"), FontWeight = Avalonia.Media.FontWeight.SemiBold });
         contentPanel.Children.Add(ruleSection);
 
         var bottom = new StackPanel
@@ -1103,7 +1099,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         HighlightRule? result = null;
         var dialog = new AtomUI.Desktop.Controls.Window
         {
-            Title = "关键字",
+            Title = T("Dialog.Highlight.RuleTitle"),
             Width = 594,
             Height = 878,
             MinWidth = 560,
@@ -1114,8 +1110,8 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         };
 
         var keywordBox = CreateLineEdit(rule.Keyword);
-        var caseBox = new AtomUI.Desktop.Controls.CheckBox { Content = "区分大小写(C)", IsChecked = rule.IsCaseSensitive };
-        var regexBox = new AtomUI.Desktop.Controls.CheckBox { Content = "正则表达式(R)", IsChecked = rule.IsRegex };
+        var caseBox = new AtomUI.Desktop.Controls.CheckBox { Content = T("Dialog.Highlight.CaseSensitive"), IsChecked = rule.IsCaseSensitive };
+        var regexBox = new AtomUI.Desktop.Controls.CheckBox { Content = T("Dialog.Highlight.Regex"), IsChecked = rule.IsRegex };
         var descriptionBox = new TextArea
         {
             Text = rule.Description,
@@ -1129,11 +1125,11 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         };
         var foregroundPicker = CreateAppearanceColorPicker(ParseColorOrDefault(rule.ForegroundColor, "#000000"), 132, true);
         var backgroundPicker = CreateAppearanceColorPicker(ParseColorOrDefault(rule.BackgroundColor, "#FFFF40"), 132, true);
-        var terminalColorBox = new AtomUI.Desktop.Controls.CheckBox { Content = "终端颜色(M)", IsChecked = rule.UseTerminalColor };
-        var boldBox = new AtomUI.Desktop.Controls.CheckBox { Content = "粗体(B)", IsChecked = rule.Bold };
-        var italicBox = new AtomUI.Desktop.Controls.CheckBox { Content = "斜体(I)", IsChecked = rule.Italic };
-        var underlineBox = new AtomUI.Desktop.Controls.CheckBox { Content = "下划线(U)", IsChecked = rule.Underline };
-        var strikeBox = new AtomUI.Desktop.Controls.CheckBox { Content = "删除线(S)", IsChecked = rule.Strikethrough };
+        var terminalColorBox = new AtomUI.Desktop.Controls.CheckBox { Content = T("Dialog.Highlight.TerminalColor"), IsChecked = rule.UseTerminalColor };
+        var boldBox = new AtomUI.Desktop.Controls.CheckBox { Content = T("Dialog.Highlight.Bold"), IsChecked = rule.Bold };
+        var italicBox = new AtomUI.Desktop.Controls.CheckBox { Content = T("Dialog.Highlight.Italic"), IsChecked = rule.Italic };
+        var underlineBox = new AtomUI.Desktop.Controls.CheckBox { Content = T("Dialog.Highlight.Underline"), IsChecked = rule.Underline };
+        var strikeBox = new AtomUI.Desktop.Controls.CheckBox { Content = T("Dialog.Highlight.Strikethrough"), IsChecked = rule.Strikethrough };
         var previewText = new Avalonia.Controls.TextBlock
         {
             Text = "Highlight",
@@ -1148,9 +1144,9 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             BorderThickness = new Thickness(1),
             Child = previewText
         };
-        var okButton = CreateDialogButton("确定", 140);
+        var okButton = CreateDialogButton(T("Common.Ok"), 140);
         okButton.ButtonType = AtomUI.Desktop.Controls.ButtonType.Primary;
-        var cancelButton = CreateDialogButton("取消", 140);
+        var cancelButton = CreateDialogButton(T("Common.Cancel"), 140);
 
         void UpdatePreview()
         {
@@ -1213,8 +1209,8 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             RowDefinitions = new RowDefinitions("Auto,8,Auto,14,Auto,12,Auto,8,74"),
             ColumnDefinitions = new ColumnDefinitions("*,18,*")
         };
-        var keywordLabel = new Avalonia.Controls.TextBlock { Text = "要强调的关键字(K):" };
-        var descriptionLabel = new Avalonia.Controls.TextBlock { Text = "说明(D):" };
+        var keywordLabel = new Avalonia.Controls.TextBlock { Text = T("Dialog.Highlight.KeywordLabel") };
+        var descriptionLabel = new Avalonia.Controls.TextBlock { Text = T("Dialog.Highlight.DescriptionLabel") };
         keywordGrid.Children.Add(keywordLabel);
         keywordGrid.Children.Add(keywordBox);
         keywordGrid.Children.Add(caseBox);
@@ -1243,11 +1239,11 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             RowDefinitions = new RowDefinitions("Auto,12,Auto,12,Auto,12,Auto"),
             ColumnDefinitions = new ColumnDefinitions("132,150,18,*")
         };
-        AddFormLabel(viewGrid, "文本颜色(T):", 0);
+        AddFormLabel(viewGrid, T("Dialog.Highlight.TextColor"), 0);
         viewGrid.Children.Add(foregroundPicker);
         Grid.SetRow(foregroundPicker, 0);
         Grid.SetColumn(foregroundPicker, 1);
-        AddFormLabel(viewGrid, "背景颜色(G):", 2);
+        AddFormLabel(viewGrid, T("Dialog.Highlight.BackgroundColor"), 2);
         viewGrid.Children.Add(backgroundPicker);
         Grid.SetRow(backgroundPicker, 2);
         Grid.SetColumn(backgroundPicker, 1);
@@ -1274,9 +1270,9 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         };
 
         var main = new StackPanel { Spacing = 24, Margin = new Thickness(20, 18, 20, 12) };
-        main.Children.Add(new Avalonia.Controls.TextBlock { Text = "关键字", FontWeight = Avalonia.Media.FontWeight.SemiBold });
+        main.Children.Add(new Avalonia.Controls.TextBlock { Text = T("Dialog.Highlight.Keyword"), FontWeight = Avalonia.Media.FontWeight.SemiBold });
         main.Children.Add(keywordGroup);
-        main.Children.Add(new Avalonia.Controls.TextBlock { Text = "查看", FontWeight = Avalonia.Media.FontWeight.SemiBold });
+        main.Children.Add(new Avalonia.Controls.TextBlock { Text = T("Dialog.Highlight.View"), FontWeight = Avalonia.Media.FontWeight.SemiBold });
         main.Children.Add(viewGroup);
         main.Children.Add(preview);
 
@@ -1462,7 +1458,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
         var dialog = new AtomUI.Desktop.Controls.Window
         {
-            Title = "列表代理",
+            Title = T("Dialog.Proxy.ListTitle"),
             Width = 846,
             Height = 646,
             MinWidth = 720,
@@ -1485,17 +1481,17 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             IsHideOnSinglePage = true,
             Margin = new Thickness(20, 16, 20, 0)
         };
-        grid.Columns.Add(new DataGridTextColumn { Header = "名称", Binding = new Avalonia.Data.Binding(nameof(ProxySettings.Name)), Width = new DataGridLength(230) });
-        grid.Columns.Add(new DataGridTextColumn { Header = "类型", Binding = new Avalonia.Data.Binding(nameof(ProxySettings.TypeDisplay)), Width = new DataGridLength(120) });
-        grid.Columns.Add(new DataGridTextColumn { Header = "主机", Binding = new Avalonia.Data.Binding(nameof(ProxySettings.Host)), Width = new DataGridLength(160) });
-        grid.Columns.Add(new DataGridTextColumn { Header = "端口", Binding = new Avalonia.Data.Binding(nameof(ProxySettings.PortDisplay)), Width = new DataGridLength(80) });
-        grid.Columns.Add(new DataGridTextColumn { Header = "用户名", Binding = new Avalonia.Data.Binding(nameof(ProxySettings.Username)), Width = new DataGridLength(110) });
-        grid.Columns.Add(new DataGridTextColumn { Header = "下一代理", Binding = new Avalonia.Data.Binding(nameof(ProxySettings.NextProxyDisplay)), Width = new DataGridLength(110) });
+        grid.Columns.Add(new DataGridTextColumn { Header = T("Dialog.Proxy.Name"), Binding = new Avalonia.Data.Binding(nameof(ProxySettings.Name)), Width = new DataGridLength(230) });
+        grid.Columns.Add(new DataGridTextColumn { Header = T("Dialog.Proxy.Type"), Binding = new Avalonia.Data.Binding(nameof(ProxySettings.TypeDisplay)), Width = new DataGridLength(120) });
+        grid.Columns.Add(new DataGridTextColumn { Header = T("Dialog.Proxy.Host"), Binding = new Avalonia.Data.Binding(nameof(ProxySettings.Host)), Width = new DataGridLength(160) });
+        grid.Columns.Add(new DataGridTextColumn { Header = T("Dialog.Proxy.Port"), Binding = new Avalonia.Data.Binding(nameof(ProxySettings.PortDisplay)), Width = new DataGridLength(80) });
+        grid.Columns.Add(new DataGridTextColumn { Header = T("Dialog.Proxy.Username"), Binding = new Avalonia.Data.Binding(nameof(ProxySettings.Username)), Width = new DataGridLength(110) });
+        grid.Columns.Add(new DataGridTextColumn { Header = T("Dialog.Proxy.NextProxy"), Binding = new Avalonia.Data.Binding(nameof(ProxySettings.NextProxyDisplay)), Width = new DataGridLength(110) });
 
-        var addButton = CreateDialogButton("添加(A)", 118);
-        var editButton = CreateDialogButton("编辑(E)", 118);
-        var deleteButton = CreateDialogButton("删除(R)", 118);
-        var closeButton = CreateDialogButton("关闭", 140);
+        var addButton = CreateDialogButton($"{T("Common.Add")}(A)", 118);
+        var editButton = CreateDialogButton($"{T("Common.Edit")}(E)", 118);
+        var deleteButton = CreateDialogButton($"{T("Common.Delete")}(R)", 118);
+        var closeButton = CreateDialogButton(T("Common.Close"), 140);
 
         void UpdateListButtons()
         {
@@ -1538,7 +1534,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             if (grid.SelectedItem is not ProxySettings current)
                 return;
 
-            if (!await ShowConfirmDialogAsync(dialog, "删除代理", $"确定删除代理“{current.DisplayName}”吗？"))
+            if (!await ShowConfirmDialogAsync(dialog, T("Dialog.Proxy.DeleteTitle"), Tf("Dialog.Proxy.DeleteMessage", current.DisplayName)))
                 return;
 
             foreach (var proxy in proxies.Where(proxy => proxy.NextProxyId == current.Id))
@@ -1596,7 +1592,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         ProxySettings? result = null;
         var dialog = new AtomUI.Desktop.Controls.Window
         {
-            Title = "代理服务器设置",
+            Title = T("Dialog.Proxy.SettingsTitle"),
             Width = 636,
             Height = 646,
             MinWidth = 560,
@@ -1624,7 +1620,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         var passwordBox = CreateLineEdit(editing.Password);
         var sessionFileCheck = new AtomUI.Desktop.Controls.CheckBox
         {
-            Content = "会话文件(S)",
+            Content = T("Dialog.Proxy.SessionFile"),
             IsEnabled = false,
             IsChecked = editing.UseSessionFile
         };
@@ -1640,7 +1636,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
             var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
             {
-                Title = "选择会话文件",
+                Title = T("Dialog.FilePicker.SessionFile"),
                 AllowMultiple = false
             });
             var file = files.FirstOrDefault();
@@ -1656,7 +1652,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
         SelectOption(nextProxySelect, editing.NextProxyId?.ToString() ?? "None");
-        var browseNextButton = CreateDialogButton("浏览(B)...", 150);
+        var browseNextButton = CreateDialogButton(T("Dialog.Proxy.Browse"), 150);
         browseNextButton.Click += (_, _) => nextProxySelect.Focus();
 
         void UpdateProxyProtocolState()
@@ -1702,7 +1698,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             RowDefinitions = new RowDefinitions("Auto,18,1,18,Auto,10,Auto,10,Auto,10,Auto,10,Auto,14,Auto,10,Auto,10,Auto,10,Auto"),
             ColumnDefinitions = new ColumnDefinitions("160,*,150")
         };
-        AddFormLabel(form, "名称(N):", 0);
+        AddFormLabel(form, $"{T("Dialog.Proxy.Name")}(N):", 0);
         form.Children.Add(nameBox);
         Grid.SetRow(nameBox, 0);
         Grid.SetColumn(nameBox, 1);
@@ -1713,30 +1709,30 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         Grid.SetRow(separator, 2);
         Grid.SetColumnSpan(separator, 3);
 
-        AddFormLabel(form, "类型(T):", 4);
+        AddFormLabel(form, $"{T("Dialog.Proxy.Type")}(T):", 4);
         form.Children.Add(protocolSelect);
         Grid.SetRow(protocolSelect, 4);
         Grid.SetColumn(protocolSelect, 1);
         Grid.SetColumnSpan(protocolSelect, 2);
 
-        AddFormLabel(form, "主机(H):", 6);
+        AddFormLabel(form, $"{T("Dialog.Proxy.Host")}(H):", 6);
         form.Children.Add(hostBox);
         Grid.SetRow(hostBox, 6);
         Grid.SetColumn(hostBox, 1);
         Grid.SetColumnSpan(hostBox, 2);
 
-        AddFormLabel(form, "端口号(P):", 8);
+        AddFormLabel(form, $"{T("Dialog.Proxy.Port")}(P):", 8);
         form.Children.Add(portBox);
         Grid.SetRow(portBox, 8);
         Grid.SetColumn(portBox, 1);
 
-        AddFormLabel(form, "用户名(U):", 10);
+        AddFormLabel(form, $"{T("Dialog.Proxy.Username")}(U):", 10);
         form.Children.Add(usernameBox);
         Grid.SetRow(usernameBox, 10);
         Grid.SetColumn(usernameBox, 1);
         Grid.SetColumnSpan(usernameBox, 2);
 
-        AddFormLabel(form, "密码(A):", 12);
+        AddFormLabel(form, $"{T("Dialog.Proxy.Password")}(A):", 12);
         form.Children.Add(passwordBox);
         Grid.SetRow(passwordBox, 12);
         Grid.SetColumn(passwordBox, 1);
@@ -1754,7 +1750,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         Grid.SetRow(sessionFileButton, 16);
         Grid.SetColumn(sessionFileButton, 2);
 
-        AddFormLabel(form, "下一代理(X):", 18);
+        AddFormLabel(form, $"{T("Dialog.Proxy.NextProxy")}(X):", 18);
         form.Children.Add(nextProxySelect);
         Grid.SetRow(nextProxySelect, 20);
         Grid.SetColumn(nextProxySelect, 0);
@@ -1763,9 +1759,9 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         Grid.SetRow(browseNextButton, 20);
         Grid.SetColumn(browseNextButton, 2);
 
-        var okButton = CreateDialogButton("确定", 138);
+        var okButton = CreateDialogButton(T("Common.Ok"), 138);
         okButton.ButtonType = AtomUI.Desktop.Controls.ButtonType.Primary;
-        var cancelButton = CreateDialogButton("取消", 138);
+        var cancelButton = CreateDialogButton(T("Common.Cancel"), 138);
 
         okButton.Click += (_, _) =>
         {
@@ -1777,7 +1773,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             if (string.IsNullOrWhiteSpace(nameBox.Text))
             {
                 nameBox.Status = InputControlStatus.Error;
-                errorText.Text = "请输入代理名称。";
+                errorText.Text = T("Dialog.Proxy.NameRequired");
                 errorText.IsVisible = true;
                 return;
             }
@@ -1785,7 +1781,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             if (string.IsNullOrWhiteSpace(hostBox.Text))
             {
                 hostBox.Status = InputControlStatus.Error;
-                errorText.Text = "请输入代理服务器主机。";
+                errorText.Text = T("Dialog.Proxy.HostRequired");
                 errorText.IsVisible = true;
                 return;
             }
@@ -1793,7 +1789,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             if (!int.TryParse(portBox.Text?.Trim(), out var port) || port is < 1 or > 65535)
             {
                 portBox.Status = InputControlStatus.Error;
-                errorText.Text = "端口必须是 1 到 65535 之间的整数。";
+                errorText.Text = T("Dialog.Proxy.PortRange");
                 errorText.IsVisible = true;
                 return;
             }
@@ -1853,7 +1849,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         ProxySettings? result = null;
         var dialog = new AtomUI.Desktop.Controls.Window
         {
-            Title = "代理服务器",
+            Title = T("Dialog.Proxy.ServerTitle"),
             Width = 500,
             Height = 360,
             MinWidth = 460,
@@ -1895,47 +1891,47 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             RowDefinitions = new RowDefinitions("Auto,12,Auto,12,Auto,12,Auto,12,Auto"),
             ColumnDefinitions = new ColumnDefinitions("110,*")
         };
-        AddFormLabel(form, "类型(T):", 0);
+        AddFormLabel(form, $"{T("Dialog.Proxy.Type")}(T):", 0);
         form.Children.Add(protocolSelect);
         Grid.SetRow(protocolSelect, 0);
         Grid.SetColumn(protocolSelect, 1);
 
-        AddFormLabel(form, "主机(H):", 2);
+        AddFormLabel(form, $"{T("Dialog.Proxy.Host")}(H):", 2);
         form.Children.Add(hostBox);
         Grid.SetRow(hostBox, 2);
         Grid.SetColumn(hostBox, 1);
 
-        AddFormLabel(form, "端口(P):", 4);
+        AddFormLabel(form, $"{T("Dialog.Proxy.Port")}(P):", 4);
         form.Children.Add(portBox);
         Grid.SetRow(portBox, 4);
         Grid.SetColumn(portBox, 1);
 
-        AddFormLabel(form, "用户名(U):", 6);
+        AddFormLabel(form, $"{T("Dialog.Proxy.Username")}(U):", 6);
         form.Children.Add(usernameBox);
         Grid.SetRow(usernameBox, 6);
         Grid.SetColumn(usernameBox, 1);
 
-        AddFormLabel(form, "密码(W):", 8);
+        AddFormLabel(form, $"{T("Dialog.Proxy.Password")}(W):", 8);
         form.Children.Add(passwordBox);
         Grid.SetRow(passwordBox, 8);
         Grid.SetColumn(passwordBox, 1);
 
         var okButton = new AtomUI.Desktop.Controls.Button
         {
-            Content = "确定",
+            Content = T("Common.Ok"),
             Width = 86,
             ButtonType = AtomUI.Desktop.Controls.ButtonType.Primary,
             SizeType = SizeType.Middle
         };
         var deleteButton = new AtomUI.Desktop.Controls.Button
         {
-            Content = "删除",
+            Content = T("Common.Delete"),
             Width = 86,
             SizeType = SizeType.Middle
         };
         var cancelButton = new AtomUI.Desktop.Controls.Button
         {
-            Content = "取消",
+            Content = T("Common.Cancel"),
             Width = 86,
             SizeType = SizeType.Middle
         };
@@ -1945,14 +1941,14 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             errorText.IsVisible = false;
             if (string.IsNullOrWhiteSpace(hostBox.Text))
             {
-                errorText.Text = "请输入代理服务器主机。";
+                errorText.Text = T("Dialog.Proxy.HostRequired");
                 errorText.IsVisible = true;
                 return;
             }
 
             if (!int.TryParse(portBox.Text?.Trim(), out var port) || port is < 1 or > 65535)
             {
-                errorText.Text = "端口必须是 1 到 65535 之间的整数。";
+                errorText.Text = T("Dialog.Proxy.PortRange");
                 errorText.IsVisible = true;
                 return;
             }
@@ -2059,7 +2055,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         LoginScriptRule? result = null;
         var dialog = new AtomUI.Desktop.Controls.Window
         {
-            Title = "等待并发送规则",
+            Title = T("Dialog.LoginScriptRule.Title"),
             Width = 536,
             Height = 526,
             MinWidth = 500,
@@ -2085,7 +2081,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         };
         var hideTextBox = new AtomUI.Desktop.Controls.CheckBox
         {
-            Content = "隐藏文本(H)",
+            Content = T("Dialog.LoginScriptRule.HideText"),
             IsChecked = rule.HideText
         };
 
@@ -2096,9 +2092,9 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             sendBox.RevealPassword = !isHidden;
         }
 
-        var okButton = CreateDialogButton("确定", 126);
+        var okButton = CreateDialogButton(T("Common.Ok"), 126);
         okButton.ButtonType = AtomUI.Desktop.Controls.ButtonType.Primary;
-        var cancelButton = CreateDialogButton("取消", 126);
+        var cancelButton = CreateDialogButton(T("Common.Cancel"), 126);
 
         void UpdateOkButton()
         {
@@ -2137,25 +2133,25 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
         form.Children.Add(new Avalonia.Controls.TextBlock
         {
-            Text = "请输入等待的字符串。",
+            Text = T("Dialog.LoginScriptRule.WaitPrompt"),
             TextWrapping = Avalonia.Media.TextWrapping.Wrap
         });
         Grid.SetColumnSpan(form.Children[^1], 2);
 
-        AddFormLabel(form, "等待(E):", 2);
+        AddFormLabel(form, T("Dialog.LoginScriptRule.WaitLabel"), 2);
         form.Children.Add(expectBox);
         Grid.SetRow(expectBox, 2);
         Grid.SetColumn(expectBox, 1);
 
         form.Children.Add(new Avalonia.Controls.TextBlock
         {
-            Text = "接收等待字符串时请输入发送的文本。",
+            Text = T("Dialog.LoginScriptRule.SendPrompt"),
             TextWrapping = Avalonia.Media.TextWrapping.Wrap
         });
         Grid.SetRow(form.Children[^1], 4);
         Grid.SetColumnSpan(form.Children[^1], 2);
 
-        AddFormLabel(form, "发送(S):", 6);
+        AddFormLabel(form, T("Dialog.LoginScriptRule.SendLabel"), 6);
         form.Children.Add(sendBox);
         Grid.SetRow(sendBox, 8);
         Grid.SetColumn(sendBox, 1);
@@ -2189,7 +2185,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         var rule = source ?? new SshTunnelRule();
         var dialog = new AtomUI.Desktop.Controls.Window
         {
-            Title = "转移规则",
+            Title = T("Dialog.TunnelRule.Title"),
             Width = 620,
             Height = 470,
             MinWidth = 560,
@@ -2201,8 +2197,8 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
         var typeOptions = new ObservableCollection<ISelectOption>
         {
-            new SelectOption { Header = "本地（拨出）", Content = SshTunnelRuleType.Local.ToString() },
-            new SelectOption { Header = "远程（传入）", Content = SshTunnelRuleType.Remote.ToString() },
+            new SelectOption { Header = T("Dialog.TunnelRule.Local"), Content = SshTunnelRuleType.Local.ToString() },
+            new SelectOption { Header = T("Dialog.TunnelRule.Remote"), Content = SshTunnelRuleType.Remote.ToString() },
             new SelectOption { Header = "Dynamic (SOCKS4/5)", Content = SshTunnelRuleType.Dynamic.ToString() }
         };
         var typeSelect = new Select
@@ -2215,16 +2211,14 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         SelectOption(typeSelect, rule.Type.ToString());
 
         var sourceHostBox = CreateLineEdit(string.IsNullOrWhiteSpace(rule.SourceHost) ? "localhost" : rule.SourceHost);
-        var listenPortSelect = CreateServiceAutoComplete();
-        SelectServicePortOption(listenPortSelect, rule.ListenPort);
+        var listenPortBox = CreateServiceAutoComplete(rule.ListenPort);
         var acceptLocalOnlyBox = new AtomUI.Desktop.Controls.CheckBox
         {
-            Content = "仅接受本地连接(A)",
+            Content = T("Dialog.TunnelRule.AcceptLocalOnly"),
             IsChecked = rule.AcceptLocalConnectionsOnly
         };
-        var destinationHostBox = CreateLineEdit(string.IsNullOrWhiteSpace(rule.DestinationHost) ? "localhost" : rule.DestinationHost);
-        var destinationPortSelect = CreateServiceAutoComplete();
-        SelectServicePortOption(destinationPortSelect, rule.DestinationPort);
+        var destinationHostBox = CreateLineEdit(string.IsNullOrWhiteSpace(rule.DestinationHost) ? "127.0.0.1" : rule.DestinationHost);
+        var destinationPortBox = CreateServiceAutoComplete(rule.DestinationPort);
         var descriptionBox = CreateLineEdit(rule.Description);
 
         var errorText = new Avalonia.Controls.TextBlock
@@ -2241,42 +2235,42 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             ColumnDefinitions = new ColumnDefinitions("150,*,150")
         };
 
-        AddFormLabel(form, "类型 (方向)(T):", 0);
+        AddFormLabel(form, T("Dialog.TunnelRule.TypeDirection"), 0);
         form.Children.Add(typeSelect);
         Grid.SetRow(typeSelect, 0);
         Grid.SetColumn(typeSelect, 1);
         Grid.SetColumnSpan(typeSelect, 2);
 
-        AddFormLabel(form, "源主机(S):", 2);
+        AddFormLabel(form, T("Dialog.TunnelRule.SourceHost"), 2);
         form.Children.Add(sourceHostBox);
         Grid.SetRow(sourceHostBox, 2);
         Grid.SetColumn(sourceHostBox, 1);
         Grid.SetColumnSpan(sourceHostBox, 2);
 
-        AddFormLabel(form, "侦听端口(L):", 4);
-        form.Children.Add(listenPortSelect);
-        Grid.SetRow(listenPortSelect, 4);
-        Grid.SetColumn(listenPortSelect, 1);
-        Grid.SetColumnSpan(listenPortSelect, 2);
+        AddFormLabel(form, T("Dialog.TunnelRule.ListenPort"), 4);
+        form.Children.Add(listenPortBox);
+        Grid.SetRow(listenPortBox, 4);
+        Grid.SetColumn(listenPortBox, 1);
+        Grid.SetColumnSpan(listenPortBox, 2);
 
         form.Children.Add(acceptLocalOnlyBox);
         Grid.SetRow(acceptLocalOnlyBox, 6);
         Grid.SetColumn(acceptLocalOnlyBox, 1);
         Grid.SetColumnSpan(acceptLocalOnlyBox, 2);
 
-        AddFormLabel(form, "目标主机(H):", 8);
+        AddFormLabel(form, T("Dialog.TunnelRule.TargetHost"), 8);
         form.Children.Add(destinationHostBox);
         Grid.SetRow(destinationHostBox, 8);
         Grid.SetColumn(destinationHostBox, 1);
         Grid.SetColumnSpan(destinationHostBox, 2);
 
-        AddFormLabel(form, "目标端口(P):", 10);
-        form.Children.Add(destinationPortSelect);
-        Grid.SetRow(destinationPortSelect, 10);
-        Grid.SetColumn(destinationPortSelect, 1);
-        Grid.SetColumnSpan(destinationPortSelect, 2);
+        AddFormLabel(form, T("Dialog.TunnelRule.TargetPort"), 10);
+        form.Children.Add(destinationPortBox);
+        Grid.SetRow(destinationPortBox, 10);
+        Grid.SetColumn(destinationPortBox, 1);
+        Grid.SetColumnSpan(destinationPortBox, 2);
 
-        AddFormLabel(form, "说明(D):", 12);
+        AddFormLabel(form, T("Dialog.TunnelRule.Description"), 12);
         form.Children.Add(descriptionBox);
         Grid.SetRow(descriptionBox, 12);
         Grid.SetColumn(descriptionBox, 1);
@@ -2285,14 +2279,14 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         SshTunnelRule? result = null;
         var okButton = new AtomUI.Desktop.Controls.Button
         {
-            Content = "确定",
+            Content = T("Common.Ok"),
             Width = 112,
             ButtonType = AtomUI.Desktop.Controls.ButtonType.Primary,
             SizeType = SizeType.Middle
         };
         var cancelButton = new AtomUI.Desktop.Controls.Button
         {
-            Content = "取消",
+            Content = T("Common.Cancel"),
             Width = 112,
             SizeType = SizeType.Middle
         };
@@ -2302,12 +2296,13 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             var type = GetSelectedTunnelType(typeSelect);
             var isDynamic = type == SshTunnelRuleType.Dynamic;
             destinationHostBox.IsEnabled = !isDynamic;
-            destinationPortSelect.IsEnabled = !isDynamic;
+            destinationPortBox.IsEnabled = !isDynamic;
             acceptLocalOnlyBox.IsEnabled = type != SshTunnelRuleType.Remote;
             if (isDynamic)
             {
                 destinationHostBox.Text = string.Empty;
-                destinationPortSelect.SelectedOption = null;
+                destinationPortBox.Value = string.Empty;
+                destinationPortBox.SelectedOption = null;
             }
         }
 
@@ -2317,23 +2312,23 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         okButton.Click += (_, _) =>
         {
             errorText.IsVisible = false;
-            listenPortSelect.Status = InputControlStatus.Default;
-            destinationPortSelect.Status = InputControlStatus.Default;
+            listenPortBox.Status = InputControlStatus.Default;
+            destinationPortBox.Status = InputControlStatus.Default;
 
             var type = GetSelectedTunnelType(typeSelect);
-            if (!TryReadPort(GetSelectedServicePort(listenPortSelect), out var listenPort))
+            if (!TryReadPort(listenPortBox.Value, out var listenPort))
             {
-                listenPortSelect.Status = InputControlStatus.Error;
-                errorText.Text = "请选择侦听端口。";
+                listenPortBox.Status = InputControlStatus.Error;
+                errorText.Text = T("Dialog.TunnelRule.ListenPortRequired");
                 errorText.IsVisible = true;
                 return;
             }
 
             var destinationPort = 0;
-            if (type != SshTunnelRuleType.Dynamic && !TryReadPort(GetSelectedServicePort(destinationPortSelect), out destinationPort))
+            if (type != SshTunnelRuleType.Dynamic && !TryReadPort(destinationPortBox.Value, out destinationPort))
             {
-                destinationPortSelect.Status = InputControlStatus.Error;
-                errorText.Text = "请选择目标端口。";
+                destinationPortBox.Status = InputControlStatus.Error;
+                errorText.Text = T("Dialog.TunnelRule.TargetPortRequired");
                 errorText.IsVisible = true;
                 return;
             }
@@ -2383,7 +2378,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         if (DataContext is not SessionEditViewModel vm)
             return;
 
-        var result = await ShowAlgorithmListEditorAsync("编辑加密算法", SshAlgorithmPreferenceService.DefaultCipherAlgorithms, vm.SshCipherAlgorithms);
+        var result = await ShowAlgorithmListEditorAsync(T("Dialog.Algorithm.CipherTitle"), SshAlgorithmPreferenceService.DefaultCipherAlgorithms, vm.SshCipherAlgorithms);
         if (result == null)
             return;
 
@@ -2396,7 +2391,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         if (DataContext is not SessionEditViewModel vm)
             return;
 
-        var result = await ShowAlgorithmListEditorAsync("编辑 MAC 算法", SshAlgorithmPreferenceService.DefaultMacAlgorithms, vm.SshMacAlgorithms);
+        var result = await ShowAlgorithmListEditorAsync(T("Dialog.Algorithm.MacTitle"), SshAlgorithmPreferenceService.DefaultMacAlgorithms, vm.SshMacAlgorithms);
         if (result == null)
             return;
 
@@ -2409,7 +2404,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         if (DataContext is not SessionEditViewModel vm)
             return;
 
-        var result = await ShowAlgorithmListEditorAsync("编辑密钥交换算法", SshAlgorithmPreferenceService.DefaultKeyExchangeAlgorithms, vm.SshKeyExchangeAlgorithms);
+        var result = await ShowAlgorithmListEditorAsync(T("Dialog.Algorithm.KexTitle"), SshAlgorithmPreferenceService.DefaultKeyExchangeAlgorithms, vm.SshKeyExchangeAlgorithms);
         if (result == null)
             return;
 
@@ -2609,7 +2604,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
         var selectAllButton = new AtomUI.Desktop.Controls.Button
         {
-            Content = "全选",
+            Content = T("Common.SelectAll"),
             Width = 78,
             SizeType = SizeType.Middle
         };
@@ -2621,7 +2616,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
         var clearButton = new AtomUI.Desktop.Controls.Button
         {
-            Content = "清空",
+            Content = T("Common.Clear"),
             Width = 78,
             SizeType = SizeType.Middle
         };
@@ -2633,7 +2628,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
         var okButton = new AtomUI.Desktop.Controls.Button
         {
-            Content = "确定",
+            Content = T("Common.Ok"),
             Width = 86,
             ButtonType = AtomUI.Desktop.Controls.ButtonType.Primary,
             SizeType = SizeType.Middle
@@ -2655,7 +2650,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
         var cancelButton = new AtomUI.Desktop.Controls.Button
         {
-            Content = "取消",
+            Content = T("Common.Cancel"),
             Width = 86,
             SizeType = SizeType.Middle
         };
@@ -2781,9 +2776,9 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             Margin = new Thickness(20, 18, 20, 12),
             VerticalAlignment = VerticalAlignment.Center
         };
-        var okButton = CreateDialogButton("确定", 96);
+        var okButton = CreateDialogButton(T("Common.Ok"), 96);
         okButton.ButtonType = AtomUI.Desktop.Controls.ButtonType.Primary;
-        var cancelButton = CreateDialogButton("取消", 96);
+        var cancelButton = CreateDialogButton(T("Common.Cancel"), 96);
 
         okButton.Click += (_, _) =>
         {
@@ -2822,21 +2817,30 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         };
     }
 
-    private static Select CreateServiceAutoComplete()
+    private static AutoCompleteSearchEdit CreateServiceAutoComplete(int port)
     {
-        return new Select
+        var autoComplete = new AutoCompleteSearchEdit
         {
-            Mode = SelectMode.Single,
-            OptionsSource = LoadTcpServiceOptions(),
-            PlaceholderText = "搜索服务或端口",
+            Value = port > 0 ? port.ToString() : string.Empty,
+            OptionsSource = LoadTcpServiceAutoCompleteOptions(),
+            PlaceholderText = T("Dialog.ServicePort.Placeholder"),
             IsAllowClear = true,
-            IsFilterEnabled = true,
             ShouldUseOverlayPopup = false,
-            DisplayPageSize = 14,
+            DisplayCandidateCount = 14,
             Filter = new StringContainsFilter(),
-            FilterValueSelector = ServicePortFilterValueSelector,
-            HorizontalAlignment = HorizontalAlignment.Stretch
+            FilterValueSelector = ServicePortAutoCompleteFilterValueSelector,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            SizeType = SizeType.Middle,
+            StyleVariant = InputControlStyleVariant.Outlined
         };
+
+        autoComplete.SelectionChanged += (_, _) =>
+        {
+            if (autoComplete.SelectedOption is TcpServiceAutoCompleteOption selected)
+                autoComplete.Value = selected.Port.ToString();
+        };
+
+        return autoComplete;
     }
 
     private static void AddFormLabel(Grid grid, string text, int row)
@@ -2865,49 +2869,16 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         return int.TryParse(text?.Trim(), out port) && port is >= 1 and <= 65535;
     }
 
-    private static string? GetSelectedServicePort(Select select)
+    private static readonly DefaultFilterValueSelector ServicePortAutoCompleteFilterValueSelector = value =>
     {
-        if (select.SelectedOption is TcpServiceOption selected)
-            return selected.Port.ToString();
-
-        return select.SelectedOption?.Content?.ToString();
-    }
-
-    private static void SelectServicePortOption(Select select, int port)
-    {
-        if (port <= 0)
-            return;
-
-        var selected = select.OptionsSource?
-            .OfType<TcpServiceOption>()
-            .FirstOrDefault(option => option.Port == port);
-        if (selected == null)
-        {
-            selected = new TcpServiceOption
-            {
-                Header = port.ToString(),
-                Content = port.ToString(),
-                ItemKey = $"custom-port-{port}",
-                Name = port.ToString(),
-                Port = port
-            };
-            if (select.OptionsSource is ICollection<ISelectOption> options)
-                options.Add(selected);
-        }
-
-        select.SelectedOption = selected;
-    }
-
-    private static readonly DefaultFilterValueSelector ServicePortFilterValueSelector = value =>
-    {
-        if (value is TcpServiceOption option)
+        if (value is TcpServiceAutoCompleteOption option)
             return $"{option.Name} {option.Port}";
         return value?.ToString();
     };
 
-    private static ObservableCollection<ISelectOption> LoadTcpServiceOptions()
+    private static ObservableCollection<IAutoCompleteOption> LoadTcpServiceAutoCompleteOptions()
     {
-        var options = new ObservableCollection<ISelectOption>();
+        var options = new ObservableCollection<IAutoCompleteOption>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var index = 0;
 
@@ -2916,10 +2887,10 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             if (!seen.Add(service.Name))
                 continue;
 
-            options.Add(new TcpServiceOption
+            options.Add(new TcpServiceAutoCompleteOption
             {
-                Header = service.Name,
-                Content = service.Name,
+                Header = $"{service.Name} ({service.Port})",
+                Content = service.Port.ToString(),
                 ItemKey = $"service-{index++}-{service.Name}-{service.Port}",
                 Name = service.Name,
                 Port = service.Port
@@ -2930,10 +2901,10 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         {
             foreach (var service in DefaultTcpServices)
             {
-                options.Add(new TcpServiceOption
+                options.Add(new TcpServiceAutoCompleteOption
                 {
-                    Header = service.Name,
-                    Content = service.Name,
+                    Header = $"{service.Name} ({service.Port})",
+                    Content = service.Port.ToString(),
                     ItemKey = $"service-{index++}-{service.Name}-{service.Port}",
                     Name = service.Name,
                     Port = service.Port
@@ -2946,7 +2917,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
     private static readonly Lazy<IReadOnlyList<(string Name, int Port)>> TcpServices = new(() => ReadTcpServices().ToArray());
 
-    private sealed record TcpServiceOption : SelectOption
+    private sealed record TcpServiceAutoCompleteOption : AutoCompleteOption
     {
         public string Name { get; init; } = string.Empty;
         public int Port { get; init; }

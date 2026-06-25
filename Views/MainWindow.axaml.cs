@@ -2,8 +2,10 @@ using System;
 using AtomUI.Desktop.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Threading;
 using ChiXueSsh.Models;
+using ChiXueSsh.Services;
 using ChiXueSsh.ViewModels;
 
 namespace ChiXueSsh.Views;
@@ -12,11 +14,19 @@ public partial class MainWindow : Window
 {
     protected override Type StyleKeyOverride { get; } = typeof(Window);
     private readonly DispatcherTimer _fullScreenHintTimer;
+    private readonly string[] _startupArgs;
     private bool _isPointerOverFullScreenHintArea;
     private SessionInfo? _quickSessionContext;
+    private TerminalTabViewModel? _tabContext;
 
     public MainWindow()
+        : this(Array.Empty<string>())
     {
+    }
+
+    public MainWindow(string[] startupArgs)
+    {
+        _startupArgs = startupArgs;
         InitializeComponent();
         _fullScreenHintTimer = new DispatcherTimer
         {
@@ -49,13 +59,21 @@ public partial class MainWindow : Window
         base.OnLoaded(e);
         QuickSessionPropertiesBtn.Click += OnQuickSessionPropertiesClick;
         QuickSessionDeleteBtn.Click += OnQuickSessionDeleteClick;
+        TabCloseBtn.Click += OnTabCloseClick;
+        TabPropertiesBtn.Click += OnTabPropertiesClick;
+        TabAddQuickBtn.Click += OnTabAddQuickClick;
+        StartRdpSmokeIfRequested();
     }
 
     protected override void OnUnloaded(RoutedEventArgs e)
     {
         QuickSessionContextMenuPopup.Close();
+        TabContextMenuPopup.Close();
         QuickSessionPropertiesBtn.Click -= OnQuickSessionPropertiesClick;
         QuickSessionDeleteBtn.Click -= OnQuickSessionDeleteClick;
+        TabCloseBtn.Click -= OnTabCloseClick;
+        TabPropertiesBtn.Click -= OnTabPropertiesClick;
+        TabAddQuickBtn.Click -= OnTabAddQuickClick;
         base.OnUnloaded(e);
     }
 
@@ -113,6 +131,32 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnTabHeaderPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(this).Properties.IsRightButtonPressed)
+            return;
+
+        if (sender is Avalonia.Controls.Control { DataContext: TerminalTabViewModel tab } &&
+            DataContext is MainWindowViewModel vm)
+        {
+            _tabContext = tab;
+            vm.SelectTabCommand.Execute(tab);
+            UpdateTabAddQuickMenuState(vm.AddCurrentSessionToQuickBarCommand.CanExecute(null));
+            TabContextMenuPopup.PlacementTarget = sender as Avalonia.Controls.Control;
+            TabContextMenuPopup.IsOpen = true;
+            e.Handled = true;
+        }
+    }
+
+    private void UpdateTabAddQuickMenuState(bool canAdd)
+    {
+        TabAddQuickBtn.IsEnabled = canAdd;
+        TabAddQuickBtn.Opacity = canAdd ? 1.0 : 0.42;
+        TabAddQuickBtn.Foreground = canAdd
+            ? Brushes.Black
+            : Brushes.Gray;
+    }
+
     private void OnTabArrangeButtonClick(object? sender, RoutedEventArgs e)
     {
         TabArrangePopup.PlacementTarget = TabArrangeButton;
@@ -161,6 +205,82 @@ public partial class MainWindow : Window
 
         vm.RemoveQuickSessionCommand.Execute(_quickSessionContext);
         _quickSessionContext = null;
+    }
+
+    private void OnTabCloseClick(object? sender, RoutedEventArgs e)
+    {
+        TabContextMenuPopup.Close();
+        if (_tabContext == null || DataContext is not MainWindowViewModel vm)
+            return;
+
+        vm.CloseTab(_tabContext);
+        _tabContext = null;
+    }
+
+    private async void OnTabPropertiesClick(object? sender, RoutedEventArgs e)
+    {
+        TabContextMenuPopup.Close();
+        if (_tabContext == null || DataContext is not MainWindowViewModel vm)
+            return;
+
+        await vm.EditQuickSessionCommand.ExecuteAsync(_tabContext.Session);
+    }
+
+    private void OnTabAddQuickClick(object? sender, RoutedEventArgs e)
+    {
+        TabContextMenuPopup.Close();
+        if (_tabContext == null || DataContext is not MainWindowViewModel vm)
+            return;
+
+        vm.SelectTabCommand.Execute(_tabContext);
+        if (vm.AddCurrentSessionToQuickBarCommand.CanExecute(null))
+            vm.AddCurrentSessionToQuickBarCommand.Execute(null);
+    }
+
+    private void StartRdpSmokeIfRequested()
+    {
+        if (Array.IndexOf(_startupArgs, "--rdp-smoke") < 0 ||
+            DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        Dispatcher.UIThread.Post(async () =>
+        {
+            var host = GetStartupArg("--rdp-host") ?? "117.72.38.235";
+            var port = int.TryParse(GetStartupArg("--rdp-port"), out var parsedPort) ? parsedPort : 3389;
+            var username = GetStartupArg("--rdp-user") ?? "rdpuser";
+            var password = GetStartupArg("--rdp-password") ?? string.Empty;
+            var width = int.TryParse(GetStartupArg("--rdp-width"), out var parsedWidth) ? parsedWidth : 1280;
+            var height = int.TryParse(GetStartupArg("--rdp-height"), out var parsedHeight) ? parsedHeight : 720;
+
+            var session = new SessionInfo
+            {
+                Name = $"RDP Smoke {host}",
+                Protocol = SessionProtocol.RDP,
+                Host = host,
+                Port = port,
+                Username = username,
+                AuthMethod = AuthMethod.Password,
+                Password = PasswordEncryptionService.Encrypt(password),
+                RdpWindowSize = "Custom",
+                RdpDesktopWidth = width,
+                RdpDesktopHeight = height
+            };
+
+            await vm.ConnectSession(session);
+        });
+    }
+
+    private string? GetStartupArg(string name)
+    {
+        for (var index = 0; index < _startupArgs.Length - 1; index++)
+        {
+            if (string.Equals(_startupArgs[index], name, StringComparison.OrdinalIgnoreCase))
+                return _startupArgs[index + 1];
+        }
+
+        return null;
     }
 
     private void FullScreenHintArea_OnPointerEntered(object? sender, PointerEventArgs e)

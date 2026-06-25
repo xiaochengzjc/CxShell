@@ -68,6 +68,7 @@ public partial class MainWindowViewModel : ObservableObject
     public bool CanMergeTabGroups => IsTabArrangementEnabled;
     public bool IsSelectedTerminalSession => SelectedTab?.IsTerminalSession == true;
     public bool IsSelectedVncSession => SelectedTab?.IsVncSession == true;
+    public bool IsSelectedRdpSession => SelectedTab?.IsRdpSession == true;
     public bool IsSelectedFileTransferSession => SelectedTab?.IsFileTransferSession == true;
 
     public ServerMonitorViewModel Monitor { get; } = new();
@@ -98,6 +99,9 @@ public partial class MainWindowViewModel : ObservableObject
     public string ArrangeMergeText => _localization.Text("Arrange.Merge");
     public string QuickPropertiesText => _localization.Text("Quick.Properties");
     public string QuickDeleteText => _localization.Text("Quick.Delete");
+    public string TabCloseText => _localization.Text("TabMenu.Close");
+    public string TabPropertiesText => _localization.Text("TabMenu.Properties");
+    public string TabAddQuickText => _localization.Text("TabMenu.AddQuick");
     public string WelcomeSelectSessionText => _localization.Text("Welcome.SelectSession");
     public string WelcomeBuiltWithAtomUiText => _localization.Text("Welcome.BuiltWithAtomUI");
     public string FullScreenEscBackText => _localization.Text("FullScreen.EscBack");
@@ -105,8 +109,6 @@ public partial class MainWindowViewModel : ObservableObject
     public string EnglishLanguageText => _localization.Text("Language.English");
 
     private Window? _sessionManagerWindow;
-    private Guid? _activeRdpSessionId;
-
     public MainWindowViewModel()
     {
         _sessionTreeVm = new SessionTreeViewModel(this);
@@ -197,6 +199,9 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(ArrangeMergeText));
         OnPropertyChanged(nameof(QuickPropertiesText));
         OnPropertyChanged(nameof(QuickDeleteText));
+        OnPropertyChanged(nameof(TabCloseText));
+        OnPropertyChanged(nameof(TabPropertiesText));
+        OnPropertyChanged(nameof(TabAddQuickText));
         OnPropertyChanged(nameof(WelcomeSelectSessionText));
         OnPropertyChanged(nameof(WelcomeBuiltWithAtomUiText));
         OnPropertyChanged(nameof(FullScreenEscBackText));
@@ -213,6 +218,13 @@ public partial class MainWindowViewModel : ObservableObject
 
         NotifySelectedContentVisibilityChanged();
         if (value?.Vnc != null)
+        {
+            if (IsSftpVisible)
+                IsSftpVisible = false;
+            if (IsMonitorVisible)
+                IsMonitorVisible = false;
+        }
+        if (value?.Rdp != null)
         {
             if (IsSftpVisible)
                 IsSftpVisible = false;
@@ -254,6 +266,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsSelectedTerminalSession));
         OnPropertyChanged(nameof(IsSelectedVncSession));
+        OnPropertyChanged(nameof(IsSelectedRdpSession));
         OnPropertyChanged(nameof(IsSelectedFileTransferSession));
     }
 
@@ -333,7 +346,7 @@ public partial class MainWindowViewModel : ObservableObject
     private void UpdateMonitor(TerminalTabViewModel? tab)
     {
         if (!IsMonitorVisible) return;
-        if (tab == null || tab.Vnc != null || !tab.Terminal.IsConnected || tab.Session.Protocol != SessionProtocol.SSH)
+        if (tab == null || tab.Vnc != null || tab.Rdp != null || !tab.Terminal.IsConnected || tab.Session.Protocol != SessionProtocol.SSH)
         {
             Monitor.StopMonitoring();
             return;
@@ -551,6 +564,15 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
+        if (SelectedTab?.Rdp is { } rdp)
+        {
+            ConnectionStatusText = rdp.IsConnected ? "RDP connected" : rdp.StatusText;
+            ConnectionStatusColor = new SolidColorBrush(rdp.IsConnected ? Color.Parse("#52C41A") : Colors.Gray);
+            ConnectedHostInfo = BuildRdpHostInfo(SelectedTab.Session);
+            TerminalSizeText = string.Empty;
+            return;
+        }
+
         if (SelectedTab?.FileTransfer is { } fileTransfer)
         {
             ConnectionStatusText = fileTransfer.IsConnected
@@ -608,7 +630,7 @@ public partial class MainWindowViewModel : ObservableObject
     private async Task NewSession()
     {
         var dialog = new SessionEditDialog();
-        var vm = new SessionEditViewModel(_sessionTreeVm.CreateSessionFromGlobalDefaults());
+        var vm = new SessionEditViewModel(_sessionTreeVm.CreateSession());
         dialog.DataContext = vm;
 
         var lifetime = Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
@@ -664,11 +686,10 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void RefreshOpenTabsForSession(SessionInfo session)
     {
-        var effectiveSession = _sessionTreeVm.GetEffectiveSession(session);
         foreach (var tab in Tabs.Where(tab => tab.Session.Id == session.Id))
         {
-            tab.Session.Name = effectiveSession.Name;
-            SessionTreeViewModel.CopySessionValues(tab.Session, effectiveSession);
+            tab.Session.Name = session.Name;
+            SessionTreeViewModel.CopySessionValues(tab.Session, session);
             tab.Title = tab.Session.Name;
             tab.NotifyThemeChanged();
             tab.Terminal.RefreshSessionOptions();
@@ -739,45 +760,43 @@ public partial class MainWindowViewModel : ObservableObject
 
     public async Task ConnectSession(SessionInfo session)
     {
-        var effectiveSession = _sessionTreeVm.GetEffectiveSession(session);
-
-        if (effectiveSession.Protocol is SessionProtocol.SFTP or SessionProtocol.FTP)
+        if (session.Protocol is SessionProtocol.SFTP or SessionProtocol.FTP)
         {
-            await ConnectFileTransferSession(effectiveSession);
+            await ConnectFileTransferSession(session);
             return;
         }
 
-        if (effectiveSession.Protocol == SessionProtocol.RDP)
+        if (session.Protocol == SessionProtocol.RDP)
         {
-            ConnectRdpSession(effectiveSession);
+            await ConnectRdpSession(session);
             return;
         }
 
-        if (effectiveSession.Protocol == SessionProtocol.VNC)
+        if (session.Protocol == SessionProtocol.VNC)
         {
-            await ConnectVncSession(effectiveSession);
+            await ConnectVncSession(session);
             return;
         }
 
-        if (effectiveSession.Protocol is not (SessionProtocol.SSH or SessionProtocol.TELNET or SessionProtocol.RLOGIN or SessionProtocol.SERIAL))
+        if (session.Protocol is not (SessionProtocol.SSH or SessionProtocol.TELNET or SessionProtocol.RLOGIN or SessionProtocol.SERIAL))
         {
-            ConnectionStatusText = $"Protocol {effectiveSession.Protocol} does not support terminal connection yet";
+            ConnectionStatusText = $"Protocol {session.Protocol} does not support terminal connection yet";
             ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FAAD14"));
             return;
         }
 
-        string? password = GetSavedPassword(effectiveSession);
+        string? password = GetSavedPassword(session);
 
-        if (effectiveSession.Protocol is SessionProtocol.SSH or SessionProtocol.TELNET or SessionProtocol.RLOGIN &&
+        if (session.Protocol is SessionProtocol.SSH or SessionProtocol.TELNET or SessionProtocol.RLOGIN &&
             string.IsNullOrEmpty(password) &&
-            SshAgentAuthService.ShouldPromptForPassword(effectiveSession))
+            SshAgentAuthService.ShouldPromptForPassword(session))
         {
-            password = await ShowPasswordDialog(effectiveSession);
+            password = await ShowPasswordDialog(session);
             if (password == null)
                 return;
         }
 
-        var tab = new TerminalTabViewModel(effectiveSession);
+        var tab = new TerminalTabViewModel(session);
         tab.CloseRequested += CloseTab;
         AddTabToActiveGroup(tab);
         SelectedTab = tab;
@@ -789,7 +808,7 @@ public partial class MainWindowViewModel : ObservableObject
             ConnectionStatusText = "Connecting...";
             ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FAAD14"));
 
-            await tab.Terminal.ConnectAsync(effectiveSession, password);
+            await tab.Terminal.ConnectAsync(session, password);
 
             tab.ConnectedPassword = password;
 
@@ -806,63 +825,25 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    private void ConnectRdpSession(SessionInfo session)
+    private async Task ConnectRdpSession(SessionInfo session)
     {
-        try
-        {
-            var launch = PlatformServices.LaunchRdp(session);
-            var sessionId = session.Id;
-            var hostInfo = BuildRdpHostInfo(session);
-            _activeRdpSessionId = sessionId;
+        var password = GetSavedPassword(session);
+        if (string.IsNullOrEmpty(password))
+            password = await ShowPasswordDialog(session);
 
-            var exitHandled = false;
-            void HandleExited()
-            {
-                if (exitHandled)
-                    return;
+        if (password == null)
+            return;
 
-                exitHandled = true;
-                Dispatcher.UIThread.Post(() => OnRdpProcessExited(sessionId, hostInfo, launch));
-            }
+        var rdp = new RdpViewModel(session, password);
+        var tab = new TerminalTabViewModel(session, rdp);
+        tab.CloseRequested += CloseTab;
+        AddTabToActiveGroup(tab);
+        SelectedTab = tab;
 
-            launch.Process.Exited += (_, _) => HandleExited();
-            if (launch.Process.HasExited)
-                HandleExited();
-
-            IsTerminalFullScreen = false;
-            ConnectionStatusText = "RDP launched";
-            ConnectionStatusColor = new SolidColorBrush(Color.Parse("#52C41A"));
-            ConnectedHostInfo = hostInfo;
-            System.Diagnostics.Debug.WriteLine($"RDP file: {launch.FilePath}");
-        }
-        catch (Exception ex)
-        {
-            ConnectionStatusText = $"RDP launch failed: {ex.Message}";
-            ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FF4D4F"));
-        }
-    }
-
-    private void OnRdpProcessExited(Guid sessionId, string hostInfo, RdpLaunchResult launch)
-    {
-        if (_activeRdpSessionId == sessionId)
-        {
-            ConnectionStatusText = "RDP disconnected";
-            ConnectionStatusColor = new SolidColorBrush(Colors.Gray);
-            ConnectedHostInfo = hostInfo;
-            _activeRdpSessionId = null;
-        }
-
-        try
-        {
-            if (File.Exists(launch.FilePath))
-                File.Delete(launch.FilePath);
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"RDP temp file cleanup failed: {ex.Message}");
-        }
-
-        launch.Process.Dispose();
+        IsTerminalFullScreen = false;
+        ConnectionStatusText = "RDP ready";
+        ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FAAD14"));
+        ConnectedHostInfo = BuildRdpHostInfo(session);
     }
 
     private static string BuildRdpHostInfo(SessionInfo session)
@@ -881,6 +862,18 @@ public partial class MainWindowViewModel : ObservableObject
         return string.IsNullOrWhiteSpace(session.Username)
             ? $"{host}:{port}"
             : $"{session.Username}@{host}:{port}";
+    }
+
+    private static string BuildVncHostInfo(SessionInfo session)
+    {
+        var host = string.IsNullOrWhiteSpace(session.Host) ? "VNC" : session.Host.Trim();
+        var port = session.Port > 0 ? session.Port : 5900;
+        if (!session.VncUseSshTunnel)
+            return $"{host}:{port}";
+
+        var sshHost = string.IsNullOrWhiteSpace(session.VncSshHost) ? host : session.VncSshHost.Trim();
+        var sshPort = session.VncSshPort is >= 1 and <= 65535 ? session.VncSshPort : 22;
+        return $"{host}:{port} via SSH {sshHost}:{sshPort}";
     }
 
     private async Task ConnectVncSession(SessionInfo session)
@@ -903,7 +896,7 @@ public partial class MainWindowViewModel : ObservableObject
         {
             ConnectionStatusText = "VNC connecting...";
             ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FAAD14"));
-            ConnectedHostInfo = $"{session.Host}:{(session.Port > 0 ? session.Port : 5900)}";
+            ConnectedHostInfo = BuildVncHostInfo(session);
             await vm.ConnectAsync(session, password);
             ConnectionStatusText = "VNC connected";
             ConnectionStatusColor = new SolidColorBrush(Color.Parse("#52C41A"));
@@ -1035,6 +1028,7 @@ public partial class MainWindowViewModel : ObservableObject
                 }
             });
         }
+        tab.Rdp?.Dispose();
         tab.FileTransfer?.StopBrowsing();
     }
 
@@ -1057,7 +1051,14 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void Disconnect()
     {
-        SelectedTab?.Terminal.Disconnect();
+        if (SelectedTab?.Vnc != null)
+            SelectedTab.Vnc.Disconnect();
+        else if (SelectedTab?.Rdp != null)
+            SelectedTab.Rdp.Disconnect();
+        else if (SelectedTab?.FileTransfer != null)
+            SelectedTab.FileTransfer.StopBrowsing();
+        else
+            SelectedTab?.Terminal.Disconnect();
     }
 
     private bool CanCurrentConnect()
@@ -1065,6 +1066,8 @@ public partial class MainWindowViewModel : ObservableObject
         return SelectedTab != null &&
                (SelectedTab.Vnc != null
                    ? !SelectedTab.Vnc.IsConnected
+                   : SelectedTab.Rdp != null
+                       ? !SelectedTab.Rdp.IsConnected
                    : SelectedTab.FileTransfer != null
                        ? !SelectedTab.FileTransfer.IsConnected
                    : !SelectedTab.Terminal.IsConnected);
@@ -1101,6 +1104,18 @@ public partial class MainWindowViewModel : ObservableObject
                 ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FF4D4F"));
             }
 
+            return;
+        }
+
+        if (tab.Rdp != null)
+        {
+            if (tab.Rdp.IsConnected)
+                return;
+
+            ConnectionStatusText = "RDP connecting...";
+            ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FAAD14"));
+            tab.Rdp.Reconnect();
+            UpdateStatusBar();
             return;
         }
 
@@ -1153,6 +1168,7 @@ public partial class MainWindowViewModel : ObservableObject
     private bool CanCurrentDisconnect()
     {
         return SelectedTab?.Vnc?.IsConnected == true ||
+               SelectedTab?.Rdp?.IsConnected == true ||
                SelectedTab?.FileTransfer?.IsConnected == true ||
                SelectedTab?.Terminal.IsConnected == true;
     }
@@ -1162,6 +1178,8 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (SelectedTab?.Vnc != null)
             SelectedTab.Vnc.Disconnect();
+        else if (SelectedTab?.Rdp != null)
+            SelectedTab.Rdp.Disconnect();
         else if (SelectedTab?.FileTransfer != null)
             SelectedTab.FileTransfer.StopBrowsing();
         else

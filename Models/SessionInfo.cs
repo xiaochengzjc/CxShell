@@ -186,24 +186,7 @@ public class HighlightSet
 
 public class ApplicationSettings
 {
-    public SessionInfo GlobalDefaults { get; set; } = CreateDefaultSession();
     public string UiLanguage { get; set; } = "zh-CN";
-
-    public static SessionInfo CreateDefaultSession()
-    {
-        return new SessionInfo
-        {
-            Id = Guid.Empty,
-            Name = "Global Defaults",
-            Host = string.Empty,
-            Username = string.Empty,
-            Port = 22,
-            Protocol = SessionProtocol.SSH,
-            AuthMethod = AuthMethod.Password,
-            TerminalFixedSize = false,
-            TerminalResetSizeOnConnect = false
-        };
-    }
 }
 
 public class SessionInfo
@@ -397,6 +380,22 @@ public class SessionInfo
     public bool RdpRedirectDrives { get; set; }
     public string RdpAudioMode { get; set; } = "DoNotPlay";
     public bool RdpAudioCapture { get; set; } = true;
+    public bool RdpUseSshTunnel { get; set; }
+    public string RdpSshHost { get; set; } = string.Empty;
+    public int RdpSshPort { get; set; } = 22;
+    public string RdpSshUsername { get; set; } = string.Empty;
+    public string RdpSshPassword { get; set; } = string.Empty;
+    public bool RdpSshUsePrivateKey { get; set; }
+    public string RdpSshPrivateKeyPath { get; set; } = string.Empty;
+    public bool VncUseSshTunnel { get; set; }
+    public string VncSshHost { get; set; } = string.Empty;
+    public int VncSshPort { get; set; } = 22;
+    public string VncSshUsername { get; set; } = string.Empty;
+    public string VncSshPassword { get; set; } = string.Empty;
+    public bool VncSshUsePrivateKey { get; set; }
+    public string VncSshPrivateKeyPath { get; set; } = string.Empty;
+    public string VncSshRemoteHost { get; set; } = "127.0.0.1";
+    public int VncSshRemotePort { get; set; } = 5901;
     public int SortOrder { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.Now;
 }

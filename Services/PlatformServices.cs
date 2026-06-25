@@ -34,14 +34,6 @@ public static class PlatformServices
         return ["/dev/ttyUSB0", "/dev/ttyACM0", "/dev/ttyS0"];
     }
 
-    public static RdpLaunchResult LaunchRdp(SessionInfo session)
-    {
-        if (!IsWindows)
-            throw new PlatformNotSupportedException("RDP launch currently requires the Windows Remote Desktop client.");
-
-        return RdpLaunchService.Launch(session);
-    }
-
     public static bool TryStartVirtualFileDragOut(
         IReadOnlyList<VirtualDragFile> files,
         out int effect,

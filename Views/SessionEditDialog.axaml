@@ -240,6 +240,114 @@
                                 BorderBrush="{atom:SharedTokenResource ColorBorder}"
                                 BorderThickness="1"
                                 CornerRadius="4"
+                                Padding="18"
+                                IsVisible="{Binding IsVncProtocol}">
+                            <Grid RowDefinitions="Auto,14,Auto,8,Auto,12,Auto,12,Auto,12,Auto,12,Auto,12,Auto"
+                                  ColumnDefinitions="110,*">
+                                <TextBlock Grid.ColumnSpan="2"
+                                           Text="VNC SSH 隧道"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+
+                                <atom:CheckBox Grid.Row="2"
+                                               Grid.ColumnSpan="2"
+                                               Content="通过 SSH 隧道连接 VNC"
+                                               IsChecked="{Binding VncUseSshTunnel, Mode=TwoWay}"/>
+
+                                <TextBlock Grid.Row="4"
+                                           Grid.ColumnSpan="2"
+                                           Text="勾选后，上方主机/端口表示 SSH 服务器内部可访问的 VNC 地址，例如 127.0.0.1:5901。"
+                                           TextWrapping="Wrap"
+                                           Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+
+                                <TextBlock Grid.Row="6"
+                                           Text="SSH 主机"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="6"
+                                               Grid.Column="1"
+                                               Text="{Binding VncSshHost, Mode=TwoWay}"
+                                               IsEnabled="{Binding VncUseSshTunnel}"
+                                               PlaceholderText="{Binding Host}"/>
+
+                                <TextBlock Grid.Row="8"
+                                           Text="SSH 端口"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="8"
+                                               Grid.Column="1"
+                                               Width="160"
+                                               HorizontalAlignment="Left"
+                                               Text="{Binding VncSshPort, Mode=TwoWay}"
+                                               IsEnabled="{Binding VncUseSshTunnel}"
+                                               PlaceholderText="22"/>
+
+                                <TextBlock Grid.Row="10"
+                                           Text="SSH 用户"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="10"
+                                               Grid.Column="1"
+                                               Text="{Binding VncSshUsername, Mode=TwoWay}"
+                                               IsEnabled="{Binding VncUseSshTunnel}"
+                                               PlaceholderText="root"/>
+
+                                <TextBlock Grid.Row="12"
+                                           Text="认证方式"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <StackPanel Grid.Row="12"
+                                            Grid.Column="1"
+                                            Orientation="Horizontal"
+                                            Spacing="20"
+                                            IsEnabled="{Binding VncUseSshTunnel}">
+                                    <atom:RadioButton Content="密码"
+                                                      IsChecked="{Binding IsVncSshPasswordAuth}"
+                                                      GroupName="VncSshAuthMethod"/>
+                                    <atom:RadioButton Content="私钥"
+                                                      IsChecked="{Binding IsVncSshPrivateKeyAuth}"
+                                                      GroupName="VncSshAuthMethod"/>
+                                </StackPanel>
+
+                                <TextBlock Grid.Row="14"
+                                           Text="SSH 密码"
+                                           VerticalAlignment="Center"
+                                           IsVisible="{Binding IsVncSshPasswordAuth}"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="14"
+                                               Grid.Column="1"
+                                               Text="{Binding VncSshPassword, Mode=TwoWay}"
+                                               PasswordChar="*"
+                                               IsEnableRevealButton="True"
+                                               IsAllowClear="True"
+                                               IsEnabled="{Binding VncUseSshTunnel}"
+                                               IsVisible="{Binding IsVncSshPasswordAuth}"/>
+
+                                <TextBlock Grid.Row="14"
+                                           Text="SSH 私钥"
+                                           VerticalAlignment="Center"
+                                           IsVisible="{Binding IsVncSshPrivateKeyAuth}"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <Grid Grid.Row="14"
+                                      Grid.Column="1"
+                                      ColumnDefinitions="*,Auto"
+                                      ColumnSpacing="8"
+                                      IsEnabled="{Binding VncUseSshTunnel}"
+                                      IsVisible="{Binding IsVncSshPrivateKeyAuth}">
+                                    <atom:LineEdit Text="{Binding VncSshPrivateKeyPath, Mode=TwoWay}"
+                                                   PlaceholderText="~/.ssh/id_rsa"/>
+                                    <atom:Button Grid.Column="1"
+                                                 Icon="{antdicons:AntDesignIconProvider Kind=FolderOpenOutlined}"
+                                                 Content="{Binding BrowseText}"
+                                                 Command="{Binding BrowseVncSshKeyCommand}"/>
+                                </Grid>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
                                 Padding="18">
                             <Grid RowDefinitions="Auto,14,Auto,12,Auto,12,Auto,12,Auto"
                                   ColumnDefinitions="110,*">
@@ -312,19 +420,127 @@
                                 BorderThickness="1"
                                 CornerRadius="4"
                                 Padding="18">
+                            <Grid RowDefinitions="Auto,14,Auto,10,Auto,12,Auto,12,Auto,12,Auto,12,Auto,12,Auto"
+                                  ColumnDefinitions="120,*"
+                                  ColumnSpacing="12">
+                                <TextBlock Grid.ColumnSpan="2"
+                                           Text="SSH 隧道"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+
+                                <atom:CheckBox Grid.Row="2"
+                                               Grid.ColumnSpan="2"
+                                               Content="通过 SSH 隧道连接 RDP"
+                                               IsChecked="{Binding RdpUseSshTunnel, Mode=TwoWay}"/>
+
+                                <TextBlock Grid.Row="4"
+                                           Grid.ColumnSpan="2"
+                                           Text="勾选后，上方主机/端口表示 SSH 服务器内部可访问的 RDP 地址，例如 127.0.0.1:3389 或内网 Windows IP:3389。CxShell 会自动创建本地临时端口。"
+                                           TextWrapping="Wrap"
+                                           Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+
+                                <TextBlock Grid.Row="6"
+                                           Text="SSH 主机"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="6"
+                                               Grid.Column="1"
+                                               Text="{Binding RdpSshHost, Mode=TwoWay}"
+                                               IsEnabled="{Binding RdpUseSshTunnel}"
+                                               PlaceholderText="{Binding Host}"/>
+
+                                <TextBlock Grid.Row="8"
+                                           Text="SSH 端口"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="8"
+                                               Grid.Column="1"
+                                               Width="160"
+                                               HorizontalAlignment="Left"
+                                               Text="{Binding RdpSshPort, Mode=TwoWay}"
+                                               IsEnabled="{Binding RdpUseSshTunnel}"
+                                               PlaceholderText="22"/>
+
+                                <TextBlock Grid.Row="10"
+                                           Text="SSH 用户"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="10"
+                                               Grid.Column="1"
+                                               Text="{Binding RdpSshUsername, Mode=TwoWay}"
+                                               IsEnabled="{Binding RdpUseSshTunnel}"
+                                               PlaceholderText="root"/>
+
+                                <TextBlock Grid.Row="12"
+                                           Text="认证方式"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <StackPanel Grid.Row="12"
+                                            Grid.Column="1"
+                                            Orientation="Horizontal"
+                                            Spacing="20"
+                                            IsEnabled="{Binding RdpUseSshTunnel}">
+                                    <atom:RadioButton Content="密码"
+                                                      IsChecked="{Binding IsRdpSshPasswordAuth}"
+                                                      GroupName="RdpSshAuthMethod"/>
+                                    <atom:RadioButton Content="私钥"
+                                                      IsChecked="{Binding IsRdpSshPrivateKeyAuth}"
+                                                      GroupName="RdpSshAuthMethod"/>
+                                </StackPanel>
+
+                                <TextBlock Grid.Row="14"
+                                           Text="SSH 密码"
+                                           VerticalAlignment="Center"
+                                           IsVisible="{Binding IsRdpSshPasswordAuth}"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="14"
+                                               Grid.Column="1"
+                                               Text="{Binding RdpSshPassword, Mode=TwoWay}"
+                                               PasswordChar="*"
+                                               IsEnableRevealButton="True"
+                                               IsAllowClear="True"
+                                               IsEnabled="{Binding RdpUseSshTunnel}"
+                                               IsVisible="{Binding IsRdpSshPasswordAuth}"/>
+
+                                <TextBlock Grid.Row="14"
+                                           Text="SSH 私钥"
+                                           VerticalAlignment="Center"
+                                           IsVisible="{Binding IsRdpSshPrivateKeyAuth}"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <Grid Grid.Row="14"
+                                      Grid.Column="1"
+                                      ColumnDefinitions="*,Auto"
+                                      ColumnSpacing="8"
+                                      IsEnabled="{Binding RdpUseSshTunnel}"
+                                      IsVisible="{Binding IsRdpSshPrivateKeyAuth}">
+                                    <atom:LineEdit Text="{Binding RdpSshPrivateKeyPath, Mode=TwoWay}"
+                                                   PlaceholderText="~/.ssh/id_rsa"/>
+                                    <atom:Button Grid.Column="1"
+                                                 Icon="{antdicons:AntDesignIconProvider Kind=FolderOpenOutlined}"
+                                                 Content="{Binding BrowseText}"
+                                                 Command="{Binding BrowseRdpSshKeyCommand}"/>
+                                </Grid>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
                             <Grid RowDefinitions="Auto,14,Auto,12,Auto"
-                                  ColumnDefinitions="*,110,112,32,110,112,32">
-                                <TextBlock Grid.ColumnSpan="7"
+                                  ColumnDefinitions="Auto,8,112,6,Auto,24,Auto,8,112,6,Auto,*">
+                                <TextBlock Grid.ColumnSpan="12"
                                            Text="{Binding ReconnectText}"
                                            FontWeight="SemiBold"
                                            Foreground="{atom:SharedTokenResource ColorText}"/>
 
                                 <atom:CheckBox Grid.Row="2"
-                                               Grid.ColumnSpan="7"
+                                               Grid.ColumnSpan="12"
                                                Content="{Binding AutoReconnectText}"
                                                IsChecked="{Binding AutoReconnect, Mode=TwoWay}"/>
 
-                                <TextBlock Grid.Row="4" Grid.Column="1"
+                                <TextBlock Grid.Row="4" Grid.Column="0"
                                            Text="{Binding IntervalText}"
                                            VerticalAlignment="Center"
                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
@@ -333,21 +549,21 @@
                                                     Maximum="3600"
                                                     Value="{Binding ReconnectIntervalSeconds, Mode=TwoWay}"
                                                     IsEnabled="{Binding AutoReconnect}"/>
-                                <TextBlock Grid.Row="4" Grid.Column="3"
+                                <TextBlock Grid.Row="4" Grid.Column="4"
                                            Text="{Binding SecondsText}"
                                            VerticalAlignment="Center"
                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
 
-                                <TextBlock Grid.Row="4" Grid.Column="4"
+                                <TextBlock Grid.Row="4" Grid.Column="6"
                                            Text="{Binding LimitText}"
                                            VerticalAlignment="Center"
                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
-                                <atom:NumericUpDown Grid.Row="4" Grid.Column="5"
+                                <atom:NumericUpDown Grid.Row="4" Grid.Column="8"
                                                     Minimum="0"
                                                     Maximum="1440"
                                                     Value="{Binding ReconnectLimitMinutes, Mode=TwoWay}"
                                                     IsEnabled="{Binding AutoReconnect}"/>
-                                <TextBlock Grid.Row="4" Grid.Column="6"
+                                <TextBlock Grid.Row="4" Grid.Column="10"
                                            Text="{Binding MinutesText}"
                                            VerticalAlignment="Center"
                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
@@ -1256,19 +1472,20 @@
                                 CornerRadius="4"
                                 Padding="18">
                             <Grid RowDefinitions="Auto,14,Auto,12,Auto"
-                                  ColumnDefinitions="150,*">
-                                <TextBlock Grid.ColumnSpan="2"
+                                  ColumnDefinitions="Auto,12,220,*">
+                                <TextBlock Grid.ColumnSpan="4"
                                            Text="{Binding [UiText.093], Source={x:Static services:LocalizationService.Shared}}"
                                            FontWeight="SemiBold"
                                            Foreground="{atom:SharedTokenResource ColorText}"/>
                                 <TextBlock Grid.Row="2" Text="{Binding [UiText.094], Source={x:Static services:LocalizationService.Shared}}"
                                            VerticalAlignment="Center"
                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
-                                <atom:Select Grid.Row="2" Grid.Column="1"
+                                <atom:Select Grid.Row="2" Grid.Column="2"
                                              x:Name="RdpAudioModeSelect"
                                              Mode="Single"
+                                             Width="220"
                                              OptionsSource="{Binding RdpAudioModeOptions}"/>
-                                <atom:CheckBox Grid.Row="4" Grid.Column="1"
+                                <atom:CheckBox Grid.Row="4" Grid.Column="2"
                                                Content="{Binding [UiText.095], Source={x:Static services:LocalizationService.Shared}}"
                                                IsChecked="{Binding RdpAudioCapture, Mode=TwoWay}"/>
                             </Grid>
@@ -2373,9 +2590,9 @@
                         </Border>
 
                         <Border BorderBrush="{atom:SharedTokenResource ColorBorder}"
-                                BorderThickness="1,1,0,0"
+                                BorderThickness="1"
                                 Margin="0,12,18,0"
-                                Padding="0,12,0,0">
+                                Padding="16,12">
                             <TextBlock Text="{Binding [UiText.226], Source={x:Static services:LocalizationService.Shared}}"
                                        TextWrapping="Wrap"/>
                         </Border>

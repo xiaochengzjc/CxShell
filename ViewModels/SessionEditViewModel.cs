@@ -20,12 +20,6 @@ namespace ChiXueSsh.ViewModels;
 
 public partial class SessionEditViewModel : ObservableObject
 {
-    public enum EditScope
-    {
-        Session,
-        GlobalDefaults
-    }
-
     private LocalizationService L => LocalizationService.Shared;
     public string NavTitleText => L.Text("SessionEdit.NavTitle");
     public string NavSubtitleText => L.Text("SessionEdit.NavSubtitle");
@@ -283,6 +277,20 @@ public partial class SessionEditViewModel : ObservableObject
     [ObservableProperty] private bool _rdpRedirectDrives;
     [ObservableProperty] private string _rdpAudioMode = "DoNotPlay";
     [ObservableProperty] private bool _rdpAudioCapture = true;
+    [ObservableProperty] private bool _rdpUseSshTunnel;
+    [ObservableProperty] private string _rdpSshHost = string.Empty;
+    [ObservableProperty] private string _rdpSshPort = "22";
+    [ObservableProperty] private string _rdpSshUsername = string.Empty;
+    [ObservableProperty] private string _rdpSshPassword = string.Empty;
+    [ObservableProperty] private bool _rdpSshUsePrivateKey;
+    [ObservableProperty] private string _rdpSshPrivateKeyPath = string.Empty;
+    [ObservableProperty] private bool _vncUseSshTunnel;
+    [ObservableProperty] private string _vncSshHost = string.Empty;
+    [ObservableProperty] private string _vncSshPort = "22";
+    [ObservableProperty] private string _vncSshUsername = string.Empty;
+    [ObservableProperty] private string _vncSshPassword = string.Empty;
+    [ObservableProperty] private bool _vncSshUsePrivateKey;
+    [ObservableProperty] private string _vncSshPrivateKeyPath = string.Empty;
 
     public bool HasValidationError => !string.IsNullOrWhiteSpace(ValidationMessage);
     public bool IsNameInvalid => NameStatus == InputControlStatus.Error;
@@ -307,8 +315,28 @@ public partial class SessionEditViewModel : ObservableObject
     public bool IsBellPage => SelectedPage == "Bell";
     public bool IsAdvancedPage => SelectedPage == "Advanced";
     public bool IsTracingPage => SelectedPage == "Tracing";
-    public bool IsSessionScope => Scope == EditScope.Session;
-    public bool IsGlobalDefaultsScope => Scope == EditScope.GlobalDefaults;
+    public bool IsSessionScope => true;
+    public bool IsVncProtocol => string.Equals(Protocol, SessionProtocol.VNC.ToString(), StringComparison.OrdinalIgnoreCase);
+    public bool IsRdpSshPasswordAuth
+    {
+        get => !RdpSshUsePrivateKey;
+        set { if (value) RdpSshUsePrivateKey = false; }
+    }
+    public bool IsRdpSshPrivateKeyAuth
+    {
+        get => RdpSshUsePrivateKey;
+        set { if (value) RdpSshUsePrivateKey = true; }
+    }
+    public bool IsVncSshPasswordAuth
+    {
+        get => !VncSshUsePrivateKey;
+        set { if (value) VncSshUsePrivateKey = false; }
+    }
+    public bool IsVncSshPrivateKeyAuth
+    {
+        get => VncSshUsePrivateKey;
+        set { if (value) VncSshUsePrivateKey = true; }
+    }
     public bool IsSftpCustomServerCommandEnabled => SftpUseCustomServer;
     public bool IsSessionKeepAliveIntervalEnabled => SendSessionKeepAlive;
     public bool IsIdleStringSettingsEnabled => SendIdleString;
@@ -909,11 +937,9 @@ public partial class SessionEditViewModel : ObservableObject
     public void RefreshLocalization()
     {
         RefreshLocalizedOptionHeaders();
-        DialogTitle = Scope == EditScope.GlobalDefaults
-            ? L.Text("SessionEdit.TitleGlobal")
-            : _editingSession == null
-                ? L.Text("SessionEdit.TitleNew")
-                : L.Text("SessionEdit.TitleProperties");
+        DialogTitle = _editingSession == null
+            ? L.Text("SessionEdit.TitleNew")
+            : L.Text("SessionEdit.TitleProperties");
 
         OnPropertyChanged(nameof(NavTitleText));
         OnPropertyChanged(nameof(NavSubtitleText));
@@ -1047,15 +1073,11 @@ public partial class SessionEditViewModel : ObservableObject
     }
 
     public SessionInfo? SavedSession { get; private set; }
-    public ApplicationSettings? SavedSettings { get; private set; }
 
     private readonly SessionInfo? _editingSession;
-    private readonly ApplicationSettings? _editingSettings;
-    public EditScope Scope { get; private set; }
 
     public SessionEditViewModel()
     {
-        Scope = EditScope.Session;
         DialogTitle = L.Text("SessionEdit.TitleNew");
         LocalizationService.Shared.LanguageChanged += (_, _) => RefreshLocalization();
         RefreshLocalizedOptionHeaders();
@@ -1065,7 +1087,6 @@ public partial class SessionEditViewModel : ObservableObject
 
     public SessionEditViewModel(SessionInfo session)
     {
-        Scope = EditScope.Session;
         _editingSession = session;
         DialogTitle = L.Text("SessionEdit.TitleProperties");
         LocalizationService.Shared.LanguageChanged += (_, _) => RefreshLocalization();
@@ -1261,19 +1282,21 @@ public partial class SessionEditViewModel : ObservableObject
         RdpRedirectDrives = session.RdpRedirectDrives;
         RdpAudioMode = string.IsNullOrWhiteSpace(session.RdpAudioMode) ? "DoNotPlay" : session.RdpAudioMode;
         RdpAudioCapture = session.RdpAudioCapture;
+        RdpUseSshTunnel = session.RdpUseSshTunnel;
+        RdpSshHost = string.IsNullOrWhiteSpace(session.RdpSshHost) ? session.Host : session.RdpSshHost;
+        RdpSshPort = Math.Clamp(session.RdpSshPort <= 0 ? 22 : session.RdpSshPort, 1, 65535).ToString();
+        RdpSshUsername = session.RdpSshUsername ?? string.Empty;
+        RdpSshPassword = PasswordEncryptionService.Decrypt(session.RdpSshPassword);
+        RdpSshUsePrivateKey = session.RdpSshUsePrivateKey;
+        RdpSshPrivateKeyPath = session.RdpSshPrivateKeyPath ?? string.Empty;
+        VncUseSshTunnel = session.VncUseSshTunnel;
+        VncSshHost = string.IsNullOrWhiteSpace(session.VncSshHost) ? session.Host : session.VncSshHost;
+        VncSshPort = Math.Clamp(session.VncSshPort <= 0 ? 22 : session.VncSshPort, 1, 65535).ToString();
+        VncSshUsername = session.VncSshUsername ?? string.Empty;
+        VncSshPassword = PasswordEncryptionService.Decrypt(session.VncSshPassword);
+        VncSshUsePrivateKey = session.VncSshUsePrivateKey;
+        VncSshPrivateKeyPath = session.VncSshPrivateKeyPath ?? string.Empty;
         RefreshSerialPortOptions();
-    }
-
-    public SessionEditViewModel(ApplicationSettings settings)
-        : this(settings.GlobalDefaults ?? ApplicationSettings.CreateDefaultSession())
-    {
-        Scope = EditScope.GlobalDefaults;
-        _editingSettings = settings;
-        DialogTitle = L.Text("SessionEdit.TitleGlobal");
-        SessionName = "Global Defaults";
-        RefreshLocalizedOptionHeaders();
-        OnPropertyChanged(nameof(IsSessionScope));
-        OnPropertyChanged(nameof(IsGlobalDefaultsScope));
     }
 
     [RelayCommand]
@@ -1293,6 +1316,40 @@ public partial class SessionEditViewModel : ObservableObject
         {
             PrivateKeyPath = files[0].Path.LocalPath;
         }
+    }
+
+    [RelayCommand]
+    private async Task BrowseVncSshKey()
+    {
+        var lifetime = Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
+        var topLevel = TopLevel.GetTopLevel(lifetime?.MainWindow);
+        if (topLevel == null) return;
+
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Select SSH private key file",
+            AllowMultiple = false
+        });
+
+        if (files.Count > 0)
+            VncSshPrivateKeyPath = files[0].Path.LocalPath;
+    }
+
+    [RelayCommand]
+    private async Task BrowseRdpSshKey()
+    {
+        var lifetime = Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
+        var topLevel = TopLevel.GetTopLevel(lifetime?.MainWindow);
+        if (topLevel == null) return;
+
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Select SSH private key file",
+            AllowMultiple = false
+        });
+
+        if (files.Count > 0)
+            RdpSshPrivateKeyPath = files[0].Path.LocalPath;
     }
 
     [RelayCommand]
@@ -1471,6 +1528,22 @@ public partial class SessionEditViewModel : ObservableObject
         session.RdpRedirectDrives = RdpRedirectDrives;
         session.RdpAudioMode = RdpAudioMode;
         session.RdpAudioCapture = RdpAudioCapture;
+        session.RdpUseSshTunnel = RdpUseSshTunnel;
+        session.RdpSshHost = string.IsNullOrWhiteSpace(RdpSshHost) ? session.Host : RdpSshHost.Trim();
+        session.RdpSshPort = int.TryParse(RdpSshPort, out var rdpSshPort) ? Math.Clamp(rdpSshPort, 1, 65535) : 22;
+        session.RdpSshUsername = RdpSshUsername.Trim();
+        session.RdpSshPassword = RdpSshUsePrivateKey ? string.Empty : PasswordEncryptionService.Encrypt(RdpSshPassword);
+        session.RdpSshUsePrivateKey = RdpSshUsePrivateKey;
+        session.RdpSshPrivateKeyPath = RdpSshUsePrivateKey ? RdpSshPrivateKeyPath.Trim() : string.Empty;
+        session.VncUseSshTunnel = VncUseSshTunnel;
+        session.VncSshHost = string.IsNullOrWhiteSpace(VncSshHost) ? session.Host : VncSshHost.Trim();
+        session.VncSshPort = int.TryParse(VncSshPort, out var vncSshPort) ? Math.Clamp(vncSshPort, 1, 65535) : 22;
+        session.VncSshUsername = VncSshUsername.Trim();
+        session.VncSshPassword = VncSshUsePrivateKey ? string.Empty : PasswordEncryptionService.Encrypt(VncSshPassword);
+        session.VncSshUsePrivateKey = VncSshUsePrivateKey;
+        session.VncSshPrivateKeyPath = VncSshUsePrivateKey ? VncSshPrivateKeyPath.Trim() : string.Empty;
+        session.VncSshRemoteHost = session.Host;
+        session.VncSshRemotePort = session.Port;
         session.FileTransferAlwaysAskDownloadFolder = FileTransferAlwaysAskDownloadFolder;
         session.FileTransferDownloadDirectory = FileTransferDownloadDirectory.Trim();
         session.FileTransferUploadDirectory = FileTransferUploadDirectory.Trim();
@@ -1511,19 +1584,6 @@ public partial class SessionEditViewModel : ObservableObject
         session.AdvancedLogWriteTimestamp = AdvancedLogWriteTimestamp;
         session.AdvancedLogTimestampFormat = string.IsNullOrWhiteSpace(AdvancedLogTimestampFormat) ? "[%a]" : AdvancedLogTimestampFormat.Trim();
 
-        if (Scope == EditScope.GlobalDefaults && _editingSettings != null)
-        {
-            session.Id = Guid.Empty;
-            session.Name = "Global Defaults";
-            session.Host = string.Empty;
-            session.Username = string.Empty;
-            session.Port = GetDefaultPort(session.Protocol);
-            _editingSettings.GlobalDefaults = session;
-            SavedSettings = _editingSettings;
-            SavedSession = null;
-            return;
-        }
-
         SavedSession = session;
     }
 
@@ -1548,6 +1608,23 @@ public partial class SessionEditViewModel : ObservableObject
         if (IsValidPortText(value) && IsPortInvalid)
             PortStatus = InputControlStatus.Default;
         ClearValidationMessageIfResolved();
+    }
+
+    partial void OnProtocolChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsVncProtocol));
+    }
+
+    partial void OnVncSshUsePrivateKeyChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsVncSshPasswordAuth));
+        OnPropertyChanged(nameof(IsVncSshPrivateKeyAuth));
+    }
+
+    partial void OnRdpSshUsePrivateKeyChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsRdpSshPasswordAuth));
+        OnPropertyChanged(nameof(IsRdpSshPrivateKeyAuth));
     }
 
     partial void OnSerialPortNameChanged(string value)
@@ -1957,7 +2034,7 @@ public partial class SessionEditViewModel : ObservableObject
         port = 0;
         ResetValidation();
 
-        if (Scope == EditScope.Session && string.IsNullOrWhiteSpace(SessionName))
+        if (string.IsNullOrWhiteSpace(SessionName))
         {
             NameStatus = InputControlStatus.Error;
             ValidationMessage = L.Text("Validation.SessionNameRequired");
@@ -1993,6 +2070,49 @@ public partial class SessionEditViewModel : ObservableObject
             SerialPortStatus = InputControlStatus.Error;
             ValidationMessage = L.Text("Validation.SerialPortRequired");
             return false;
+        }
+
+        if (protocol == SessionProtocol.RDP && RdpUseSshTunnel)
+        {
+            if (string.IsNullOrWhiteSpace(RdpSshHost))
+            {
+                ValidationMessage = "SSH host is required for RDP tunnel.";
+                return false;
+            }
+
+            if (!IsValidPortText(RdpSshPort))
+            {
+                ValidationMessage = "SSH port must be an integer between 1 and 65535.";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(RdpSshUsername))
+            {
+                ValidationMessage = "SSH username is required for RDP tunnel.";
+                return false;
+            }
+        }
+
+        if (protocol == SessionProtocol.VNC && VncUseSshTunnel)
+        {
+            if (string.IsNullOrWhiteSpace(VncSshHost))
+            {
+                ValidationMessage = "SSH host is required for VNC tunnel.";
+                return false;
+            }
+
+            if (!IsValidPortText(VncSshPort))
+            {
+                ValidationMessage = "SSH port must be an integer between 1 and 65535.";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(VncSshUsername))
+            {
+                ValidationMessage = "SSH username is required for VNC tunnel.";
+                return false;
+            }
+
         }
 
         return true;

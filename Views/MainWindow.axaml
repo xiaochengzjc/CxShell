@@ -74,6 +74,7 @@
                                                 MinWidth="110"
                                                 BorderThickness="1,1,1,0"
                                                 Margin="2,2,0,0"
+                                                PointerPressed="OnTabHeaderPointerPressed"
                                                 Background="{Binding TabBackgroundBrush}">
                                             <Border.BorderBrush>
                                                 <SolidColorBrush Color="{Binding IsSelected, Converter={x:Static vm:TabSelectedBorderConverter.Instance}}"/>
@@ -117,6 +118,9 @@
                         </Grid>
                         <Grid IsVisible="{Binding IsSelectedVncSession}">
                             <views:VncView DataContext="{Binding SelectedTab.Vnc, x:CompileBindings=False}"/>
+                        </Grid>
+                        <Grid IsVisible="{Binding IsSelectedRdpSession}">
+                            <views:RdpView DataContext="{Binding SelectedTab.Rdp, x:CompileBindings=False}"/>
                         </Grid>
                         <Grid IsVisible="{Binding IsSelectedFileTransferSession}">
                             <views:SftpPanelView DataContext="{Binding SelectedTab.FileTransfer, x:CompileBindings=False}"/>
@@ -463,6 +467,7 @@
                                         <Border Padding="12,6"
                                                 BorderThickness="1,1,1,0"
                                                 Margin="2,2,0,0"
+                                                PointerPressed="OnTabHeaderPointerPressed"
                                                 Background="{Binding TabBackgroundBrush}">
                                             <Border.BorderBrush>
                                                 <SolidColorBrush Color="{Binding IsSelected, Converter={x:Static vm:TabSelectedBorderConverter.Instance}}"/>
@@ -497,6 +502,8 @@
                                             IsVisible="{Binding $parent[Window].DataContext.IsSelectedTerminalSession, x:CompileBindings=False}"/>
                         <views:VncView DataContext="{Binding SelectedTab.Vnc, x:CompileBindings=False}"
                                        IsVisible="{Binding $parent[Window].DataContext.IsSelectedVncSession, x:CompileBindings=False}"/>
+                        <views:RdpView DataContext="{Binding SelectedTab.Rdp, x:CompileBindings=False}"
+                                       IsVisible="{Binding $parent[Window].DataContext.IsSelectedRdpSession, x:CompileBindings=False}"/>
                         <views:SftpPanelView DataContext="{Binding SelectedTab.FileTransfer, x:CompileBindings=False}"
                                              IsVisible="{Binding $parent[Window].DataContext.IsSelectedFileTransferSession, x:CompileBindings=False}"/>
                     </Grid>
@@ -614,6 +621,49 @@
                                  Padding="16,6"
                                  FontSize="13"
                                  Foreground="{atom:SharedTokenResource ColorError}"/>
+                </StackPanel>
+            </Border>
+        </atom:Popup>
+        <atom:Popup x:Name="TabContextMenuPopup"
+                    Placement="Pointer"
+                    IsLightDismissEnabled="True">
+            <Border Background="{atom:SharedTokenResource ColorBgElevated}"
+                    BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Padding="0,4"
+                    MinWidth="132">
+                <StackPanel Spacing="0">
+                    <atom:Button x:Name="TabCloseBtn"
+                                 Content="{Binding TabCloseText}"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 HorizontalAlignment="Stretch"
+                                 HorizontalContentAlignment="Left"
+                                 Padding="16,6"
+                                 MinHeight="34"
+                                 FontSize="13"
+                                 Foreground="{atom:SharedTokenResource ColorText}"/>
+                    <atom:Button x:Name="TabPropertiesBtn"
+                                 Content="{Binding TabPropertiesText}"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 HorizontalAlignment="Stretch"
+                                 HorizontalContentAlignment="Left"
+                                 Padding="16,6"
+                                 MinHeight="34"
+                                 FontSize="13"
+                                 Foreground="{atom:SharedTokenResource ColorText}"/>
+                    <atom:Button x:Name="TabAddQuickBtn"
+                                 Content="{Binding TabAddQuickText}"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 HorizontalAlignment="Stretch"
+                                 HorizontalContentAlignment="Left"
+                                 Padding="16,6"
+                                 MinHeight="34"
+                                 FontSize="13"
+                                 Foreground="{atom:SharedTokenResource ColorText}"/>
                 </StackPanel>
             </Border>
         </atom:Popup>

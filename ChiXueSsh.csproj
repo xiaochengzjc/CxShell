@@ -13,8 +13,16 @@
     <ItemGroup>
         <Compile Remove="AtomUI/**" />
         <Compile Remove=".tmp/**" />
+        <Compile Remove=".buildcheck*/**" />
+        <Compile Remove="tools/**" />
         <AvaloniaXaml Remove="AtomUI/**" />
         <AvaloniaXaml Remove=".tmp/**" />
+        <AvaloniaXaml Remove=".buildcheck*/**" />
+        <AvaloniaXaml Remove="tools/**" />
+        <None Remove=".buildcheck*/**" />
+        <None Remove="tools/**" />
+        <Content Remove=".buildcheck*/**" />
+        <Content Remove="tools/**" />
         <AvaloniaResource Include="Assets/**" />
     </ItemGroup>
 
@@ -30,5 +38,9 @@
         <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
         <PackageReference Include="SshNet.Agent" Version="2024.2.0.1" />
         <PackageReference Include="System.IO.Ports" Version="10.0.9" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="runtimes/**/native/*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     </ItemGroup>
 </Project>

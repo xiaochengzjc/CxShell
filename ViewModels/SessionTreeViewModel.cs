@@ -89,7 +89,6 @@ public partial class SessionTreeViewModel : ObservableObject
         _storage = new SessionStorageService();
         _data = _storage.Load();
         _data.Settings ??= new ApplicationSettings();
-        _data.Settings.GlobalDefaults ??= ApplicationSettings.CreateDefaultSession();
         LocalizationService.Shared.SetLanguage(_data.Settings.UiLanguage);
         LocalizationService.Shared.LanguageChanged += (_, _) => NotifyLocalizationChanged();
         LoadSessions();
@@ -115,7 +114,7 @@ public partial class SessionTreeViewModel : ObservableObject
         OnPropertyChanged(nameof(ColumnPortText));
     }
 
-    public SessionInfo CreateSessionFromGlobalDefaults()
+    public SessionInfo CreateSession()
     {
         return new SessionInfo
         {
@@ -129,23 +128,7 @@ public partial class SessionTreeViewModel : ObservableObject
     public void SaveSettings(ApplicationSettings settings)
     {
         _data.Settings = settings;
-        _data.Settings.GlobalDefaults ??= ApplicationSettings.CreateDefaultSession();
         _storage.Save(_data);
-    }
-
-    public SessionInfo GetEffectiveSession(SessionInfo session)
-    {
-        var defaults = _data.Settings.GlobalDefaults ?? ApplicationSettings.CreateDefaultSession();
-        return MergeSession(defaults, session);
-    }
-
-    private static SessionInfo MergeSession(SessionInfo defaults, SessionInfo session)
-    {
-        var effective = CloneSession(defaults, session.Name);
-        effective.Id = session.Id;
-        effective.GroupId = session.GroupId;
-        CopySessionValues(effective, session);
-        return effective;
     }
 
     public static void CopySessionValues(SessionInfo target, SessionInfo source)
@@ -217,6 +200,22 @@ public partial class SessionTreeViewModel : ObservableObject
         target.RdpRedirectDrives = source.RdpRedirectDrives;
         target.RdpAudioMode = source.RdpAudioMode;
         target.RdpAudioCapture = source.RdpAudioCapture;
+        target.RdpUseSshTunnel = source.RdpUseSshTunnel;
+        target.RdpSshHost = source.RdpSshHost;
+        target.RdpSshPort = source.RdpSshPort;
+        target.RdpSshUsername = source.RdpSshUsername;
+        target.RdpSshPassword = source.RdpSshPassword;
+        target.RdpSshUsePrivateKey = source.RdpSshUsePrivateKey;
+        target.RdpSshPrivateKeyPath = source.RdpSshPrivateKeyPath;
+        target.VncUseSshTunnel = source.VncUseSshTunnel;
+        target.VncSshHost = source.VncSshHost;
+        target.VncSshPort = source.VncSshPort;
+        target.VncSshUsername = source.VncSshUsername;
+        target.VncSshPassword = source.VncSshPassword;
+        target.VncSshUsePrivateKey = source.VncSshUsePrivateKey;
+        target.VncSshPrivateKeyPath = source.VncSshPrivateKeyPath;
+        target.VncSshRemoteHost = source.VncSshRemoteHost;
+        target.VncSshRemotePort = source.VncSshRemotePort;
         target.TerminalFixedSize = source.TerminalFixedSize;
         target.TerminalResetSizeOnConnect = source.TerminalResetSizeOnConnect;
         target.TerminalColumns = source.TerminalColumns;
@@ -672,6 +671,22 @@ public partial class SessionTreeViewModel : ObservableObject
             RdpRedirectDrives = source.RdpRedirectDrives,
             RdpAudioMode = source.RdpAudioMode,
             RdpAudioCapture = source.RdpAudioCapture,
+            RdpUseSshTunnel = source.RdpUseSshTunnel,
+            RdpSshHost = source.RdpSshHost,
+            RdpSshPort = source.RdpSshPort,
+            RdpSshUsername = source.RdpSshUsername,
+            RdpSshPassword = source.RdpSshPassword,
+            RdpSshUsePrivateKey = source.RdpSshUsePrivateKey,
+            RdpSshPrivateKeyPath = source.RdpSshPrivateKeyPath,
+            VncUseSshTunnel = source.VncUseSshTunnel,
+            VncSshHost = source.VncSshHost,
+            VncSshPort = source.VncSshPort,
+            VncSshUsername = source.VncSshUsername,
+            VncSshPassword = source.VncSshPassword,
+            VncSshUsePrivateKey = source.VncSshUsePrivateKey,
+            VncSshPrivateKeyPath = source.VncSshPrivateKeyPath,
+            VncSshRemoteHost = source.VncSshRemoteHost,
+            VncSshRemotePort = source.VncSshRemotePort,
             TerminalFixedSize = source.TerminalFixedSize,
             TerminalColumns = source.TerminalColumns,
             TerminalRows = source.TerminalRows,

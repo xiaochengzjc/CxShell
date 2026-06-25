@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
@@ -15,6 +16,7 @@ using Avalonia;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using ChiXueSsh.Models;
+using Renci.SshNet;
 
 namespace ChiXueSsh.Services;
 
@@ -41,6 +43,7 @@ public sealed class VncClientService : IDisposable
     private const byte PointerEventMessage = 5;
     private const byte KeyEventMessage = 4;
     private const byte FramebufferUpdateRequestMessage = 3;
+    private static readonly object DebugLogLock = new();
     private readonly object _writeLock = new();
     private TcpClient? _tcpClient;
     private Stream? _stream;
@@ -48,6 +51,10 @@ public sealed class VncClientService : IDisposable
     private Task? _readTask;
     private WriteableBitmap? _bitmap;
     private int[]? _pixels;
+    private string _connectionId = string.Empty;
+    private int _framebufferUpdateCount;
+    private SshClient? _sshTunnelClient;
+    private ForwardedPortLocal? _sshTunnelPort;
 
     public event EventHandler<VncFramebufferEventArgs>? FramebufferUpdated;
     public event Action<string>? StatusChanged;
@@ -59,6 +66,7 @@ public sealed class VncClientService : IDisposable
     public int Height { get; private set; }
     public string DesktopName { get; private set; } = string.Empty;
     public bool IsConnected => _tcpClient?.Connected == true;
+    public static string DebugLogPath => Path.Combine(GetDebugLogDirectory(), "vnc-debug.log");
 
     public async Task ConnectAsync(SessionInfo session, string? password, CancellationToken cancellationToken = default)
     {
@@ -67,20 +75,42 @@ public sealed class VncClientService : IDisposable
         if (string.IsNullOrWhiteSpace(session.Host))
             throw new InvalidOperationException("VNC host is required.");
 
+        var connectHost = session.Host;
         var port = session.Port > 0 ? session.Port : 5900;
-        StatusChanged?.Invoke($"Connecting to {session.Host}:{port}...");
+        _connectionId = $"{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}"[..24];
+        _framebufferUpdateCount = 0;
+        DebugLog($"connect start host={session.Host} port={port} session={SanitizeLogValue(session.Name)} hasPassword={!string.IsNullOrEmpty(password)} useSshTunnel={session.VncUseSshTunnel}");
 
-        _tcpClient = new TcpClient();
-        await _tcpClient.ConnectAsync(session.Host, port, cancellationToken);
-        _stream = _tcpClient.GetStream();
+        if (session.VncUseSshTunnel)
+        {
+            port = await StartSshTunnelAsync(session, cancellationToken);
+            connectHost = IPAddress.Loopback.ToString();
+        }
 
-        await HandshakeAsync(password ?? string.Empty, cancellationToken);
-        await SendSetEncodingsAsync(cancellationToken);
-        SendFramebufferUpdateRequest(false);
+        StatusChanged?.Invoke($"Connecting to {connectHost}:{port}...");
 
-        _readCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        _readTask = Task.Run(() => ReadLoopAsync(_readCts.Token), _readCts.Token);
-        StatusChanged?.Invoke($"Connected: {DesktopName} {Width}x{Height}");
+        try
+        {
+            _tcpClient = new TcpClient();
+            await _tcpClient.ConnectAsync(connectHost, port, cancellationToken);
+            DebugLog($"tcp connected local={_tcpClient.Client.LocalEndPoint} remote={_tcpClient.Client.RemoteEndPoint}");
+            _stream = _tcpClient.GetStream();
+
+            await HandshakeAsync(password ?? string.Empty, cancellationToken);
+            await SendSetEncodingsAsync(cancellationToken);
+            SendFramebufferUpdateRequest(false);
+
+            _readCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _readTask = Task.Run(() => ReadLoopAsync(_readCts.Token), _readCts.Token);
+            StatusChanged?.Invoke($"Connected: {DesktopName} {Width}x{Height}");
+            DebugLog($"connect success desktop={SanitizeLogValue(DesktopName)} size={Width}x{Height}");
+        }
+        catch (Exception ex)
+        {
+            DebugLog($"connect failed {ex.GetType().Name}: {ex.Message}");
+            Disconnect();
+            throw;
+        }
     }
 
     public void SendPointer(byte buttonMask, int x, int y)
@@ -129,6 +159,7 @@ public sealed class VncClientService : IDisposable
 
     public void Disconnect()
     {
+        DebugLog("disconnect requested");
         _readCts?.Cancel();
         try
         {
@@ -146,25 +177,127 @@ public sealed class VncClientService : IDisposable
         _stream = null;
         _tcpClient?.Dispose();
         _tcpClient = null;
+        StopSshTunnel();
+    }
+
+    private async Task<int> StartSshTunnelAsync(SessionInfo session, CancellationToken cancellationToken)
+    {
+        var sshHost = string.IsNullOrWhiteSpace(session.VncSshHost) ? session.Host : session.VncSshHost.Trim();
+        var sshPort = session.VncSshPort is >= 1 and <= 65535 ? session.VncSshPort : 22;
+        var sshUser = session.VncSshUsername?.Trim() ?? string.Empty;
+        var remoteHost = string.IsNullOrWhiteSpace(session.Host) ? "127.0.0.1" : session.Host.Trim();
+        var remotePort = session.Port is >= 1 and <= 65535 ? session.Port : 5901;
+        var localPort = GetFreeLoopbackPort();
+
+        if (string.IsNullOrWhiteSpace(sshHost))
+            throw new InvalidOperationException("VNC SSH tunnel host is required.");
+        if (string.IsNullOrWhiteSpace(sshUser))
+            throw new InvalidOperationException("VNC SSH tunnel username is required.");
+
+        var authMethods = CreateVncSshAuthMethods(session, sshUser);
+        var connectionInfo = new ConnectionInfo(sshHost, sshPort, sshUser, authMethods);
+        _sshTunnelClient = new SshClient(connectionInfo);
+        if (session.SshAcceptAndSaveHostKey)
+            _sshTunnelClient.HostKeyReceived += (_, e) => e.CanTrust = true;
+
+        DebugLog($"ssh tunnel connecting ssh={sshUser}@{sshHost}:{sshPort} local=127.0.0.1:{localPort} remote={remoteHost}:{remotePort}");
+        StatusChanged?.Invoke($"Opening SSH tunnel to {sshHost}:{sshPort}...");
+        await Task.Run(() => _sshTunnelClient.Connect(), cancellationToken);
+
+        _sshTunnelPort = new ForwardedPortLocal("127.0.0.1", (uint)localPort, remoteHost, (uint)remotePort);
+        _sshTunnelPort.Exception += (_, e) => ErrorOccurred?.Invoke($"VNC SSH tunnel failed: {e.Exception.Message}");
+        _sshTunnelClient.AddForwardedPort(_sshTunnelPort);
+        _sshTunnelPort.Start();
+        DebugLog($"ssh tunnel started local=127.0.0.1:{localPort} remote={remoteHost}:{remotePort}");
+        return localPort;
+    }
+
+    private static AuthenticationMethod[] CreateVncSshAuthMethods(SessionInfo session, string username)
+    {
+        if (session.VncSshUsePrivateKey)
+        {
+            if (string.IsNullOrWhiteSpace(session.VncSshPrivateKeyPath))
+                throw new InvalidOperationException("VNC SSH private key path is required.");
+            return [new PrivateKeyAuthenticationMethod(username, new PrivateKeyFile(ExpandPath(session.VncSshPrivateKeyPath)))];
+        }
+
+        var password = PasswordEncryptionService.Decrypt(session.VncSshPassword);
+        return [new PasswordAuthenticationMethod(username, password)];
+    }
+
+    private static int GetFreeLoopbackPort()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        return port;
+    }
+
+    private static string ExpandPath(string path)
+    {
+        if (path.StartsWith("~"))
+        {
+            return Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                path[2..]);
+        }
+
+        return Path.GetFullPath(path);
+    }
+
+    private void StopSshTunnel()
+    {
+        try
+        {
+            if (_sshTunnelPort?.IsStarted == true)
+                _sshTunnelPort.Stop();
+        }
+        catch
+        {
+            // Ignore tunnel shutdown failures.
+        }
+
+        try
+        {
+            if (_sshTunnelClient != null && _sshTunnelPort != null)
+                _sshTunnelClient.RemoveForwardedPort(_sshTunnelPort);
+        }
+        catch
+        {
+            // Ignore tunnel shutdown failures.
+        }
+
+        _sshTunnelPort?.Dispose();
+        _sshTunnelPort = null;
+        _sshTunnelClient?.Dispose();
+        _sshTunnelClient = null;
     }
 
     private async Task HandshakeAsync(string password, CancellationToken cancellationToken)
     {
+        DebugLog("handshake reading server version");
         var versionBytes = await ReadExactAsync(12, cancellationToken);
         var serverVersion = Encoding.ASCII.GetString(versionBytes);
         if (!serverVersion.StartsWith("RFB ", StringComparison.Ordinal))
+        {
+            DebugLog($"handshake invalid version bytes={Convert.ToHexString(versionBytes)} text={SanitizeLogValue(serverVersion)}");
             throw new InvalidOperationException("The server did not return an RFB version.");
+        }
 
         StatusChanged?.Invoke($"RFB server version: {serverVersion.Trim()}");
+        DebugLog($"handshake serverVersion={serverVersion.Trim()}");
 
         var clientVersion = serverVersion.Contains("003.003", StringComparison.Ordinal)
             ? "RFB 003.003\n"
             : "RFB 003.008\n";
         await WriteAsync(Encoding.ASCII.GetBytes(clientVersion), cancellationToken);
+        DebugLog($"handshake clientVersion={clientVersion.Trim()}");
 
         if (serverVersion.Contains("003.003", StringComparison.Ordinal))
         {
             var securityType = BinaryPrimitives.ReadUInt32BigEndian(await ReadExactAsync(4, cancellationToken));
+            DebugLog($"security legacyType={securityType}");
             await HandleSecurityTypeAsync((byte)securityType, password, isVersion33: true, cancellationToken);
         }
         else
@@ -173,11 +306,13 @@ public sealed class VncClientService : IDisposable
             if (count == 0)
             {
                 var reason = await ReadReasonAsync(cancellationToken);
+                DebugLog($"security server refused reason={SanitizeLogValue(reason)}");
                 throw new InvalidOperationException(reason);
             }
 
             var types = await ReadExactAsync(count, cancellationToken);
             StatusChanged?.Invoke($"RFB security types: {string.Join(',', types.Select(t => t.ToString()))}");
+            DebugLog($"security offeredTypes={string.Join(',', types.Select(SecurityTypeName))}");
             var selected = types.Contains((byte)2)
                 ? (byte)2
                 : types.Contains((byte)19) && !string.IsNullOrEmpty(password)
@@ -186,11 +321,13 @@ public sealed class VncClientService : IDisposable
                         ? (byte)1
                         : types[0];
             StatusChanged?.Invoke($"RFB selected security type: {selected}");
+            DebugLog($"security selectedType={SecurityTypeName(selected)}");
             await WriteAsync(new[] { selected }, cancellationToken);
             await HandleSecurityTypeAsync(selected, password, isVersion33: false, cancellationToken);
         }
 
         await WriteAsync(new byte[] { 1 }, cancellationToken); // shared flag
+        DebugLog("client init sent shared=true");
         var init = await ReadExactAsync(24, cancellationToken);
         Width = BinaryPrimitives.ReadUInt16BigEndian(init.AsSpan(0, 2));
         Height = BinaryPrimitives.ReadUInt16BigEndian(init.AsSpan(2, 2));
@@ -199,6 +336,7 @@ public sealed class VncClientService : IDisposable
             ? Encoding.UTF8.GetString(await ReadExactAsync(checked((int)nameLength), cancellationToken))
             : "VNC";
         StatusChanged?.Invoke($"RFB framebuffer: {Width}x{Height}, desktop={DesktopName}");
+        DebugLog($"server init width={Width} height={Height} nameLength={nameLength} desktop={SanitizeLogValue(DesktopName)}");
 
         _pixels = new int[Width * Height];
         _bitmap = new WriteableBitmap(
@@ -212,22 +350,27 @@ public sealed class VncClientService : IDisposable
 
     private async Task HandleSecurityTypeAsync(byte securityType, string password, bool isVersion33, CancellationToken cancellationToken)
     {
+        DebugLog($"security handling type={SecurityTypeName(securityType)} legacy={isVersion33}");
         switch (securityType)
         {
             case 1:
                 if (!isVersion33)
                     await ReadSecurityResultAsync(cancellationToken);
+                DebugLog("security none accepted");
                 return;
             case 2:
                 var challenge = await ReadExactAsync(16, cancellationToken);
+                DebugLog($"security vncAuth challenge={Convert.ToHexString(challenge)} hasPassword={!string.IsNullOrEmpty(password)}");
                 var response = CreateVncPasswordResponse(password, challenge);
                 await WriteAsync(response, cancellationToken);
                 await ReadSecurityResultAsync(cancellationToken);
+                DebugLog("security vncAuth accepted");
                 return;
             case 19:
                 await HandleVeNCryptAsync(password, cancellationToken);
                 return;
             default:
+                DebugLog($"security unsupported type={securityType}");
                 throw new NotSupportedException($"VNC security type {securityType} is not supported yet.");
         }
     }
@@ -235,21 +378,31 @@ public sealed class VncClientService : IDisposable
     private async Task HandleVeNCryptAsync(string password, CancellationToken cancellationToken)
     {
         StatusChanged?.Invoke("Negotiating VeNCrypt...");
+        DebugLog("vencrypt negotiation start");
         var version = await ReadExactAsync(2, cancellationToken);
+        DebugLog($"vencrypt serverVersion={version[0]}.{version[1]}");
         await WriteAsync(version, cancellationToken);
         var versionStatus = (await ReadExactAsync(1, cancellationToken))[0];
         if (versionStatus != 0)
+        {
+            DebugLog($"vencrypt version rejected status={versionStatus}");
             throw new InvalidOperationException("VeNCrypt version negotiation failed.");
+        }
 
         var subtypeCount = (await ReadExactAsync(1, cancellationToken))[0];
         var subtypes = new uint[subtypeCount];
         for (var i = 0; i < subtypeCount; i++)
             subtypes[i] = BinaryPrimitives.ReadUInt32BigEndian(await ReadExactAsync(4, cancellationToken));
+        DebugLog($"vencrypt offeredSubtypes={string.Join(',', subtypes.Select(VeNCryptSubtypeName))}");
 
         var selected = SelectVeNCryptSubtype(subtypes, !string.IsNullOrEmpty(password));
         if (selected == 0)
+        {
+            DebugLog("vencrypt no supported subtype");
             throw new NotSupportedException("No supported VeNCrypt subtype was offered by the server.");
+        }
         StatusChanged?.Invoke($"VeNCrypt subtype selected: {selected}");
+        DebugLog($"vencrypt selectedSubtype={VeNCryptSubtypeName(selected)}");
 
         var selectedBytes = new byte[4];
         BinaryPrimitives.WriteUInt32BigEndian(selectedBytes, selected);
@@ -258,12 +411,15 @@ public sealed class VncClientService : IDisposable
         if (selected != 256)
         {
             StatusChanged?.Invoke("Starting TLS...");
+            DebugLog("vencrypt starting tls");
             await StartTlsAsync(cancellationToken);
+            DebugLog("vencrypt tls established");
         }
 
         if (selected is 258 or 261)
         {
             var challenge = await ReadExactAsync(16, cancellationToken);
+            DebugLog($"vencrypt vncAuth challenge={Convert.ToHexString(challenge)} hasPassword={!string.IsNullOrEmpty(password)}");
             var response = CreateVncPasswordResponse(password, challenge);
             await WriteAsync(response, cancellationToken);
             await ReadSecurityResultAsync(cancellationToken);
@@ -314,9 +470,13 @@ public sealed class VncClientService : IDisposable
     {
         var status = BinaryPrimitives.ReadUInt32BigEndian(await ReadExactAsync(4, cancellationToken));
         if (status == 0)
+        {
+            DebugLog("security result ok");
             return;
+        }
 
         var reason = await ReadReasonAsync(cancellationToken);
+        DebugLog($"security result failed status={status} reason={SanitizeLogValue(reason)}");
         throw new InvalidOperationException(string.IsNullOrWhiteSpace(reason)
             ? $"VNC authentication failed: {status}"
             : reason);
@@ -346,6 +506,7 @@ public sealed class VncClientService : IDisposable
         BinaryPrimitives.WriteInt32BigEndian(buffer[4..], EncodingCopyRect);
         BinaryPrimitives.WriteInt32BigEndian(buffer[8..], EncodingRaw);
         await WriteAsync(buffer.ToArray(), cancellationToken);
+        DebugLog("client encodings sent CopyRect,Raw");
     }
 
     private async Task SendSetPixelFormatAsync(CancellationToken cancellationToken)
@@ -363,12 +524,14 @@ public sealed class VncClientService : IDisposable
         buffer[15] = 8;  // green shift
         buffer[16] = 0;  // blue shift
         await WriteAsync(buffer.ToArray(), cancellationToken);
+        DebugLog("client pixelFormat sent bpp=32 depth=24 littleEndian=true trueColor=true shifts=16,8,0 max=255");
     }
 
     private async Task ReadLoopAsync(CancellationToken cancellationToken)
     {
         try
         {
+            DebugLog("read loop started");
             while (!cancellationToken.IsCancellationRequested)
             {
                 var type = (await ReadExactAsync(1, cancellationToken))[0];
@@ -380,24 +543,29 @@ public sealed class VncClientService : IDisposable
                         break;
                     case 2:
                         StatusChanged?.Invoke("VNC server bell");
+                        DebugLog("server bell");
                         break;
                     case 3:
                         await HandleServerCutTextAsync(cancellationToken);
                         break;
                     default:
+                        DebugLog($"read loop unsupported serverMessage={type}");
                         throw new NotSupportedException($"Unsupported VNC server message type: {type}");
                 }
             }
         }
         catch (OperationCanceledException)
         {
+            DebugLog("read loop canceled");
         }
         catch (Exception ex)
         {
+            DebugLog($"read loop failed {ex.GetType().Name}: {ex.Message}");
             ErrorOccurred?.Invoke(ex.Message);
         }
         finally
         {
+            DebugLog("read loop stopped");
             Disconnected?.Invoke();
         }
     }
@@ -408,6 +576,9 @@ public sealed class VncClientService : IDisposable
         var countBytes = await ReadExactAsync(2, cancellationToken);
         var rectangles = BinaryPrimitives.ReadUInt16BigEndian(countBytes);
         var changed = false;
+        _framebufferUpdateCount++;
+        if (_framebufferUpdateCount <= 5 || rectangles == 0)
+            DebugLog($"framebuffer update index={_framebufferUpdateCount} rectangles={rectangles}");
 
         for (var i = 0; i < rectangles; i++)
         {
@@ -417,6 +588,8 @@ public sealed class VncClientService : IDisposable
             var width = BinaryPrimitives.ReadUInt16BigEndian(header.AsSpan(4, 2));
             var height = BinaryPrimitives.ReadUInt16BigEndian(header.AsSpan(6, 2));
             var encoding = BinaryPrimitives.ReadInt32BigEndian(header.AsSpan(8, 4));
+            if (_framebufferUpdateCount <= 3)
+                DebugLog($"rectangle {i + 1}/{rectangles} x={x} y={y} width={width} height={height} encoding={EncodingName(encoding)}");
 
             if (encoding == EncodingRaw)
             {
@@ -440,12 +613,17 @@ public sealed class VncClientService : IDisposable
             }
             else
             {
+                DebugLog($"unsupported rectangle encoding={encoding} x={x} y={y} width={width} height={height}");
                 throw new NotSupportedException($"Unsupported VNC rectangle encoding: {encoding}");
             }
         }
 
         if (changed)
+        {
+            if (_framebufferUpdateCount <= 5)
+                DebugLog("framebuffer publish");
             PublishFramebuffer();
+        }
     }
 
     private async Task ReadRawRectangleAsync(int x, int y, int width, int height, CancellationToken cancellationToken)
@@ -493,6 +671,7 @@ public sealed class VncClientService : IDisposable
         if (length > 0)
         {
             var text = Encoding.UTF8.GetString(await ReadExactAsync(checked((int)length), cancellationToken));
+            DebugLog($"server cut text length={length}");
             ClipboardTextReceived?.Invoke(text);
         }
     }
@@ -929,6 +1108,85 @@ public sealed class VncClientService : IDisposable
             result = (result << 1) | ((value >> i) & 1);
 
         return (byte)result;
+    }
+
+    private static string GetDebugLogDirectory()
+    {
+        var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrWhiteSpace(root))
+            root = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        if (string.IsNullOrWhiteSpace(root))
+            root = AppContext.BaseDirectory;
+
+        return Path.Combine(root, "CxShell", "Logs");
+    }
+
+    private void DebugLog(string message)
+    {
+        try
+        {
+            var directory = GetDebugLogDirectory();
+            Directory.CreateDirectory(directory);
+            var line = $"{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff zzz} [{_connectionId}] {message}{Environment.NewLine}";
+            lock (DebugLogLock)
+                File.AppendAllText(DebugLogPath, line, Encoding.UTF8);
+        }
+        catch
+        {
+            // Debug logging must never break the VNC connection path.
+        }
+    }
+
+    private static string SanitizeLogValue(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return string.Empty;
+
+        return value
+            .Replace("\r", "\\r", StringComparison.Ordinal)
+            .Replace("\n", "\\n", StringComparison.Ordinal)
+            .Replace("\t", "\\t", StringComparison.Ordinal);
+    }
+
+    private static string SecurityTypeName(byte type)
+    {
+        return type switch
+        {
+            1 => "1(None)",
+            2 => "2(VNCAuth)",
+            16 => "16(Tight)",
+            18 => "18(TLS)",
+            19 => "19(VeNCrypt)",
+            20 => "20(SASL)",
+            _ => type.ToString()
+        };
+    }
+
+    private static string VeNCryptSubtypeName(uint subtype)
+    {
+        return subtype switch
+        {
+            256 => "256(Plain)",
+            257 => "257(TLSNone)",
+            258 => "258(TLSVnc)",
+            259 => "259(TLSPlain)",
+            260 => "260(X509None)",
+            261 => "261(X509Vnc)",
+            262 => "262(X509Plain)",
+            _ => subtype.ToString()
+        };
+    }
+
+    private static string EncodingName(int encoding)
+    {
+        return encoding switch
+        {
+            EncodingRaw => "0(Raw)",
+            EncodingCopyRect => "1(CopyRect)",
+            EncodingTight => "7(Tight)",
+            EncodingZrle => "16(ZRLE)",
+            _ => encoding.ToString()
+        };
     }
 
     public void Dispose()

@@ -1,21 +1,23 @@
-# 编译输出
+# Build output
 bin/
 obj/
+native/**/build/
 
-# 第三方源码（AtomUI NuGet 包的本地源码参考）
+# Local third-party reference source
 AtomUI/
 
-# IDE 配置
+# IDE settings
 .vs/
 *.user
 *.DotSettings.user
 .idea/
 .qoder/
 
-# OS 文件
+# OS files
 Thumbs.db
 .DS_Store
 .codex-build
 .buildcheck*/
 .tmp/
 publish/
+artifacts/*

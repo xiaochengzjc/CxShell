@@ -15,10 +15,12 @@ public partial class TerminalTabViewModel : ObservableObject
     public SessionInfo Session { get; }
     public TerminalViewModel Terminal { get; }
     public VncViewModel? Vnc { get; }
+    public RdpViewModel? Rdp { get; }
     public SftpViewModel? FileTransfer { get; }
     public bool IsVncSession => Vnc != null;
+    public bool IsRdpSession => Rdp != null;
     public bool IsFileTransferSession => FileTransfer != null;
-    public bool IsTerminalSession => Vnc == null && FileTransfer == null;
+    public bool IsTerminalSession => Vnc == null && Rdp == null && FileTransfer == null;
     public IBrush ConnectionIndicatorBrush => new SolidColorBrush(IsConnected
         ? Color.Parse("#18C914")
         : Color.Parse("#F5222D"));
@@ -35,24 +37,30 @@ public partial class TerminalTabViewModel : ObservableObject
     public event Action<TerminalTabViewModel>? CloseRequested;
 
     public TerminalTabViewModel(SessionInfo session)
-        : this(session, null, null)
+        : this(session, null, null, null)
     {
     }
 
     public TerminalTabViewModel(SessionInfo session, VncViewModel? vnc)
-        : this(session, vnc, null)
+        : this(session, vnc, null, null)
+    {
+    }
+
+    public TerminalTabViewModel(SessionInfo session, RdpViewModel rdp)
+        : this(session, null, rdp, null)
     {
     }
 
     public TerminalTabViewModel(SessionInfo session, SftpViewModel fileTransfer)
-        : this(session, null, fileTransfer)
+        : this(session, null, null, fileTransfer)
     {
     }
 
-    private TerminalTabViewModel(SessionInfo session, VncViewModel? vnc, SftpViewModel? fileTransfer)
+    private TerminalTabViewModel(SessionInfo session, VncViewModel? vnc, RdpViewModel? rdp, SftpViewModel? fileTransfer)
     {
         Session = session;
         Vnc = vnc;
+        Rdp = rdp;
         FileTransfer = fileTransfer;
         _title = session.Name;
         Terminal = new TerminalViewModel();
@@ -82,6 +90,20 @@ public partial class TerminalTabViewModel : ObservableObject
                 }
             };
             IsConnected = Vnc.IsConnected;
+            NotifyConnectionIndicatorChanged();
+        }
+
+        if (Rdp != null)
+        {
+            Rdp.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(RdpViewModel.IsConnected))
+                {
+                    IsConnected = Rdp.IsConnected;
+                    NotifyConnectionIndicatorChanged();
+                }
+            };
+            IsConnected = Rdp.IsConnected;
             NotifyConnectionIndicatorChanged();
         }
 

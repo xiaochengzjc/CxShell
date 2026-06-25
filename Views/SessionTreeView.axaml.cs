@@ -12,6 +12,10 @@ namespace ChiXueSsh.Views;
 
 public partial class SessionTreeView : UserControl
 {
+    private static string T(string key) => LocalizationService.Shared.Text(key);
+
+    private static string Tf(string key, params object[] args) => string.Format(T(key), args);
+
     public SessionTreeView()
     {
         InitializeComponent();
@@ -37,7 +41,7 @@ public partial class SessionTreeView : UserControl
         UpdateColumnHeaders();
         LocalizationService.Shared.LanguageChanged += OnLanguageChanged;
 
-        // 绑定弹出菜单按钮事件
+        // Bind popup menu button events.
         if (MenuEditBtn != null) MenuEditBtn.Click += OnEditClick;
         if (MenuConnectBtn != null) MenuConnectBtn.Click += OnConnectClick;
         if (MenuDeleteBtn != null) MenuDeleteBtn.Click += OnDeleteClick;
@@ -80,7 +84,7 @@ public partial class SessionTreeView : UserControl
 
         var point = e.GetCurrentPoint(SessionTree);
 
-        // 右键点击
+        // Right-click opens the context menu.
         if (point.Properties.IsRightButtonPressed)
         {
             var node = FindClickedNode(e);
@@ -98,7 +102,7 @@ public partial class SessionTreeView : UserControl
             return;
         }
 
-        // 双击连接
+        // Double-click connects the selected session.
         if (e.ClickCount == 2)
         {
             var node = FindClickedNode(e);
@@ -115,7 +119,7 @@ public partial class SessionTreeView : UserControl
             {
                 _ = mainVm.ConnectSession(session);
 
-                // 如果 SessionTreeView 在独立弹出窗口中，连接后自动关闭该窗口
+                // Close the standalone session manager window after connecting.
                 var window = TopLevel.GetTopLevel(this) as Avalonia.Controls.Window;
                 if (window is SessionManagerWindow)
                     window.Close();
@@ -143,7 +147,7 @@ public partial class SessionTreeView : UserControl
 
     private MainWindowViewModel? GetMainWindowViewModel()
     {
-        // 优先从 DataContext 的 SessionTreeViewModel 获取主窗口 VM（支持独立窗口模式）
+        // Prefer the view model's main window reference for standalone window mode.
         if (DataContext is SessionTreeViewModel vm)
             return vm.MainWindow;
 
@@ -209,7 +213,7 @@ public partial class SessionTreeView : UserControl
         if (session == null) return;
 
         var owner = TopLevel.GetTopLevel(this) as Avalonia.Controls.Window;
-        if (owner == null || !await ShowDeleteConfirmWindow(owner, session.Name))
+        if (owner == null || !await ShowLocalizedDeleteConfirmWindow(owner, session.Name))
             return;
 
         var mainVm = GetMainWindowViewModel();
@@ -228,14 +232,14 @@ public partial class SessionTreeView : UserControl
             vm.MoveSelectedSessionDown();
     }
 
-    private static async System.Threading.Tasks.Task<bool> ShowDeleteConfirmWindow(
+    private static async System.Threading.Tasks.Task<bool> ShowLocalizedDeleteConfirmWindow(
         Avalonia.Controls.Window owner,
         string sessionName)
     {
         var confirmed = false;
         var dialog = new AtomUI.Desktop.Controls.Window
         {
-            Title = "确认删除",
+            Title = T("Dialog.SessionDelete.Title"),
             Width = 380,
             Height = 160,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -246,7 +250,7 @@ public partial class SessionTreeView : UserControl
         var panel = new StackPanel { Spacing = 16, Margin = new Thickness(20) };
         panel.Children.Add(new AtomUI.Desktop.Controls.TextBlock
         {
-            Text = $"确定要删除会话“{sessionName}”吗？",
+            Text = Tf("Dialog.SessionDelete.Message", sessionName),
             TextWrapping = Avalonia.Media.TextWrapping.Wrap
         });
 
@@ -256,13 +260,13 @@ public partial class SessionTreeView : UserControl
             Spacing = 8,
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right
         };
-        var confirmButton = new AtomUI.Desktop.Controls.Button { Content = "删除", Width = 76 };
+        var confirmButton = new AtomUI.Desktop.Controls.Button { Content = T("Common.Delete"), Width = 76 };
         confirmButton.Click += (_, _) =>
         {
             confirmed = true;
             dialog.Close();
         };
-        var cancelButton = new AtomUI.Desktop.Controls.Button { Content = "取消", Width = 76 };
+        var cancelButton = new AtomUI.Desktop.Controls.Button { Content = T("Common.Cancel"), Width = 76 };
         cancelButton.Click += (_, _) => dialog.Close();
         buttons.Children.Add(confirmButton);
         buttons.Children.Add(cancelButton);
@@ -272,4 +276,5 @@ public partial class SessionTreeView : UserControl
         await dialog.ShowDialog(owner);
         return confirmed;
     }
+
 }
