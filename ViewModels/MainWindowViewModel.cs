@@ -30,12 +30,16 @@ public enum TabArrangementMode
 
 public partial class MainWindowViewModel : ObservableObject
 {
+    private const double DefaultSftpPanelWidth = 318;
+    private const double MinimumSftpPanelWidth = 260;
+
     private readonly SessionTreeViewModel _sessionTreeVm;
     private readonly LocalizationService _localization = LocalizationService.Shared;
 
     [ObservableProperty] private SessionTreeViewModel _sessionTree;
     [ObservableProperty] private bool _isMonitorVisible = false;
     [ObservableProperty] private bool _isSftpVisible = false;
+    [ObservableProperty] private GridLength _sftpPanelWidth = new(0);
     [ObservableProperty] private string _connectionStatusText = "Disconnected";
     [ObservableProperty] private IBrush _connectionStatusColor = Brushes.Gray;
     [ObservableProperty] private string _connectedHostInfo = string.Empty;
@@ -55,6 +59,8 @@ public partial class MainWindowViewModel : ObservableObject
     public bool HasTabs => Tabs.Count > 0;
     public bool IsMainChromeVisible => !IsTerminalFullScreen;
     public bool IsSftpPanelVisible => IsSftpVisible && !IsTerminalFullScreen;
+    public double SftpPanelPixelWidth => SftpPanelWidth.Value;
+    public GridLength SftpSplitterWidth => IsSftpPanelVisible ? new GridLength(8) : new GridLength(0);
     public bool IsMonitorPanelVisible => IsMonitorVisible && !IsTerminalFullScreen;
     public bool IsTabHeaderVisible => !IsTerminalFullScreen;
     public bool IsMainTabHeaderVisible => IsTabHeaderVisible && !IsTabArrangementEnabled;
@@ -282,22 +288,49 @@ public partial class MainWindowViewModel : ObservableObject
     partial void OnIsSftpVisibleChanged(bool value)
     {
         OnPropertyChanged(nameof(IsSftpPanelVisible));
+        OnPropertyChanged(nameof(SftpSplitterWidth));
         if (value)
+        {
+            if (!IsTerminalFullScreen)
+                RestoreSftpPanelWidth(resetToDefault: true);
             UpdateSftp(SelectedTab);
+        }
         else
+        {
+            CollapseSftpPanelWidth();
             Sftp.StopBrowsing();
+        }
     }
 
     partial void OnIsTerminalFullScreenChanged(bool value)
     {
         OnPropertyChanged(nameof(IsMainChromeVisible));
         OnPropertyChanged(nameof(IsSftpPanelVisible));
+        OnPropertyChanged(nameof(SftpSplitterWidth));
         OnPropertyChanged(nameof(IsMonitorPanelVisible));
         OnPropertyChanged(nameof(IsTabHeaderVisible));
         OnPropertyChanged(nameof(IsMainTabHeaderVisible));
         OnPropertyChanged(nameof(IsSingleTabContentVisible));
         OnPropertyChanged(nameof(IsArrangedTabsVisible));
+        if (value)
+            CollapseSftpPanelWidth();
+        else if (IsSftpVisible)
+            RestoreSftpPanelWidth(resetToDefault: true);
         IsFullScreenHintVisible = value;
+    }
+
+    partial void OnSftpPanelWidthChanged(GridLength value)
+    {
+        OnPropertyChanged(nameof(SftpPanelPixelWidth));
+
+        if (value.GridUnitType != GridUnitType.Pixel || value.Value <= 0)
+            return;
+
+        var clamped = Math.Max(MinimumSftpPanelWidth, value.Value);
+        _lastSftpPanelWidth = clamped;
+
+        if (Math.Abs(clamped - value.Value) > 0.5)
+            SftpPanelWidth = new GridLength(clamped);
     }
 
     private bool CanArrangeTabsCore() => CanArrangeTabs;
@@ -367,6 +400,31 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
         Sftp.SwitchConnection(tab.Session, tab.ConnectedPassword);
+    }
+
+    private double _lastSftpPanelWidth = DefaultSftpPanelWidth;
+
+    private void CollapseSftpPanelWidth()
+    {
+        if (SftpPanelWidth.Value <= 0)
+            return;
+
+        _lastSftpPanelWidth = Math.Max(MinimumSftpPanelWidth, SftpPanelWidth.Value);
+        SftpPanelWidth = new GridLength(0);
+    }
+
+    private void RestoreSftpPanelWidth(bool resetToDefault = false)
+    {
+        if (SftpPanelWidth.Value > 0)
+        {
+            if (resetToDefault)
+                SftpPanelWidth = new GridLength(DefaultSftpPanelWidth);
+            return;
+        }
+
+        if (resetToDefault)
+            _lastSftpPanelWidth = DefaultSftpPanelWidth;
+        SftpPanelWidth = new GridLength(Math.Max(MinimumSftpPanelWidth, _lastSftpPanelWidth));
     }
 
     [RelayCommand]

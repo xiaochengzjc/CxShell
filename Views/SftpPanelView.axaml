@@ -1,6 +1,5 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:services="using:ChiXueSsh.Services"
              xmlns:atom="https://atomui.net"
              xmlns:vm="using:ChiXueSsh.ViewModels"
              xmlns:models="using:ChiXueSsh.Models"
@@ -9,185 +8,219 @@
 
     <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" Background="{atom:SharedTokenResource ColorBgLayout}">
 
-        <!-- 头部 -->
-        <Border Grid.Row="0" Background="{atom:SharedTokenResource ColorBgContainer}" Padding="10,8">
+        <Border Grid.Row="0"
+                Background="{atom:SharedTokenResource ColorBgContainer}"
+                Padding="10,8">
             <Grid ColumnDefinitions="*,Auto">
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
-                    <TextBlock Text="📁" FontSize="14" VerticalAlignment="Center"
+                <StackPanel Grid.Column="0"
+                            Orientation="Horizontal"
+                            Spacing="6">
+                    <TextBlock Text="📁"
+                               FontSize="14"
+                               VerticalAlignment="Center"
                                Foreground="{atom:SharedTokenResource ColorText}"/>
-                    <TextBlock Text="{Binding ProtocolLabel}" FontSize="13" FontWeight="Bold"
-                               Foreground="{atom:SharedTokenResource ColorText}" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding ProtocolLabel}"
+                               FontSize="13"
+                               FontWeight="Bold"
+                               Foreground="{atom:SharedTokenResource ColorText}"
+                               VerticalAlignment="Center"/>
                 </StackPanel>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
-                    <TextBlock Text="{Binding HostLabel}" FontSize="11"
-                               Foreground="{atom:SharedTokenResource ColorTextTertiary}" VerticalAlignment="Center"/>
-                    <Ellipse Width="8" Height="8" VerticalAlignment="Center"
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            Spacing="6">
+                    <TextBlock Text="{Binding HostLabel}"
+                               FontSize="11"
+                               Foreground="{atom:SharedTokenResource ColorTextTertiary}"
+                               VerticalAlignment="Center"/>
+                    <Ellipse Width="8"
+                             Height="8"
+                             VerticalAlignment="Center"
                              Fill="{Binding IsConnected, Converter={x:Static vm:SftpStatusColorConverter.Instance}}"/>
                 </StackPanel>
             </Grid>
         </Border>
 
-        <!-- 路径面包屑 -->
-        <Border Grid.Row="1" Background="{atom:SharedTokenResource ColorBgLayout}" Padding="6,4"
-                BorderBrush="{atom:SharedTokenResource ColorSplit}" BorderThickness="0,0,0,1">
-            <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                          VerticalScrollBarVisibility="Disabled">
-                <ItemsControl ItemsSource="{Binding PathSegments}">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <StackPanel Orientation="Horizontal"/>
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate DataType="vm:PathSegment">
-                            <StackPanel Orientation="Horizontal">
-                                <atom:Button Background="Transparent" BorderThickness="0"
-                                             Padding="3,2"
-                                             Command="{Binding $parent[UserControl].DataContext.NavigateToPathCommand, x:CompileBindings=False}"
-                                             CommandParameter="{Binding FullPath}">
-                                    <TextBlock Text="{Binding Label}" FontSize="11"
-                                               Foreground="{atom:SharedTokenResource ColorPrimary}"
-                                               TextDecorations="Underline"/>
-                                </atom:Button>
-                                <TextBlock Text="›" Foreground="{atom:SharedTokenResource ColorBorderSecondary}"
-                                           VerticalAlignment="Center" Margin="0,0,2,0"/>
-                            </StackPanel>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </ScrollViewer>
+        <Border Grid.Row="1"
+                Background="{atom:SharedTokenResource ColorBgLayout}"
+                Padding="6,4"
+                BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                BorderThickness="0,0,0,1">
+            <Grid>
+                <atom:LineEdit
+                               x:Name="RemotePathInput"
+                               Text="{Binding PathInput, Mode=TwoWay}"
+                               PlaceholderText="/home/user"
+                               IsAllowClear="False"
+                               IsEnabled="{Binding IsConnected}"
+                               FontSize="12"
+                               Height="32"
+                               HorizontalAlignment="Stretch"
+                               KeyDown="OnRemotePathInputKeyDown"/>
+            </Grid>
         </Border>
 
-        <!-- 工具栏 -->
-        <Border Grid.Row="1" Background="{atom:SharedTokenResource ColorBgLayout}" Padding="6,4"
-                BorderBrush="{atom:SharedTokenResource ColorSplit}" BorderThickness="0,0,0,1">
-            <atom:LineEdit x:Name="RemotePathInput"
-                           Text="{Binding PathInput, Mode=TwoWay}"
-                           PlaceholderText="/home/user"
-                           IsAllowClear="False"
-                           IsEnabled="{Binding IsConnected}"
-                           FontSize="12"
-                           Height="32"
-                           HorizontalAlignment="Stretch"
-                           KeyDown="OnRemotePathInputKeyDown"/>
-        </Border>
-
-        <Border Grid.Row="2" Background="{atom:SharedTokenResource ColorBgContainer}" Padding="6,4"
-                BorderBrush="{atom:SharedTokenResource ColorSplit}" BorderThickness="0,0,0,1">
-            <StackPanel Orientation="Horizontal" Spacing="2">
-                <atom:Button Background="{atom:SharedTokenResource ColorFillTertiary}" BorderThickness="0" Padding="8,5"
+        <Border Grid.Row="2"
+                Background="{atom:SharedTokenResource ColorBgContainer}"
+                Padding="6,4"
+                BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                BorderThickness="0,0,0,1">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="2">
+                <atom:Button Background="{atom:SharedTokenResource ColorFillTertiary}"
+                             BorderThickness="0"
+                             Padding="8,5"
                              Command="{Binding NavigateHomeCommand}"
                              CornerRadius="4">
-                    <TextBlock Text="🏠" FontSize="14" Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                    <TextBlock Text="🏠"
+                               FontSize="14"
+                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
                 </atom:Button>
-                <atom:Button Background="{atom:SharedTokenResource ColorFillTertiary}" BorderThickness="0" Padding="8,5"
+                <atom:Button Background="{atom:SharedTokenResource ColorFillTertiary}"
+                             BorderThickness="0"
+                             Padding="8,5"
                              Command="{Binding NavigateUpCommand}"
                              CornerRadius="4">
-                    <TextBlock Text="↑" FontSize="14" Foreground="{atom:SharedTokenResource ColorTextSecondary}" FontWeight="Bold"/>
+                    <TextBlock Text="↑"
+                               FontSize="14"
+                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"
+                               FontWeight="Bold"/>
                 </atom:Button>
-                <atom:Button Background="{atom:SharedTokenResource ColorFillTertiary}" BorderThickness="0" Padding="8,5"
+                <atom:Button Background="{atom:SharedTokenResource ColorFillTertiary}"
+                             BorderThickness="0"
+                             Padding="8,5"
                              Command="{Binding RefreshCommand}"
                              CornerRadius="4">
-                    <TextBlock Text="↻" FontSize="14" Foreground="{atom:SharedTokenResource ColorTextSecondary}" FontWeight="Bold"/>
+                    <TextBlock Text="↻"
+                               FontSize="14"
+                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"
+                               FontWeight="Bold"/>
                 </atom:Button>
-                <Border Width="1" Background="{atom:SharedTokenResource ColorBorder}" Margin="4,4"/>
-                <atom:Button Background="{atom:SharedTokenResource ColorSuccessBg}" BorderThickness="0" Padding="8,5"
+                <Border Width="1"
+                        Background="{atom:SharedTokenResource ColorBorder}"
+                        Margin="4,4"/>
+                <atom:Button Background="{atom:SharedTokenResource ColorSuccessBg}"
+                             BorderThickness="0"
+                             Padding="8,5"
                              Command="{Binding UploadCommand}"
-                             IsEnabled="{Binding IsConnected}" CornerRadius="4">
-                    <TextBlock Text="{Binding UploadText}" FontSize="12" Foreground="{atom:SharedTokenResource ColorSuccess}" FontWeight="Bold"/>
+                             IsEnabled="{Binding IsConnected}"
+                             CornerRadius="4">
+                    <TextBlock Text="{Binding UploadText}"
+                               FontSize="12"
+                               Foreground="{atom:SharedTokenResource ColorSuccess}"
+                               FontWeight="Bold"/>
                 </atom:Button>
-                <atom:Button Background="{atom:SharedTokenResource ColorInfoBg}" BorderThickness="0" Padding="8,5"
+                <atom:Button Background="{atom:SharedTokenResource ColorInfoBg}"
+                             BorderThickness="0"
+                             Padding="8,5"
                              Command="{Binding DownloadCommand}"
-                             IsEnabled="{Binding IsConnected}" CornerRadius="4">
-                    <TextBlock Text="{Binding DownloadText}" FontSize="12" Foreground="{atom:SharedTokenResource ColorInfo}" FontWeight="Bold"/>
+                             IsEnabled="{Binding IsConnected}"
+                             CornerRadius="4">
+                    <TextBlock Text="{Binding DownloadText}"
+                               FontSize="12"
+                               Foreground="{atom:SharedTokenResource ColorInfo}"
+                               FontWeight="Bold"/>
                 </atom:Button>
-                <atom:Button Background="{atom:SharedTokenResource ColorWarningBg}" BorderThickness="0" Padding="8,5"
+                <atom:Button Background="{atom:SharedTokenResource ColorWarningBg}"
+                             BorderThickness="0"
+                             Padding="8,5"
                              Command="{Binding CreateDirectoryCommand}"
-                             IsEnabled="{Binding IsConnected}" CornerRadius="4">
-                    <TextBlock Text="{Binding NewDirectoryText}" FontSize="12" Foreground="{atom:SharedTokenResource ColorWarning}" FontWeight="Bold"/>
+                             IsEnabled="{Binding IsConnected}"
+                             CornerRadius="4">
+                    <TextBlock Text="{Binding NewDirectoryText}"
+                               FontSize="12"
+                               Foreground="{atom:SharedTokenResource ColorWarning}"
+                               FontWeight="Bold"/>
+                </atom:Button>
+                <atom:Button Background="{atom:SharedTokenResource ColorErrorBg}"
+                             BorderThickness="0"
+                             Padding="8,5"
+                             Command="{Binding DeleteCommand}"
+                             IsEnabled="{Binding HasSelectedFiles}"
+                             CornerRadius="4">
+                    <TextBlock Text="{Binding DeleteText}"
+                               FontSize="12"
+                               Foreground="{atom:SharedTokenResource ColorError}"
+                               FontWeight="Bold"/>
                 </atom:Button>
             </StackPanel>
         </Border>
 
-        <!-- 错误提示 -->
-        <Border Grid.Row="3" Background="{atom:SharedTokenResource ColorErrorBg}" Padding="8,4"
+        <Border Grid.Row="3"
+                Background="{atom:SharedTokenResource ColorErrorBg}"
+                Padding="8,4"
                 IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-            <TextBlock Text="{Binding ErrorMessage}" Foreground="{atom:SharedTokenResource ColorErrorText}"
-                       FontSize="11" TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding ErrorMessage}"
+                       Foreground="{atom:SharedTokenResource ColorErrorText}"
+                       FontSize="11"
+                       TextWrapping="Wrap"/>
         </Border>
 
-        <!-- 文件列表：ScrollViewer + ItemsControl 绕开 AtomUI ListBox 样式覆盖问题 -->
         <Grid Grid.Row="4"
               DragDrop.AllowDrop="{Binding IsConnected}"
               DragDrop.DragOver="OnFileListDragOver"
               DragDrop.Drop="OnFileListDrop">
-            <!-- 未连接提示 -->
-            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
-                        Spacing="8" IsVisible="{Binding !IsConnected}">
-                <TextBlock Text="📁" FontSize="32" HorizontalAlignment="Center" Opacity="0.3"/>
-                <TextBlock Text="{Binding ConnectHintText}" FontSize="12"
-                           Foreground="{atom:SharedTokenResource ColorTextTertiary}" HorizontalAlignment="Center"/>
+            <StackPanel HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Spacing="8"
+                        IsVisible="{Binding !IsConnected}">
+                <TextBlock Text="📁"
+                           FontSize="32"
+                           HorizontalAlignment="Center"
+                           Opacity="0.3"/>
+                <TextBlock Text="{Binding ConnectHintText}"
+                           FontSize="12"
+                           Foreground="{atom:SharedTokenResource ColorTextTertiary}"
+                           HorizontalAlignment="Center"/>
             </StackPanel>
 
-            <!-- 加载中 -->
-            <TextBlock Text="{Binding LoadingText}" Foreground="{atom:SharedTokenResource ColorTextSecondary}" FontSize="12"
-                       HorizontalAlignment="Center" VerticalAlignment="Center"
+            <TextBlock Text="{Binding LoadingText}"
+                       Foreground="{atom:SharedTokenResource ColorTextSecondary}"
+                       FontSize="12"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
                        IsVisible="{Binding IsLoading}"/>
 
-            <!-- 文件列表 -->
-            <ScrollViewer IsVisible="{Binding IsConnected}"
-                          HorizontalScrollBarVisibility="Disabled"
-                          VerticalScrollBarVisibility="Auto">
-                <StackPanel>
-                    <!-- 内联新建目录输入行 -->
-                    <Border IsVisible="{Binding IsCreatingDirectory}"
-                            Padding="8,5" Background="{atom:SharedTokenResource ColorSuccessBg}"
-                            BorderBrush="{atom:SharedTokenResource ColorSuccessBorder}" BorderThickness="0,0,0,1">
-                        <Grid ColumnDefinitions="Auto,*">
-                            <TextBlock Grid.Column="0" Text="📁" FontSize="13"
-                                       VerticalAlignment="Center" Foreground="{atom:SharedTokenResource ColorWarning}"
-                                       Margin="0,0,6,0"/>
-                            <atom:TextBox Grid.Column="1"
-                                     x:Name="NewDirInput"
-                                     Text="{Binding NewDirectoryName, Mode=TwoWay}"
-                                     FontSize="12"
-                                     BorderThickness="0,0,0,1" BorderBrush="{atom:SharedTokenResource ColorPrimaryBorder}"
-                                     Padding="2,1"
-                                     VerticalAlignment="Center"
-                                     KeyDown="OnNewDirInputKeyDown"
-                                     LostFocus="OnNewDirInputLostFocus"/>
-                        </Grid>
-                    </Border>
-
-                    <!-- 文件条目列表 -->
-                    <ItemsControl ItemsSource="{Binding Files}">
-                        <ItemsControl.ItemTemplate>
+            <atom:DataGrid x:Name="FileGrid"
+                           IsVisible="{Binding IsConnected}"
+                           ItemsSource="{Binding Files}"
+                           SelectedItem="{Binding SelectedFile, Mode=TwoWay}"
+                           AutoGenerateColumns="False"
+                           IsReadOnly="True"
+                           SelectionMode="Extended"
+                           SizeType="Middle"
+                           GridLinesVisibility="All"
+                           CanUserResizeColumns="True"
+                           CanUserSortColumns="True"
+                           IsHideOnSinglePage="True"
+                           HeadersVisibility="Column"
+                           SelectionChanged="OnFileGridSelectionChanged"
+                           PointerPressed="OnFileGridPointerPressed"
+                           PointerMoved="OnFileGridPointerMoved"
+                           PointerReleased="OnFileGridPointerReleased"
+                           KeyDown="OnFileGridKeyDown">
+                <atom:DataGrid.Columns>
+                    <atom:DataGridTemplateColumn Header="{Binding NameText}"
+                                                 SortMemberPath="Name"
+                                                 Width="1*"
+                                                 MinWidth="100"
+                                                 CanUserResize="True">
+                        <atom:DataGridTemplateColumn.CellTemplate>
                             <DataTemplate DataType="models:SftpFileItem">
-                                <Border Padding="8,5"
-                                        BorderBrush="{atom:SharedTokenResource ColorSplit}" BorderThickness="0,0,0,1"
-                                        Cursor="Hand"
-                                        Background="{Binding IsSelected, Converter={x:Static vm:SftpSelectedColorConverter.Instance}}"
-                                        PointerPressed="OnFileItemPressed"
-                                        PointerMoved="OnFileItemPointerMoved"
-                                        PointerReleased="OnFileItemReleased">
-                                    <Border.Styles>
-                                        <Style Selector="Border:pointerover">
-                                            <Setter Property="Background" Value="{atom:SharedTokenResource ColorFillTertiary}"/>
-                                        </Style>
-                                    </Border.Styles>
-                                    <Grid ColumnDefinitions="Auto,*,Auto,Auto">
-                                        <TextBlock Grid.Column="0" Text="{Binding Icon}"
-                                                   FontSize="13" VerticalAlignment="Center"
-                                                   Foreground="{atom:SharedTokenResource ColorTextSecondary}" Margin="0,0,6,0"/>
-                                        <!-- 正常显示名称 -->
-                                        <TextBlock Grid.Column="1" Text="{Binding DisplayName}"
-                                                   FontSize="12" VerticalAlignment="Center"
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding Icon}"
+                                               FontSize="13"
+                                               VerticalAlignment="Center"
+                                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"
+                                               Margin="0,0,6,0"/>
+                                    <Grid Grid.Column="1">
+                                        <TextBlock Text="{Binding DisplayName}"
+                                                   FontSize="12"
+                                                   VerticalAlignment="Center"
                                                    TextTrimming="CharacterEllipsis"
                                                    IsVisible="{Binding !IsRenaming}"
                                                    Foreground="{Binding IsDirectory, Converter={x:Static vm:SftpDirColorConverter.Instance}}"/>
-                                        <!-- 内联重命名输入框 -->
-                                        <atom:TextBox Grid.Column="1"
-                                                      Text="{Binding RenamingText, Mode=TwoWay}"
+                                        <atom:TextBox Text="{Binding RenamingText, Mode=TwoWay}"
                                                       FontSize="12"
                                                       BorderThickness="0,0,0,1"
                                                       Padding="2,1"
@@ -196,20 +229,25 @@
                                                       Tag="{Binding}"
                                                       KeyDown="OnRenameInputKeyDown"
                                                       LostFocus="OnRenameInputLostFocus"/>
-                                        <TextBlock Grid.Column="2" Text="{Binding SizeDisplay}"
-                                                   FontSize="10" Foreground="{atom:SharedTokenResource ColorTextTertiary}"
-                                                   VerticalAlignment="Center" Margin="8,0"
-                                                   MinWidth="44" TextAlignment="Right"/>
-                                        <TextBlock Grid.Column="3" Text="{Binding DateDisplay}"
-                                                   FontSize="10" Foreground="{atom:SharedTokenResource ColorTextTertiary}"
-                                                   VerticalAlignment="Center"/>
                                     </Grid>
-                                </Border>
+                                </Grid>
                             </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
-            </ScrollViewer>
+                        </atom:DataGridTemplateColumn.CellTemplate>
+                    </atom:DataGridTemplateColumn>
+                    <atom:DataGridTextColumn Header="{Binding SizeText}"
+                                             Binding="{Binding SizeDisplay}"
+                                             SortMemberPath="Size"
+                                             Width="0.8*"
+                                             MinWidth="82"
+                                             CanUserResize="True"/>
+                    <atom:DataGridTextColumn Header="{Binding ModifiedText}"
+                                             Binding="{Binding DateDisplay}"
+                                             SortMemberPath="LastModified"
+                                             Width="*"
+                                             MinWidth="118"
+                                             CanUserResize="True"/>
+                </atom:DataGrid.Columns>
+            </atom:DataGrid>
         </Grid>
 
     </Grid>

@@ -16,14 +16,15 @@ public class SessionData
 
 public class SessionStorageService
 {
+    private const string CurrentAppDirectoryName = "CxShell";
+    private const string LegacyAppDirectoryName = "ChiXueSsh";
+
     private readonly string _storageDir;
     private readonly string _storagePath;
 
     public SessionStorageService()
     {
-        _storageDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "ChiXueSsh");
+        _storageDir = ResolveStorageDirectory();
         _storagePath = Path.Combine(_storageDir, "sessions.json");
     }
 
@@ -52,5 +53,70 @@ public class SessionStorageService
         };
         var json = System.Text.Json.JsonSerializer.Serialize(data, options);
         File.WriteAllText(_storagePath, json, Encoding.UTF8);
+    }
+
+    private static string ResolveStorageDirectory()
+    {
+        foreach (var root in EnumerateStorageRoots())
+        {
+            if (string.IsNullOrWhiteSpace(root))
+                continue;
+
+            var fullRoot = TryGetFullRoot(root);
+            if (string.IsNullOrWhiteSpace(fullRoot))
+                continue;
+
+            var current = Path.Combine(fullRoot, CurrentAppDirectoryName);
+            var legacy = Path.Combine(fullRoot, LegacyAppDirectoryName);
+
+            if (File.Exists(Path.Combine(current, "sessions.json")))
+                return current;
+
+            if (File.Exists(Path.Combine(legacy, "sessions.json")))
+                return legacy;
+
+            if (!File.Exists(current))
+                return current;
+
+            if (!File.Exists(legacy))
+                return legacy;
+        }
+
+        return Path.Combine(AppContext.BaseDirectory, ".cxshell-data");
+    }
+
+    private static IEnumerable<string> EnumerateStorageRoots()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            var xdgConfigHome = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
+            if (!string.IsNullOrWhiteSpace(xdgConfigHome))
+                yield return xdgConfigHome;
+        }
+
+        yield return Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        yield return Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
+        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (!string.IsNullOrWhiteSpace(userProfile))
+            yield return OperatingSystem.IsWindows()
+                ? Path.Combine(userProfile, "AppData", "Roaming")
+                : Path.Combine(userProfile, ".config");
+    }
+
+    private static string? TryGetFullRoot(string root)
+    {
+        try
+        {
+            var expanded = Environment.ExpandEnvironmentVariables(root);
+            if (!Path.IsPathFullyQualified(expanded))
+                return null;
+
+            return Path.GetFullPath(expanded);
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

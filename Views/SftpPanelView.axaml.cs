@@ -1,11 +1,14 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Interactivity;
 using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
@@ -14,6 +17,7 @@ using AtomUI.Theme.Styling;
 using ChiXueSsh.Services;
 using ChiXueSsh.ViewModels;
 using AtomButton = AtomUI.Desktop.Controls.Button;
+using AtomDataGrid = AtomUI.Desktop.Controls.DataGrid;
 using AtomLineEdit = AtomUI.Desktop.Controls.LineEdit;
 using AtomPopup = AtomUI.Desktop.Controls.Popup;
 using AtomTextBox = AtomUI.Desktop.Controls.TextBox;
@@ -23,47 +27,103 @@ namespace ChiXueSsh.Views;
 
 public partial class SftpPanelView : UserControl
 {
-    private Border? _dragSourceBorder;
+    private SftpViewModel? _attachedViewModel;
     private Models.SftpFileItem? _dragSourceItem;
     private PointerPressedEventArgs? _dragStartEventArgs;
     private Avalonia.Point _dragStartPoint;
     private bool _isDraggingFileItem;
+    private bool _doubleTapHandlerAttached;
+    private bool _isFileGridColumnUpdateQueued;
     private const double DragStartDistance = 6;
+    private const double FileNameColumnMinWidth = 100;
+    private const double FileSizeColumnMinWidth = 82;
+    private const double FileModifiedColumnMinWidth = 118;
+    private const double FileNameColumnWeight = 0.38;
+    private const double FileSizeColumnWeight = 0.20;
 
     public SftpPanelView()
     {
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
+        FileGrid.GetObservable(BoundsProperty).Subscribe(_ => QueueFileGridColumnWidthUpdate());
     }
 
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
-        if (DataContext is SftpViewModel vm)
-        {
-            InjectDelegates(vm);
-            vm.PropertyChanged += OnVmPropertyChanged;
-        }
+        AttachViewModel(DataContext as SftpViewModel);
     }
 
     protected override void OnLoaded(RoutedEventArgs e)
     {
         base.OnLoaded(e);
 
-        if (DataContext is SftpViewModel vm)
+        AttachViewModel(DataContext as SftpViewModel);
+
+        if (!_doubleTapHandlerAttached)
         {
-            InjectDelegates(vm);
-            vm.PropertyChanged += OnVmPropertyChanged;
+            this.AddHandler(DoubleTappedEvent, OnFileDoubleTapped, RoutingStrategies.Bubble);
+            _doubleTapHandlerAttached = true;
         }
 
-        this.AddHandler(DoubleTappedEvent, OnFileDoubleTapped, RoutingStrategies.Bubble);
+        QueueFileGridColumnWidthUpdate();
+    }
+
+    private void QueueFileGridColumnWidthUpdate()
+    {
+        if (_isFileGridColumnUpdateQueued)
+            return;
+
+        _isFileGridColumnUpdateQueued = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _isFileGridColumnUpdateQueued = false;
+            UpdateFileGridColumnWidths();
+        }, DispatcherPriority.Render);
+    }
+
+    private void UpdateFileGridColumnWidths()
+    {
+        if (FileGrid.Columns.Count < 3 || FileGrid.Bounds.Width <= 0)
+            return;
+
+        var minimumWidth = FileNameColumnMinWidth + FileSizeColumnMinWidth + FileModifiedColumnMinWidth;
+        var availableWidth = Math.Max(minimumWidth, FileGrid.Bounds.Width - 2);
+        var extraWidth = availableWidth - minimumWidth;
+        var nameWidth = FileNameColumnMinWidth + Math.Round(extraWidth * FileNameColumnWeight);
+        var sizeWidth = FileSizeColumnMinWidth + Math.Round(extraWidth * FileSizeColumnWeight);
+
+        FileGrid.Columns[0].Width = new AtomUI.Desktop.Controls.DataGridLength(nameWidth);
+        FileGrid.Columns[1].Width = new AtomUI.Desktop.Controls.DataGridLength(sizeWidth);
+        FileGrid.Columns[2].Width = new AtomUI.Desktop.Controls.DataGridLength(availableWidth - nameWidth - sizeWidth);
+    }
+
+    private void AttachViewModel(SftpViewModel? viewModel)
+    {
+        if (_attachedViewModel == viewModel)
+        {
+            if (viewModel != null)
+                InjectDelegates(viewModel);
+            return;
+        }
+
+        if (_attachedViewModel != null)
+            _attachedViewModel.PropertyChanged -= OnVmPropertyChanged;
+
+        _attachedViewModel = viewModel;
+
+        if (viewModel != null)
+        {
+            viewModel.PropertyChanged += OnVmPropertyChanged;
+            InjectDelegates(viewModel);
+        }
     }
 
     private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (DataContext is not SftpViewModel vm)
+        if (_attachedViewModel == null)
             return;
 
-        if (e.PropertyName == nameof(SftpViewModel.IsCreatingDirectory) && vm.IsCreatingDirectory)
+        if (e.PropertyName == nameof(SftpViewModel.IsCreatingDirectory) && _attachedViewModel.IsCreatingDirectory)
         {
             Dispatcher.UIThread.Post(() =>
             {
@@ -80,9 +140,9 @@ public partial class SftpPanelView : UserControl
             }, DispatcherPriority.Render);
         }
 
-        if (e.PropertyName == nameof(SftpViewModel.RenamingItem) && vm.RenamingItem != null)
+        if (e.PropertyName == nameof(SftpViewModel.RenamingItem) && _attachedViewModel.RenamingItem != null)
         {
-            var targetItem = vm.RenamingItem;
+            var targetItem = _attachedViewModel.RenamingItem;
             Dispatcher.UIThread.Post(() =>
             {
                 var tb = FindRenameTextBox(this, targetItem);
@@ -116,7 +176,7 @@ public partial class SftpPanelView : UserControl
 
     public void OnRenameInputKeyDown(object? sender, KeyEventArgs e)
     {
-        if (DataContext is not SftpViewModel vm || sender is not AtomTextBox tb)
+        if (_attachedViewModel == null || sender is not AtomTextBox tb)
             return;
 
         if (tb.Tag is not Models.SftpFileItem item)
@@ -126,32 +186,32 @@ public partial class SftpPanelView : UserControl
         {
             e.Handled = true;
             item.RenamingText = tb.Text ?? item.Name;
-            if (vm.ConfirmRenameCommand is CommunityToolkit.Mvvm.Input.IAsyncRelayCommand asyncCmd)
+            if (_attachedViewModel.ConfirmRenameCommand is CommunityToolkit.Mvvm.Input.IAsyncRelayCommand asyncCmd)
                 _ = asyncCmd.ExecuteAsync(item);
         }
         else if (e.Key == Key.Escape)
         {
             e.Handled = true;
-            vm.CancelRenameCommand.Execute(item);
+            _attachedViewModel.CancelRenameCommand.Execute(item);
         }
     }
 
     public void OnRenameInputLostFocus(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not SftpViewModel vm || sender is not AtomTextBox tb)
+        if (_attachedViewModel == null || sender is not AtomTextBox tb)
             return;
 
         if (tb.Tag is not Models.SftpFileItem item || !item.IsRenaming)
             return;
 
         item.RenamingText = tb.Text ?? item.Name;
-        if (vm.ConfirmRenameCommand is CommunityToolkit.Mvvm.Input.IAsyncRelayCommand asyncCmd)
+        if (_attachedViewModel.ConfirmRenameCommand is CommunityToolkit.Mvvm.Input.IAsyncRelayCommand asyncCmd)
             _ = asyncCmd.ExecuteAsync(item);
     }
 
     public void OnNewDirInputKeyDown(object? sender, KeyEventArgs e)
     {
-        if (DataContext is not SftpViewModel vm)
+        if (_attachedViewModel == null)
             return;
 
         if (e.Key == Key.Enter)
@@ -159,44 +219,44 @@ public partial class SftpPanelView : UserControl
             e.Handled = true;
             var input = this.FindControl<AtomTextBox>("NewDirInput");
             if (input != null)
-                vm.NewDirectoryName = input.Text ?? "\u65b0\u76ee\u5f55";
+                _attachedViewModel.NewDirectoryName = input.Text ?? "\u65b0\u76ee\u5f55";
 
-            _ = vm.ConfirmCreateDirectoryCommand.ExecuteAsync(null);
+            _ = _attachedViewModel.ConfirmCreateDirectoryCommand.ExecuteAsync(null);
         }
         else if (e.Key == Key.Escape)
         {
             e.Handled = true;
-            vm.CancelCreateDirectoryCommand.Execute(null);
+            _attachedViewModel.CancelCreateDirectoryCommand.Execute(null);
         }
     }
 
     public void OnNewDirInputLostFocus(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not SftpViewModel vm || !vm.IsCreatingDirectory)
+        if (_attachedViewModel == null || !_attachedViewModel.IsCreatingDirectory)
             return;
 
         var input = this.FindControl<AtomTextBox>("NewDirInput");
         if (input != null)
-            vm.NewDirectoryName = input.Text ?? "\u65b0\u76ee\u5f55";
+            _attachedViewModel.NewDirectoryName = input.Text ?? "\u65b0\u76ee\u5f55";
 
-        _ = vm.ConfirmCreateDirectoryCommand.ExecuteAsync(null);
+        _ = _attachedViewModel.ConfirmCreateDirectoryCommand.ExecuteAsync(null);
     }
 
     public void OnRemotePathInputKeyDown(object? sender, KeyEventArgs e)
     {
-        if (DataContext is not SftpViewModel vm || e.Key != Key.Enter)
+        if (_attachedViewModel == null || e.Key != Key.Enter)
             return;
 
         e.Handled = true;
         if (sender is AtomLineEdit input)
-            vm.PathInput = input.Text ?? vm.CurrentPath;
+            _attachedViewModel.PathInput = input.Text ?? _attachedViewModel.CurrentPath;
 
-        _ = vm.NavigateToTypedPathCommand.ExecuteAsync(null);
+        _ = _attachedViewModel.NavigateToTypedPathCommand.ExecuteAsync(null);
     }
 
     public void OnFileListDragOver(object? sender, DragEventArgs e)
     {
-        e.DragEffects = DataContext is SftpViewModel { IsConnected: true }
+        e.DragEffects = _attachedViewModel is { IsConnected: true }
             ? DragDropEffects.Copy
             : DragDropEffects.None;
         e.Handled = true;
@@ -206,7 +266,7 @@ public partial class SftpPanelView : UserControl
     {
         e.Handled = true;
 
-        if (DataContext is not SftpViewModel { IsConnected: true } vm)
+        if (_attachedViewModel is not { IsConnected: true } vm)
             return;
 
         try
@@ -231,6 +291,347 @@ public partial class SftpPanelView : UserControl
         {
             await vm.ShowDropUploadErrorAsync(ex.Message);
         }
+    }
+
+    private void OnFileGridSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_attachedViewModel == null || sender is not AtomDataGrid grid)
+            return;
+
+        _attachedViewModel.SetSelectedFiles(GetSelectedFiles(grid));
+    }
+
+    private void OnFileGridPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (_attachedViewModel == null || sender is not AtomDataGrid grid)
+            return;
+
+        var item = TryGetItemFromVisual(e.Source as Avalonia.Visual);
+        if (item == null || item.IsRenaming)
+            return;
+
+        var point = e.GetCurrentPoint(grid);
+        if (point.Properties.IsRightButtonPressed)
+        {
+            grid.SelectedItem = item;
+            e.Handled = true;
+            Dispatcher.UIThread.Post(() => ShowFileContextMenu(grid, item, _attachedViewModel), DispatcherPriority.Input);
+            ClearFileDragState();
+            return;
+        }
+
+        if (point.Properties.IsLeftButtonPressed)
+        {
+            _dragSourceItem = item;
+            _dragStartEventArgs = e;
+            _dragStartPoint = e.GetPosition(this);
+        }
+    }
+
+    private void OnFileGridPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (!_isDraggingFileItem)
+            ClearFileDragState();
+    }
+
+    private async void OnFileGridPointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (_isDraggingFileItem ||
+            _dragSourceItem == null ||
+            _dragStartEventArgs == null ||
+            _attachedViewModel == null)
+        {
+            return;
+        }
+
+        var point = e.GetCurrentPoint(this);
+        if (!point.Properties.IsLeftButtonPressed)
+        {
+            ClearFileDragState();
+            return;
+        }
+
+        var current = e.GetPosition(this);
+        if (Math.Abs(current.X - _dragStartPoint.X) < DragStartDistance &&
+            Math.Abs(current.Y - _dragStartPoint.Y) < DragStartDistance)
+        {
+            return;
+        }
+
+        _isDraggingFileItem = true;
+        var dragEventArgs = _dragStartEventArgs;
+        var item = _dragSourceItem;
+
+        try
+        {
+            if (_attachedViewModel.CanStreamDragOut(item))
+            {
+                var dragFiles = await _attachedViewModel.CreateVirtualDragFilesAsync(item);
+                if (dragFiles.Count > 0)
+                {
+                    System.Console.WriteLine($"[SFTP] Starting virtual stream drag-out: {item.FullPath}, files={dragFiles.Count}");
+                    if (PlatformServices.TryStartVirtualFileDragOut(dragFiles, out var virtualEffect, out var virtualError))
+                    {
+                        System.Console.WriteLine($"[SFTP] Virtual stream drag-out finished: {virtualEffect}");
+                        return;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(virtualError))
+                        System.Console.WriteLine($"[SFTP] Virtual stream drag-out unavailable: {virtualError}");
+                }
+            }
+
+            var topLevel = TopLevel.GetTopLevel(this);
+            var data = new DataTransfer();
+            if (data.Items is IList<DataTransferItem> items)
+            {
+                var dataItem = new DataTransferItem();
+                dataItem.Set(DataFormat.File, () =>
+                {
+                    System.Console.WriteLine($"[SFTP] Exporting remote item for drag: {item.FullPath}");
+                    var localPath = _attachedViewModel.ExportItemForDragBlocking(item);
+                    if (string.IsNullOrWhiteSpace(localPath))
+                        return null;
+
+                    return GetStorageItemForDrag(topLevel, localPath);
+                });
+                items.Add(dataItem);
+            }
+
+            System.Console.WriteLine($"[SFTP] Starting drag-out: {item.FullPath}");
+            var effect = await DragDrop.DoDragDropAsync(dragEventArgs, data, DragDropEffects.Copy);
+            System.Console.WriteLine($"[SFTP] Drag-out finished: {effect}");
+        }
+        finally
+        {
+            ClearFileDragState();
+            _isDraggingFileItem = false;
+        }
+    }
+
+    private void OnFileGridKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (_attachedViewModel == null)
+            return;
+
+        if (e.Key == Key.Delete)
+        {
+            e.Handled = true;
+            if (_attachedViewModel.DeleteCommand is CommunityToolkit.Mvvm.Input.IAsyncRelayCommand asyncCmd)
+                _ = asyncCmd.ExecuteAsync(null);
+            else
+                _attachedViewModel.DeleteCommand.Execute(null);
+        }
+    }
+
+    private static Models.SftpFileItem? TryGetItemFromVisual(Avalonia.Visual? visual)
+    {
+        while (visual != null)
+        {
+            if (visual.DataContext is Models.SftpFileItem item)
+                return item;
+
+            visual = visual.GetVisualParent() as Avalonia.Visual;
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<Models.SftpFileItem> GetSelectedFiles(AtomDataGrid grid)
+    {
+        var selectedItemsProperty = grid.GetType().GetProperty("SelectedItems");
+        if (selectedItemsProperty?.GetValue(grid) is IEnumerable selectedItems)
+            return selectedItems.OfType<Models.SftpFileItem>().ToList();
+
+        return [];
+    }
+
+    private static Avalonia.Platform.Storage.IStorageItem? GetStorageItemForDrag(TopLevel? topLevel, string localPath)
+    {
+        if (topLevel == null)
+            return null;
+
+        return System.IO.Directory.Exists(localPath)
+            ? topLevel.StorageProvider.TryGetFolderFromPathAsync(localPath).GetAwaiter().GetResult()
+            : topLevel.StorageProvider.TryGetFileFromPathAsync(localPath).GetAwaiter().GetResult();
+    }
+
+    private void ClearFileDragState()
+    {
+        _dragSourceItem = null;
+        _dragStartEventArgs = null;
+    }
+
+    private void ShowFileContextMenu(Control anchor, Models.SftpFileItem item, SftpViewModel vm)
+    {
+        var popup = new AtomPopup
+        {
+            PlacementTarget = anchor,
+            Placement = PlacementMode.Pointer,
+            IsLightDismissEnabled = true,
+            WindowManagerAddShadowHint = false,
+        };
+
+        var panel = new StackPanel
+        {
+            Background = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorBgElevated, Color.Parse("#FFFFFF"))),
+            MinWidth = 120,
+        };
+
+        void AddItem(string text, Action action)
+        {
+            var btn = new AtomButton
+            {
+                Content = text,
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(12, 6),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Foreground = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorText, Color.Parse("#000000"))),
+                FontSize = 12,
+            };
+            btn.Click += (_, _) =>
+            {
+                popup.IsOpen = false;
+                action();
+            };
+            panel.Children.Add(btn);
+        }
+
+        if (!item.IsDirectory)
+        {
+            AddItem(vm.DownloadText, () => _ = vm.DownloadCommand.ExecuteAsync(null));
+            panel.Children.Add(new Border
+            {
+                Height = 1,
+                Background = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorSplit, Color.Parse("#F0F0F0"))),
+                Margin = new Thickness(4, 2),
+            });
+        }
+
+        AddItem(vm.RenameText, () => vm.RenameCommand.Execute(null));
+        AddItem(vm.DeleteText, () => _ = vm.DeleteCommand.ExecuteAsync(null));
+
+        popup.Child = new Border
+        {
+            Child = panel,
+            Background = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorBgElevated, Color.Parse("#FFFFFF"))),
+            BorderBrush = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorBorder, Color.Parse("#D9D9D9"))),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            BoxShadow = BoxShadows.Parse("0 4 12 0 #80000000"),
+        };
+
+        popup.PlacementTarget = anchor;
+        popup.Open();
+    }
+
+    private void OnFileDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (_attachedViewModel == null)
+            return;
+
+        var item = TryGetItemFromVisual(e.Source as Avalonia.Visual);
+        if (item != null)
+            _ = _attachedViewModel.OpenItemCommand.ExecuteAsync(item);
+    }
+
+    private static async Task<bool> ShowConfirmWindow(Window owner, string message)
+    {
+        var result = false;
+        var dialog = new AtomWindow
+        {
+            Title = "\u786e\u8ba4",
+            Width = 360,
+            Height = 140,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            CanResize = false,
+            ShowInTaskbar = false
+        };
+
+        var panel = new StackPanel { Spacing = 12, Margin = new Thickness(20) };
+        panel.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap });
+
+        var btnPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+
+        var okBtn = new AtomButton { Content = "\u786e\u8ba4", Width = 70 };
+        okBtn.Click += (_, _) => { result = true; dialog.Close(); };
+        var cancelBtn = new AtomButton { Content = "\u53d6\u6d88", Width = 70 };
+        cancelBtn.Click += (_, _) => dialog.Close();
+
+        btnPanel.Children.Add(okBtn);
+        btnPanel.Children.Add(cancelBtn);
+        panel.Children.Add(btnPanel);
+        dialog.Content = panel;
+
+        await dialog.ShowDialog(owner);
+        return result;
+    }
+
+    private static async Task<string?> ShowInputWindow(Window owner, string title, string defaultValue)
+    {
+        string? result = null;
+        var dialog = new AtomWindow
+        {
+            Title = title,
+            Width = 360,
+            Height = 200,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            CanResize = false,
+            ShowInTaskbar = false
+        };
+
+        var panel = new StackPanel { Spacing = 12, Margin = new Thickness(20) };
+        var label = new TextBlock
+        {
+            Text = title,
+            FontSize = 13,
+            Foreground = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorTextSecondary, Color.Parse("#666666")))
+        };
+        var input = new AtomTextBox { Text = defaultValue, FontSize = 13 };
+        panel.Children.Add(label);
+
+        dialog.Opened += (_, _) =>
+        {
+            input.Focus();
+            input.SelectAll();
+        };
+
+        var btnPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+
+        var okBtn = new AtomButton { Content = "\u786e\u8ba4", Width = 70 };
+        okBtn.Click += (_, _) => { result = input.Text; dialog.Close(); };
+        var cancelBtn = new AtomButton { Content = "\u53d6\u6d88", Width = 70 };
+        cancelBtn.Click += (_, _) => dialog.Close();
+
+        input.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter)
+            {
+                result = input.Text;
+                dialog.Close();
+            }
+        };
+
+        btnPanel.Children.Add(okBtn);
+        btnPanel.Children.Add(cancelBtn);
+        panel.Children.Add(input);
+        panel.Children.Add(btnPanel);
+        dialog.Content = panel;
+
+        await dialog.ShowDialog(owner);
+        return result;
     }
 
     private void InjectDelegates(SftpViewModel vm)
@@ -296,313 +697,5 @@ public partial class SftpPanelView : UserControl
         var directory = System.IO.Path.GetDirectoryName(path);
         if (!string.IsNullOrWhiteSpace(directory))
             vm.LocalStartDirectory = directory;
-    }
-
-    private void OnFileItemPressed(object? sender, PointerPressedEventArgs e)
-    {
-        if (DataContext is not SftpViewModel vm || sender is not Border border)
-            return;
-
-        if (border.DataContext is not Models.SftpFileItem item)
-            return;
-
-        var point = e.GetCurrentPoint(border);
-        System.Console.WriteLine($"[SFTP] PointerPressed: Left={point.Properties.IsLeftButtonPressed}, Right={point.Properties.IsRightButtonPressed}, item={item.Name}");
-        vm.SelectFileCommand.Execute(item);
-
-        if (point.Properties.IsRightButtonPressed)
-        {
-            e.Handled = true;
-            Dispatcher.UIThread.Post(() => ShowFileContextMenu(border, item, vm), DispatcherPriority.Input);
-            ClearFileDragState();
-            return;
-        }
-
-        if (point.Properties.IsLeftButtonPressed)
-        {
-            _dragSourceBorder = border;
-            _dragSourceItem = item;
-            _dragStartEventArgs = e;
-            _dragStartPoint = e.GetPosition(this);
-        }
-    }
-
-    private void OnFileItemReleased(object? sender, PointerReleasedEventArgs e)
-    {
-        System.Console.WriteLine($"[SFTP] PointerReleased: InitialPressMouseButton={e.InitialPressMouseButton}");
-        if (!_isDraggingFileItem)
-            ClearFileDragState();
-    }
-
-    private async void OnFileItemPointerMoved(object? sender, PointerEventArgs e)
-    {
-        if (_isDraggingFileItem ||
-            _dragSourceBorder == null ||
-            _dragSourceItem == null ||
-            _dragStartEventArgs == null ||
-            DataContext is not SftpViewModel vm)
-        {
-            return;
-        }
-
-        var point = e.GetCurrentPoint(this);
-        if (!point.Properties.IsLeftButtonPressed)
-        {
-            ClearFileDragState();
-            return;
-        }
-
-        var current = e.GetPosition(this);
-        if (Math.Abs(current.X - _dragStartPoint.X) < DragStartDistance &&
-            Math.Abs(current.Y - _dragStartPoint.Y) < DragStartDistance)
-        {
-            return;
-        }
-
-        _isDraggingFileItem = true;
-        var dragEventArgs = _dragStartEventArgs;
-        var item = _dragSourceItem;
-
-        try
-        {
-            if (vm.CanStreamDragOut(item))
-            {
-                var dragFiles = await vm.CreateVirtualDragFilesAsync(item);
-                if (dragFiles.Count > 0)
-                {
-                    System.Console.WriteLine($"[SFTP] Starting virtual stream drag-out: {item.FullPath}, files={dragFiles.Count}");
-                    if (PlatformServices.TryStartVirtualFileDragOut(dragFiles, out var virtualEffect, out var virtualError))
-                    {
-                        System.Console.WriteLine($"[SFTP] Virtual stream drag-out finished: {virtualEffect}");
-                        return;
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(virtualError))
-                        System.Console.WriteLine($"[SFTP] Virtual stream drag-out unavailable: {virtualError}");
-                }
-            }
-
-            var topLevel = TopLevel.GetTopLevel(this);
-            var data = new DataTransfer();
-            if (data.Items is IList<DataTransferItem> items)
-            {
-                var dataItem = new DataTransferItem();
-                dataItem.Set(DataFormat.File, () =>
-                {
-                    System.Console.WriteLine($"[SFTP] Exporting remote item for drag: {item.FullPath}");
-                    var localPath = vm.ExportItemForDragBlocking(item);
-                    if (string.IsNullOrWhiteSpace(localPath))
-                        return null;
-
-                    return GetStorageItemForDrag(topLevel, localPath);
-                });
-                items.Add(dataItem);
-            }
-
-            System.Console.WriteLine($"[SFTP] Starting drag-out: {item.FullPath}");
-            var effect = await DragDrop.DoDragDropAsync(dragEventArgs, data, DragDropEffects.Copy);
-            System.Console.WriteLine($"[SFTP] Drag-out finished: {effect}");
-        }
-        finally
-        {
-            ClearFileDragState();
-            _isDraggingFileItem = false;
-        }
-    }
-
-    private static Avalonia.Platform.Storage.IStorageItem? GetStorageItemForDrag(TopLevel? topLevel, string localPath)
-    {
-        if (topLevel == null)
-            return null;
-
-        return System.IO.Directory.Exists(localPath)
-            ? topLevel.StorageProvider.TryGetFolderFromPathAsync(localPath).GetAwaiter().GetResult()
-            : topLevel.StorageProvider.TryGetFileFromPathAsync(localPath).GetAwaiter().GetResult();
-    }
-
-    private void ClearFileDragState()
-    {
-        _dragSourceBorder = null;
-        _dragSourceItem = null;
-        _dragStartEventArgs = null;
-    }
-
-    private void ShowFileContextMenu(Border anchor, Models.SftpFileItem item, SftpViewModel vm)
-    {
-        var popup = new AtomPopup
-        {
-            PlacementTarget = anchor,
-            Placement = Avalonia.Controls.PlacementMode.Pointer,
-            IsLightDismissEnabled = true,
-            WindowManagerAddShadowHint = false,
-        };
-
-        var panel = new StackPanel
-        {
-            Background = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorBgElevated, Color.Parse("#FFFFFF"))),
-            MinWidth = 120,
-        };
-
-        void AddItem(string text, Action action)
-        {
-            var btn = new AtomButton
-            {
-                Content = text,
-                Background = Brushes.Transparent,
-                BorderThickness = new Avalonia.Thickness(0),
-                Padding = new Avalonia.Thickness(12, 6),
-                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
-                HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Left,
-                Foreground = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorText, Color.Parse("#000000"))),
-                FontSize = 12,
-            };
-            btn.Click += (_, _) =>
-            {
-                popup.IsOpen = false;
-                action();
-            };
-            panel.Children.Add(btn);
-        }
-
-        if (!item.IsDirectory)
-        {
-            AddItem("\u2193 \u4e0b\u8f7d", () => _ = vm.DownloadCommand.ExecuteAsync(null));
-            panel.Children.Add(new Border
-            {
-                Height = 1,
-                Background = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorSplit, Color.Parse("#F0F0F0"))),
-                Margin = new Avalonia.Thickness(4, 2),
-            });
-        }
-
-        AddItem("\u270e \u91cd\u547d\u540d", () => vm.RenameCommand.Execute(null));
-        AddItem("\u5220\u9664", () => _ = vm.DeleteCommand.ExecuteAsync(null));
-
-        popup.Child = new Border
-        {
-            Child = panel,
-            Background = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorBgElevated, Color.Parse("#FFFFFF"))),
-            BorderBrush = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorBorder, Color.Parse("#D9D9D9"))),
-            BorderThickness = new Avalonia.Thickness(1),
-            CornerRadius = new Avalonia.CornerRadius(4),
-            BoxShadow = BoxShadows.Parse("0 4 12 0 #80000000"),
-        };
-
-        popup.PlacementTarget = anchor;
-        popup.Open();
-    }
-
-    private void OnFileDoubleTapped(object? sender, TappedEventArgs e)
-    {
-        if (DataContext is not SftpViewModel vm)
-            return;
-
-        var source = e.Source as Avalonia.Visual;
-        while (source != null)
-        {
-            if (source.DataContext is Models.SftpFileItem item)
-            {
-                _ = vm.OpenItemCommand.ExecuteAsync(item);
-                return;
-            }
-            source = source.GetVisualParent() as Avalonia.Visual;
-        }
-    }
-
-    private static async Task<bool> ShowConfirmWindow(Window owner, string message)
-    {
-        var result = false;
-        var dialog = new AtomWindow
-        {
-            Title = "\u786e\u8ba4",
-            Width = 360,
-            Height = 140,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            CanResize = false,
-            ShowInTaskbar = false
-        };
-
-        var panel = new StackPanel { Spacing = 12, Margin = new Avalonia.Thickness(20) };
-        panel.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap });
-
-        var btnPanel = new StackPanel
-        {
-            Orientation = Avalonia.Layout.Orientation.Horizontal,
-            Spacing = 8,
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right
-        };
-
-        var okBtn = new AtomButton { Content = "\u786e\u8ba4", Width = 70 };
-        okBtn.Click += (_, _) => { result = true; dialog.Close(); };
-        var cancelBtn = new AtomButton { Content = "\u53d6\u6d88", Width = 70 };
-        cancelBtn.Click += (_, _) => dialog.Close();
-
-        btnPanel.Children.Add(okBtn);
-        btnPanel.Children.Add(cancelBtn);
-        panel.Children.Add(btnPanel);
-        dialog.Content = panel;
-
-        await dialog.ShowDialog(owner);
-        return result;
-    }
-
-    private static async Task<string?> ShowInputWindow(Window owner, string title, string defaultValue)
-    {
-        string? result = null;
-        var dialog = new AtomWindow
-        {
-            Title = title,
-            Width = 360,
-            Height = 200,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            CanResize = false,
-            ShowInTaskbar = false
-        };
-
-        var panel = new StackPanel { Spacing = 12, Margin = new Avalonia.Thickness(20) };
-        var label = new TextBlock
-        {
-            Text = title,
-            FontSize = 13,
-            Foreground = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorTextSecondary, Color.Parse("#666666")))
-        };
-        var input = new AtomTextBox { Text = defaultValue, FontSize = 13 };
-        panel.Children.Add(label);
-
-        dialog.Opened += (_, _) =>
-        {
-            input.Focus();
-            input.SelectAll();
-        };
-
-        var btnPanel = new StackPanel
-        {
-            Orientation = Avalonia.Layout.Orientation.Horizontal,
-            Spacing = 8,
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right
-        };
-
-        var okBtn = new AtomButton { Content = "\u786e\u8ba4", Width = 70 };
-        okBtn.Click += (_, _) => { result = input.Text; dialog.Close(); };
-        var cancelBtn = new AtomButton { Content = "\u53d6\u6d88", Width = 70 };
-        cancelBtn.Click += (_, _) => dialog.Close();
-
-        input.KeyDown += (_, e) =>
-        {
-            if (e.Key == Key.Enter)
-            {
-                result = input.Text;
-                dialog.Close();
-            }
-        };
-
-        btnPanel.Children.Add(okBtn);
-        btnPanel.Children.Add(cancelBtn);
-        panel.Children.Add(input);
-        panel.Children.Add(btnPanel);
-        dialog.Content = panel;
-
-        await dialog.ShowDialog(owner);
-        return result;
     }
 }

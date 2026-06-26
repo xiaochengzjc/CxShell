@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(FreeRDP REQUIRED CONFIG)
 find_package(WinPR REQUIRED CONFIG)
 find_package(OpenSSL REQUIRED)
+find_path(FREERDP_INCLUDE_DIR NAMES freerdp/freerdp.h PATH_SUFFIXES freerdp3)
 find_library(FREERDP_CLIENT_LIBRARY NAMES freerdp-client3 freerdp-client REQUIRED)
 
 add_library(CxRdpBridge SHARED
@@ -17,6 +18,8 @@ add_library(CxRdpBridge SHARED
 target_include_directories(CxRdpBridge
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
+    PRIVATE
+        ${FREERDP_INCLUDE_DIR}
 )
 
 target_link_libraries(CxRdpBridge PRIVATE freerdp winpr ${FREERDP_CLIENT_LIBRARY} OpenSSL::Crypto)

@@ -19,6 +19,11 @@ public partial class SftpViewModel : ObservableObject
     public string UploadText => L.Text("Sftp.Upload");
     public string DownloadText => L.Text("Sftp.Download");
     public string NewDirectoryText => L.Text("Sftp.NewDirectory");
+    public string NameText => L.Text("Sftp.Name");
+    public string SizeText => L.Text("Sftp.Size");
+    public string ModifiedText => L.Text("Sftp.Modified");
+    public string RenameText => L.Text("Common.Rename");
+    public string DeleteText => L.Text("Common.Delete");
     public string ConnectHintText => L.Text("Sftp.ConnectHint");
     public string LoadingText => L.Text("Sftp.Loading");
 
@@ -42,6 +47,10 @@ public partial class SftpViewModel : ObservableObject
 
     public ObservableCollection<SftpFileItem> Files { get; } = new();
     public ObservableCollection<PathSegment> PathSegments { get; } = new();
+    private readonly List<SftpFileItem> _selectedFiles = new();
+
+    public IReadOnlyList<SftpFileItem> SelectedFiles => _selectedFiles;
+    public bool HasSelectedFiles => _selectedFiles.Count > 0;
 
     public Func<Task<string?>>? PickUploadFileAsync { get; set; }
     public Func<string, Task<string?>>? PickDownloadPathAsync { get; set; }
@@ -60,6 +69,11 @@ public partial class SftpViewModel : ObservableObject
         OnPropertyChanged(nameof(UploadText));
         OnPropertyChanged(nameof(DownloadText));
         OnPropertyChanged(nameof(NewDirectoryText));
+        OnPropertyChanged(nameof(NameText));
+        OnPropertyChanged(nameof(SizeText));
+        OnPropertyChanged(nameof(ModifiedText));
+        OnPropertyChanged(nameof(RenameText));
+        OnPropertyChanged(nameof(DeleteText));
         OnPropertyChanged(nameof(ConnectHintText));
         OnPropertyChanged(nameof(LoadingText));
     }
@@ -71,6 +85,22 @@ public partial class SftpViewModel : ObservableObject
 
         if (newValue != null)
             newValue.IsSelected = true;
+    }
+
+    public void SetSelectedFiles(IEnumerable<SftpFileItem> items)
+    {
+        var next = items.Where(item => item != null).Distinct().ToList();
+        if (_selectedFiles.SequenceEqual(next))
+            return;
+
+        _selectedFiles.Clear();
+        _selectedFiles.AddRange(next);
+        OnPropertyChanged(nameof(SelectedFiles));
+        OnPropertyChanged(nameof(HasSelectedFiles));
+
+        var primary = next.FirstOrDefault();
+        if (!ReferenceEquals(SelectedFile, primary))
+            SelectedFile = primary;
     }
 
     public void SwitchConnection(SessionInfo session, string? password)
@@ -101,6 +131,7 @@ public partial class SftpViewModel : ObservableObject
             HostLabel = "Not connected";
             Files.Clear();
             PathSegments.Clear();
+            SetSelectedFiles(Array.Empty<SftpFileItem>());
             CurrentPath = "/";
             PathInput = "/";
             ErrorMessage = null;
@@ -119,6 +150,7 @@ public partial class SftpViewModel : ObservableObject
             ErrorMessage = null;
             Files.Clear();
             PathSegments.Clear();
+            SetSelectedFiles(Array.Empty<SftpFileItem>());
         });
 
         try
@@ -163,6 +195,7 @@ public partial class SftpViewModel : ObservableObject
                 Files.Clear();
                 foreach (var item in items)
                     Files.Add(item);
+                SetSelectedFiles(Array.Empty<SftpFileItem>());
                 IsLoading = false;
             });
         }
@@ -195,12 +228,6 @@ public partial class SftpViewModel : ObservableObject
             accumulated += "/" + part;
             PathSegments.Add(new PathSegment { Label = part, FullPath = accumulated });
         }
-    }
-
-    [RelayCommand]
-    private void SelectFile(SftpFileItem item)
-    {
-        SelectedFile = item;
     }
 
     [RelayCommand]
@@ -658,19 +685,28 @@ public partial class SftpViewModel : ObservableObject
     [RelayCommand]
     private async Task Delete()
     {
-        if (!_service.IsConnected || SelectedFile == null)
+        if (!_service.IsConnected)
+            return;
+
+        var targets = SelectedFiles.Count > 0
+            ? SelectedFiles.ToList()
+            : SelectedFile != null
+                ? [SelectedFile]
+                : [];
+        if (targets.Count == 0)
             return;
 
         if (ShowConfirmDialogAsync != null)
         {
-            var confirmed = await ShowConfirmDialogAsync($"Delete '{SelectedFile.Name}'?");
+            var confirmed = await ShowConfirmDialogAsync(BuildDeleteMessage(targets));
             if (!confirmed)
                 return;
         }
 
         try
         {
-            await _service.DeleteAsync(SelectedFile.FullPath, SelectedFile.IsDirectory);
+            foreach (var item in targets)
+                await _service.DeleteAsync(item.FullPath, item.IsDirectory);
             await LoadDirectoryAsync(CurrentPath);
         }
         catch (Exception ex)
@@ -759,6 +795,22 @@ public partial class SftpViewModel : ObservableObject
     {
         IsCreatingDirectory = false;
         NewDirectoryName = "NewFolder";
+    }
+
+    private string BuildDeleteMessage(IReadOnlyList<SftpFileItem> targets)
+    {
+        if (targets.Count == 1)
+            return L.IsEnglish
+                ? $"Delete '{targets[0].Name}'?"
+                : $"确定删除“{targets[0].Name}”吗？";
+
+        var sample = string.Join(", ", targets.Take(3).Select(item => item.Name));
+        if (targets.Count > 3)
+            sample += "...";
+
+        return L.IsEnglish
+            ? $"Delete {targets.Count} selected items?\n{sample}"
+            : $"确定删除 {targets.Count} 个所选项吗？\n{sample}";
     }
 
     private static IFileTransferService CreateService(SessionProtocol protocol)

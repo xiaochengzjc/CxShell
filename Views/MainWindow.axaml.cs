@@ -18,6 +18,17 @@ public partial class MainWindow : Window
     private bool _isPointerOverFullScreenHintArea;
     private SessionInfo? _quickSessionContext;
     private TerminalTabViewModel? _tabContext;
+    private bool _isDraggingSftpSplitter;
+    private bool _isSftpPanelWidthApplyQueued;
+    private bool _hasSftpSplitterPreviousCursor;
+    private double _sftpSplitterStartX;
+    private double _sftpSplitterStartWidth;
+    private Cursor? _sftpSplitterPreviousCursor;
+
+    private const double MinimumSftpPanelWidth = 260;
+    private const double SftpSplitterHitSlop = 0;
+    private const double MinimumTerminalPanelWidth = 320;
+    private const double MonitorPanelWidth = 283;
 
     public MainWindow()
         : this(Array.Empty<string>())
@@ -48,10 +59,22 @@ public partial class MainWindow : Window
                 else
                     _fullScreenHintTimer.Stop();
             }
+
+            if (e.PropertyName == nameof(MainWindowViewModel.SftpPanelWidth) ||
+                e.PropertyName == nameof(MainWindowViewModel.IsSftpVisible) ||
+                e.PropertyName == nameof(MainWindowViewModel.IsTerminalFullScreen))
+            {
+                QueueApplySftpPanelWidth(vm);
+            }
         };
         DataContext = vm;
+        MainContentGrid.AddHandler(PointerPressedEvent, OnMainContentGridPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(PointerMovedEvent, OnSftpSplitterPointerMoved, RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(PointerReleasedEvent, OnSftpSplitterPointerReleased, RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(PointerCaptureLostEvent, OnSftpSplitterPointerCaptureLost, RoutingStrategies.Bubble, handledEventsToo: true);
         AddHandler(KeyDownEvent, OnPreviewKeyDown, RoutingStrategies.Tunnel);
         AddHandler(PointerPressedEvent, OnPreviewPointerPressed, RoutingStrategies.Tunnel);
+        QueueApplySftpPanelWidth(vm);
     }
 
     protected override void OnLoaded(RoutedEventArgs e)
@@ -186,6 +209,158 @@ public partial class MainWindow : Window
         {
             vm.SelectTabGroupCommand.Execute(group);
         }
+    }
+
+    private void OnSftpSplitterPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        TryStartSftpSplitterDrag(sender, e);
+    }
+
+    private void OnMainContentGridPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm ||
+            !vm.IsSftpPanelVisible ||
+            !IsLeftButtonPress(e))
+        {
+            return;
+        }
+
+        var position = e.GetPosition(MainContentGrid);
+        var splitterLeft = SftpPanelHost.Bounds.Right;
+        var splitterRight = splitterLeft + Math.Max(vm.SftpSplitterWidth.Value, 1);
+        if (position.X < splitterLeft - SftpSplitterHitSlop ||
+            position.X > splitterRight + SftpSplitterHitSlop)
+        {
+            return;
+        }
+
+        TryStartSftpSplitterDrag(MainContentGrid, e);
+    }
+
+    private void TryStartSftpSplitterDrag(object? sender, PointerPressedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm ||
+            !vm.IsSftpPanelVisible ||
+            !IsLeftButtonPress(e))
+        {
+            return;
+        }
+
+        if (_isDraggingSftpSplitter)
+            return;
+
+        _isDraggingSftpSplitter = true;
+        _sftpSplitterStartX = e.GetPosition(MainContentGrid).X;
+        _sftpSplitterStartWidth = Math.Max(MinimumSftpPanelWidth, vm.SftpPanelWidth.Value);
+
+        e.Pointer.Capture(this);
+        ShowSftpSplitterCursor();
+
+        e.Handled = true;
+    }
+
+    private void OnSftpSplitterPointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (!_isDraggingSftpSplitter ||
+            DataContext is not MainWindowViewModel vm ||
+            !vm.IsSftpPanelVisible)
+        {
+            return;
+        }
+
+        var delta = e.GetPosition(MainContentGrid).X - _sftpSplitterStartX;
+        var maxWidth = GetMaximumSftpPanelWidth(vm);
+        var width = Math.Min(Math.Max(MinimumSftpPanelWidth, _sftpSplitterStartWidth + delta), maxWidth);
+        vm.SftpPanelWidth = new Avalonia.Controls.GridLength(width);
+        ShowSftpSplitterCursor();
+        e.Handled = true;
+    }
+
+    private void OnSftpSplitterPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (!_isDraggingSftpSplitter)
+            return;
+
+        EndSftpSplitterDrag(e.Pointer);
+        e.Handled = true;
+    }
+
+    private void OnSftpSplitterPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+    {
+        if (ReferenceEquals(e.Source, this))
+            EndSftpSplitterDrag(null);
+    }
+
+    private void EndSftpSplitterDrag(IPointer? pointer)
+    {
+        _isDraggingSftpSplitter = false;
+        pointer?.Capture(null);
+        ClearSftpSplitterCursor();
+    }
+
+    private void ShowSftpSplitterCursor()
+    {
+        if (!_hasSftpSplitterPreviousCursor)
+        {
+            _sftpSplitterPreviousCursor = Cursor;
+            _hasSftpSplitterPreviousCursor = true;
+        }
+
+        Cursor = new Cursor(StandardCursorType.SizeWestEast);
+    }
+
+    private void ClearSftpSplitterCursor()
+    {
+        if (!_hasSftpSplitterPreviousCursor)
+            return;
+
+        Cursor = _sftpSplitterPreviousCursor;
+        _sftpSplitterPreviousCursor = null;
+        _hasSftpSplitterPreviousCursor = false;
+    }
+
+    private bool IsLeftButtonPress(PointerPressedEventArgs e)
+    {
+        var properties = e.GetCurrentPoint(this).Properties;
+        return properties.IsLeftButtonPressed ||
+               properties.PointerUpdateKind == PointerUpdateKind.LeftButtonPressed;
+    }
+
+    private void QueueApplySftpPanelWidth(MainWindowViewModel vm)
+    {
+        if (_isSftpPanelWidthApplyQueued)
+            return;
+
+        _isSftpPanelWidthApplyQueued = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _isSftpPanelWidthApplyQueued = false;
+            ApplySftpPanelWidth(vm);
+        }, DispatcherPriority.Render);
+    }
+
+    private void ApplySftpPanelWidth(MainWindowViewModel vm)
+    {
+        var width = vm.IsSftpPanelVisible
+            ? Math.Max(MinimumSftpPanelWidth, vm.SftpPanelWidth.Value)
+            : 0;
+
+        MainContentGrid.ColumnDefinitions[0].Width = new Avalonia.Controls.GridLength(width);
+        SftpPanelHost.Width = width;
+        SftpPanelHost.MinWidth = width > 0 ? MinimumSftpPanelWidth : 0;
+        SftpPanelHost.MaxWidth = width;
+        SftpPanelHost.InvalidateMeasure();
+        MainContentGrid.InvalidateMeasure();
+    }
+
+    private double GetMaximumSftpPanelWidth(MainWindowViewModel vm)
+    {
+        var reservedRightWidth = vm.IsMonitorPanelVisible ? MonitorPanelWidth : 0;
+        var maxWidth = MainContentGrid.Bounds.Width -
+                       reservedRightWidth -
+                       MinimumTerminalPanelWidth -
+                       vm.SftpSplitterWidth.Value;
+        return Math.Max(MinimumSftpPanelWidth, maxWidth);
     }
 
     private async void OnQuickSessionPropertiesClick(object? sender, RoutedEventArgs e)

@@ -22,6 +22,7 @@
 
 extern "C" {
 #include <freerdp/freerdp.h>
+#include <freerdp/version.h>
 #include <freerdp/client.h>
 #include <freerdp/client/cmdline.h>
 #include <freerdp/client/channels.h>
@@ -315,10 +316,12 @@ const char* auth_reason_name(rdp_auth_reason reason)
         return "GatewayRpc";
     case AUTH_SMARTCARD_PIN:
         return "SmartcardPin";
+#if FREERDP_VERSION_MAJOR > 3 || (FREERDP_VERSION_MAJOR == 3 && FREERDP_VERSION_MINOR >= 26)
     case AUTH_RDSTLS:
         return "Rdstls";
     case AUTH_FIDO_PIN:
         return "FidoPin";
+#endif
     default:
         return "Unknown";
     }

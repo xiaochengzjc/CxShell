@@ -133,9 +133,9 @@
 
 
 
-    <DockPanel>
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
         <!-- 工具栏 -->
-        <Border DockPanel.Dock="Top" Padding="8,4"
+        <Border Grid.Row="0" Padding="8,4"
                 IsVisible="{Binding IsMainChromeVisible}"
                 Background="{atom:SharedTokenResource ColorBgContainer}">
             <StackPanel Orientation="Horizontal" Spacing="4">
@@ -331,7 +331,7 @@
         </Border>
 
         <!-- 状态栏 -->
-        <Border DockPanel.Dock="Top"
+        <Border Grid.Row="1"
                 Height="44"
                 Padding="8,5"
                 ClipToBounds="False"
@@ -399,7 +399,7 @@
             </DockPanel>
         </Border>
 
-        <Border DockPanel.Dock="Bottom" Padding="8,4"
+        <Border Grid.Row="3" Padding="8,4"
                 IsVisible="{Binding IsMainChromeVisible}"
                 Background="{atom:SharedTokenResource ColorBgContainer}"
                 BorderBrush="{atom:SharedTokenResource ColorSplit}" BorderThickness="0,1,0,0">
@@ -414,261 +414,280 @@
             </StackPanel>
         </Border>
 
-        <!-- 主内容区域 -->
-        <Grid ColumnDefinitions="Auto,*,Auto">
+        <Grid Grid.Row="2">
+            <Grid x:Name="MainContentGrid">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="0"/>
+                    <ColumnDefinition Width="{Binding SftpSplitterWidth}"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
 
-            <!-- Col 0: 左侧 SFTP 面板 -->
-            <Grid Grid.Column="0" ColumnDefinitions="*,3"
-                  IsVisible="{Binding IsSftpPanelVisible}">
-                <views:SftpPanelView Grid.Column="0"
-                                     DataContext="{Binding Sftp, x:CompileBindings=False}"
-                                     Width="300"/>
-                <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch"
-                              Background="{atom:SharedTokenResource ColorSplit}"/>
-            </Grid>
+                <!-- Col 0: 左侧 SFTP 面板 -->
+                <Border Grid.Column="0"
+                        x:Name="SftpPanelHost"
+                        IsVisible="{Binding IsSftpPanelVisible}"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Stretch"
+                        ClipToBounds="True">
+                    <views:SftpPanelView DataContext="{Binding Sftp, x:CompileBindings=False}"/>
+                </Border>
+                <Border Grid.Column="1"
+                        x:Name="SftpSplitterHandle"
+                        IsVisible="{Binding IsSftpPanelVisible}"
+                        HorizontalAlignment="Stretch"
+                        Background="Transparent"
+                        Cursor="SizeWestEast"
+                        PointerPressed="OnSftpSplitterPointerPressed"
+                        PointerMoved="OnSftpSplitterPointerMoved"
+                        PointerReleased="OnSftpSplitterPointerReleased">
+                    <Border Width="1"
+                            HorizontalAlignment="Center"
+                            Background="{atom:SharedTokenResource ColorSplit}"/>
+                </Border>
 
-            <!-- Col 1: 终端区域（始终深色）-->
-            <Grid Grid.Column="1" Background="#141414">
-                <!-- 无标签时显示欢迎页 -->
-                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
-                            Spacing="12"
-                            IsVisible="{Binding !HasTabs}">
-                    <atom:TextBlock Text="CxShell" FontSize="32" FontWeight="Bold"
-                                   HorizontalAlignment="Center" Opacity="0.3"
-                                   Foreground="{atom:SharedTokenResource ColorTextLightSolid}"/>
-                    <atom:TextBlock Text="{Binding WelcomeSelectSessionText}"
-                                   HorizontalAlignment="Center" Opacity="0.5"
-                                   Foreground="{atom:SharedTokenResource ColorTextLightSolid}"/>
-                    <atom:TextBlock Text="{Binding WelcomeBuiltWithAtomUiText}"
-                                   HorizontalAlignment="Center" Opacity="0.25"
-                                   Foreground="{atom:SharedTokenResource ColorTextLightSolid}"
-                                   FontSize="11"/>
-                </StackPanel>
+                <!-- Col 1: 终端区域（始终深色）-->
+                <Grid Grid.Column="2" Background="#141414">
+                    <!-- 无标签时显示欢迎页 -->
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                                Spacing="12"
+                                IsVisible="{Binding !HasTabs}">
+                        <atom:TextBlock Text="CxShell" FontSize="32" FontWeight="Bold"
+                                       HorizontalAlignment="Center" Opacity="0.3"
+                                       Foreground="{atom:SharedTokenResource ColorTextLightSolid}"/>
+                        <atom:TextBlock Text="{Binding WelcomeSelectSessionText}"
+                                       HorizontalAlignment="Center" Opacity="0.5"
+                                       Foreground="{atom:SharedTokenResource ColorTextLightSolid}"/>
+                        <atom:TextBlock Text="{Binding WelcomeBuiltWithAtomUiText}"
+                                       HorizontalAlignment="Center" Opacity="0.25"
+                                       Foreground="{atom:SharedTokenResource ColorTextLightSolid}"
+                                       FontSize="11"/>
+                    </StackPanel>
 
-                <!-- 有标签时显示多标签布局 -->
-                <Grid IsVisible="{Binding HasTabs}" RowDefinitions="Auto,*">
-                    <!-- Tab 标题栏 -->
-                    <Border Grid.Row="0"
-                            IsVisible="{Binding IsMainTabHeaderVisible}"
-                            Background="{atom:SharedTokenResource ColorBgLayout}"
-                            BorderBrush="{atom:SharedTokenResource ColorBorder}" BorderThickness="0,0,0,1">
-                        <ItemsControl ItemsSource="{Binding Tabs}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <StackPanel Orientation="Horizontal"/>
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate DataType="vm:TerminalTabViewModel">
-                                    <atom:Button Background="Transparent" BorderThickness="0"
-                                                 Padding="0"
-                                                 Command="{Binding $parent[Window].DataContext.SelectTabCommand, x:CompileBindings=False}"
-                                                 CommandParameter="{Binding}">
-                                        <Border Padding="12,6"
-                                                BorderThickness="1,1,1,0"
-                                                Margin="2,2,0,0"
-                                                PointerPressed="OnTabHeaderPointerPressed"
-                                                Background="{Binding TabBackgroundBrush}">
-                                            <Border.BorderBrush>
-                                                <SolidColorBrush Color="{Binding IsSelected, Converter={x:Static vm:TabSelectedBorderConverter.Instance}}"/>
-                                             </Border.BorderBrush>
-                                             <StackPanel Orientation="Horizontal" Spacing="6">
-                                                 <Ellipse Width="8"
-                                                          Height="8"
-                                                          Fill="{Binding ConnectionIndicatorBrush}"
-                                                          VerticalAlignment="Center"
-                                                          atom:ToolTip.Tip="{Binding ConnectionIndicatorText}"/>
-                                                 <atom:TextBlock Text="{Binding Title}" FontSize="12"
-                                                                VerticalAlignment="Center"
-                                                                Foreground="{Binding IsSelected, Converter={x:Static vm:TabSelectedFgConverter.Instance}}"/>
-                                                <atom:Button Command="{Binding CloseTabCommand}"
-                                                             Padding="2,0" FontSize="10"
-                                                             Background="Transparent" BorderThickness="0"
-                                                             Opacity="0.5">
-                                                    <atom:TextBlock Text="✕" FontSize="10"/>
-                                                </atom:Button>
-                                            </StackPanel>
-                                        </Border>
-                                    </atom:Button>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </Border>
-                    <!-- 当前 Tab 的终端内容 -->
-                    <Grid Grid.Row="1"
-                          IsVisible="{Binding IsSingleTabContentVisible}">
-                        <views:TerminalView x:Name="ActiveTerminalView"
-                                            DataContext="{Binding SelectedTab.Terminal, x:CompileBindings=False}"
-                                            IsVisible="{Binding $parent[Window].DataContext.IsSelectedTerminalSession, x:CompileBindings=False}"/>
-                        <views:VncView DataContext="{Binding SelectedTab.Vnc, x:CompileBindings=False}"
-                                       IsVisible="{Binding $parent[Window].DataContext.IsSelectedVncSession, x:CompileBindings=False}"/>
-                        <views:RdpView DataContext="{Binding SelectedTab.Rdp, x:CompileBindings=False}"
-                                       IsVisible="{Binding $parent[Window].DataContext.IsSelectedRdpSession, x:CompileBindings=False}"/>
-                        <views:SftpPanelView DataContext="{Binding SelectedTab.FileTransfer, x:CompileBindings=False}"
-                                             IsVisible="{Binding $parent[Window].DataContext.IsSelectedFileTransferSession, x:CompileBindings=False}"/>
-                    </Grid>
-
-                    <!-- 多标签排列内容 -->
-                    <Grid Grid.Row="1"
-                          Background="{atom:SharedTokenResource ColorBgLayout}"
-                          IsVisible="{Binding IsArrangedTabsVisible}">
-                        <ItemsControl ItemsSource="{Binding TabGroups}"
-                                      ItemTemplate="{StaticResource ArrangedTabPaneTemplate}"
-                                      IsVisible="{Binding IsVerticalTabArrangement}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <controls:ResizableStackPanel Orientation="Horizontal"/>
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                        </ItemsControl>
-
-                        <ItemsControl ItemsSource="{Binding TabGroups}"
-                                      ItemTemplate="{StaticResource ArrangedTabPaneTemplate}"
-                                      IsVisible="{Binding IsHorizontalTabArrangement}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <controls:ResizableStackPanel Orientation="Vertical"/>
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                        </ItemsControl>
-
-                        <ItemsControl ItemsSource="{Binding TileRows}"
-                                      IsVisible="{Binding IsTileTabArrangement}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <controls:ResizableStackPanel Orientation="Vertical"/>
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate DataType="vm:TileTabGroupRowViewModel">
-                                    <ItemsControl ItemsSource="{Binding Groups}"
-                                                  ItemTemplate="{StaticResource ArrangedTabPaneTemplate}">
-                                        <ItemsControl.ItemsPanel>
-                                            <ItemsPanelTemplate>
-                                                <controls:ResizableStackPanel Orientation="Horizontal"/>
-                                            </ItemsPanelTemplate>
-                                        </ItemsControl.ItemsPanel>
-                                    </ItemsControl>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </Grid>
-                    <Grid Grid.RowSpan="2"
-                          IsVisible="{Binding IsTerminalFullScreen}"
-                          HorizontalAlignment="Stretch"
-                          VerticalAlignment="Top"
-                          Height="44"
-                          Background="Transparent"
-                          PointerEntered="FullScreenHintArea_OnPointerEntered"
-                          PointerExited="FullScreenHintArea_OnPointerExited">
-                        <Border Height="3"
-                                Width="180"
-                                HorizontalAlignment="Center"
-                                VerticalAlignment="Top"
-                                Background="#64D8FF"
-                                BoxShadow="0 0 12 0 #9964D8FF"/>
-                        <Border IsVisible="{Binding IsFullScreenHintVisible}"
-                                HorizontalAlignment="Center"
-                                VerticalAlignment="Top"
-                                Margin="0,8,0,0"
-                                Padding="14,6"
-                                CornerRadius="6"
-                                Background="#CC1F2933"
-                                BorderBrush="#4464D8FF"
-                                BorderThickness="1">
-                            <atom:TextBlock Text="{Binding FullScreenEscBackText}"
-                                            Foreground="White"
-                                            FontSize="13"/>
+                    <!-- 有标签时显示多标签布局 -->
+                    <Grid IsVisible="{Binding HasTabs}" RowDefinitions="Auto,*">
+                        <!-- Tab 标题栏 -->
+                        <Border Grid.Row="0"
+                                IsVisible="{Binding IsMainTabHeaderVisible}"
+                                Background="{atom:SharedTokenResource ColorBgLayout}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}" BorderThickness="0,0,0,1">
+                            <ItemsControl ItemsSource="{Binding Tabs}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="vm:TerminalTabViewModel">
+                                        <atom:Button Background="Transparent" BorderThickness="0"
+                                                     Padding="0"
+                                                     Command="{Binding $parent[Window].DataContext.SelectTabCommand, x:CompileBindings=False}"
+                                                     CommandParameter="{Binding}">
+                                            <Border Padding="12,6"
+                                                    BorderThickness="1,1,1,0"
+                                                    Margin="2,2,0,0"
+                                                    PointerPressed="OnTabHeaderPointerPressed"
+                                                    Background="{Binding TabBackgroundBrush}">
+                                                <Border.BorderBrush>
+                                                    <SolidColorBrush Color="{Binding IsSelected, Converter={x:Static vm:TabSelectedBorderConverter.Instance}}"/>
+                                                 </Border.BorderBrush>
+                                                 <StackPanel Orientation="Horizontal" Spacing="6">
+                                                     <Ellipse Width="8"
+                                                              Height="8"
+                                                              Fill="{Binding ConnectionIndicatorBrush}"
+                                                              VerticalAlignment="Center"
+                                                              atom:ToolTip.Tip="{Binding ConnectionIndicatorText}"/>
+                                                     <atom:TextBlock Text="{Binding Title}" FontSize="12"
+                                                                    VerticalAlignment="Center"
+                                                                    Foreground="{Binding IsSelected, Converter={x:Static vm:TabSelectedFgConverter.Instance}}"/>
+                                                    <atom:Button Command="{Binding CloseTabCommand}"
+                                                                 Padding="2,0" FontSize="10"
+                                                                 Background="Transparent" BorderThickness="0"
+                                                                 Opacity="0.5">
+                                                        <atom:TextBlock Text="✕" FontSize="10"/>
+                                                    </atom:Button>
+                                                </StackPanel>
+                                            </Border>
+                                        </atom:Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </Border>
+                        <!-- 当前 Tab 的终端内容 -->
+                        <Grid Grid.Row="1"
+                              IsVisible="{Binding IsSingleTabContentVisible}">
+                            <views:TerminalView x:Name="ActiveTerminalView"
+                                                DataContext="{Binding SelectedTab.Terminal, x:CompileBindings=False}"
+                                                IsVisible="{Binding $parent[Window].DataContext.IsSelectedTerminalSession, x:CompileBindings=False}"/>
+                            <views:VncView DataContext="{Binding SelectedTab.Vnc, x:CompileBindings=False}"
+                                           IsVisible="{Binding $parent[Window].DataContext.IsSelectedVncSession, x:CompileBindings=False}"/>
+                            <views:RdpView DataContext="{Binding SelectedTab.Rdp, x:CompileBindings=False}"
+                                           IsVisible="{Binding $parent[Window].DataContext.IsSelectedRdpSession, x:CompileBindings=False}"/>
+                            <views:SftpPanelView DataContext="{Binding SelectedTab.FileTransfer, x:CompileBindings=False}"
+                                                 IsVisible="{Binding $parent[Window].DataContext.IsSelectedFileTransferSession, x:CompileBindings=False}"/>
+                        </Grid>
+
+                        <!-- 多标签排列内容 -->
+                        <Grid Grid.Row="1"
+                              Background="{atom:SharedTokenResource ColorBgLayout}"
+                              IsVisible="{Binding IsArrangedTabsVisible}">
+                            <ItemsControl ItemsSource="{Binding TabGroups}"
+                                          ItemTemplate="{StaticResource ArrangedTabPaneTemplate}"
+                                          IsVisible="{Binding IsVerticalTabArrangement}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <controls:ResizableStackPanel Orientation="Horizontal"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
+
+                            <ItemsControl ItemsSource="{Binding TabGroups}"
+                                          ItemTemplate="{StaticResource ArrangedTabPaneTemplate}"
+                                          IsVisible="{Binding IsHorizontalTabArrangement}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <controls:ResizableStackPanel Orientation="Vertical"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
+
+                            <ItemsControl ItemsSource="{Binding TileRows}"
+                                          IsVisible="{Binding IsTileTabArrangement}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <controls:ResizableStackPanel Orientation="Vertical"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="vm:TileTabGroupRowViewModel">
+                                        <ItemsControl ItemsSource="{Binding Groups}"
+                                                      ItemTemplate="{StaticResource ArrangedTabPaneTemplate}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <controls:ResizableStackPanel Orientation="Horizontal"/>
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                        </ItemsControl>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Grid>
+                        <Grid Grid.RowSpan="2"
+                              IsVisible="{Binding IsTerminalFullScreen}"
+                              HorizontalAlignment="Stretch"
+                              VerticalAlignment="Top"
+                              Height="44"
+                              Background="Transparent"
+                              PointerEntered="FullScreenHintArea_OnPointerEntered"
+                              PointerExited="FullScreenHintArea_OnPointerExited">
+                            <Border Height="3"
+                                    Width="180"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Top"
+                                    Background="#64D8FF"
+                                    BoxShadow="0 0 12 0 #9964D8FF"/>
+                            <Border IsVisible="{Binding IsFullScreenHintVisible}"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Top"
+                                    Margin="0,8,0,0"
+                                    Padding="14,6"
+                                    CornerRadius="6"
+                                    Background="#CC1F2933"
+                                    BorderBrush="#4464D8FF"
+                                    BorderThickness="1">
+                                <atom:TextBlock Text="{Binding FullScreenEscBackText}"
+                                                Foreground="White"
+                                                FontSize="13"/>
+                            </Border>
+                        </Grid>
                     </Grid>
                 </Grid>
+
+                <!-- Col 2: 右侧分割线 + 监控面板（整体隐藏时不占宽度，Terminal 自动扩展） -->
+                <StackPanel Grid.Column="3" Orientation="Horizontal"
+                            IsVisible="{Binding IsMonitorPanelVisible}">
+                    <GridSplitter Width="3" HorizontalAlignment="Left"
+                                  Background="{atom:SharedTokenResource ColorSplit}"/>
+                    <views:ServerMonitorView DataContext="{Binding Monitor, x:CompileBindings=False}"
+                                             Width="280"/>
+                </StackPanel>
             </Grid>
 
-            <!-- Col 2: 右侧分割线 + 监控面板（整体隐藏时不占宽度，Terminal 自动扩展） -->
-            <StackPanel Grid.Column="2" Orientation="Horizontal"
-                        IsVisible="{Binding IsMonitorPanelVisible}">
-                <GridSplitter Width="3" HorizontalAlignment="Left"
-                              Background="{atom:SharedTokenResource ColorSplit}"/>
-                <views:ServerMonitorView DataContext="{Binding Monitor, x:CompileBindings=False}"
-                                         Width="280"/>
-            </StackPanel>
-        <atom:Popup x:Name="QuickSessionContextMenuPopup"
-                    Placement="Pointer"
-                    IsLightDismissEnabled="True">
-            <Border Background="{atom:SharedTokenResource ColorBgElevated}"
-                    BorderBrush="{atom:SharedTokenResource ColorBorder}"
-                    BorderThickness="1"
-                    CornerRadius="6"
-                    Padding="0,4"
-                    MinWidth="120">
-                <StackPanel Spacing="0">
-                    <atom:Button x:Name="QuickSessionPropertiesBtn"
-                                 Content="{Binding QuickPropertiesText}"
-                                 Background="Transparent"
-                                 BorderThickness="0"
-                                 HorizontalAlignment="Stretch"
-                                 HorizontalContentAlignment="Left"
-                                 Padding="16,6"
-                                 FontSize="13"
-                                 Foreground="{atom:SharedTokenResource ColorText}"/>
-                    <Border Height="1" Background="{atom:SharedTokenResource ColorSplit}" Margin="8,4"/>
-                    <atom:Button x:Name="QuickSessionDeleteBtn"
-                                 Content="{Binding QuickDeleteText}"
-                                 Background="Transparent"
-                                 BorderThickness="0"
-                                 HorizontalAlignment="Stretch"
-                                 HorizontalContentAlignment="Left"
-                                 Padding="16,6"
-                                 FontSize="13"
-                                 Foreground="{atom:SharedTokenResource ColorError}"/>
-                </StackPanel>
-            </Border>
-        </atom:Popup>
-        <atom:Popup x:Name="TabContextMenuPopup"
-                    Placement="Pointer"
-                    IsLightDismissEnabled="True">
-            <Border Background="{atom:SharedTokenResource ColorBgElevated}"
-                    BorderBrush="{atom:SharedTokenResource ColorBorder}"
-                    BorderThickness="1"
-                    CornerRadius="6"
-                    Padding="0,4"
-                    MinWidth="132">
-                <StackPanel Spacing="0">
-                    <atom:Button x:Name="TabCloseBtn"
-                                 Content="{Binding TabCloseText}"
-                                 Background="Transparent"
-                                 BorderThickness="0"
-                                 HorizontalAlignment="Stretch"
-                                 HorizontalContentAlignment="Left"
-                                 Padding="16,6"
-                                 MinHeight="34"
-                                 FontSize="13"
-                                 Foreground="{atom:SharedTokenResource ColorText}"/>
-                    <atom:Button x:Name="TabPropertiesBtn"
-                                 Content="{Binding TabPropertiesText}"
-                                 Background="Transparent"
-                                 BorderThickness="0"
-                                 HorizontalAlignment="Stretch"
-                                 HorizontalContentAlignment="Left"
-                                 Padding="16,6"
-                                 MinHeight="34"
-                                 FontSize="13"
-                                 Foreground="{atom:SharedTokenResource ColorText}"/>
-                    <atom:Button x:Name="TabAddQuickBtn"
-                                 Content="{Binding TabAddQuickText}"
-                                 Background="Transparent"
-                                 BorderThickness="0"
-                                 HorizontalAlignment="Stretch"
-                                 HorizontalContentAlignment="Left"
-                                 Padding="16,6"
-                                 MinHeight="34"
-                                 FontSize="13"
-                                 Foreground="{atom:SharedTokenResource ColorText}"/>
-                </StackPanel>
-            </Border>
-        </atom:Popup>
+            <atom:Popup x:Name="QuickSessionContextMenuPopup"
+                        Placement="Pointer"
+                        IsLightDismissEnabled="True">
+                <Border Background="{atom:SharedTokenResource ColorBgElevated}"
+                        BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Padding="0,4"
+                        MinWidth="120">
+                    <StackPanel Spacing="0">
+                        <atom:Button x:Name="QuickSessionPropertiesBtn"
+                                     Content="{Binding QuickPropertiesText}"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     HorizontalAlignment="Stretch"
+                                     HorizontalContentAlignment="Left"
+                                     Padding="16,6"
+                                     FontSize="13"
+                                     Foreground="{atom:SharedTokenResource ColorText}"/>
+                        <Border Height="1" Background="{atom:SharedTokenResource ColorSplit}" Margin="8,4"/>
+                        <atom:Button x:Name="QuickSessionDeleteBtn"
+                                     Content="{Binding QuickDeleteText}"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     HorizontalAlignment="Stretch"
+                                     HorizontalContentAlignment="Left"
+                                     Padding="16,6"
+                                     FontSize="13"
+                                     Foreground="{atom:SharedTokenResource ColorError}"/>
+                    </StackPanel>
+                </Border>
+            </atom:Popup>
+            <atom:Popup x:Name="TabContextMenuPopup"
+                        Placement="Pointer"
+                        IsLightDismissEnabled="True">
+                <Border Background="{atom:SharedTokenResource ColorBgElevated}"
+                        BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Padding="0,4"
+                        MinWidth="132">
+                    <StackPanel Spacing="0">
+                        <atom:Button x:Name="TabCloseBtn"
+                                     Content="{Binding TabCloseText}"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     HorizontalAlignment="Stretch"
+                                     HorizontalContentAlignment="Left"
+                                     Padding="16,6"
+                                     MinHeight="34"
+                                     FontSize="13"
+                                     Foreground="{atom:SharedTokenResource ColorText}"/>
+                        <atom:Button x:Name="TabPropertiesBtn"
+                                     Content="{Binding TabPropertiesText}"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     HorizontalAlignment="Stretch"
+                                     HorizontalContentAlignment="Left"
+                                     Padding="16,6"
+                                     MinHeight="34"
+                                     FontSize="13"
+                                     Foreground="{atom:SharedTokenResource ColorText}"/>
+                        <atom:Button x:Name="TabAddQuickBtn"
+                                     Content="{Binding TabAddQuickText}"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     HorizontalAlignment="Stretch"
+                                     HorizontalContentAlignment="Left"
+                                     Padding="16,6"
+                                     MinHeight="34"
+                                     FontSize="13"
+                                     Foreground="{atom:SharedTokenResource ColorText}"/>
+                    </StackPanel>
+                </Border>
+            </atom:Popup>
         </Grid>
-
-
-    </DockPanel>
+    </Grid>
 </atom:Window>

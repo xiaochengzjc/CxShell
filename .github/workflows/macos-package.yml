@@ -1,0 +1,79 @@
+name: macOS Package
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Package macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.runs_on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runs_on: macos-14
+            rid: osx-arm64
+            triplet: arm64-osx
+            arch: arm64
+            artifact_dir: CxShell-macos-arm64
+          - runs_on: macos-15-intel
+            rid: osx-x64
+            triplet: x64-osx
+            arch: x64
+            artifact_dir: CxShell-macos-x64
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Install build tools
+        shell: bash
+        run: |
+          brew install cmake ninja pkg-config
+
+      - name: Bootstrap vcpkg
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
+          "$HOME/vcpkg/bootstrap-vcpkg.sh"
+
+      - name: Publish app
+        shell: bash
+        run: |
+          dotnet publish ChiXueSsh.csproj \
+            -c Release \
+            -r "${{ matrix.rid }}" \
+            --self-contained true \
+            -o "artifacts/${{ matrix.artifact_dir }}" \
+            /p:PublishSingleFile=false
+
+      - name: Build RDP bridge
+        shell: bash
+        run: |
+          export VCPKG_ROOT="$HOME/vcpkg"
+          export OUTPUT_DIR="$GITHUB_WORKSPACE/artifacts/${{ matrix.artifact_dir }}"
+          export TRIPLET="${{ matrix.triplet }}"
+          bash tools/build-rdp-bridge.sh
+
+      - name: Create archive
+        shell: bash
+        run: |
+          tar -czf "artifacts/${{ matrix.artifact_dir }}.tar.gz" -C artifacts "${{ matrix.artifact_dir }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_dir }}
+          path: artifacts/${{ matrix.artifact_dir }}.tar.gz
+          if-no-files-found: error
