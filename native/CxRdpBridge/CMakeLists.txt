@@ -8,7 +8,6 @@ find_package(FreeRDP REQUIRED CONFIG)
 find_package(WinPR REQUIRED CONFIG)
 find_package(OpenSSL REQUIRED)
 find_path(FREERDP_INCLUDE_DIR NAMES freerdp/freerdp.h PATH_SUFFIXES freerdp3)
-find_library(FREERDP_CLIENT_LIBRARY NAMES freerdp-client3 freerdp-client REQUIRED)
 find_library(CJSON_LIBRARY NAMES cjson REQUIRED)
 get_filename_component(CJSON_LIBRARY_DIR "${CJSON_LIBRARY}" DIRECTORY)
 
@@ -26,7 +25,7 @@ target_include_directories(CxRdpBridge
 
 target_link_directories(CxRdpBridge PRIVATE ${CJSON_LIBRARY_DIR})
 
-target_link_libraries(CxRdpBridge PRIVATE freerdp winpr ${FREERDP_CLIENT_LIBRARY} ${CJSON_LIBRARY} OpenSSL::Crypto)
+target_link_libraries(CxRdpBridge PRIVATE freerdp winpr ${CJSON_LIBRARY} OpenSSL::Crypto)
 
 target_compile_definitions(CxRdpBridge PRIVATE CX_RDP_BRIDGE_EXPORTS)
 
