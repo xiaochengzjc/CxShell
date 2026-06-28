@@ -13,6 +13,8 @@ jobs:
   package:
     name: Package macOS ${{ matrix.arch }}
     runs-on: ${{ matrix.runs_on }}
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
     strategy:
       fail-fast: false
       matrix:
@@ -37,6 +39,16 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      - name: Resolve package version
+        id: version
+        shell: bash
+        run: |
+          version="1.0.0"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
       - name: Install build tools
         shell: bash
         run: |
@@ -45,8 +57,20 @@ jobs:
       - name: Bootstrap vcpkg
         shell: bash
         run: |
-          git clone --depth 1 https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
-          "$HOME/vcpkg/bootstrap-vcpkg.sh"
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh"
+
+      - name: Cache vcpkg packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.VCPKG_ROOT }}/downloads
+            ${{ env.VCPKG_ROOT }}/installed
+            ${{ env.VCPKG_ROOT }}/buildtrees
+            ${{ env.VCPKG_ROOT }}/packages
+          key: ${{ runner.os }}-${{ matrix.triplet }}-vcpkg-freerdp-${{ hashFiles('tools/build-rdp-bridge.sh', 'native/CxRdpBridge/CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.triplet }}-vcpkg-freerdp-
 
       - name: Publish app
         shell: bash
@@ -55,16 +79,45 @@ jobs:
             -c Release \
             -r "${{ matrix.rid }}" \
             --self-contained true \
-            -o "artifacts/${{ matrix.artifact_dir }}" \
-            /p:PublishSingleFile=false
+            -o "artifacts/publish/${{ matrix.rid }}" \
+            /p:PublishSingleFile=false \
+            /p:DebugType=none \
+            /p:DebugSymbols=false
+
+      - name: Create app bundle
+        shell: bash
+        run: |
+          export PUBLISH_DIR="$GITHUB_WORKSPACE/artifacts/publish/${{ matrix.rid }}"
+          export ARTIFACT_DIR="$GITHUB_WORKSPACE/artifacts/${{ matrix.artifact_dir }}"
+          export ARCH="${{ matrix.arch }}"
+          export BUNDLE_VERSION="${{ steps.version.outputs.value }}"
+          export BUNDLE_SHORT_VERSION="${{ steps.version.outputs.value }}"
+          bash tools/package-macos-app.sh
 
       - name: Build RDP bridge
         shell: bash
         run: |
-          export VCPKG_ROOT="$HOME/vcpkg"
-          export OUTPUT_DIR="$GITHUB_WORKSPACE/artifacts/${{ matrix.artifact_dir }}"
+          export OUTPUT_DIR="$GITHUB_WORKSPACE/artifacts/${{ matrix.artifact_dir }}/CxShell.app/Contents/MacOS"
           export TRIPLET="${{ matrix.triplet }}"
           bash tools/build-rdp-bridge.sh
+
+      - name: Ad-hoc sign app
+        shell: bash
+        run: |
+          codesign --force --deep --sign - "artifacts/${{ matrix.artifact_dir }}/CxShell.app"
+
+      - name: Validate package
+        shell: bash
+        run: |
+          app_path="artifacts/${{ matrix.artifact_dir }}/CxShell.app"
+          test -x "$app_path/Contents/MacOS/CxShell"
+          test -f "$app_path/Contents/Info.plist"
+          test -f "$app_path/Contents/MacOS/libCxRdpBridge.dylib"
+          if [ -d "$app_path/Contents/MacOS/runtimes/win-x64" ]; then
+            echo "Windows native runtime files were copied into the macOS package." >&2
+            exit 1
+          fi
+          otool -L "$app_path/Contents/MacOS/libCxRdpBridge.dylib"
 
       - name: Create archive
         shell: bash

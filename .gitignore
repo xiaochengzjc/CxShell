@@ -9,6 +9,7 @@ AtomUI/
 
 # Native binaries copied into release packages
 runtimes/
+.vcpkg/
 
 # IDE settings
 .vs/
