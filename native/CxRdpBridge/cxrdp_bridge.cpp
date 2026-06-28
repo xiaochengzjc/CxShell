@@ -23,9 +23,6 @@
 extern "C" {
 #include <freerdp/freerdp.h>
 #include <freerdp/version.h>
-#include <freerdp/client.h>
-#include <freerdp/client/cmdline.h>
-#include <freerdp/client/channels.h>
 #include <freerdp/gdi/gdi.h>
 #include <freerdp/input.h>
 #include <freerdp/error.h>
@@ -569,10 +566,6 @@ void connection_thread(CxRdpSession* session)
         { "negotiate", true, true, true, true, false }
     };
 
-    const std::string targetArg = "/v:" + session->host + ":" + std::to_string(session->port > 0 ? session->port : 3389);
-    const std::string widthArg = "/w:" + std::to_string(session->width > 0 ? session->width : 1024);
-    const std::string heightArg = "/h:" + std::to_string(session->height > 0 ? session->height : 768);
-
     std::string lastError;
     for (const auto& profile : profiles)
     {
@@ -595,29 +588,6 @@ void connection_thread(CxRdpSession* session)
             notify_status(session, lastError.c_str());
             free_instance(session);
             break;
-        }
-
-        std::vector<char*> argv = {
-            const_cast<char*>("cxshell-rdp"),
-            const_cast<char*>(targetArg.c_str()),
-            const_cast<char*>("/cert:ignore"),
-            const_cast<char*>(widthArg.c_str()),
-            const_cast<char*>(heightArg.c_str())
-        };
-        const int parseResult = freerdp_client_settings_parse_command_line_arguments(
-            settings,
-            static_cast<int>(argv.size()),
-            argv.data(),
-            FALSE);
-        if (parseResult < 0)
-        {
-            std::ostringstream parseError;
-            parseError << "FreeRDP settings parse failed. mode=" << profile.name << " code=" << parseResult;
-            lastError = parseError.str();
-            set_error(session, lastError);
-            notify_status(session, lastError.c_str());
-            free_instance(session);
-            continue;
         }
 
         freerdp_settings_set_string(settings, FreeRDP_ServerHostname, session->host.c_str());
@@ -667,9 +637,6 @@ void connection_thread(CxRdpSession* session)
                  << " rdp=" << (freerdp_settings_get_bool(settings, FreeRDP_RdpSecurity) ? "true" : "false")
                  << " negotiate=" << (freerdp_settings_get_bool(settings, FreeRDP_NegotiateSecurityLayer) ? "true" : "false");
         notify_status(session, security.str().c_str());
-
-        if (!freerdp_client_load_channels(session->instance))
-            notify_status(session, "RDP channel loading returned false; continuing without optional channels.");
 
         if (!freerdp_connect(session->instance))
         {
