@@ -4,7 +4,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Text.Json.Serialization;
 
-namespace ChiXueSsh.Models;
+namespace CxShell.Models;
 
 public enum AuthMethod
 {
@@ -334,7 +334,10 @@ public class SessionInfo
     public bool SshUseCompression { get; set; }
     public bool SshNoTerminal { get; set; }
     public bool SshAcceptAndSaveHostKey { get; set; }
-    public bool SshDoNotStartFileManager { get; set; } = true;
+    public bool SshAutoOpenSftpPanel { get; set; } = true;
+    public bool SshAutoOpenMonitorPanel { get; set; } = true;
+    // Kept for older config files and older app versions.
+    public bool SshDoNotStartFileManager { get; set; }
     public string SshCipherAlgorithms { get; set; } = string.Empty;
     public string SshMacAlgorithms { get; set; } = string.Empty;
     public string SshKeyExchangeAlgorithms { get; set; } = string.Empty;
@@ -352,6 +355,7 @@ public class SessionInfo
     public int RloginTerminalSpeed { get; set; } = 38400;
     public string SftpLocalStartDirectory { get; set; } = string.Empty;
     public string SftpRemoteStartDirectory { get; set; } = string.Empty;
+    public bool SftpFollowTerminalDirectory { get; set; } = true;
     public bool SftpUseCustomServer { get; set; }
     public string SftpCustomServerCommand { get; set; } = string.Empty;
     public bool FileTransferAlwaysAskDownloadFolder { get; set; } = true;

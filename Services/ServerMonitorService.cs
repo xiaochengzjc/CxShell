@@ -2,10 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using ChiXueSsh.Models;
+using CxShell.Models;
 using Renci.SshNet;
 
-namespace ChiXueSsh.Services;
+namespace CxShell.Services;
 
 public class ServerMonitorService : IDisposable
 {
@@ -42,7 +42,7 @@ public class ServerMonitorService : IDisposable
         }
         catch (Exception ex)
         {
-            ErrorOccurred?.Invoke($"监控连接失败: {ex.Message}");
+            ErrorOccurred?.Invoke(string.Format(LocalizationService.Shared.Text("Monitor.ConnectionFailed"), ex.Message));
             _sshClient?.Dispose();
             _sshClient = null;
             return;
@@ -89,7 +89,7 @@ public class ServerMonitorService : IDisposable
             }
             catch (Exception ex)
             {
-                ErrorOccurred?.Invoke($"采集失败: {ex.Message}");
+                ErrorOccurred?.Invoke(string.Format(LocalizationService.Shared.Text("Monitor.CollectFailed"), ex.Message));
             }
         }
     }
@@ -121,7 +121,7 @@ public class ServerMonitorService : IDisposable
         }
         catch (Exception ex)
         {
-            ErrorOccurred?.Invoke($"命令执行超时或失败: {ex.Message}");
+            ErrorOccurred?.Invoke(string.Format(LocalizationService.Shared.Text("Monitor.CommandFailed"), ex.Message));
             return null;
         }
 

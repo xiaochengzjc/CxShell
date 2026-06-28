@@ -5,10 +5,10 @@ using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
-using ChiXueSsh.Models;
+using CxShell.Models;
 using Renci.SshNet;
 
-namespace ChiXueSsh.Services;
+namespace CxShell.Services;
 
 public sealed class RdpFramebufferEventArgs : EventArgs
 {
@@ -291,12 +291,32 @@ public sealed class RdpBridgeClient : IDisposable
         var baseDirectory = AppContext.BaseDirectory;
         var fileName = GetExpectedNativeLibraryName();
         var rid = GetCurrentRid();
-
-        return
-        [
+        var candidates = new List<string>
+        {
             Path.Combine(baseDirectory, fileName),
             Path.Combine(baseDirectory, "runtimes", rid, "native", fileName)
-        ];
+        };
+
+        var processDirectory = Path.GetDirectoryName(Environment.ProcessPath);
+        if (!string.IsNullOrWhiteSpace(processDirectory) &&
+            !string.Equals(processDirectory, baseDirectory, StringComparison.OrdinalIgnoreCase))
+        {
+            candidates.Add(Path.Combine(processDirectory, fileName));
+            candidates.Add(Path.Combine(processDirectory, "runtimes", rid, "native", fileName));
+        }
+
+        if (AppContext.GetData("NATIVE_DLL_SEARCH_DIRECTORIES") is string nativeSearchDirectories)
+        {
+            foreach (var directory in nativeSearchDirectories.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+            {
+                candidates.Add(Path.Combine(directory, fileName));
+                candidates.Add(Path.Combine(directory, "runtimes", rid, "native", fileName));
+            }
+        }
+
+        return candidates
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private static string GetCurrentRid()

@@ -2,9 +2,9 @@ using System;
 using System.Globalization;
 using System.IO;
 using System.Text;
-using ChiXueSsh.Models;
+using CxShell.Models;
 
-namespace ChiXueSsh.Services;
+namespace CxShell.Services;
 
 public sealed class SessionLogWriter : IDisposable
 {

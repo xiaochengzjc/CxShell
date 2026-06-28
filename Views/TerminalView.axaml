@@ -1,10 +1,10 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:services="using:ChiXueSsh.Services"
+             xmlns:services="using:CxShell.Services"
              xmlns:atom="https://atomui.net"
-             xmlns:vm="using:ChiXueSsh.ViewModels"
-             xmlns:controls="using:ChiXueSsh.Controls"
-             x:Class="ChiXueSsh.Views.TerminalView"
+             xmlns:vm="using:CxShell.ViewModels"
+             xmlns:controls="using:CxShell.Controls"
+             x:Class="CxShell.Views.TerminalView"
              x:DataType="vm:TerminalViewModel">
     <Grid>
         <!-- 连接中提示 -->
@@ -57,30 +57,5 @@
                                   HighlightRules="{Binding AppearanceHighlightRules}"
                                   TerminalBuffer="{Binding Buffer}"/>
 
-        <atom:Popup x:Name="TerminalContextMenuPopup"
-                    Placement="Pointer"
-                    IsLightDismissEnabled="True">
-            <Border Background="{atom:SharedTokenResource ColorBgElevated}"
-                    BorderBrush="{atom:SharedTokenResource ColorBorder}"
-                    BorderThickness="1"
-                    CornerRadius="6"
-                    Padding="0,4"
-                    MinWidth="120">
-                <StackPanel Spacing="0">
-                    <atom:Button x:Name="MenuCopyBtn" Content="{Binding CopyText}"
-                                 Background="Transparent" BorderThickness="0"
-                                 HorizontalAlignment="Stretch"
-                                 HorizontalContentAlignment="Left"
-                                 Padding="16,6" FontSize="13"
-                                 Foreground="{atom:SharedTokenResource ColorText}"/>
-                    <atom:Button x:Name="MenuPasteBtn" Content="{Binding PasteText}"
-                                 Background="Transparent" BorderThickness="0"
-                                 HorizontalAlignment="Stretch"
-                                 HorizontalContentAlignment="Left"
-                                 Padding="16,6" FontSize="13"
-                                 Foreground="{atom:SharedTokenResource ColorText}"/>
-                </StackPanel>
-            </Border>
-        </atom:Popup>
     </Grid>
 </UserControl>

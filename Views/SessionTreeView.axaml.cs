@@ -5,10 +5,13 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
-using ChiXueSsh.Services;
-using ChiXueSsh.ViewModels;
+using CxShell.Services;
+using CxShell.ViewModels;
+using AtomContextMenu = AtomUI.Desktop.Controls.ContextMenu;
+using AtomMenuItem = AtomUI.Desktop.Controls.MenuItem;
+using AtomMenuSeparator = AtomUI.Desktop.Controls.MenuSeparator;
 
-namespace ChiXueSsh.Views;
+namespace CxShell.Views;
 
 public partial class SessionTreeView : UserControl
 {
@@ -41,10 +44,6 @@ public partial class SessionTreeView : UserControl
         UpdateColumnHeaders();
         LocalizationService.Shared.LanguageChanged += OnLanguageChanged;
 
-        // Bind popup menu button events.
-        if (MenuEditBtn != null) MenuEditBtn.Click += OnEditClick;
-        if (MenuConnectBtn != null) MenuConnectBtn.Click += OnConnectClick;
-        if (MenuDeleteBtn != null) MenuDeleteBtn.Click += OnDeleteClick;
         if (NewSessionBtn != null) NewSessionBtn.Click += OnNewClick;
         if (CopySessionBtn != null) CopySessionBtn.Click += OnCopyClick;
         if (PasteSessionBtn != null) PasteSessionBtn.Click += OnPasteClick;
@@ -92,11 +91,7 @@ public partial class SessionTreeView : UserControl
             {
                 vm.SelectedNode = node;
                 SessionTree.SelectedItem = node;
-
-                if (ContextMenuPopup != null)
-                {
-                    ContextMenuPopup.IsOpen = true;
-                }
+                ShowSessionContextMenu(SessionTree, vm);
             }
             e.Handled = true;
             return;
@@ -157,7 +152,6 @@ public partial class SessionTreeView : UserControl
 
     private async void OnEditClick(object? sender, RoutedEventArgs e)
     {
-        ContextMenuPopup?.Close();
         if (DataContext is not SessionTreeViewModel vm) return;
         var session = vm.SelectedSession;
         if (session == null) return;
@@ -193,7 +187,6 @@ public partial class SessionTreeView : UserControl
 
     private async void OnConnectClick(object? sender, RoutedEventArgs e)
     {
-        ContextMenuPopup?.Close();
         if (DataContext is not SessionTreeViewModel vm) return;
         var session = vm.SelectedSession;
         if (session == null) return;
@@ -207,7 +200,6 @@ public partial class SessionTreeView : UserControl
 
     private async void OnDeleteClick(object? sender, RoutedEventArgs e)
     {
-        ContextMenuPopup?.Close();
         if (DataContext is not SessionTreeViewModel vm) return;
         var session = vm.SelectedSession;
         if (session == null) return;
@@ -232,49 +224,42 @@ public partial class SessionTreeView : UserControl
             vm.MoveSelectedSessionDown();
     }
 
+    private void ShowSessionContextMenu(Control anchor, SessionTreeViewModel vm)
+    {
+        var menu = new AtomContextMenu
+        {
+            Placement = PlacementMode.Pointer,
+            PlacementTarget = anchor
+        };
+
+        void AddItem(string text, Action action)
+        {
+            var item = new AtomMenuItem { Header = text };
+            item.Click += (_, _) =>
+            {
+                menu.Close();
+                action();
+            };
+            menu.Items.Add(item);
+        }
+
+        AddItem(vm.PropertiesText, () => OnEditClick(anchor, new RoutedEventArgs()));
+        AddItem(vm.ConnectText, () => OnConnectClick(anchor, new RoutedEventArgs()));
+        menu.Items.Add(new AtomMenuSeparator());
+        AddItem(vm.DeleteText, () => OnDeleteClick(anchor, new RoutedEventArgs()));
+        menu.Open(anchor);
+    }
+
     private static async System.Threading.Tasks.Task<bool> ShowLocalizedDeleteConfirmWindow(
         Avalonia.Controls.Window owner,
         string sessionName)
     {
-        var confirmed = false;
-        var dialog = new AtomUI.Desktop.Controls.Window
-        {
-            Title = T("Dialog.SessionDelete.Title"),
-            Width = 380,
-            Height = 160,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            CanResize = false,
-            ShowInTaskbar = false
-        };
-
-        var panel = new StackPanel { Spacing = 16, Margin = new Thickness(20) };
-        panel.Children.Add(new AtomUI.Desktop.Controls.TextBlock
-        {
-            Text = Tf("Dialog.SessionDelete.Message", sessionName),
-            TextWrapping = Avalonia.Media.TextWrapping.Wrap
-        });
-
-        var buttons = new StackPanel
-        {
-            Orientation = Avalonia.Layout.Orientation.Horizontal,
-            Spacing = 8,
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right
-        };
-        var confirmButton = new AtomUI.Desktop.Controls.Button { Content = T("Common.Delete"), Width = 76 };
-        confirmButton.Click += (_, _) =>
-        {
-            confirmed = true;
-            dialog.Close();
-        };
-        var cancelButton = new AtomUI.Desktop.Controls.Button { Content = T("Common.Cancel"), Width = 76 };
-        cancelButton.Click += (_, _) => dialog.Close();
-        buttons.Children.Add(confirmButton);
-        buttons.Children.Add(cancelButton);
-        panel.Children.Add(buttons);
-        dialog.Content = panel;
-
-        await dialog.ShowDialog(owner);
-        return confirmed;
+        return await AtomUiDialogService.ShowConfirmAsync(
+            owner,
+            T("Dialog.SessionDelete.Title"),
+            Tf("Dialog.SessionDelete.Message", sessionName),
+            T("Common.Delete"),
+            T("Common.Cancel"));
     }
 
 }

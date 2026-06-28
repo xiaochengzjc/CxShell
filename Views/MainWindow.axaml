@@ -1,16 +1,16 @@
-﻿<atom:Window xmlns="https://github.com/avaloniaui"
+<atom:Window xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:services="using:ChiXueSsh.Services"
+             xmlns:services="using:CxShell.Services"
              xmlns:atom="https://atomui.net"
              xmlns:antdicons="https://atomui.net/icons/antdesign"
-             xmlns:models="using:ChiXueSsh.Models"
-             xmlns:controls="using:ChiXueSsh.Controls"
-             xmlns:vm="using:ChiXueSsh.ViewModels"
-             xmlns:views="using:ChiXueSsh.Views"
-             x:Class="ChiXueSsh.Views.MainWindow"
+             xmlns:models="using:CxShell.Models"
+             xmlns:controls="using:CxShell.Controls"
+             xmlns:vm="using:CxShell.ViewModels"
+             xmlns:views="using:CxShell.Views"
+             x:Class="CxShell.Views.MainWindow"
              x:DataType="vm:MainWindowViewModel"
              Title="CxShell"
-             Icon="/Assets/ChiXueSshLogo.png"
+             Icon="/Assets/CxShellLogo.png"
              Width="1200"
              Height="800"
              MinWidth="600"
@@ -20,7 +20,7 @@
 
     <atom:Window.LogoTemplate>
         <DataTemplate>
-            <Image Source="/Assets/ChiXueSshLogo.png"/>
+            <Image Source="/Assets/CxShellLogo.png"/>
         </DataTemplate>
     </atom:Window.LogoTemplate>
 
@@ -613,81 +613,6 @@
                 </StackPanel>
             </Grid>
 
-            <atom:Popup x:Name="QuickSessionContextMenuPopup"
-                        Placement="Pointer"
-                        IsLightDismissEnabled="True">
-                <Border Background="{atom:SharedTokenResource ColorBgElevated}"
-                        BorderBrush="{atom:SharedTokenResource ColorBorder}"
-                        BorderThickness="1"
-                        CornerRadius="6"
-                        Padding="0,4"
-                        MinWidth="120">
-                    <StackPanel Spacing="0">
-                        <atom:Button x:Name="QuickSessionPropertiesBtn"
-                                     Content="{Binding QuickPropertiesText}"
-                                     Background="Transparent"
-                                     BorderThickness="0"
-                                     HorizontalAlignment="Stretch"
-                                     HorizontalContentAlignment="Left"
-                                     Padding="16,6"
-                                     FontSize="13"
-                                     Foreground="{atom:SharedTokenResource ColorText}"/>
-                        <Border Height="1" Background="{atom:SharedTokenResource ColorSplit}" Margin="8,4"/>
-                        <atom:Button x:Name="QuickSessionDeleteBtn"
-                                     Content="{Binding QuickDeleteText}"
-                                     Background="Transparent"
-                                     BorderThickness="0"
-                                     HorizontalAlignment="Stretch"
-                                     HorizontalContentAlignment="Left"
-                                     Padding="16,6"
-                                     FontSize="13"
-                                     Foreground="{atom:SharedTokenResource ColorError}"/>
-                    </StackPanel>
-                </Border>
-            </atom:Popup>
-            <atom:Popup x:Name="TabContextMenuPopup"
-                        Placement="Pointer"
-                        IsLightDismissEnabled="True">
-                <Border Background="{atom:SharedTokenResource ColorBgElevated}"
-                        BorderBrush="{atom:SharedTokenResource ColorBorder}"
-                        BorderThickness="1"
-                        CornerRadius="6"
-                        Padding="0,4"
-                        MinWidth="132">
-                    <StackPanel Spacing="0">
-                        <atom:Button x:Name="TabCloseBtn"
-                                     Content="{Binding TabCloseText}"
-                                     Background="Transparent"
-                                     BorderThickness="0"
-                                     HorizontalAlignment="Stretch"
-                                     HorizontalContentAlignment="Left"
-                                     Padding="16,6"
-                                     MinHeight="34"
-                                     FontSize="13"
-                                     Foreground="{atom:SharedTokenResource ColorText}"/>
-                        <atom:Button x:Name="TabPropertiesBtn"
-                                     Content="{Binding TabPropertiesText}"
-                                     Background="Transparent"
-                                     BorderThickness="0"
-                                     HorizontalAlignment="Stretch"
-                                     HorizontalContentAlignment="Left"
-                                     Padding="16,6"
-                                     MinHeight="34"
-                                     FontSize="13"
-                                     Foreground="{atom:SharedTokenResource ColorText}"/>
-                        <atom:Button x:Name="TabAddQuickBtn"
-                                     Content="{Binding TabAddQuickText}"
-                                     Background="Transparent"
-                                     BorderThickness="0"
-                                     HorizontalAlignment="Stretch"
-                                     HorizontalContentAlignment="Left"
-                                     Padding="16,6"
-                                     MinHeight="34"
-                                     FontSize="13"
-                                     Foreground="{atom:SharedTokenResource ColorText}"/>
-                    </StackPanel>
-                </Border>
-            </atom:Popup>
         </Grid>
     </Grid>
 </atom:Window>

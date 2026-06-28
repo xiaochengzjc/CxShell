@@ -2,7 +2,7 @@ using System;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace ChiXueSsh.Services;
+namespace CxShell.Services;
 
 public static class PasswordEncryptionService
 {

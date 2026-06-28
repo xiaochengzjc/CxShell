@@ -16,11 +16,11 @@ On macOS/Linux:
 VCPKG_ROOT="$HOME/vcpkg" OUTPUT_DIR="./publish" ./tools/build-rdp-bridge.sh
 ```
 
-The native bridge and FreeRDP/WinPR runtime libraries must be copied next to `ChiXueSsh.dll`, for example:
+The native bridge and FreeRDP/WinPR runtime libraries must be copied next to `CxShell.dll`, for example:
 
 ```text
 .buildcheck-rdp/
-  ChiXueSsh.dll
+  CxShell.dll
   CxRdpBridge.dll
   freerdp*.dll
   winpr*.dll

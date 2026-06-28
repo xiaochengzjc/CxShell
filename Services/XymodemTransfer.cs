@@ -6,7 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ChiXueSsh.Services;
+namespace CxShell.Services;
 
 public enum XymodemProtocol
 {

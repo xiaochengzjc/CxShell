@@ -3,10 +3,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using ChiXueSsh.Models;
+using CxShell.Models;
 using Renci.SshNet;
 
-namespace ChiXueSsh.Services;
+namespace CxShell.Services;
 
 public class SftpService : IFileTransferService, IDisposable
 {

@@ -2,12 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
-using ChiXueSsh.Models;
-using ChiXueSsh.Services;
+using CxShell.Models;
+using CxShell.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
-namespace ChiXueSsh.ViewModels;
+namespace CxShell.ViewModels;
 
 public partial class SessionNodeViewModel : ObservableObject
 {
@@ -164,7 +164,9 @@ public partial class SessionTreeViewModel : ObservableObject
         target.SshUseCompression = source.SshUseCompression;
         target.SshNoTerminal = source.SshNoTerminal;
         target.SshAcceptAndSaveHostKey = source.SshAcceptAndSaveHostKey;
-        target.SshDoNotStartFileManager = source.SshDoNotStartFileManager;
+        target.SshAutoOpenSftpPanel = source.SshAutoOpenSftpPanel;
+        target.SshAutoOpenMonitorPanel = source.SshAutoOpenMonitorPanel;
+        target.SshDoNotStartFileManager = !source.SshAutoOpenSftpPanel;
         target.SshCipherAlgorithms = source.SshCipherAlgorithms;
         target.SshMacAlgorithms = source.SshMacAlgorithms;
         target.SshKeyExchangeAlgorithms = source.SshKeyExchangeAlgorithms;
@@ -182,6 +184,7 @@ public partial class SessionTreeViewModel : ObservableObject
         target.RloginTerminalSpeed = source.RloginTerminalSpeed;
         target.SftpLocalStartDirectory = source.SftpLocalStartDirectory;
         target.SftpRemoteStartDirectory = source.SftpRemoteStartDirectory;
+        target.SftpFollowTerminalDirectory = source.SftpFollowTerminalDirectory;
         target.SftpUseCustomServer = source.SftpUseCustomServer;
         target.SftpCustomServerCommand = source.SftpCustomServerCommand;
         target.SerialPortName = source.SerialPortName;
@@ -635,7 +638,9 @@ public partial class SessionTreeViewModel : ObservableObject
             SshUseCompression = source.SshUseCompression,
             SshNoTerminal = source.SshNoTerminal,
             SshAcceptAndSaveHostKey = source.SshAcceptAndSaveHostKey,
-            SshDoNotStartFileManager = source.SshDoNotStartFileManager,
+            SshAutoOpenSftpPanel = source.SshAutoOpenSftpPanel,
+            SshAutoOpenMonitorPanel = source.SshAutoOpenMonitorPanel,
+            SshDoNotStartFileManager = !source.SshAutoOpenSftpPanel,
             SshCipherAlgorithms = source.SshCipherAlgorithms,
             SshMacAlgorithms = source.SshMacAlgorithms,
             SshKeyExchangeAlgorithms = source.SshKeyExchangeAlgorithms,
@@ -653,6 +658,7 @@ public partial class SessionTreeViewModel : ObservableObject
             RloginTerminalSpeed = source.RloginTerminalSpeed,
             SftpLocalStartDirectory = source.SftpLocalStartDirectory,
             SftpRemoteStartDirectory = source.SftpRemoteStartDirectory,
+            SftpFollowTerminalDirectory = source.SftpFollowTerminalDirectory,
             SftpUseCustomServer = source.SftpUseCustomServer,
             SftpCustomServerCommand = source.SftpCustomServerCommand,
             SerialPortName = source.SerialPortName,

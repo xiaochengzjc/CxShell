@@ -6,9 +6,9 @@ using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
-using ChiXueSsh.ViewModels;
+using CxShell.ViewModels;
 
-namespace ChiXueSsh.Views;
+namespace CxShell.Views;
 
 public partial class VncView : UserControl
 {

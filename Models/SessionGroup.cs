@@ -1,6 +1,6 @@
 using System;
 
-namespace ChiXueSsh.Models;
+namespace CxShell.Models;
 
 public class SessionGroup
 {

@@ -10,7 +10,7 @@ using Renci.SshNet.Messages.Connection;
 using Renci.SshNet.Security;
 using SshNet.Agent;
 
-namespace ChiXueSsh.Services;
+namespace CxShell.Services;
 
 internal sealed class SshAgentForwardingService : IDisposable
 {

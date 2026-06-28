@@ -1,7 +1,8 @@
 using System;
 using Avalonia.Media;
+using System.Text;
 
-namespace ChiXueSsh.Terminal;
+namespace CxShell.Terminal;
 
 /// <summary>
 /// ANSI escape sequence parser - state machine implementation.
@@ -33,10 +34,12 @@ public class AnsiParser
     private bool _useG1;
     private int _savedCursorRow;
     private int _savedCursorCol;
+    private readonly StringBuilder _oscBuffer = new();
 
     private readonly TerminalBuffer _buffer;
 
     public event Action? BellReceived;
+    public event Action<string>? OperatingSystemCommandReceived;
 
     public AnsiParser(TerminalBuffer buffer)
     {
@@ -75,7 +78,10 @@ public class AnsiParser
                 break;
             case State.OscEscape:
                 // After ESC in OSC, expect \ to terminate
-                _state = State.Ground;
+                if (ch == '\\')
+                    CompleteOscString();
+                else
+                    _state = State.Ground;
                 break;
             case State.CharsetDesignate:
                 ProcessCharsetDesignation(ch);
@@ -130,6 +136,7 @@ public class AnsiParser
                 _isPrivateMode = false;
                 break;
             case ']':
+                _oscBuffer.Clear();
                 _state = State.OscString;
                 break;
             case '(':
@@ -253,9 +260,22 @@ public class AnsiParser
         }
         else if (ch == '\a') // BEL terminates OSC
         {
-            _state = State.Ground;
+            CompleteOscString();
         }
-        // Otherwise consume characters
+        else if (_oscBuffer.Length < 8192)
+        {
+            _oscBuffer.Append(ch);
+        }
+        // Otherwise consume characters.
+    }
+
+    private void CompleteOscString()
+    {
+        var command = _oscBuffer.ToString();
+        _oscBuffer.Clear();
+        _state = State.Ground;
+        if (!string.IsNullOrEmpty(command))
+            OperatingSystemCommandReceived?.Invoke(command);
     }
 
     private void ExecuteCsi(char finalChar)

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using Avalonia.Media;
 
-namespace ChiXueSsh.Terminal;
+namespace CxShell.Terminal;
 
 public class TerminalBuffer
 {

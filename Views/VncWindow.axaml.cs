@@ -6,9 +6,9 @@ using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Threading;
-using ChiXueSsh.ViewModels;
+using CxShell.ViewModels;
 
-namespace ChiXueSsh.Views;
+namespace CxShell.Views;
 
 public partial class VncWindow : AtomUI.Desktop.Controls.Window
 {

@@ -6,10 +6,10 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using ChiXueSsh.Models;
+using CxShell.Models;
 using Renci.SshNet;
 
-namespace ChiXueSsh.Services;
+namespace CxShell.Services;
 
 public static class ProxyConnectionFactory
 {

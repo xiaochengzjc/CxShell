@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO.Ports;
-using ChiXueSsh.Models;
+using CxShell.Models;
 
-namespace ChiXueSsh.Services;
+namespace CxShell.Services;
 
 public static class PlatformServices
 {

@@ -1,11 +1,11 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:services="using:ChiXueSsh.Services"
+             xmlns:services="using:CxShell.Services"
              xmlns:atom="https://atomui.net"
-             xmlns:vm="using:ChiXueSsh.ViewModels"
-             xmlns:models="using:ChiXueSsh.Models"
-             xmlns:controls="using:ChiXueSsh.Controls"
-             x:Class="ChiXueSsh.Views.ServerMonitorView"
+             xmlns:vm="using:CxShell.ViewModels"
+             xmlns:models="using:CxShell.Models"
+             xmlns:controls="using:CxShell.Controls"
+             x:Class="CxShell.Views.ServerMonitorView"
              x:DataType="vm:ServerMonitorViewModel"
              Background="{atom:SharedTokenResource ColorBgLayout}"
              Width="280">
@@ -18,7 +18,7 @@
             <Border Padding="12,10" Background="{atom:SharedTokenResource ColorBgContainer}">
                 <Grid ColumnDefinitions="*,Auto">
                     <StackPanel Grid.Column="0" Spacing="2">
-                        <TextBlock Text="{Binding [UiText.001], Source={x:Static services:LocalizationService.Shared}}"
+                        <TextBlock Text="{Binding MonitorTitleText}"
                                    FontSize="11" Foreground="{atom:SharedTokenResource ColorTextTertiary}"
                                    FontWeight="Bold"/>
                         <TextBlock Text="{Binding HostLabel}"
@@ -32,7 +32,7 @@
                                 <SolidColorBrush Color="{Binding IsMonitoring, Converter={x:Static controls:MonitorColorConverter.Instance}}"/>
                             </Ellipse.Fill>
                         </Ellipse>
-                        <TextBlock Text="{Binding IsMonitoring, Converter={x:Static controls:MonitorStatusConverter.Instance}}"
+                        <TextBlock Text="{Binding MonitorStatusText}"
                                    FontSize="11" Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
                     </StackPanel>
                 </Grid>
@@ -97,7 +97,7 @@
             <Border Padding="12,10,12,6"
                     IsVisible="{Binding Memory, Converter={x:Static controls:NullToBoolConverter.Instance}}">
                 <StackPanel Spacing="8">
-                    <TextBlock Text="{Binding [UiText.002], Source={x:Static services:LocalizationService.Shared}}" FontSize="11"
+                    <TextBlock Text="{Binding MemoryTitleText}" FontSize="11"
                                Foreground="{atom:SharedTokenResource ColorTextTertiary}" FontWeight="Bold"/>
                     <Grid ColumnDefinitions="120,*">
                         <!-- 饼图 -->
@@ -108,41 +108,21 @@
                         <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <Ellipse Width="8" Height="8" Fill="{atom:SharedTokenResource ColorError}"/>
-                                <TextBlock FontSize="10" Foreground="{atom:SharedTokenResource ColorTextSecondary}">
-                                    <TextBlock.Text>
-                                        <MultiBinding StringFormat="已用 {0}">
-                                            <Binding Path="Memory.UsedFormatted"/>
-                                        </MultiBinding>
-                                    </TextBlock.Text>
-                                </TextBlock>
+                                <TextBlock Text="{Binding MemoryUsedDisplay}"
+                                           FontSize="10" Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <Ellipse Width="8" Height="8" Fill="{atom:SharedTokenResource ColorInfo}"/>
-                                <TextBlock FontSize="10" Foreground="{atom:SharedTokenResource ColorTextSecondary}">
-                                    <TextBlock.Text>
-                                        <MultiBinding StringFormat="缓存 {0}">
-                                            <Binding Path="Memory.CachedFormatted"/>
-                                        </MultiBinding>
-                                    </TextBlock.Text>
-                                </TextBlock>
+                                <TextBlock Text="{Binding MemoryCachedDisplay}"
+                                           FontSize="10" Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <Ellipse Width="8" Height="8" Fill="{atom:SharedTokenResource ColorSuccess}"/>
-                                <TextBlock FontSize="10" Foreground="{atom:SharedTokenResource ColorTextSecondary}">
-                                    <TextBlock.Text>
-                                        <MultiBinding StringFormat="空闲 {0}">
-                                            <Binding Path="Memory.FreeFormatted"/>
-                                        </MultiBinding>
-                                    </TextBlock.Text>
-                                </TextBlock>
+                                <TextBlock Text="{Binding MemoryFreeDisplay}"
+                                           FontSize="10" Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
                             </StackPanel>
-                            <TextBlock FontSize="10" Foreground="{atom:SharedTokenResource ColorTextTertiary}">
-                                <TextBlock.Text>
-                                    <MultiBinding StringFormat="共 {0}">
-                                        <Binding Path="Memory.TotalFormatted"/>
-                                    </MultiBinding>
-                                </TextBlock.Text>
-                            </TextBlock>
+                            <TextBlock Text="{Binding MemoryTotalDisplay}"
+                                       FontSize="10" Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
                         </StackPanel>
                     </Grid>
                 </StackPanel>
@@ -153,17 +133,17 @@
             <!-- 网络区域 -->
             <Border Padding="12,10,12,6">
                 <StackPanel Spacing="6">
-                    <TextBlock Text="{Binding [UiText.003], Source={x:Static services:LocalizationService.Shared}}" FontSize="11"
+                    <TextBlock Text="{Binding NetworkTitleText}" FontSize="11"
                                Foreground="{atom:SharedTokenResource ColorTextTertiary}" FontWeight="Bold"/>
                     <!-- 当前速度 -->
                     <Grid ColumnDefinitions="*,*">
                         <StackPanel Grid.Column="0" Spacing="2">
-                            <TextBlock Text="{Binding [UiText.004], Source={x:Static services:LocalizationService.Shared}}" FontSize="10" Foreground="{atom:SharedTokenResource ColorInfo}"/>
+                            <TextBlock Text="{Binding DownloadText}" FontSize="10" Foreground="{atom:SharedTokenResource ColorInfo}"/>
                             <TextBlock FontSize="11" Foreground="{atom:SharedTokenResource ColorText}"
                                        Text="{Binding CurrentNetworkSpeed.RxFormatted, FallbackValue='0 B/s'}"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Spacing="2">
-                            <TextBlock Text="{Binding [UiText.005], Source={x:Static services:LocalizationService.Shared}}" FontSize="10" Foreground="{atom:SharedTokenResource ColorSuccess}"/>
+                            <TextBlock Text="{Binding UploadText}" FontSize="10" Foreground="{atom:SharedTokenResource ColorSuccess}"/>
                             <TextBlock FontSize="11" Foreground="{atom:SharedTokenResource ColorText}"
                                        Text="{Binding CurrentNetworkSpeed.TxFormatted, FallbackValue='0 B/s'}"/>
                         </StackPanel>
@@ -183,7 +163,7 @@
             <Border Padding="12,10,12,6"
                     IsVisible="{Binding DiskPartitions.Count, Converter={x:Static controls:CountToBoolConverter.Instance}}">
                 <StackPanel Spacing="6">
-                    <TextBlock Text="{Binding [UiText.006], Source={x:Static services:LocalizationService.Shared}}" FontSize="11"
+                    <TextBlock Text="{Binding DiskTitleText}" FontSize="11"
                                Foreground="{atom:SharedTokenResource ColorTextTertiary}" FontWeight="Bold"/>
                     <ItemsControl ItemsSource="{Binding DiskPartitions}">
                         <ItemsControl.ItemTemplate>
@@ -221,7 +201,7 @@
             <Border Padding="12,6,12,10"
                     IsVisible="{Binding DiskIo.Count, Converter={x:Static controls:CountToBoolConverter.Instance}}">
                 <StackPanel Spacing="4">
-                    <TextBlock Text="{Binding [UiText.007], Source={x:Static services:LocalizationService.Shared}}" FontSize="11"
+                    <TextBlock Text="{Binding DiskIoTitleText}" FontSize="11"
                                Foreground="{atom:SharedTokenResource ColorTextTertiary}" FontWeight="Bold"/>
                     <ItemsControl ItemsSource="{Binding DiskIo}">
                         <ItemsControl.ItemTemplate>
@@ -232,12 +212,12 @@
                                                FontSize="10" Foreground="{atom:SharedTokenResource ColorTextSecondary}"
                                                VerticalAlignment="Center"/>
                                     <StackPanel Grid.Column="1" Spacing="1">
-                                        <TextBlock Text="{Binding [UiText.008], Source={x:Static services:LocalizationService.Shared}}" FontSize="9" Foreground="{atom:SharedTokenResource ColorInfo}"/>
+                                        <TextBlock Text="{Binding $parent[UserControl].DataContext.ReadText, x:CompileBindings=False}" FontSize="9" Foreground="{atom:SharedTokenResource ColorInfo}"/>
                                         <TextBlock FontSize="10" Foreground="{atom:SharedTokenResource ColorTextSecondary}"
                                                    Text="{Binding ReadFormatted}"/>
                                     </StackPanel>
                                     <StackPanel Grid.Column="2" Spacing="1">
-                                        <TextBlock Text="{Binding [UiText.009], Source={x:Static services:LocalizationService.Shared}}" FontSize="9" Foreground="{atom:SharedTokenResource ColorSuccess}"/>
+                                        <TextBlock Text="{Binding $parent[UserControl].DataContext.WriteText, x:CompileBindings=False}" FontSize="9" Foreground="{atom:SharedTokenResource ColorSuccess}"/>
                                         <TextBlock FontSize="10" Foreground="{atom:SharedTokenResource ColorTextSecondary}"
                                                    Text="{Binding WriteFormatted}"/>
                                     </StackPanel>

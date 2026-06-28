@@ -1,8 +1,8 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:atom="https://atomui.net"
-             xmlns:vm="clr-namespace:ChiXueSsh.ViewModels"
-             x:Class="ChiXueSsh.Views.RdpView"
+             xmlns:vm="clr-namespace:CxShell.ViewModels"
+             x:Class="CxShell.Views.RdpView"
              x:DataType="vm:RdpViewModel"
              Focusable="True"
              Background="{atom:SharedTokenResource ColorBgLayout}">

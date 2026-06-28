@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using ChiXueSsh.Models;
+using CxShell.Models;
 using Renci.SshNet;
 
-namespace ChiXueSsh.Services;
+namespace CxShell.Services;
 
 public static class SshAlgorithmPreferenceService
 {

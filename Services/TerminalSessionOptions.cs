@@ -1,8 +1,8 @@
 using System;
 using System.Text;
-using ChiXueSsh.Models;
+using CxShell.Models;
 
-namespace ChiXueSsh.Services;
+namespace CxShell.Services;
 
 public static class TerminalSessionOptions
 {

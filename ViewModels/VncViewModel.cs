@@ -3,12 +3,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
-using ChiXueSsh.Models;
-using ChiXueSsh.Services;
+using CxShell.Models;
+using CxShell.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
-namespace ChiXueSsh.ViewModels;
+namespace CxShell.ViewModels;
 
 public partial class VncViewModel : ObservableObject, IDisposable
 {

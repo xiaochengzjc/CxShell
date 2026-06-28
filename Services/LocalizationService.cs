@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
-namespace ChiXueSsh.Services;
+namespace CxShell.Services;
 
 public sealed class LocalizationService : INotifyPropertyChanged
 {
@@ -101,6 +101,17 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ["SessionEdit.PasswordNotSaved"] = "Leave empty to prompt for password when connecting.",
         ["SessionEdit.PasswordSavedEncrypted"] = "Saved passwords are encrypted in the session file.",
         ["SessionEdit.PrivateKeyPath"] = "Private key path",
+        ["SessionEdit.SshTunnelTitle"] = "SSH Tunneling",
+        ["SessionEdit.VncSshTunnelTitle"] = "VNC SSH Tunneling",
+        ["SessionEdit.UseVncSshTunnel"] = "Connect VNC through SSH tunnel",
+        ["SessionEdit.VncSshTunnelDescription"] = "When selected, the host/port above is the VNC address reachable from the SSH server, for example 127.0.0.1:5901.",
+        ["SessionEdit.UseRdpSshTunnel"] = "Connect RDP through SSH tunnel",
+        ["SessionEdit.RdpSshTunnelDescription"] = "When selected, the host/port above is the RDP address reachable from the SSH server, for example 127.0.0.1:3389 or an internal Windows IP:3389. CxShell automatically creates a temporary local port.",
+        ["SessionEdit.SshHost"] = "SSH Host",
+        ["SessionEdit.SshPort"] = "SSH Port",
+        ["SessionEdit.SshUsername"] = "SSH Username",
+        ["SessionEdit.SshPassword"] = "SSH Password",
+        ["SessionEdit.SshPrivateKey"] = "SSH Private Key",
         ["SessionEdit.Browse"] = "Browse",
         ["SessionEdit.Reconnect"] = "Reconnect",
         ["SessionEdit.AutoReconnect"] = "Automatically reconnect when connection closes unexpectedly",
@@ -116,6 +127,7 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ["Terminal.Paste"] = "Paste",
         ["Sftp.Upload"] = "↑ Upload",
         ["Sftp.Download"] = "↓ Download",
+        ["Sftp.Edit"] = "Edit",
         ["Sftp.NewDirectory"] = "+ Folder",
         ["Sftp.Name"] = "Name",
         ["Sftp.Size"] = "Size",
@@ -134,9 +146,16 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ["Monitor.MemoryUsed"] = "Used",
         ["Monitor.MemoryCached"] = "Cached",
         ["Monitor.MemoryFree"] = "Free",
+        ["Monitor.MemoryUsedFormat"] = "Used {0}",
+        ["Monitor.MemoryCachedFormat"] = "Cached {0}",
+        ["Monitor.MemoryFreeFormat"] = "Free {0}",
+        ["Monitor.MemoryTotalFormat"] = "Total {0}",
         ["Monitor.CpuTotal"] = "Total",
         ["Monitor.CpuCore"] = "Core {0}",
         ["Monitor.NotConnected"] = "Not connected",
+        ["Monitor.ConnectionFailed"] = "Monitor connection failed: {0}",
+        ["Monitor.CollectFailed"] = "Collection failed: {0}",
+        ["Monitor.CommandFailed"] = "Command timed out or failed: {0}",
         ["Session.CopySuffix"] = "{0} - Copy",
         ["Validation.SessionNameRequired"] = "Enter a session name.",
         ["Validation.HostRequired"] = "Enter a host address.",
@@ -270,6 +289,17 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ["SessionEdit.PasswordNotSaved"] = "留空则连接时提示输入密码。",
         ["SessionEdit.PasswordSavedEncrypted"] = "保存后的密码会加密存储到会话文件。",
         ["SessionEdit.PrivateKeyPath"] = "私钥路径",
+        ["SessionEdit.SshTunnelTitle"] = "SSH 隧道",
+        ["SessionEdit.VncSshTunnelTitle"] = "VNC SSH 隧道",
+        ["SessionEdit.UseVncSshTunnel"] = "通过 SSH 隧道连接 VNC",
+        ["SessionEdit.VncSshTunnelDescription"] = "勾选后，上方主机/端口表示 SSH 服务器内部可访问的 VNC 地址，例如 127.0.0.1:5901。",
+        ["SessionEdit.UseRdpSshTunnel"] = "通过 SSH 隧道连接 RDP",
+        ["SessionEdit.RdpSshTunnelDescription"] = "勾选后，上方主机/端口表示 SSH 服务器内部可访问的 RDP 地址，例如 127.0.0.1:3389 或内网 Windows IP:3389。CxShell 会自动创建本地临时端口。",
+        ["SessionEdit.SshHost"] = "SSH 主机",
+        ["SessionEdit.SshPort"] = "SSH 端口",
+        ["SessionEdit.SshUsername"] = "SSH 用户",
+        ["SessionEdit.SshPassword"] = "SSH 密码",
+        ["SessionEdit.SshPrivateKey"] = "SSH 私钥",
         ["SessionEdit.Browse"] = "浏览",
         ["SessionEdit.Reconnect"] = "重新连接",
         ["SessionEdit.AutoReconnect"] = "连接异常关闭时自动重新连接",
@@ -285,6 +315,7 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ["Terminal.Paste"] = "粘贴",
         ["Sftp.Upload"] = "↑ 上传",
         ["Sftp.Download"] = "↓ 下载",
+        ["Sftp.Edit"] = "编辑",
         ["Sftp.NewDirectory"] = "+ 目录",
         ["Sftp.Name"] = "名称",
         ["Sftp.Size"] = "大小",
@@ -303,9 +334,16 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ["Monitor.MemoryUsed"] = "已用",
         ["Monitor.MemoryCached"] = "缓存",
         ["Monitor.MemoryFree"] = "空闲",
+        ["Monitor.MemoryUsedFormat"] = "已用 {0}",
+        ["Monitor.MemoryCachedFormat"] = "缓存 {0}",
+        ["Monitor.MemoryFreeFormat"] = "空闲 {0}",
+        ["Monitor.MemoryTotalFormat"] = "共 {0}",
         ["Monitor.CpuTotal"] = "总计",
         ["Monitor.CpuCore"] = "核心 {0}",
         ["Monitor.NotConnected"] = "未连接",
+        ["Monitor.ConnectionFailed"] = "监控连接失败: {0}",
+        ["Monitor.CollectFailed"] = "采集失败: {0}",
+        ["Monitor.CommandFailed"] = "命令执行超时或失败: {0}",
         ["Session.CopySuffix"] = "{0} - 副本",
         ["Validation.SessionNameRequired"] = "请输入会话名称。",
         ["Validation.HostRequired"] = "请输入主机地址。",
@@ -585,7 +623,7 @@ public sealed class LocalizationService : INotifyPropertyChanged
         english["UiText.039"] = "Use ZLIB compression (Z)";
         english["UiText.040"] = "Do not allocate a terminal (D)";
         english["UiText.041"] = "Automatically accept and save host key on first connection (A)";
-        english["UiText.042"] = "Do not start file manager connection (N)";
+        english["UiText.042"] = "Open SFTP panel after SSH connection (S)";
         english["UiText.043"] = "Algorithms";
         english["UiText.044"] = "Select algorithms for SSH connections. Choose &lt;... List&gt; to use the default or edited algorithm list.";
         english["UiText.045"] = "Encryption (E):";
@@ -803,6 +841,8 @@ public sealed class LocalizationService : INotifyPropertyChanged
         english["UiText.257"] = "SSH packets (P)";
         english["UiText.258"] = "TELNET option mode (T)";
         english["UiText.259"] = "Send Clipboard";
+        english["UiText.260"] = "Open monitor panel after SSH connection (M)";
+        english["UiText.261"] = "Follow terminal current directory (F)";
 
         chinese["UiText.001"] = "服务器监控";
         chinese["UiText.002"] = "内存";
@@ -845,7 +885,7 @@ public sealed class LocalizationService : INotifyPropertyChanged
         chinese["UiText.039"] = "使用 ZLIB 压缩(Z)";
         chinese["UiText.040"] = "不分配终端(D)";
         chinese["UiText.041"] = "第一次连接时自动接受并保存主机密钥(A)";
-        chinese["UiText.042"] = "不要建立文件管理器连接(N)";
+        chinese["UiText.042"] = "连接 SSH 后自动打开 SFTP 面板(S)";
         chinese["UiText.043"] = "算法";
         chinese["UiText.044"] = "选择要使用的算法 SSH 连接。选择 &lt;... List&gt; 使用默认或编辑后的算法列表。";
         chinese["UiText.045"] = "加密(E):";
@@ -1063,6 +1103,8 @@ public sealed class LocalizationService : INotifyPropertyChanged
         chinese["UiText.257"] = "SSH数据包(P)";
         chinese["UiText.258"] = "TELNET选项模式(T)";
         chinese["UiText.259"] = "发送剪贴板";
+        chinese["UiText.260"] = "连接 SSH 后自动打开监控面板(M)";
+        chinese["UiText.261"] = "跟随终端当前目录(F)";
     }
 
     public string Language { get; private set; } = Chinese;

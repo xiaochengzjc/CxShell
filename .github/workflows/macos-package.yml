@@ -51,7 +51,7 @@ jobs:
       - name: Publish app
         shell: bash
         run: |
-          dotnet publish ChiXueSsh.csproj \
+          dotnet publish CxShell.csproj \
             -c Release \
             -r "${{ matrix.rid }}" \
             --self-contained true \

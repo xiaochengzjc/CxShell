@@ -4,9 +4,9 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using ChiXueSsh.Models;
+using CxShell.Models;
 
-namespace ChiXueSsh.Services;
+namespace CxShell.Services;
 
 public sealed class RloginConnectionService : ITerminalConnectionService
 {

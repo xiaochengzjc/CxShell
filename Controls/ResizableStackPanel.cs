@@ -6,7 +6,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 
-namespace ChiXueSsh.Controls;
+namespace CxShell.Controls;
 
 public sealed class ResizableStackPanel : Panel
 {

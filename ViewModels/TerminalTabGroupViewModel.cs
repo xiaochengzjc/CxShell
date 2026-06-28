@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 
-namespace ChiXueSsh.ViewModels;
+namespace CxShell.ViewModels;
 
 public partial class TerminalTabGroupViewModel : ObservableObject
 {

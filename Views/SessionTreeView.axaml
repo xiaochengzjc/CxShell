@@ -2,8 +2,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:atom="https://atomui.net"
              xmlns:antdicons="https://atomui.net/icons/antdesign"
-             xmlns:vm="using:ChiXueSsh.ViewModels"
-             x:Class="ChiXueSsh.Views.SessionTreeView"
+             xmlns:vm="using:CxShell.ViewModels"
+             x:Class="CxShell.Views.SessionTreeView"
              x:DataType="vm:SessionTreeViewModel"
              Background="{atom:SharedTokenResource ColorBgLayout}">
     <Grid>
@@ -71,47 +71,5 @@
                 </atom:DataGrid.Columns>
             </atom:DataGrid>
         </Grid>
-
-        <atom:Popup x:Name="ContextMenuPopup"
-                    Placement="Pointer"
-                    IsLightDismissEnabled="True">
-            <Border Background="{atom:SharedTokenResource ColorBgElevated}"
-                    BorderBrush="{atom:SharedTokenResource ColorBorder}"
-                    BorderThickness="1"
-                    CornerRadius="6"
-                    Padding="0,4"
-                    MinWidth="120">
-                <StackPanel Spacing="0">
-                    <atom:Button x:Name="MenuEditBtn"
-                                 Content="{Binding PropertiesText}"
-                                 Background="Transparent"
-                                 BorderThickness="0"
-                                 HorizontalAlignment="Stretch"
-                                 HorizontalContentAlignment="Left"
-                                 Padding="16,6"
-                                 FontSize="13"
-                                 Foreground="{atom:SharedTokenResource ColorText}"/>
-                    <atom:Button x:Name="MenuConnectBtn"
-                                 Content="{Binding ConnectText}"
-                                 Background="Transparent"
-                                 BorderThickness="0"
-                                 HorizontalAlignment="Stretch"
-                                 HorizontalContentAlignment="Left"
-                                 Padding="16,6"
-                                 FontSize="13"
-                                 Foreground="{atom:SharedTokenResource ColorText}"/>
-                    <Border Height="1" Background="{atom:SharedTokenResource ColorSplit}" Margin="8,4"/>
-                    <atom:Button x:Name="MenuDeleteBtn"
-                                 Content="{Binding DeleteText}"
-                                 Background="Transparent"
-                                 BorderThickness="0"
-                                 HorizontalAlignment="Stretch"
-                                 HorizontalContentAlignment="Left"
-                                 Padding="16,6"
-                                 FontSize="13"
-                                 Foreground="{atom:SharedTokenResource ColorError}"/>
-                </StackPanel>
-            </Border>
-        </atom:Popup>
     </Grid>
 </UserControl>

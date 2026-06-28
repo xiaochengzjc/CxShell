@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
-using ChiXueSsh.Models;
+using CxShell.Models;
 
-namespace ChiXueSsh.Services;
+namespace CxShell.Services;
 
 /// <summary>
 /// 纯静态工具类，解析 Linux /proc 虚拟文件系统内容

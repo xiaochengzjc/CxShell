@@ -9,12 +9,12 @@ using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Threading;
 using Avalonia.Media;
-using ChiXueSsh.Models;
-using ChiXueSsh.Services;
-using ChiXueSsh.Terminal;
+using CxShell.Models;
+using CxShell.Services;
+using CxShell.Terminal;
 using CommunityToolkit.Mvvm.ComponentModel;
 
-namespace ChiXueSsh.ViewModels;
+namespace CxShell.ViewModels;
 
 public partial class TerminalViewModel : ObservableObject
 {
@@ -67,8 +67,11 @@ public partial class TerminalViewModel : ObservableObject
     private List<LoginScriptRule> _pendingLoginScriptRules = new();
     private readonly object _recentOutputLock = new();
     private readonly StringBuilder _recentOutputBuffer = new();
+    private readonly object _hiddenInputEchoLock = new();
     private DateTimeOffset _lastBellAt = DateTimeOffset.MinValue;
     private DateTimeOffset _bellMutedUntil = DateTimeOffset.MinValue;
+    private string? _hiddenInputEcho;
+    private int _hiddenInputEchoMatchIndex;
     private SessionLogWriter? _sessionLogWriter;
 
     public Func<Task<IReadOnlyList<string>>>? PickZmodemUploadFilesAsync { get; set; }
@@ -137,7 +140,7 @@ public partial class TerminalViewModel : ObservableObject
     {
         Buffer = new TerminalBuffer(Columns, Rows);
         Parser = new AnsiParser(Buffer);
-        AttachParserBellHandler(Parser);
+        AttachParserHandlers(Parser);
         LocalizationService.Shared.LanguageChanged += (_, _) => RefreshLocalization();
     }
 
@@ -165,6 +168,8 @@ public partial class TerminalViewModel : ObservableObject
 
     public event Action? BufferChanged;
     public event Action? BellRequested;
+    public event Action<string>? RemoteCurrentDirectoryChanged;
+    public string? RemoteCurrentDirectory { get; private set; }
 
     public async Task ConnectAsync(SessionInfo session, string? password)
     {
@@ -209,7 +214,8 @@ public partial class TerminalViewModel : ObservableObject
             ParseColorOrDefault(session.AppearanceBoldForegroundColor, "#33FF33"),
             ParseAnsiColors(session.AppearanceAnsiColors));
         Parser = new AnsiParser(Buffer);
-        AttachParserBellHandler(Parser);
+        AttachParserHandlers(Parser);
+        RemoteCurrentDirectory = null;
         _terminalByteDecoder.Reset();
         lock (_recentOutputLock)
             _recentOutputBuffer.Clear();
@@ -246,6 +252,10 @@ public partial class TerminalViewModel : ObservableObject
 
                     var terminalData = ProcessAnswerback(data, connection);
                     terminalData = TerminalSessionOptions.NormalizeReceiveLineEndings(terminalData, _session);
+                    terminalData = FilterHiddenInputEcho(terminalData);
+                    if (string.IsNullOrEmpty(terminalData))
+                        return;
+
                     LogTerminalData(terminalData);
                     AppendRecentOutput(terminalData);
                     HandleLoginScriptData(generation, connection, terminalData);
@@ -288,6 +298,7 @@ public partial class TerminalViewModel : ObservableObject
             StartKeepAliveLoop(generation, _session, connection, cancellationToken);
             StartLoginScriptFileAsync(generation, _session, connection, cancellationToken);
             SendPreinputString(connection, _session);
+            StartRemoteDirectoryTrackingAsync(generation, _session, connection, cancellationToken);
         }
         finally
         {
@@ -295,9 +306,69 @@ public partial class TerminalViewModel : ObservableObject
         }
     }
 
-    private void AttachParserBellHandler(AnsiParser parser)
+    private void AttachParserHandlers(AnsiParser parser)
     {
         parser.BellReceived += OnBellReceived;
+        parser.OperatingSystemCommandReceived += OnOperatingSystemCommandReceived;
+    }
+
+    private void OnOperatingSystemCommandReceived(string command)
+    {
+        if (!TryParseOsc7CurrentDirectory(command, out var path))
+            return;
+
+        if (string.Equals(RemoteCurrentDirectory, path, StringComparison.Ordinal))
+            return;
+
+        RemoteCurrentDirectory = path;
+        RemoteCurrentDirectoryChanged?.Invoke(path);
+    }
+
+    private static bool TryParseOsc7CurrentDirectory(string command, out string path)
+    {
+        path = string.Empty;
+
+        if (!command.StartsWith("7;", StringComparison.Ordinal))
+            return false;
+
+        var value = command[2..].Trim();
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        string pathPart;
+        if (value.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+        {
+            var remainder = value[7..];
+            var slashIndex = remainder.IndexOf('/');
+            if (slashIndex < 0)
+                return false;
+
+            pathPart = remainder[slashIndex..];
+        }
+        else
+        {
+            pathPart = value;
+        }
+
+        try
+        {
+            pathPart = Uri.UnescapeDataString(pathPart);
+        }
+        catch (UriFormatException)
+        {
+            return false;
+        }
+
+        pathPart = pathPart.Replace('\\', '/').Trim();
+        if (pathPart.Length is 0 or > 4096 ||
+            !pathPart.StartsWith("/", StringComparison.Ordinal) ||
+            pathPart.Contains('\0'))
+        {
+            return false;
+        }
+
+        path = pathPart;
+        return true;
     }
 
     private void OnBellReceived()
@@ -613,6 +684,109 @@ public partial class TerminalViewModel : ObservableObject
         text = TerminalSessionOptions.NormalizeSendLineEndings(text, session);
         if (!string.IsNullOrEmpty(text))
             connection.SendData(text);
+    }
+
+    private void StartRemoteDirectoryTrackingAsync(
+        int generation,
+        SessionInfo session,
+        ITerminalConnectionService connection,
+        CancellationToken cancellationToken)
+    {
+        if (session.Protocol != SessionProtocol.SSH ||
+            session.SshNoTerminal ||
+            !session.SftpFollowTerminalDirectory)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(800), cancellationToken);
+                if (generation != _connectionGeneration || _manualDisconnect || !connection.IsConnected)
+                    return;
+
+                var bootstrap = BuildRemoteDirectoryTrackingBootstrap();
+                RegisterHiddenInputEcho(bootstrap);
+                var text = TerminalSessionOptions.NormalizeSendLineEndings(bootstrap + "\r", session);
+                connection.SendData(text);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }, cancellationToken);
+    }
+
+    private void RegisterHiddenInputEcho(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        lock (_hiddenInputEchoLock)
+        {
+            _hiddenInputEcho = text;
+            _hiddenInputEchoMatchIndex = 0;
+        }
+    }
+
+    private string FilterHiddenInputEcho(string data)
+    {
+        if (string.IsNullOrEmpty(data))
+            return data;
+
+        lock (_hiddenInputEchoLock)
+        {
+            if (string.IsNullOrEmpty(_hiddenInputEcho))
+                return data;
+
+            var output = new StringBuilder(data.Length);
+            foreach (var ch in data)
+            {
+                var target = _hiddenInputEcho;
+                if (string.IsNullOrEmpty(target))
+                {
+                    output.Append(ch);
+                    continue;
+                }
+
+                if (ch == target[_hiddenInputEchoMatchIndex])
+                {
+                    _hiddenInputEchoMatchIndex++;
+                    if (_hiddenInputEchoMatchIndex == target.Length)
+                    {
+                        _hiddenInputEcho = null;
+                        _hiddenInputEchoMatchIndex = 0;
+                    }
+
+                    continue;
+                }
+
+                if (_hiddenInputEchoMatchIndex > 0)
+                {
+                    output.Append(target.AsSpan(0, _hiddenInputEchoMatchIndex));
+                    _hiddenInputEchoMatchIndex = 0;
+
+                    if (ch == target[0])
+                    {
+                        _hiddenInputEchoMatchIndex = 1;
+                        continue;
+                    }
+                }
+
+                output.Append(ch);
+            }
+
+            return output.ToString();
+        }
+    }
+
+    private static string BuildRemoteDirectoryTrackingBootstrap()
+    {
+        return "__cxshell_osc7(){ __cxshell_h=$(hostname 2>/dev/null||printf localhost); printf '\\033]7;file://%s%s\\007' \"$__cxshell_h\" \"$PWD\"; }; " +
+               "if [ -n \"${ZSH_VERSION-}\" ]; then case \" ${precmd_functions[*]-} \" in *\" __cxshell_osc7 \"*) ;; *) eval 'precmd_functions+=(__cxshell_osc7)' ;; esac; " +
+               "elif [ -n \"${BASH_VERSION-}\" ]; then case \";${PROMPT_COMMAND-};\" in *\";__cxshell_osc7;\"*) ;; *) PROMPT_COMMAND=\"__cxshell_osc7${PROMPT_COMMAND:+;$PROMPT_COMMAND}\" ;; esac; fi; " +
+               "if [ -n \"${BASH_VERSION-}${ZSH_VERSION-}\" ]; then __cxshell_osc7; fi";
     }
 
     private static string NormalizeScriptSendText(string text)

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Collections.ObjectModel;
@@ -18,11 +18,11 @@ using Avalonia.Media;
 using Avalonia.Media.TextFormatting;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
-using ChiXueSsh.Models;
-using ChiXueSsh.Services;
-using ChiXueSsh.ViewModels;
+using CxShell.Models;
+using CxShell.Services;
+using CxShell.ViewModels;
 
-namespace ChiXueSsh.Views;
+namespace CxShell.Views;
 
 public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 {
@@ -2758,53 +2758,12 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
     private async Task<bool> ShowConfirmDialogAsync(Avalonia.Controls.Window owner, string title, string message)
     {
-        var result = false;
-        var dialog = new AtomUI.Desktop.Controls.Window
-        {
-            Title = title,
-            Width = 360,
-            Height = 180,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            CanResize = false,
-            ShowInTaskbar = false
-        };
-
-        var messageText = new Avalonia.Controls.TextBlock
-        {
-            Text = message,
-            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-            Margin = new Thickness(20, 18, 20, 12),
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        var okButton = CreateDialogButton(T("Common.Ok"), 96);
-        okButton.ButtonType = AtomUI.Desktop.Controls.ButtonType.Primary;
-        var cancelButton = CreateDialogButton(T("Common.Cancel"), 96);
-
-        okButton.Click += (_, _) =>
-        {
-            result = true;
-            dialog.Close();
-        };
-        cancelButton.Click += (_, _) => dialog.Close();
-
-        var buttons = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Spacing = 10,
-            Margin = new Thickness(20, 0, 20, 16)
-        };
-        buttons.Children.Add(okButton);
-        buttons.Children.Add(cancelButton);
-
-        var content = new DockPanel();
-        DockPanel.SetDock(buttons, Dock.Bottom);
-        content.Children.Add(buttons);
-        content.Children.Add(messageText);
-        dialog.Content = content;
-
-        await dialog.ShowDialog(owner);
-        return result;
+        return await AtomUiDialogService.ShowConfirmAsync(
+            owner,
+            title,
+            message,
+            T("Common.Ok"),
+            T("Common.Cancel"));
     }
 
     private static LineEdit CreateLineEdit(string? text)

@@ -2,7 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
-namespace ChiXueSsh.Models;
+namespace CxShell.Models;
 
 public class SftpFileItem : INotifyPropertyChanged
 {
@@ -47,7 +47,7 @@ public class SftpFileItem : INotifyPropertyChanged
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
     public string Icon => IsDirectory ? "📁" : GetFileIcon(Name);
-    public string SizeDisplay => IsDirectory ? string.Empty : FormatSize(Size);
+    public string SizeDisplay => IsDirectory ? "-" : FormatSize(Size);
     public string DateDisplay => LastModified.ToString("MM-dd HH:mm");
 
     public string DisplayName => IsSymLink && SymLinkTarget != null

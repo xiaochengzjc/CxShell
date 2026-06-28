@@ -5,8 +5,13 @@
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+        <AssemblyName>CxShell</AssemblyName>
+        <RootNamespace>CxShell</RootNamespace>
+        <Product>CxShell</Product>
+        <Title>CxShell</Title>
+        <PackageId>CxShell</PackageId>
         <ApplicationManifest>app.manifest</ApplicationManifest>
-        <ApplicationIcon>Assets\ChiXueSshLogo.ico</ApplicationIcon>
+        <ApplicationIcon>Assets\CxShellLogo.ico</ApplicationIcon>
         <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     </PropertyGroup>
 
@@ -30,17 +35,24 @@
         <PackageReference Include="AtomUI.Desktop.Controls" Version="6.0.1" />
         <PackageReference Include="AtomUI.Desktop.Controls.ColorPicker" Version="6.0.1" />
         <PackageReference Include="AtomUI.Desktop.Controls.DataGrid" Version="6.0.1" />
+        <PackageReference Include="Avalonia.AvaloniaEdit" Version="12.0.0" />
         <PackageReference Include="Avalonia.Desktop" Version="12.0.4" />
         <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.4" />
+        <PackageReference Include="AvaloniaEdit.TextMate" Version="12.0.0" />
         <PackageReference Include="FluentFTP" Version="54.2.0" />
         <PackageReference Include="ReactiveUI.Avalonia" Version="12.0.1" />
         <PackageReference Include="SSH.NET" Version="2024.2.0" />
         <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
         <PackageReference Include="SshNet.Agent" Version="2024.2.0.1" />
         <PackageReference Include="System.IO.Ports" Version="10.0.9" />
+        <PackageReference Include="TextMateSharp.Grammars" Version="2.0.4" />
     </ItemGroup>
 
-    <ItemGroup>
+    <ItemGroup Condition="'$(RuntimeIdentifier)' == ''">
         <None Include="runtimes/**/native/*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+
+    <ItemGroup Condition="'$(RuntimeIdentifier)' != ''">
+        <None Include="runtimes/$(RuntimeIdentifier)/native/*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     </ItemGroup>
 </Project>

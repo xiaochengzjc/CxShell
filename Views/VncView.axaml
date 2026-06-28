@@ -1,9 +1,9 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:services="using:ChiXueSsh.Services"
+             xmlns:services="using:CxShell.Services"
              xmlns:atom="https://atomui.net"
-             xmlns:vm="using:ChiXueSsh.ViewModels"
-             x:Class="ChiXueSsh.Views.VncView"
+             xmlns:vm="using:CxShell.ViewModels"
+             x:Class="CxShell.Views.VncView"
              x:DataType="vm:VncViewModel"
              Background="{atom:SharedTokenResource ColorBgLayout}">
     <Grid RowDefinitions="*,Auto">

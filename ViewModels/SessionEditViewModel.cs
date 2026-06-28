@@ -11,12 +11,12 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
-using ChiXueSsh.Models;
-using ChiXueSsh.Services;
+using CxShell.Models;
+using CxShell.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
-namespace ChiXueSsh.ViewModels;
+namespace CxShell.ViewModels;
 
 public partial class SessionEditViewModel : ObservableObject
 {
@@ -61,6 +61,17 @@ public partial class SessionEditViewModel : ObservableObject
     public string PasswordNotSavedText => L.Text("SessionEdit.PasswordNotSaved");
     public string PasswordSavedEncryptedText => L.Text("SessionEdit.PasswordSavedEncrypted");
     public string PrivateKeyPathText => L.Text("SessionEdit.PrivateKeyPath");
+    public string SshTunnelTitleText => L.Text("SessionEdit.SshTunnelTitle");
+    public string VncSshTunnelTitleText => L.Text("SessionEdit.VncSshTunnelTitle");
+    public string UseVncSshTunnelText => L.Text("SessionEdit.UseVncSshTunnel");
+    public string VncSshTunnelDescriptionText => L.Text("SessionEdit.VncSshTunnelDescription");
+    public string UseRdpSshTunnelText => L.Text("SessionEdit.UseRdpSshTunnel");
+    public string RdpSshTunnelDescriptionText => L.Text("SessionEdit.RdpSshTunnelDescription");
+    public string SshHostText => L.Text("SessionEdit.SshHost");
+    public string SshPortText => L.Text("SessionEdit.SshPort");
+    public string SshUsernameText => L.Text("SessionEdit.SshUsername");
+    public string SshPasswordText => L.Text("SessionEdit.SshPassword");
+    public string SshPrivateKeyText => L.Text("SessionEdit.SshPrivateKey");
     public string BrowseText => L.Text("SessionEdit.Browse");
     public string ReconnectText => L.Text("SessionEdit.Reconnect");
     public string AutoReconnectText => L.Text("SessionEdit.AutoReconnect");
@@ -226,7 +237,9 @@ public partial class SessionEditViewModel : ObservableObject
     [ObservableProperty] private bool _sshUseCompression;
     [ObservableProperty] private bool _sshNoTerminal;
     [ObservableProperty] private bool _sshAcceptAndSaveHostKey;
-    [ObservableProperty] private bool _sshDoNotStartFileManager = true;
+    [ObservableProperty] private bool _sshAutoOpenSftpPanel = true;
+    [ObservableProperty] private bool _sshAutoOpenMonitorPanel = true;
+    [ObservableProperty] private bool _sshDoNotStartFileManager;
     [ObservableProperty] private string _sshCipherAlgorithms = string.Empty;
     [ObservableProperty] private string _sshMacAlgorithms = string.Empty;
     [ObservableProperty] private string _sshKeyExchangeAlgorithms = string.Empty;
@@ -248,6 +261,7 @@ public partial class SessionEditViewModel : ObservableObject
     [ObservableProperty] private string _rloginTerminalSpeed = "38400";
     [ObservableProperty] private string _sftpLocalStartDirectory = string.Empty;
     [ObservableProperty] private string _sftpRemoteStartDirectory = string.Empty;
+    [ObservableProperty] private bool _sftpFollowTerminalDirectory = true;
     [ObservableProperty] private bool _sftpUseCustomServer;
     [ObservableProperty] private string _sftpCustomServerCommand = string.Empty;
     [ObservableProperty] private bool _fileTransferAlwaysAskDownloadFolder = true;
@@ -317,6 +331,7 @@ public partial class SessionEditViewModel : ObservableObject
     public bool IsTracingPage => SelectedPage == "Tracing";
     public bool IsSessionScope => true;
     public bool IsVncProtocol => string.Equals(Protocol, SessionProtocol.VNC.ToString(), StringComparison.OrdinalIgnoreCase);
+    public bool IsRdpProtocol => string.Equals(Protocol, SessionProtocol.RDP.ToString(), StringComparison.OrdinalIgnoreCase);
     public bool IsRdpSshPasswordAuth
     {
         get => !RdpSshUsePrivateKey;
@@ -981,6 +996,17 @@ public partial class SessionEditViewModel : ObservableObject
         OnPropertyChanged(nameof(PasswordNotSavedText));
         OnPropertyChanged(nameof(PasswordSavedEncryptedText));
         OnPropertyChanged(nameof(PrivateKeyPathText));
+        OnPropertyChanged(nameof(SshTunnelTitleText));
+        OnPropertyChanged(nameof(VncSshTunnelTitleText));
+        OnPropertyChanged(nameof(UseVncSshTunnelText));
+        OnPropertyChanged(nameof(VncSshTunnelDescriptionText));
+        OnPropertyChanged(nameof(UseRdpSshTunnelText));
+        OnPropertyChanged(nameof(RdpSshTunnelDescriptionText));
+        OnPropertyChanged(nameof(SshHostText));
+        OnPropertyChanged(nameof(SshPortText));
+        OnPropertyChanged(nameof(SshUsernameText));
+        OnPropertyChanged(nameof(SshPasswordText));
+        OnPropertyChanged(nameof(SshPrivateKeyText));
         OnPropertyChanged(nameof(BrowseText));
         OnPropertyChanged(nameof(ReconnectText));
         OnPropertyChanged(nameof(AutoReconnectText));
@@ -1235,6 +1261,8 @@ public partial class SessionEditViewModel : ObservableObject
         SshUseCompression = session.SshUseCompression;
         SshNoTerminal = session.SshNoTerminal;
         SshAcceptAndSaveHostKey = session.SshAcceptAndSaveHostKey;
+        SshAutoOpenSftpPanel = session.SshAutoOpenSftpPanel;
+        SshAutoOpenMonitorPanel = session.SshAutoOpenMonitorPanel;
         SshDoNotStartFileManager = session.SshDoNotStartFileManager;
         SshCipherAlgorithms = session.SshCipherAlgorithms ?? string.Empty;
         SshMacAlgorithms = session.SshMacAlgorithms ?? string.Empty;
@@ -1254,6 +1282,7 @@ public partial class SessionEditViewModel : ObservableObject
         RloginTerminalSpeed = Math.Max(1, session.RloginTerminalSpeed).ToString();
         SftpLocalStartDirectory = session.SftpLocalStartDirectory ?? string.Empty;
         SftpRemoteStartDirectory = session.SftpRemoteStartDirectory ?? string.Empty;
+        SftpFollowTerminalDirectory = session.SftpFollowTerminalDirectory;
         SftpUseCustomServer = session.SftpUseCustomServer;
         SftpCustomServerCommand = session.SftpCustomServerCommand ?? string.Empty;
         FileTransferAlwaysAskDownloadFolder = session.FileTransferAlwaysAskDownloadFolder;
@@ -1406,7 +1435,9 @@ public partial class SessionEditViewModel : ObservableObject
         session.SshUseCompression = SshUseCompression;
         session.SshNoTerminal = SshNoTerminal;
         session.SshAcceptAndSaveHostKey = SshAcceptAndSaveHostKey;
-        session.SshDoNotStartFileManager = SshDoNotStartFileManager;
+        session.SshAutoOpenSftpPanel = SshAutoOpenSftpPanel;
+        session.SshAutoOpenMonitorPanel = SshAutoOpenMonitorPanel;
+        session.SshDoNotStartFileManager = !SshAutoOpenSftpPanel;
         session.SshCipherAlgorithms = NormalizeAlgorithmList(SshCipherAlgorithms);
         session.SshMacAlgorithms = NormalizeAlgorithmList(SshMacAlgorithms);
         session.SshKeyExchangeAlgorithms = NormalizeAlgorithmList(SshKeyExchangeAlgorithms);
@@ -1426,6 +1457,7 @@ public partial class SessionEditViewModel : ObservableObject
             : 38400;
         session.SftpLocalStartDirectory = SftpLocalStartDirectory.Trim();
         session.SftpRemoteStartDirectory = SftpRemoteStartDirectory.Trim();
+        session.SftpFollowTerminalDirectory = SftpFollowTerminalDirectory;
         session.SftpUseCustomServer = SftpUseCustomServer;
         session.SftpCustomServerCommand = SftpCustomServerCommand.Trim();
         session.SerialPortName = SerialPortName.Trim();
@@ -1613,6 +1645,7 @@ public partial class SessionEditViewModel : ObservableObject
     partial void OnProtocolChanged(string value)
     {
         OnPropertyChanged(nameof(IsVncProtocol));
+        OnPropertyChanged(nameof(IsRdpProtocol));
     }
 
     partial void OnVncSshUsePrivateKeyChanged(bool value)

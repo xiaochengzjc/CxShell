@@ -12,13 +12,13 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
-using ChiXueSsh.Models;
-using ChiXueSsh.Services;
-using ChiXueSsh.Views;
+using CxShell.Models;
+using CxShell.Services;
+using CxShell.Views;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
-namespace ChiXueSsh.ViewModels;
+namespace CxShell.ViewModels;
 
 public enum TabArrangementMode
 {
@@ -31,7 +31,7 @@ public enum TabArrangementMode
 public partial class MainWindowViewModel : ObservableObject
 {
     private const double DefaultSftpPanelWidth = 318;
-    private const double MinimumSftpPanelWidth = 260;
+    private const double MinimumSftpPanelWidth = 120;
 
     private readonly SessionTreeViewModel _sessionTreeVm;
     private readonly LocalizationService _localization = LocalizationService.Shared;
@@ -385,6 +385,40 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
         Monitor.SwitchConnection(tab.Session, tab.ConnectedPassword);
+    }
+
+    private void UpdateCompanionPanelsAfterTerminalConnect(TerminalTabViewModel tab)
+    {
+        if (tab.Session.Protocol != SessionProtocol.SSH)
+        {
+            UpdateMonitor(tab);
+            UpdateSftp(tab);
+            return;
+        }
+
+        if (tab.Session.SshAutoOpenMonitorPanel)
+        {
+            if (!IsMonitorVisible)
+                IsMonitorVisible = true;
+            else
+                UpdateMonitor(tab);
+        }
+        else if (IsMonitorVisible)
+        {
+            UpdateMonitor(tab);
+        }
+
+        if (tab.Session.SshAutoOpenSftpPanel)
+        {
+            if (!IsSftpVisible)
+                IsSftpVisible = true;
+            else
+                UpdateSftp(tab);
+        }
+        else if (IsSftpVisible)
+        {
+            UpdateSftp(tab);
+        }
     }
 
     private void UpdateSftp(TerminalTabViewModel? tab)
@@ -860,6 +894,7 @@ public partial class MainWindowViewModel : ObservableObject
         SelectedTab = tab;
 
         tab.Terminal.PropertyChanged += OnActiveTerminalPropertyChanged;
+        tab.Terminal.RemoteCurrentDirectoryChanged += path => OnTerminalRemoteCurrentDirectoryChanged(tab, path);
 
         try
         {
@@ -869,12 +904,7 @@ public partial class MainWindowViewModel : ObservableObject
             await tab.Terminal.ConnectAsync(session, password);
 
             tab.ConnectedPassword = password;
-
-            if (IsMonitorVisible && tab.Session.Protocol == SessionProtocol.SSH)
-                Monitor.SwitchConnection(tab.Session, tab.ConnectedPassword);
-
-            if (IsSftpVisible && tab.Session.Protocol == SessionProtocol.SSH)
-                Sftp.SwitchConnection(tab.Session, tab.ConnectedPassword);
+            UpdateCompanionPanelsAfterTerminalConnect(tab);
         }
         catch (Exception ex)
         {
@@ -1023,6 +1053,23 @@ public partial class MainWindowViewModel : ObservableObject
         {
             UpdateTerminalSize();
         }
+    }
+
+    private async void OnTerminalRemoteCurrentDirectoryChanged(TerminalTabViewModel tab, string path)
+    {
+        if (tab != SelectedTab ||
+            !IsSftpVisible ||
+            !Sftp.IsConnected ||
+            tab.Session.Protocol != SessionProtocol.SSH ||
+            !tab.Session.SftpFollowTerminalDirectory ||
+            tab.Vnc != null ||
+            tab.Rdp != null ||
+            tab.FileTransfer != null)
+        {
+            return;
+        }
+
+        await Sftp.TryNavigateToRemotePathAsync(path);
     }
 
     public void CloseTab(TerminalTabViewModel tab)
@@ -1213,8 +1260,7 @@ public partial class MainWindowViewModel : ObservableObject
             ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FAAD14"));
             await tab.Terminal.ConnectAsync(tab.Session, password);
             tab.ConnectedPassword = password;
-            UpdateMonitor(tab);
-            UpdateSftp(tab);
+            UpdateCompanionPanelsAfterTerminalConnect(tab);
         }
         catch (Exception ex)
         {

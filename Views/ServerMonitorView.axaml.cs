@@ -1,6 +1,6 @@
 using Avalonia.Controls;
 
-namespace ChiXueSsh.Views;
+namespace CxShell.Views;
 
 public partial class ServerMonitorView : UserControl
 {

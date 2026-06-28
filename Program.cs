@@ -3,7 +3,7 @@ using Avalonia;
 using AtomUI;
 using ReactiveUI.Avalonia;
 
-namespace ChiXueSsh;
+namespace CxShell;
 
 internal class Program
 {

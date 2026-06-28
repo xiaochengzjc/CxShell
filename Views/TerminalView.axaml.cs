@@ -7,9 +7,11 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
-using ChiXueSsh.ViewModels;
+using CxShell.ViewModels;
+using AtomContextMenu = AtomUI.Desktop.Controls.ContextMenu;
+using AtomMenuItem = AtomUI.Desktop.Controls.MenuItem;
 
-namespace ChiXueSsh.Views;
+namespace CxShell.Views;
 
 public partial class TerminalView : UserControl
 {
@@ -33,7 +35,6 @@ public partial class TerminalView : UserControl
 
     protected override void OnUnloaded(RoutedEventArgs e)
     {
-        TerminalContextMenuPopup.Close();
         Unbind();
         _terminal = null;
         base.OnUnloaded(e);
@@ -61,8 +62,6 @@ public partial class TerminalView : UserControl
         _terminal.InputReceived += OnInputReceived;
         _terminal.SizeChanged2 += OnSizeChanged;
         _terminal.PointerPressed += OnPointerPressed;
-        MenuCopyBtn.Click += OnCopyClick;
-        MenuPasteBtn.Click += OnPasteClick;
         vm.BufferChanged += OnBufferChanged;
         vm.BellRequested += OnBellRequested;
         vm.PropertyChanged += OnVmPropertyChanged;
@@ -83,9 +82,6 @@ public partial class TerminalView : UserControl
             _terminal.SizeChanged2 -= OnSizeChanged;
             _terminal.PointerPressed -= OnPointerPressed;
         }
-        MenuCopyBtn.Click -= OnCopyClick;
-        MenuPasteBtn.Click -= OnPasteClick;
-
         if (_boundVm != null)
         {
             _boundVm.BufferChanged -= OnBufferChanged;
@@ -239,15 +235,46 @@ public partial class TerminalView : UserControl
         if (_terminal == null || !e.GetCurrentPoint(_terminal).Properties.IsRightButtonPressed)
             return;
 
-        TerminalContextMenuPopup.PlacementTarget = _terminal;
-        MenuCopyBtn.IsEnabled = _terminal.HasSelection;
-        TerminalContextMenuPopup.IsOpen = true;
+        ShowTerminalContextMenu(_terminal);
         e.Handled = true;
     }
 
-    private async void OnCopyClick(object? sender, RoutedEventArgs e)
+    private void ShowTerminalContextMenu(Controls.TerminalControl terminal)
     {
-        TerminalContextMenuPopup.Close();
+        var menu = new AtomContextMenu
+        {
+            Placement = PlacementMode.Pointer,
+            PlacementTarget = terminal
+        };
+
+        var copyItem = new AtomMenuItem
+        {
+            Header = _boundVm?.CopyText ?? "Copy",
+            IsEnabled = terminal.HasSelection
+        };
+        copyItem.Click += async (_, _) =>
+        {
+            menu.Close();
+            await CopyTerminalSelectionAsync();
+        };
+
+        var pasteItem = new AtomMenuItem
+        {
+            Header = _boundVm?.PasteText ?? "Paste"
+        };
+        pasteItem.Click += async (_, _) =>
+        {
+            menu.Close();
+            await PasteTerminalTextAsync();
+        };
+
+        menu.Items.Add(copyItem);
+        menu.Items.Add(pasteItem);
+        menu.Open(terminal);
+    }
+
+    private async Task CopyTerminalSelectionAsync()
+    {
         if (_terminal != null)
         {
             await _terminal.CopySelectionAsync();
@@ -255,9 +282,8 @@ public partial class TerminalView : UserControl
         }
     }
 
-    private async void OnPasteClick(object? sender, RoutedEventArgs e)
+    private async Task PasteTerminalTextAsync()
     {
-        TerminalContextMenuPopup.Close();
         if (_terminal != null)
         {
             await _terminal.PasteAsync();

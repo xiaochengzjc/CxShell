@@ -1,6 +1,6 @@
 using Avalonia.Media;
 
-namespace ChiXueSsh.Terminal;
+namespace CxShell.Terminal;
 
 public struct TerminalCell
 {

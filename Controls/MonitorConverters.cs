@@ -3,11 +3,11 @@ using System.Collections.Generic;
 using System.Globalization;
 using Avalonia.Data.Converters;
 using Avalonia.Media;
-using ChiXueSsh.Controls;
-using ChiXueSsh.Models;
-using ChiXueSsh.Services;
+using CxShell.Controls;
+using CxShell.Models;
+using CxShell.Services;
 
-namespace ChiXueSsh.Controls;
+namespace CxShell.Controls;
 
 /// <summary>bool → 监控状态颜色 (true=绿, false=灰)</summary>
 public class MonitorColorConverter : IValueConverter

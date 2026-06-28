@@ -4,7 +4,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 
-namespace ChiXueSsh.Controls;
+namespace CxShell.Controls;
 
 public class PieSegment
 {

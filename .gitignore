@@ -2,22 +2,36 @@
 bin/
 obj/
 native/**/build/
+TestResults/
 
 # Local third-party reference source
 AtomUI/
 
+# Native binaries copied into release packages
+runtimes/
+
 # IDE settings
 .vs/
+.vscode/
 *.user
 *.DotSettings.user
 .idea/
 .qoder/
+.agents/
 
 # OS files
 Thumbs.db
 .DS_Store
+
+# Local scratch/build verification
 .codex-build
 .buildcheck*/
 .tmp/
 publish/
-artifacts/*
+artifacts/
+
+# Logs and package output
+*.binlog
+*.log
+*.nupkg
+*.snupkg

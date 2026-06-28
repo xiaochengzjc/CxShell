@@ -2,11 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using ChiXueSsh.Models;
+using CxShell.Models;
 using Renci.SshNet;
 using SshNet.Agent;
 
-namespace ChiXueSsh.Services;
+namespace CxShell.Services;
 
 public static class SshAgentAuthService
 {

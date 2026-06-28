@@ -4,10 +4,10 @@ using System.Linq;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
-using ChiXueSsh.Models;
+using CxShell.Models;
 using FluentFTP;
 
-namespace ChiXueSsh.Services;
+namespace CxShell.Services;
 
 public sealed class FtpService : IFileTransferService, IDisposable
 {

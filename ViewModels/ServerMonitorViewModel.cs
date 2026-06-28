@@ -1,15 +1,17 @@
 using System;
+using System.Linq;
 using System.Collections.ObjectModel;
 using Avalonia.Threading;
-using ChiXueSsh.Models;
-using ChiXueSsh.Services;
+using CxShell.Models;
+using CxShell.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 
-namespace ChiXueSsh.ViewModels;
+namespace CxShell.ViewModels;
 
 public partial class ServerMonitorViewModel : ObservableObject, IDisposable
 {
     private readonly ServerMonitorService _service = new();
+    private LocalizationService L => LocalizationService.Shared;
 
     [ObservableProperty] private bool _isMonitoring;
     [ObservableProperty] private string? _errorMessage;
@@ -17,6 +19,31 @@ public partial class ServerMonitorViewModel : ObservableObject, IDisposable
     [ObservableProperty] private MemoryInfo? _memory;
     [ObservableProperty] private NetworkSpeed? _currentNetworkSpeed;
     [ObservableProperty] private string _hostLabel = LocalizationService.Shared.Text("Monitor.NotConnected");
+
+    public string MonitorTitleText => L.Text("UiText.001");
+    public string MonitorStatusText => IsMonitoring
+        ? L.Text("Monitor.StatusRunning")
+        : L.Text("Monitor.StatusStopped");
+    public string MemoryTitleText => L.Text("UiText.002");
+    public string NetworkTitleText => L.Text("UiText.003");
+    public string DownloadText => L.Text("UiText.004");
+    public string UploadText => L.Text("UiText.005");
+    public string DiskTitleText => L.Text("UiText.006");
+    public string DiskIoTitleText => L.Text("UiText.007");
+    public string ReadText => L.Text("UiText.008");
+    public string WriteText => L.Text("UiText.009");
+    public string MemoryUsedDisplay => Memory == null
+        ? string.Empty
+        : string.Format(L.Text("Monitor.MemoryUsedFormat"), Memory.UsedFormatted);
+    public string MemoryCachedDisplay => Memory == null
+        ? string.Empty
+        : string.Format(L.Text("Monitor.MemoryCachedFormat"), Memory.CachedFormatted);
+    public string MemoryFreeDisplay => Memory == null
+        ? string.Empty
+        : string.Format(L.Text("Monitor.MemoryFreeFormat"), Memory.FreeFormatted);
+    public string MemoryTotalDisplay => Memory == null
+        ? string.Empty
+        : string.Format(L.Text("Monitor.MemoryTotalFormat"), Memory.TotalFormatted);
 
     public ObservableCollection<CpuCoreInfo> CpuCores { get; } = new();
     public ObservableCollection<NetworkSpeed> NetworkHistory { get; } = new();
@@ -59,6 +86,53 @@ public partial class ServerMonitorViewModel : ObservableObject, IDisposable
     {
         if (!IsMonitoring)
             HostLabel = LocalizationService.Shared.Text("Monitor.NotConnected");
+
+        NotifyLocalizedPropertiesChanged();
+        RefreshCpuCoreLabels();
+    }
+
+    partial void OnIsMonitoringChanged(bool value)
+    {
+        OnPropertyChanged(nameof(MonitorStatusText));
+    }
+
+    partial void OnMemoryChanged(MemoryInfo? value)
+    {
+        NotifyMemoryDisplayChanged();
+    }
+
+    private void NotifyLocalizedPropertiesChanged()
+    {
+        OnPropertyChanged(nameof(MonitorTitleText));
+        OnPropertyChanged(nameof(MonitorStatusText));
+        OnPropertyChanged(nameof(MemoryTitleText));
+        OnPropertyChanged(nameof(NetworkTitleText));
+        OnPropertyChanged(nameof(DownloadText));
+        OnPropertyChanged(nameof(UploadText));
+        OnPropertyChanged(nameof(DiskTitleText));
+        OnPropertyChanged(nameof(DiskIoTitleText));
+        OnPropertyChanged(nameof(ReadText));
+        OnPropertyChanged(nameof(WriteText));
+        NotifyMemoryDisplayChanged();
+    }
+
+    private void NotifyMemoryDisplayChanged()
+    {
+        OnPropertyChanged(nameof(MemoryUsedDisplay));
+        OnPropertyChanged(nameof(MemoryCachedDisplay));
+        OnPropertyChanged(nameof(MemoryFreeDisplay));
+        OnPropertyChanged(nameof(MemoryTotalDisplay));
+    }
+
+    private void RefreshCpuCoreLabels()
+    {
+        if (CpuCores.Count == 0)
+            return;
+
+        var cores = CpuCores.ToArray();
+        CpuCores.Clear();
+        foreach (var core in cores)
+            CpuCores.Add(core);
     }
 
     private void ClearData()

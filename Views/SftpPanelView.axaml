@@ -1,9 +1,9 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:atom="https://atomui.net"
-             xmlns:vm="using:ChiXueSsh.ViewModels"
-             xmlns:models="using:ChiXueSsh.Models"
-             x:Class="ChiXueSsh.Views.SftpPanelView"
+             xmlns:vm="using:CxShell.ViewModels"
+             xmlns:models="using:CxShell.Models"
+             x:Class="CxShell.Views.SftpPanelView"
              x:DataType="vm:SftpViewModel">
 
     <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" Background="{atom:SharedTokenResource ColorBgLayout}">
@@ -156,12 +156,41 @@
         </Border>
 
         <Grid Grid.Row="4"
+              RowDefinitions="Auto,*"
+              Background="Transparent"
               DragDrop.AllowDrop="{Binding IsConnected}"
               DragDrop.DragOver="OnFileListDragOver"
               DragDrop.Drop="OnFileListDrop">
+            <Border Grid.Row="0"
+                    Background="{atom:SharedTokenResource ColorBgContainer}"
+                    BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                    BorderThickness="0,0,0,1"
+                    Padding="6,4"
+                    IsVisible="{Binding IsCreatingDirectory}">
+                <Grid ColumnDefinitions="Auto,*"
+                      ColumnSpacing="6">
+                    <TextBlock Grid.Column="0"
+                               Text="+"
+                               FontSize="15"
+                               FontWeight="Bold"
+                               VerticalAlignment="Center"
+                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                    <atom:TextBox Grid.Column="1"
+                                  x:Name="NewDirInput"
+                                  Text="{Binding NewDirectoryName, Mode=TwoWay}"
+                                  FontSize="12"
+                                  BorderThickness="0,0,0,1"
+                                  Padding="2,2"
+                                  VerticalAlignment="Center"
+                                  KeyDown="OnNewDirInputKeyDown"
+                                  LostFocus="OnNewDirInputLostFocus"/>
+                </Grid>
+            </Border>
+
             <StackPanel HorizontalAlignment="Center"
                         VerticalAlignment="Center"
                         Spacing="8"
+                        Grid.RowSpan="2"
                         IsVisible="{Binding !IsConnected}">
                 <TextBlock Text="📁"
                            FontSize="32"
@@ -173,81 +202,83 @@
                            HorizontalAlignment="Center"/>
             </StackPanel>
 
-            <TextBlock Text="{Binding LoadingText}"
-                       Foreground="{atom:SharedTokenResource ColorTextSecondary}"
-                       FontSize="12"
-                       HorizontalAlignment="Center"
-                       VerticalAlignment="Center"
-                       IsVisible="{Binding IsLoading}"/>
-
-            <atom:DataGrid x:Name="FileGrid"
-                           IsVisible="{Binding IsConnected}"
-                           ItemsSource="{Binding Files}"
-                           SelectedItem="{Binding SelectedFile, Mode=TwoWay}"
-                           AutoGenerateColumns="False"
-                           IsReadOnly="True"
-                           SelectionMode="Extended"
-                           SizeType="Middle"
-                           GridLinesVisibility="All"
-                           CanUserResizeColumns="True"
-                           CanUserSortColumns="True"
-                           IsHideOnSinglePage="True"
-                           HeadersVisibility="Column"
-                           SelectionChanged="OnFileGridSelectionChanged"
-                           PointerPressed="OnFileGridPointerPressed"
-                           PointerMoved="OnFileGridPointerMoved"
-                           PointerReleased="OnFileGridPointerReleased"
-                           KeyDown="OnFileGridKeyDown">
-                <atom:DataGrid.Columns>
-                    <atom:DataGridTemplateColumn Header="{Binding NameText}"
-                                                 SortMemberPath="Name"
-                                                 Width="1*"
-                                                 MinWidth="100"
-                                                 CanUserResize="True">
-                        <atom:DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate DataType="models:SftpFileItem">
-                                <Grid ColumnDefinitions="Auto,*">
-                                    <TextBlock Grid.Column="0"
-                                               Text="{Binding Icon}"
-                                               FontSize="13"
-                                               VerticalAlignment="Center"
-                                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"
-                                               Margin="0,0,6,0"/>
-                                    <Grid Grid.Column="1">
-                                        <TextBlock Text="{Binding DisplayName}"
-                                                   FontSize="12"
+            <atom:Spin Grid.Row="1"
+                       IsVisible="{Binding IsConnected}"
+                       IsSpinning="{Binding IsLoading}"
+                       IsTipVisible="{Binding IsLoading}"
+                       Tip="{Binding LoadingText}"
+                       SizeType="Middle"
+                       IsMaskBackgroundEnabled="False"
+                       IsMaskBlurEnabled="False"
+                       HorizontalAlignment="Stretch"
+                       VerticalAlignment="Stretch">
+                <atom:DataGrid x:Name="FileGrid"
+                               ItemsSource="{Binding Files}"
+                               SelectedItem="{Binding SelectedFile, Mode=TwoWay}"
+                               AutoGenerateColumns="False"
+                               IsReadOnly="True"
+                               SelectionMode="Extended"
+                               SizeType="Middle"
+                               GridLinesVisibility="All"
+                               CanUserResizeColumns="True"
+                               CanUserSortColumns="True"
+                               IsHideOnSinglePage="True"
+                               HeadersVisibility="Column"
+                               SelectionChanged="OnFileGridSelectionChanged"
+                               PointerMoved="OnFileGridPointerMoved"
+                               PointerReleased="OnFileGridPointerReleased"
+                               KeyDown="OnFileGridKeyDown">
+                    <atom:DataGrid.Columns>
+                        <atom:DataGridTemplateColumn Header="{Binding NameText}"
+                                                     SortMemberPath="Name"
+                                                     Width="1*"
+                                                     MinWidth="100"
+                                                     CanUserResize="True">
+                            <atom:DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate DataType="models:SftpFileItem">
+                                    <Grid ColumnDefinitions="Auto,*">
+                                        <TextBlock Grid.Column="0"
+                                                   Text="{Binding Icon}"
+                                                   FontSize="13"
                                                    VerticalAlignment="Center"
-                                                   TextTrimming="CharacterEllipsis"
-                                                   IsVisible="{Binding !IsRenaming}"
-                                                   Foreground="{Binding IsDirectory, Converter={x:Static vm:SftpDirColorConverter.Instance}}"/>
-                                        <atom:TextBox Text="{Binding RenamingText, Mode=TwoWay}"
-                                                      FontSize="12"
-                                                      BorderThickness="0,0,0,1"
-                                                      Padding="2,1"
-                                                      VerticalAlignment="Center"
-                                                      IsVisible="{Binding IsRenaming}"
-                                                      Tag="{Binding}"
-                                                      KeyDown="OnRenameInputKeyDown"
-                                                      LostFocus="OnRenameInputLostFocus"/>
+                                                   Foreground="{atom:SharedTokenResource ColorTextSecondary}"
+                                                   Margin="0,0,6,0"/>
+                                        <Grid Grid.Column="1">
+                                            <TextBlock Text="{Binding DisplayName}"
+                                                       FontSize="12"
+                                                       VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       IsVisible="{Binding !IsRenaming}"
+                                                       Foreground="{Binding IsDirectory, Converter={x:Static vm:SftpDirColorConverter.Instance}}"/>
+                                            <atom:TextBox Text="{Binding RenamingText, Mode=TwoWay}"
+                                                          FontSize="12"
+                                                          BorderThickness="0,0,0,1"
+                                                          Padding="2,1"
+                                                          VerticalAlignment="Center"
+                                                          IsVisible="{Binding IsRenaming}"
+                                                          Tag="{Binding}"
+                                                          KeyDown="OnRenameInputKeyDown"
+                                                          LostFocus="OnRenameInputLostFocus"/>
+                                        </Grid>
                                     </Grid>
-                                </Grid>
-                            </DataTemplate>
-                        </atom:DataGridTemplateColumn.CellTemplate>
-                    </atom:DataGridTemplateColumn>
-                    <atom:DataGridTextColumn Header="{Binding SizeText}"
-                                             Binding="{Binding SizeDisplay}"
-                                             SortMemberPath="Size"
-                                             Width="0.8*"
-                                             MinWidth="82"
-                                             CanUserResize="True"/>
-                    <atom:DataGridTextColumn Header="{Binding ModifiedText}"
-                                             Binding="{Binding DateDisplay}"
-                                             SortMemberPath="LastModified"
-                                             Width="*"
-                                             MinWidth="118"
-                                             CanUserResize="True"/>
-                </atom:DataGrid.Columns>
-            </atom:DataGrid>
+                                </DataTemplate>
+                            </atom:DataGridTemplateColumn.CellTemplate>
+                        </atom:DataGridTemplateColumn>
+                        <atom:DataGridTextColumn Header="{Binding SizeText}"
+                                                 Binding="{Binding SizeDisplay}"
+                                                 SortMemberPath="Size"
+                                                 Width="0.8*"
+                                                 MinWidth="82"
+                                                 CanUserResize="True"/>
+                        <atom:DataGridTextColumn Header="{Binding ModifiedText}"
+                                                 Binding="{Binding DateDisplay}"
+                                                 SortMemberPath="LastModified"
+                                                 Width="*"
+                                                 MinWidth="118"
+                                                 CanUserResize="True"/>
+                    </atom:DataGrid.Columns>
+                </atom:DataGrid>
+            </atom:Spin>
         </Grid>
 
     </Grid>

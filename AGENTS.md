@@ -10,7 +10,7 @@ CxShell is a single-project Avalonia desktop terminal and remote session client 
 - `Services/`: SSH/SFTP connections, persistence, monitoring, and Linux parsing.
 - `Terminal/`: terminal buffer, cells, ANSI parsing, and color handling.
 - `Controls/` and `Converters/`: reusable UI controls and binding converters.
-- `Assets/`: resources embedded through `ChiXueSsh.csproj`.
+- `Assets/`: resources embedded through `CxShell.csproj`.
 
 `AtomUI/` is ignored reference source and explicitly excluded from compilation. Do not treat `bin/` or `obj/` as source.
 
@@ -20,9 +20,9 @@ Run commands from the repository root:
 
 ```powershell
 dotnet restore
-dotnet build ChiXueSsh.csproj
-dotnet run --project ChiXueSsh.csproj
-dotnet format ChiXueSsh.csproj
+dotnet build CxShell.csproj
+dotnet run --project CxShell.csproj
+dotnet format CxShell.csproj
 ```
 
 `restore` downloads NuGet dependencies, `build` compiles the app, `run` launches the desktop client, and `format` applies standard .NET formatting.
@@ -33,7 +33,7 @@ Use four-space indentation in C# and follow existing file-scoped namespace style
 
 ## Testing Guidelines
 
-No automated test project currently exists. Before submitting changes, run `dotnet build ChiXueSsh.csproj` and manually exercise affected SSH, SFTP, terminal, or monitoring workflows. New test projects should use names such as `ChiXueSsh.Tests`, with test files named `<ClassName>Tests.cs`; run them with `dotnet test`.
+No automated test project currently exists. Before submitting changes, run `dotnet build CxShell.csproj` and manually exercise affected SSH, SFTP, terminal, or monitoring workflows. New test projects should use names such as `CxShell.Tests`, with test files named `<ClassName>Tests.cs`; run them with `dotnet test`.
 
 ## Terminal Interaction Requirements
 

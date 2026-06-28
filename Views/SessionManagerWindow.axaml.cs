@@ -1,9 +1,9 @@
 using System;
 using AtomUI.Desktop.Controls;
 using Avalonia.Interactivity;
-using ChiXueSsh.ViewModels;
+using CxShell.ViewModels;
 
-namespace ChiXueSsh.Views;
+namespace CxShell.Views;
 
 public partial class SessionManagerWindow : Window
 {

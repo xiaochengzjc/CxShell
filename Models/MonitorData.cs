@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
-using ChiXueSsh.Services;
+using CxShell.Services;
 
-namespace ChiXueSsh.Models;
+namespace CxShell.Models;
 
 public class CpuCoreInfo
 {

@@ -3,14 +3,15 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using Avalonia.Threading;
-using ChiXueSsh.Models;
-using ChiXueSsh.Services;
+using CxShell.Models;
+using CxShell.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
-namespace ChiXueSsh.ViewModels;
+namespace CxShell.ViewModels;
 
 public partial class SftpViewModel : ObservableObject
 {
@@ -18,6 +19,7 @@ public partial class SftpViewModel : ObservableObject
 
     public string UploadText => L.Text("Sftp.Upload");
     public string DownloadText => L.Text("Sftp.Download");
+    public string EditText => L.Text("Sftp.Edit");
     public string NewDirectoryText => L.Text("Sftp.NewDirectory");
     public string NameText => L.Text("Sftp.Name");
     public string SizeText => L.Text("Sftp.Size");
@@ -31,6 +33,7 @@ public partial class SftpViewModel : ObservableObject
     private SessionInfo? _currentSession;
     private string? _currentPassword;
     private string _homeDirectory = "/";
+    private const long MaxEditableFileSize = 5 * 1024 * 1024;
 
     [ObservableProperty] private bool _isConnected;
     [ObservableProperty] private string _currentPath = "/";
@@ -50,12 +53,15 @@ public partial class SftpViewModel : ObservableObject
     private readonly List<SftpFileItem> _selectedFiles = new();
 
     public IReadOnlyList<SftpFileItem> SelectedFiles => _selectedFiles;
+    public int SelectedFileCount => _selectedFiles.Count;
+    public bool HasMultipleSelectedFiles => _selectedFiles.Count > 1;
     public bool HasSelectedFiles => _selectedFiles.Count > 0;
 
     public Func<Task<string?>>? PickUploadFileAsync { get; set; }
     public Func<string, Task<string?>>? PickDownloadPathAsync { get; set; }
     public Func<string, Task<bool>>? ShowConfirmDialogAsync { get; set; }
     public Func<string, string, Task<string?>>? ShowInputDialogAsync { get; set; }
+    public Func<RemoteFileEditorViewModel, Task>? ShowRemoteFileEditorAsync { get; set; }
 
     public SftpViewModel()
     {
@@ -68,6 +74,7 @@ public partial class SftpViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(UploadText));
         OnPropertyChanged(nameof(DownloadText));
+        OnPropertyChanged(nameof(EditText));
         OnPropertyChanged(nameof(NewDirectoryText));
         OnPropertyChanged(nameof(NameText));
         OnPropertyChanged(nameof(SizeText));
@@ -96,7 +103,10 @@ public partial class SftpViewModel : ObservableObject
         _selectedFiles.Clear();
         _selectedFiles.AddRange(next);
         OnPropertyChanged(nameof(SelectedFiles));
+        OnPropertyChanged(nameof(SelectedFileCount));
+        OnPropertyChanged(nameof(HasMultipleSelectedFiles));
         OnPropertyChanged(nameof(HasSelectedFiles));
+        OnPropertyChanged(nameof(DeleteText));
 
         var primary = next.FirstOrDefault();
         if (!ReferenceEquals(SelectedFile, primary))
@@ -136,6 +146,21 @@ public partial class SftpViewModel : ObservableObject
             PathInput = "/";
             ErrorMessage = null;
         });
+    }
+
+    public async Task TryNavigateToRemotePathAsync(string path)
+    {
+        if (!_service.IsConnected)
+            return;
+
+        var targetPath = NormalizeRemotePath(path);
+        if (string.IsNullOrWhiteSpace(targetPath) ||
+            string.Equals(targetPath, CurrentPath, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        await LoadDirectoryAsync(targetPath);
     }
 
     private async Task<bool> ConnectAndBrowseAsync()
@@ -347,6 +372,232 @@ public partial class SftpViewModel : ObservableObject
 
         if (item.IsDirectory)
             await LoadDirectoryAsync(item.FullPath);
+        else
+            await EditRemoteFile(item);
+    }
+
+    [RelayCommand]
+    private async Task EditRemoteFile(SftpFileItem? item)
+    {
+        if (!_service.IsConnected)
+            return;
+
+        item ??= SelectedFile;
+        if (item == null || item.IsDirectory)
+            return;
+
+        if (ShowRemoteFileEditorAsync == null)
+        {
+            ErrorMessage = "Editor is not available.";
+            return;
+        }
+
+        if (item.Size > MaxEditableFileSize)
+        {
+            ErrorMessage = $"File is too large to edit online. Limit: {FormatByteSize(MaxEditableFileSize)}.";
+            return;
+        }
+
+        string? tempPath = null;
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            IsLoading = true;
+            ErrorMessage = null;
+        });
+
+        try
+        {
+            tempPath = CreateTempEditFilePath(item.Name);
+            await _service.DownloadFileAsync(item.FullPath, tempPath);
+            var bytes = await File.ReadAllBytesAsync(tempPath);
+            if (LooksBinary(bytes))
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    ErrorMessage = "Binary files cannot be edited online.";
+                    IsLoading = false;
+                });
+                return;
+            }
+
+            var snapshot = DecodeEditableText(bytes);
+            var editorVm = new RemoteFileEditorViewModel(
+                item.Name,
+                item.FullPath,
+                snapshot.Text,
+                $"{FormatByteSize(bytes.Length)} · {snapshot.Encoding.WebName}",
+                text => SaveEditedRemoteFileAsync(item, snapshot, text));
+
+            await Dispatcher.UIThread.InvokeAsync(() => IsLoading = false);
+            await ShowRemoteFileEditorAsync(editorVm);
+        }
+        catch (Exception ex)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                ErrorMessage = $"Open editor failed: {ex.Message}";
+                IsLoading = false;
+            });
+        }
+        finally
+        {
+            if (tempPath != null)
+                TryDeleteFile(tempPath);
+        }
+    }
+
+    private async Task SaveEditedRemoteFileAsync(SftpFileItem item, EditableTextSnapshot snapshot, string text)
+    {
+        string? tempPath = null;
+        try
+        {
+            tempPath = CreateTempEditFilePath(item.Name);
+            var bytes = EncodeEditableText(snapshot, text);
+            await File.WriteAllBytesAsync(tempPath, bytes);
+            await _service.UploadFileAsync(tempPath, item.FullPath);
+            await LoadDirectoryAsync(CurrentPath);
+        }
+        finally
+        {
+            if (tempPath != null)
+                TryDeleteFile(tempPath);
+        }
+    }
+
+    private sealed record EditableTextSnapshot(
+        string Text,
+        Encoding Encoding,
+        byte[] Preamble,
+        string NewLine);
+
+    private static EditableTextSnapshot DecodeEditableText(byte[] bytes)
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+
+        var offset = 0;
+        Encoding encoding;
+        byte[] preamble;
+        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+        {
+            encoding = new UTF8Encoding(false, true);
+            preamble = [0xEF, 0xBB, 0xBF];
+            offset = 3;
+        }
+        else if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+        {
+            encoding = Encoding.Unicode;
+            preamble = [0xFF, 0xFE];
+            offset = 2;
+        }
+        else if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+        {
+            encoding = Encoding.BigEndianUnicode;
+            preamble = [0xFE, 0xFF];
+            offset = 2;
+        }
+        else
+        {
+            encoding = new UTF8Encoding(false, true);
+            preamble = [];
+        }
+
+        string text;
+        try
+        {
+            text = encoding.GetString(bytes, offset, bytes.Length - offset);
+        }
+        catch (DecoderFallbackException)
+        {
+            encoding = Encoding.GetEncoding("GB18030");
+            preamble = [];
+            offset = 0;
+            text = encoding.GetString(bytes);
+        }
+
+        return new EditableTextSnapshot(text, encoding, preamble, DetectNewLine(text));
+    }
+
+    private static byte[] EncodeEditableText(EditableTextSnapshot snapshot, string text)
+    {
+        var normalized = NormalizeNewLines(text, snapshot.NewLine);
+        var body = snapshot.Encoding.GetBytes(normalized);
+        if (snapshot.Preamble.Length == 0)
+            return body;
+
+        var result = new byte[snapshot.Preamble.Length + body.Length];
+        Buffer.BlockCopy(snapshot.Preamble, 0, result, 0, snapshot.Preamble.Length);
+        Buffer.BlockCopy(body, 0, result, snapshot.Preamble.Length, body.Length);
+        return result;
+    }
+
+    private static string DetectNewLine(string text)
+    {
+        var crlf = text.IndexOf("\r\n", StringComparison.Ordinal);
+        if (crlf >= 0)
+            return "\r\n";
+
+        var lf = text.IndexOf('\n');
+        if (lf >= 0)
+            return "\n";
+
+        var cr = text.IndexOf('\r');
+        return cr >= 0 ? "\r" : Environment.NewLine;
+    }
+
+    private static string NormalizeNewLines(string text, string newLine)
+    {
+        return text
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Replace("\n", newLine, StringComparison.Ordinal);
+    }
+
+    private static bool LooksBinary(byte[] bytes)
+    {
+        var sampleLength = Math.Min(bytes.Length, 8192);
+        if (sampleLength == 0)
+            return false;
+
+        var controlCount = 0;
+        for (var i = 0; i < sampleLength; i++)
+        {
+            var value = bytes[i];
+            if (value == 0)
+                return true;
+
+            if (value < 0x08 || value is > 0x0D and < 0x20)
+                controlCount++;
+        }
+
+        return controlCount > sampleLength / 10;
+    }
+
+    private static string CreateTempEditFilePath(string remoteName)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "CxShell", "RemoteEdit");
+        Directory.CreateDirectory(root);
+        var name = SanitizeLocalName(remoteName);
+        return Path.Combine(root, $"{Guid.NewGuid():N}-{name}");
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch
+        {
+        }
+    }
+
+    private static string FormatByteSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        if (bytes < 1024L * 1024 * 1024) return $"{bytes / (1024.0 * 1024):F1} MB";
+        return $"{bytes / (1024.0 * 1024 * 1024):F1} GB";
     }
 
     [RelayCommand]
@@ -580,7 +831,7 @@ public partial class SftpViewModel : ObservableObject
 
     private async Task<string?> ExportItemForDragCoreAsync(SftpFileItem item, bool useInvoke)
     {
-        var exportRoot = Path.Combine(Path.GetTempPath(), "ChiXueSsh", "SftpDrag", Guid.NewGuid().ToString("N"));
+        var exportRoot = Path.Combine(Path.GetTempPath(), "CxShell", "SftpDrag", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(exportRoot);
 
         await SetDragExportLoadingAsync(useInvoke, true, null);
@@ -698,20 +949,34 @@ public partial class SftpViewModel : ObservableObject
 
         if (ShowConfirmDialogAsync != null)
         {
-            var confirmed = await ShowConfirmDialogAsync(BuildDeleteMessage(targets));
+            var confirmed = await ShowConfirmDialogAsync(BuildDeleteConfirmMessage(targets));
             if (!confirmed)
                 return;
         }
 
-        try
+        var failures = new List<string>();
+        foreach (var item in targets)
         {
-            foreach (var item in targets)
+            try
+            {
                 await _service.DeleteAsync(item.FullPath, item.IsDirectory);
-            await LoadDirectoryAsync(CurrentPath);
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"{item.Name}: {ex.Message}");
+            }
         }
-        catch (Exception ex)
+
+        await LoadDirectoryAsync(CurrentPath);
+
+        if (failures.Count > 0)
         {
-            await Dispatcher.UIThread.InvokeAsync(() => ErrorMessage = $"Delete failed: {ex.Message}");
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                ErrorMessage = L.IsEnglish
+                    ? $"Failed to delete {failures.Count} item(s): {string.Join("; ", failures.Take(3))}"
+                    : $"\u5220\u9664 {failures.Count} \u9879\u5931\u8d25\uff1a{string.Join("; ", failures.Take(3))}";
+            });
         }
     }
 
@@ -795,6 +1060,20 @@ public partial class SftpViewModel : ObservableObject
     {
         IsCreatingDirectory = false;
         NewDirectoryName = "NewFolder";
+    }
+
+    private string BuildDeleteConfirmMessage(IReadOnlyList<SftpFileItem> targets)
+    {
+        if (targets.Count == 1)
+        {
+            return L.IsEnglish
+                ? "Delete the selected item?"
+                : "\u786e\u5b9a\u5220\u9664\u9009\u4e2d\u9879\u5417\uff1f";
+        }
+
+        return L.IsEnglish
+            ? $"Delete {targets.Count} selected items?"
+            : $"\u786e\u5b9a\u5220\u9664\u9009\u4e2d\u7684 {targets.Count} \u9879\u5417\uff1f";
     }
 
     private string BuildDeleteMessage(IReadOnlyList<SftpFileItem> targets)

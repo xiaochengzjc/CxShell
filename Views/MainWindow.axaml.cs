@@ -4,11 +4,14 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
-using ChiXueSsh.Models;
-using ChiXueSsh.Services;
-using ChiXueSsh.ViewModels;
+using CxShell.Models;
+using CxShell.Services;
+using CxShell.ViewModels;
+using AtomContextMenu = AtomUI.Desktop.Controls.ContextMenu;
+using AtomMenuItem = AtomUI.Desktop.Controls.MenuItem;
+using AtomMenuSeparator = AtomUI.Desktop.Controls.MenuSeparator;
 
-namespace ChiXueSsh.Views;
+namespace CxShell.Views;
 
 public partial class MainWindow : Window
 {
@@ -25,7 +28,7 @@ public partial class MainWindow : Window
     private double _sftpSplitterStartWidth;
     private Cursor? _sftpSplitterPreviousCursor;
 
-    private const double MinimumSftpPanelWidth = 260;
+    private const double MinimumSftpPanelWidth = 120;
     private const double SftpSplitterHitSlop = 0;
     private const double MinimumTerminalPanelWidth = 320;
     private const double MonitorPanelWidth = 283;
@@ -80,23 +83,11 @@ public partial class MainWindow : Window
     protected override void OnLoaded(RoutedEventArgs e)
     {
         base.OnLoaded(e);
-        QuickSessionPropertiesBtn.Click += OnQuickSessionPropertiesClick;
-        QuickSessionDeleteBtn.Click += OnQuickSessionDeleteClick;
-        TabCloseBtn.Click += OnTabCloseClick;
-        TabPropertiesBtn.Click += OnTabPropertiesClick;
-        TabAddQuickBtn.Click += OnTabAddQuickClick;
         StartRdpSmokeIfRequested();
     }
 
     protected override void OnUnloaded(RoutedEventArgs e)
     {
-        QuickSessionContextMenuPopup.Close();
-        TabContextMenuPopup.Close();
-        QuickSessionPropertiesBtn.Click -= OnQuickSessionPropertiesClick;
-        QuickSessionDeleteBtn.Click -= OnQuickSessionDeleteClick;
-        TabCloseBtn.Click -= OnTabCloseClick;
-        TabPropertiesBtn.Click -= OnTabPropertiesClick;
-        TabAddQuickBtn.Click -= OnTabAddQuickClick;
         base.OnUnloaded(e);
     }
 
@@ -148,8 +139,7 @@ public partial class MainWindow : Window
         if (sender is Avalonia.Controls.Control { DataContext: SessionInfo session })
         {
             _quickSessionContext = session;
-            QuickSessionContextMenuPopup.PlacementTarget = sender as Avalonia.Controls.Control;
-            QuickSessionContextMenuPopup.IsOpen = true;
+            ShowQuickSessionContextMenu((Avalonia.Controls.Control)sender);
             e.Handled = true;
         }
     }
@@ -164,20 +154,57 @@ public partial class MainWindow : Window
         {
             _tabContext = tab;
             vm.SelectTabCommand.Execute(tab);
-            UpdateTabAddQuickMenuState(vm.AddCurrentSessionToQuickBarCommand.CanExecute(null));
-            TabContextMenuPopup.PlacementTarget = sender as Avalonia.Controls.Control;
-            TabContextMenuPopup.IsOpen = true;
+            ShowTabContextMenu((Avalonia.Controls.Control)sender, vm.AddCurrentSessionToQuickBarCommand.CanExecute(null));
             e.Handled = true;
         }
     }
 
-    private void UpdateTabAddQuickMenuState(bool canAdd)
+    private void ShowQuickSessionContextMenu(Avalonia.Controls.Control anchor)
     {
-        TabAddQuickBtn.IsEnabled = canAdd;
-        TabAddQuickBtn.Opacity = canAdd ? 1.0 : 0.42;
-        TabAddQuickBtn.Foreground = canAdd
-            ? Brushes.Black
-            : Brushes.Gray;
+        if (DataContext is not MainWindowViewModel vm)
+            return;
+
+        var menu = CreatePointerContextMenu(anchor);
+        AddMenuItem(menu, vm.QuickPropertiesText, () => OnQuickSessionPropertiesClick(anchor, new RoutedEventArgs()));
+        menu.Items.Add(new AtomMenuSeparator());
+        AddMenuItem(menu, vm.QuickDeleteText, () => OnQuickSessionDeleteClick(anchor, new RoutedEventArgs()));
+        menu.Open(anchor);
+    }
+
+    private void ShowTabContextMenu(Avalonia.Controls.Control anchor, bool canAddQuick)
+    {
+        if (DataContext is not MainWindowViewModel vm)
+            return;
+
+        var menu = CreatePointerContextMenu(anchor);
+        AddMenuItem(menu, vm.TabCloseText, () => OnTabCloseClick(anchor, new RoutedEventArgs()));
+        AddMenuItem(menu, vm.TabPropertiesText, () => OnTabPropertiesClick(anchor, new RoutedEventArgs()));
+        AddMenuItem(menu, vm.TabAddQuickText, () => OnTabAddQuickClick(anchor, new RoutedEventArgs()), canAddQuick);
+        menu.Open(anchor);
+    }
+
+    private static AtomContextMenu CreatePointerContextMenu(Avalonia.Controls.Control anchor)
+    {
+        return new AtomContextMenu
+        {
+            Placement = Avalonia.Controls.PlacementMode.Pointer,
+            PlacementTarget = anchor
+        };
+    }
+
+    private static void AddMenuItem(AtomContextMenu menu, string text, Action action, bool isEnabled = true)
+    {
+        var item = new AtomMenuItem
+        {
+            Header = text,
+            IsEnabled = isEnabled
+        };
+        item.Click += (_, _) =>
+        {
+            menu.Close();
+            action();
+        };
+        menu.Items.Add(item);
     }
 
     private void OnTabArrangeButtonClick(object? sender, RoutedEventArgs e)
@@ -365,7 +392,6 @@ public partial class MainWindow : Window
 
     private async void OnQuickSessionPropertiesClick(object? sender, RoutedEventArgs e)
     {
-        QuickSessionContextMenuPopup.Close();
         if (_quickSessionContext == null || DataContext is not MainWindowViewModel vm)
             return;
 
@@ -374,7 +400,6 @@ public partial class MainWindow : Window
 
     private void OnQuickSessionDeleteClick(object? sender, RoutedEventArgs e)
     {
-        QuickSessionContextMenuPopup.Close();
         if (_quickSessionContext == null || DataContext is not MainWindowViewModel vm)
             return;
 
@@ -384,7 +409,6 @@ public partial class MainWindow : Window
 
     private void OnTabCloseClick(object? sender, RoutedEventArgs e)
     {
-        TabContextMenuPopup.Close();
         if (_tabContext == null || DataContext is not MainWindowViewModel vm)
             return;
 
@@ -394,7 +418,6 @@ public partial class MainWindow : Window
 
     private async void OnTabPropertiesClick(object? sender, RoutedEventArgs e)
     {
-        TabContextMenuPopup.Close();
         if (_tabContext == null || DataContext is not MainWindowViewModel vm)
             return;
 
@@ -403,7 +426,6 @@ public partial class MainWindow : Window
 
     private void OnTabAddQuickClick(object? sender, RoutedEventArgs e)
     {
-        TabContextMenuPopup.Close();
         if (_tabContext == null || DataContext is not MainWindowViewModel vm)
             return;
 

@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Runtime.Versioning;
 
-namespace ChiXueSsh.Services;
+namespace CxShell.Services;
 
 public sealed record VirtualDragFile(
     string FileName,

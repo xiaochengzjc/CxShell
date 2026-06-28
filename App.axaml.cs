@@ -6,9 +6,9 @@ using AtomUI;
 using AtomUI.Controls;
 using AtomUI.Desktop.Controls;
 using AtomUI.Theme;
-using ChiXueSsh.Views;
+using CxShell.Views;
 
-namespace ChiXueSsh;
+namespace CxShell;
 
 public partial class App : Application
 {

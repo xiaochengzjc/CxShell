@@ -5,7 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 
-namespace ChiXueSsh.Services;
+namespace CxShell.Services;
 
 public enum ZmodemTransferDirection
 {

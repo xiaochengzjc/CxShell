@@ -4,9 +4,9 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
-using ChiXueSsh.ViewModels;
+using CxShell.ViewModels;
 
-namespace ChiXueSsh.Views;
+namespace CxShell.Views;
 
 public partial class RdpView : UserControl
 {

@@ -2,7 +2,7 @@ using System;
 using Avalonia.Data.Converters;
 using Avalonia.Media;
 
-namespace ChiXueSsh.Converters;
+namespace CxShell.Converters;
 
 public class ConnectionStatusConverter : IValueConverter
 {

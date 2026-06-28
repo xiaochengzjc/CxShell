@@ -1,9 +1,8 @@
 using System.Collections.Generic;
 using System.Text;
-using System.Text.Json.Serialization;
-using ChiXueSsh.Models;
+using CxShell.Models;
 
-namespace ChiXueSsh.Services;
+namespace CxShell.Services;
 
 public class SessionData
 {
@@ -17,7 +16,6 @@ public class SessionData
 public class SessionStorageService
 {
     private const string CurrentAppDirectoryName = "CxShell";
-    private const string LegacyAppDirectoryName = "ChiXueSsh";
 
     private readonly string _storageDir;
     private readonly string _storagePath;
@@ -57,55 +55,42 @@ public class SessionStorageService
 
     private static string ResolveStorageDirectory()
     {
-        foreach (var root in EnumerateStorageRoots())
-        {
-            if (string.IsNullOrWhiteSpace(root))
-                continue;
-
-            var fullRoot = TryGetFullRoot(root);
-            if (string.IsNullOrWhiteSpace(fullRoot))
-                continue;
-
-            var current = Path.Combine(fullRoot, CurrentAppDirectoryName);
-            var legacy = Path.Combine(fullRoot, LegacyAppDirectoryName);
-
-            if (File.Exists(Path.Combine(current, "sessions.json")))
-                return current;
-
-            if (File.Exists(Path.Combine(legacy, "sessions.json")))
-                return legacy;
-
-            if (!File.Exists(current))
-                return current;
-
-            if (!File.Exists(legacy))
-                return legacy;
-        }
+        var root = ResolveStorageRoot();
+        if (!string.IsNullOrWhiteSpace(root))
+            return Path.Combine(root, CurrentAppDirectoryName);
 
         return Path.Combine(AppContext.BaseDirectory, ".cxshell-data");
     }
 
-    private static IEnumerable<string> EnumerateStorageRoots()
+    private static string? ResolveStorageRoot()
     {
-        if (!OperatingSystem.IsWindows())
+        var appData = TryGetFullRoot(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData));
+        if (!string.IsNullOrWhiteSpace(appData))
+            return appData;
+
+        if (OperatingSystem.IsWindows())
+            return null;
+
+        var xdgConfigHome = TryGetFullRoot(Environment.GetEnvironmentVariable("XDG_CONFIG_HOME"));
+        if (!string.IsNullOrWhiteSpace(xdgConfigHome))
+            return xdgConfigHome;
+
+        var userProfile = TryGetFullRoot(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+        if (!string.IsNullOrWhiteSpace(userProfile))
         {
-            var xdgConfigHome = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
-            if (!string.IsNullOrWhiteSpace(xdgConfigHome))
-                yield return xdgConfigHome;
+            return OperatingSystem.IsMacOS()
+                ? Path.Combine(userProfile, "Library", "Application Support")
+                : Path.Combine(userProfile, ".config");
         }
 
-        yield return Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        yield return Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-
-        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (!string.IsNullOrWhiteSpace(userProfile))
-            yield return OperatingSystem.IsWindows()
-                ? Path.Combine(userProfile, "AppData", "Roaming")
-                : Path.Combine(userProfile, ".config");
+        return null;
     }
 
-    private static string? TryGetFullRoot(string root)
+    private static string? TryGetFullRoot(string? root)
     {
+        if (string.IsNullOrWhiteSpace(root))
+            return null;
+
         try
         {
             var expanded = Environment.ExpandEnvironmentVariables(root);

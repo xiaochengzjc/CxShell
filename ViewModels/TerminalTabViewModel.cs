@@ -1,10 +1,10 @@
 using System;
 using Avalonia.Media;
-using ChiXueSsh.Models;
+using CxShell.Models;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
-namespace ChiXueSsh.ViewModels;
+namespace CxShell.ViewModels;
 
 public partial class TerminalTabViewModel : ObservableObject
 {

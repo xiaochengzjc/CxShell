@@ -14,10 +14,10 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
-using ChiXueSsh.Models;
-using ChiXueSsh.Terminal;
+using CxShell.Models;
+using CxShell.Terminal;
 
-namespace ChiXueSsh.Controls;
+namespace CxShell.Controls;
 
 public class TerminalControl : Control
 {
