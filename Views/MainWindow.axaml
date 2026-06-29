@@ -42,6 +42,27 @@
             <Setter Property="Background" Value="{atom:SharedTokenResource ColorBgLayout}"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
         </Style>
+        <Style Selector="Button.tab-close-button">
+            <Setter Property="Width" Value="18"/>
+            <Setter Property="Height" Value="18"/>
+            <Setter Property="MinWidth" Value="18"/>
+            <Setter Property="MinHeight" Value="18"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Opacity" Value="0.6"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style Selector="Button.tab-close-button:pointerover">
+            <Setter Property="Background" Value="{atom:SharedTokenResource ColorFillSecondary}"/>
+            <Setter Property="Opacity" Value="0.9"/>
+        </Style>
+        <Style Selector="Button.tab-close-button:pressed">
+            <Setter Property="Background" Value="{atom:SharedTokenResource ColorFill}"/>
+        </Style>
     </atom:Window.Styles>
 
     <atom:Window.Resources>
@@ -80,18 +101,19 @@
                                                 <SolidColorBrush Color="{Binding IsSelected, Converter={x:Static vm:TabSelectedBorderConverter.Instance}}"/>
                                             </Border.BorderBrush>
                                             <DockPanel LastChildFill="True">
-                                                <atom:Button DockPanel.Dock="Right"
-                                                             Command="{Binding CloseTabCommand}"
-                                                             Width="22"
-                                                             Height="20"
-                                                             Padding="0"
-                                                             Background="Transparent"
-                                                             BorderThickness="0"
-                                                             HorizontalContentAlignment="Center"
-                                                             VerticalContentAlignment="Center"
-                                                             Opacity="0.65">
-                                                    <atom:TextBlock Text="✕" FontSize="10"/>
-                                                </atom:Button>
+                                                <Button DockPanel.Dock="Right"
+                                                        Classes="tab-close-button"
+                                                        Command="{Binding CloseTabCommand}">
+                                                    <Grid Width="10"
+                                                          Height="10"
+                                                          HorizontalAlignment="Center"
+                                                          VerticalAlignment="Center">
+                                                        <Path Data="M 2,2 L 8,8 M 8,2 L 2,8"
+                                                              Stroke="{atom:SharedTokenResource ColorTextSecondary}"
+                                                              StrokeThickness="1.4"
+                                                              StrokeLineCap="Round"/>
+                                                    </Grid>
+                                                </Button>
                                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                                     <Ellipse Width="8"
                                                              Height="8"
@@ -500,12 +522,19 @@
                                                      <atom:TextBlock Text="{Binding Title}" FontSize="12"
                                                                     VerticalAlignment="Center"
                                                                     Foreground="{Binding IsSelected, Converter={x:Static vm:TabSelectedFgConverter.Instance}}"/>
-                                                    <atom:Button Command="{Binding CloseTabCommand}"
-                                                                 Padding="2,0" FontSize="10"
-                                                                 Background="Transparent" BorderThickness="0"
-                                                                 Opacity="0.5">
-                                                        <atom:TextBlock Text="✕" FontSize="10"/>
-                                                    </atom:Button>
+                                                    <Button Classes="tab-close-button"
+                                                            Command="{Binding CloseTabCommand}"
+                                                            Margin="2,0,0,0">
+                                                        <Grid Width="10"
+                                                              Height="10"
+                                                              HorizontalAlignment="Center"
+                                                              VerticalAlignment="Center">
+                                                            <Path Data="M 2,2 L 8,8 M 8,2 L 2,8"
+                                                                  Stroke="{atom:SharedTokenResource ColorTextSecondary}"
+                                                                  StrokeThickness="1.4"
+                                                                  StrokeLineCap="Round"/>
+                                                        </Grid>
+                                                    </Button>
                                                 </StackPanel>
                                             </Border>
                                         </atom:Button>

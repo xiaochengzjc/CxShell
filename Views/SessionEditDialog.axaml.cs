@@ -1119,7 +1119,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             MinHeight = 74,
             IsResizable = false,
             TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-            SizeType = SizeType.Middle,
+            SizeType = CustomizableSizeType.Middle,
             StyleVariant = InputControlStyleVariant.Outlined,
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
@@ -1474,7 +1474,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             AutoGenerateColumns = false,
             IsReadOnly = true,
             SelectionMode = DataGridSelectionMode.Single,
-            SizeType = SizeType.Middle,
+            SizeType = CustomizableSizeType.Middle,
             GridLinesVisibility = DataGridGridLinesVisibility.Vertical,
             CanUserResizeColumns = true,
             CanUserSortColumns = true,
@@ -1921,19 +1921,19 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             Content = T("Common.Ok"),
             Width = 86,
             ButtonType = AtomUI.Desktop.Controls.ButtonType.Primary,
-            SizeType = SizeType.Middle
+            SizeType = CustomizableSizeType.Middle
         };
         var deleteButton = new AtomUI.Desktop.Controls.Button
         {
             Content = T("Common.Delete"),
             Width = 86,
-            SizeType = SizeType.Middle
+            SizeType = CustomizableSizeType.Middle
         };
         var cancelButton = new AtomUI.Desktop.Controls.Button
         {
             Content = T("Common.Cancel"),
             Width = 86,
-            SizeType = SizeType.Middle
+            SizeType = CustomizableSizeType.Middle
         };
 
         okButton.Click += (_, _) =>
@@ -2075,7 +2075,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             MinHeight = 148,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Stretch,
-            SizeType = SizeType.Middle,
+            SizeType = CustomizableSizeType.Middle,
             StyleVariant = InputControlStyleVariant.Outlined,
             IsResizable = false
         };
@@ -2282,13 +2282,13 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             Content = T("Common.Ok"),
             Width = 112,
             ButtonType = AtomUI.Desktop.Controls.ButtonType.Primary,
-            SizeType = SizeType.Middle
+            SizeType = CustomizableSizeType.Middle
         };
         var cancelButton = new AtomUI.Desktop.Controls.Button
         {
             Content = T("Common.Cancel"),
             Width = 112,
-            SizeType = SizeType.Middle
+            SizeType = CustomizableSizeType.Middle
         };
 
         void UpdateRuleDialogState()
@@ -2606,7 +2606,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         {
             Content = T("Common.SelectAll"),
             Width = 78,
-            SizeType = SizeType.Middle
+            SizeType = CustomizableSizeType.Middle
         };
         selectAllButton.Click += (_, _) =>
         {
@@ -2618,7 +2618,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         {
             Content = T("Common.Clear"),
             Width = 78,
-            SizeType = SizeType.Middle
+            SizeType = CustomizableSizeType.Middle
         };
         clearButton.Click += (_, _) =>
         {
@@ -2631,7 +2631,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             Content = T("Common.Ok"),
             Width = 86,
             ButtonType = AtomUI.Desktop.Controls.ButtonType.Primary,
-            SizeType = SizeType.Middle
+            SizeType = CustomizableSizeType.Middle
         };
         okButton.Click += (_, _) =>
         {
@@ -2652,7 +2652,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         {
             Content = T("Common.Cancel"),
             Width = 86,
-            SizeType = SizeType.Middle
+            SizeType = CustomizableSizeType.Middle
         };
         cancelButton.Click += (_, _) => dialog.Close();
 
@@ -2701,7 +2701,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         {
             Content = content,
             Width = width,
-            SizeType = SizeType.Middle
+            SizeType = CustomizableSizeType.Middle
         };
     }
 
@@ -2771,7 +2771,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         return new LineEdit
         {
             Text = text ?? string.Empty,
-            SizeType = SizeType.Middle,
+            SizeType = CustomizableSizeType.Middle,
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
     }
@@ -2789,7 +2789,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             Filter = new StringContainsFilter(),
             FilterValueSelector = ServicePortAutoCompleteFilterValueSelector,
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            SizeType = SizeType.Middle,
+            SizeType = CustomizableSizeType.Middle,
             StyleVariant = InputControlStyleVariant.Outlined
         };
 

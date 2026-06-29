@@ -1320,7 +1320,7 @@ public partial class MainWindowViewModel : ObservableObject
             PlaceholderText = _localization.Text("PasswordDialog.Placeholder"),
             IsEnableRevealButton = true,
             IsAllowClear = true,
-            SizeType = SizeType.Middle,
+            SizeType = CustomizableSizeType.Middle,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             MinHeight = 34,
             Margin = new Thickness(20, 10)
@@ -1339,7 +1339,7 @@ public partial class MainWindowViewModel : ObservableObject
             Content = _localization.Text("PasswordDialog.Ok"),
             Width = 86,
             ButtonType = AtomUI.Desktop.Controls.ButtonType.Primary,
-            SizeType = SizeType.Middle
+            SizeType = CustomizableSizeType.Middle
         };
         okButton.Click += (_, _) =>
         {
@@ -1351,7 +1351,7 @@ public partial class MainWindowViewModel : ObservableObject
             Content = _localization.Text("PasswordDialog.Cancel"),
             Width = 86,
             ButtonType = AtomUI.Desktop.Controls.ButtonType.Default,
-            SizeType = SizeType.Middle
+            SizeType = CustomizableSizeType.Middle
         };
         cancelButton.Click += (_, _) => dialog.Close();
 
