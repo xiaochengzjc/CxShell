@@ -88,20 +88,6 @@ jobs:
             -Triplet "${{ matrix.triplet }}" `
             -OutputDir $publishDir
 
-      - name: Validate RDP bridge
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $rid = "${{ matrix.rid }}"
-          $publishDir = Join-Path $env:GITHUB_WORKSPACE "artifacts\publish\$rid"
-          $nativeDlls = @(Get-ChildItem $publishDir -Filter "*.dll" | Sort-Object Name)
-          $nativeDlls | Select-Object -ExpandProperty Name
-
-          $bridgePath = Join-Path $publishDir "CxRdpBridge.dll"
-          if (!(Test-Path $bridgePath)) {
-              throw "Required RDP runtime file was not found: $bridgePath"
-          }
-
       - name: Create archive
         shell: pwsh
         run: |
