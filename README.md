@@ -287,28 +287,45 @@ bash tools/build-rdp-bridge.sh
 
 ## GitHub Actions
 
-The repository includes a macOS packaging workflow:
+The repository includes a release packaging workflow:
+
+```text
+.github/workflows/release.yml
+```
+
+It can be triggered in two ways:
+
+- Push a `v*` tag, for example `v0.1.0`.
+- Run the `Release Packages` workflow manually and provide a release tag.
+
+The workflow builds and uploads these GitHub Release assets:
+
+- `CxShell-<tag>-win-x64.zip`
+- `CxShell-<tag>-win-arm64.zip`
+- `CxShell-<tag>-win-x86.zip`
+- `CxShell-<tag>-linux-x64.tar.gz`
+- `CxShell-<tag>-linux-arm64.tar.gz`
+- `CxShell-<tag>-macos-arm64.tar.gz`
+- `CxShell-<tag>-macos-x64.tar.gz`
+
+The macOS packages contain a `.app` bundle and include the native RDP bridge. Windows and Linux packages are self-contained application builds; their RDP native bridge files can be added through the `runtimes/<rid>/native` packaging path when platform bridge CI is enabled.
+
+To publish a release from the command line:
+
+```bash
+git tag v0.1.0
+git push github v0.1.0
+```
+
+After the workflow completes, open the repository on GitHub, go to `Releases`, and download the package that matches your operating system and CPU architecture.
+
+The repository also keeps a macOS-only packaging workflow for manual verification:
 
 ```text
 .github/workflows/macos-package.yml
 ```
 
-It can be triggered in two ways:
-
-- Run the `macOS Package` workflow manually from the GitHub Actions page.
-- Push a `v*` tag, for example `v0.1.0`.
-
-The workflow builds:
-
-- `osx-arm64` on a GitHub macOS arm64 runner.
-- `osx-x64` on a GitHub macOS Intel runner.
-
-Build outputs are uploaded as Actions artifacts:
-
-- `CxShell-macos-arm64`
-- `CxShell-macos-x64`
-
-To download a packaged macOS build, open the repository on GitHub, go to `Actions`, open the latest successful `macOS Package` run, and download the artifact from the `Artifacts` section at the bottom of the run page.
+Run `macOS Package` manually from the GitHub Actions page when you only need macOS artifacts without creating a GitHub Release.
 
 ## Runtime Files And Git
 

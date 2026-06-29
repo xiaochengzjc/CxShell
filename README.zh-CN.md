@@ -287,28 +287,45 @@ bash tools/build-rdp-bridge.sh
 
 ## GitHub Actions
 
-仓库包含 macOS 打包工作流：
+仓库包含 Release 打包工作流：
+
+```text
+.github/workflows/release.yml
+```
+
+触发方式：
+
+- 推送 `v*` 标签，例如 `v0.1.0`。
+- 在 GitHub Actions 页面手动运行 `Release Packages` workflow，并填写 release tag。
+
+工作流会构建并上传以下 GitHub Release 产物：
+
+- `CxShell-<tag>-win-x64.zip`
+- `CxShell-<tag>-win-arm64.zip`
+- `CxShell-<tag>-win-x86.zip`
+- `CxShell-<tag>-linux-x64.tar.gz`
+- `CxShell-<tag>-linux-arm64.tar.gz`
+- `CxShell-<tag>-macos-arm64.tar.gz`
+- `CxShell-<tag>-macos-x64.tar.gz`
+
+macOS 包内包含 `.app` bundle，并包含原生 RDP bridge。Windows 和 Linux 包是自包含应用构建；后续启用对应平台 bridge CI 后，可以通过 `runtimes/<rid>/native` 打包路径加入 RDP 原生桥接文件。
+
+命令行发布示例：
+
+```bash
+git tag v0.1.0
+git push github v0.1.0
+```
+
+workflow 完成后，打开 GitHub 仓库的 `Releases` 页面，下载和你的操作系统、CPU 架构匹配的包即可。
+
+仓库也保留了 macOS-only 打包工作流，方便单独验证 macOS 包：
 
 ```text
 .github/workflows/macos-package.yml
 ```
 
-触发方式：
-
-- 手动运行 `macOS Package` workflow。
-- 推送 `v*` 标签，例如 `v0.1.0`。
-
-工作流会分别构建：
-
-- `osx-arm64`，运行在 GitHub macOS arm64 runner。
-- `osx-x64`，运行在 GitHub macOS Intel runner。
-
-构建产物会上传为 Actions artifacts：
-
-- `CxShell-macos-arm64`
-- `CxShell-macos-x64`
-
-下载路径：GitHub 仓库页面进入 `Actions`，打开最近一次成功的 `macOS Package` 运行记录，在页面底部 `Artifacts` 区域下载对应压缩包。
+如果只需要 macOS artifacts，不想创建 GitHub Release，可以在 GitHub Actions 页面手动运行 `macOS Package`。
 
 ## 运行时文件与 Git
 

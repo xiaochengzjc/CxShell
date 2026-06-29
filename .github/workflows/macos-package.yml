@@ -2,9 +2,6 @@ name: macOS Package
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "v*"
 
 permissions:
   contents: read
