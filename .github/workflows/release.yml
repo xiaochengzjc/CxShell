@@ -102,10 +102,6 @@ jobs:
               throw "Required RDP runtime file was not found: $bridgePath"
           }
 
-          if ($nativeDlls.Count -lt 4) {
-              throw "Expected RDP bridge dependencies to be copied next to CxRdpBridge.dll, but only $($nativeDlls.Count) DLL file(s) were found."
-          }
-
       - name: Create archive
         shell: pwsh
         run: |

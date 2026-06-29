@@ -168,6 +168,13 @@ if (![string]::IsNullOrWhiteSpace($OutputDir)) {
         Get-ChildItem $vcpkgBin -Filter "*.dll" | Copy-Item -Destination $OutputDir -Force
     }
 
+    $vcpkgInstalled = Join-Path $VcpkgRoot "installed\$Triplet"
+    if (Test-Path $vcpkgInstalled) {
+        Get-ChildItem $vcpkgInstalled -Recurse -Filter "*.dll" |
+            Where-Object { $_.FullName -notmatch "\\debug\\" } |
+            Copy-Item -Destination $OutputDir -Force
+    }
+
     $legacyProvider = Join-Path $vcpkgBin "legacy.dll"
     if (Test-Path $legacyProvider) {
         Copy-Item $legacyProvider -Destination $OutputDir -Force
