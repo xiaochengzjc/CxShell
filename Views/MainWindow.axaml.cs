@@ -146,17 +146,56 @@ public partial class MainWindow : Window
 
     private void OnTabHeaderPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (!e.GetCurrentPoint(this).Properties.IsRightButtonPressed)
+        var tab = ResolveTabContext(sender as Avalonia.Controls.Control, out var anchor) ??
+                  ResolveTabContext(e.Source as Avalonia.Controls.Control, out anchor);
+        if (tab == null || anchor == null || DataContext is not MainWindowViewModel vm)
+        {
             return;
+        }
 
-        if (sender is Avalonia.Controls.Control { DataContext: TerminalTabViewModel tab } &&
-            DataContext is MainWindowViewModel vm)
+        var properties = e.GetCurrentPoint(this).Properties;
+        if (properties.IsLeftButtonPressed || properties.PointerUpdateKind == PointerUpdateKind.LeftButtonPressed)
+        {
+            vm.SelectTabCommand.Execute(tab);
+            e.Handled = true;
+            return;
+        }
+
+        if (properties.IsRightButtonPressed || properties.PointerUpdateKind == PointerUpdateKind.RightButtonPressed)
         {
             _tabContext = tab;
             vm.SelectTabCommand.Execute(tab);
-            ShowTabContextMenu((Avalonia.Controls.Control)sender, vm.AddCurrentSessionToQuickBarCommand.CanExecute(null));
+            ShowTabContextMenu(anchor, vm.AddCurrentSessionToQuickBarCommand.CanExecute(null));
             e.Handled = true;
         }
+    }
+
+    private void OnTabStripClosing(object? sender, TabStripClosingEventArgs e)
+    {
+        e.Cancel = true;
+
+        var tab = e.TabStripItem.DataContext as TerminalTabViewModel ??
+                  e.TabStripItem.Content as TerminalTabViewModel;
+        if (tab != null && DataContext is MainWindowViewModel vm)
+            vm.CloseTab(tab);
+    }
+
+    private static TerminalTabViewModel? ResolveTabContext(Avalonia.Controls.Control? source, out Avalonia.Controls.Control? anchor)
+    {
+        anchor = source;
+        var current = source;
+        while (current != null)
+        {
+            if (current.DataContext is TerminalTabViewModel tab)
+            {
+                anchor = current;
+                return tab;
+            }
+
+            current = current.Parent as Avalonia.Controls.Control;
+        }
+
+        return null;
     }
 
     private void ShowQuickSessionContextMenu(Avalonia.Controls.Control anchor)
