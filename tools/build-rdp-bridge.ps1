@@ -178,6 +178,12 @@ if (![string]::IsNullOrWhiteSpace($OutputDir)) {
             Copy-Item -Destination $OutputDir -Force
     }
 
+    $prefixedBridge = Join-Path $OutputDir "libCxRdpBridge.dll"
+    $expectedBridge = Join-Path $OutputDir "CxRdpBridge.dll"
+    if ((Test-Path $prefixedBridge) -and !(Test-Path $expectedBridge)) {
+        Copy-Item $prefixedBridge -Destination $expectedBridge -Force
+    }
+
     $legacyProvider = Join-Path $vcpkgBin "legacy.dll"
     if (Test-Path $legacyProvider) {
         Copy-Item $legacyProvider -Destination $OutputDir -Force

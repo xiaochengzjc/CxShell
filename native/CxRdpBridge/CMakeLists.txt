@@ -29,7 +29,9 @@ target_link_libraries(CxRdpBridge PRIVATE freerdp winpr ${CJSON_LIBRARY} OpenSSL
 
 target_compile_definitions(CxRdpBridge PRIVATE CX_RDP_BRIDGE_EXPORTS)
 
-if (APPLE)
+if (WIN32)
+    set_target_properties(CxRdpBridge PROPERTIES PREFIX "")
+elseif (APPLE)
     set_target_properties(CxRdpBridge PROPERTIES
         INSTALL_RPATH "@loader_path"
         BUILD_WITH_INSTALL_RPATH TRUE
