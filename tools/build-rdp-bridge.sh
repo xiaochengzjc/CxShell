@@ -28,6 +28,11 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE_DIR="$REPO_ROOT/native/CxRdpBridge"
 BUILD_DIR="$SOURCE_DIR/build/$TRIPLET"
 
+echo "Using CMake: $(command -v cmake)"
+echo "Using Ninja: $(command -v ninja)"
+cmake --version
+ninja --version
+
 if [ "$USE_SYSTEM_FREERDP" = "1" ]; then
   BUILD_DIR="$SOURCE_DIR/build/$TRIPLET-system"
   cmake_args=(
@@ -35,6 +40,7 @@ if [ "$USE_SYSTEM_FREERDP" = "1" ]; then
     -B "$BUILD_DIR"
     -G Ninja
     "-DCMAKE_BUILD_TYPE=$CONFIGURATION"
+    "-DVCPKG_APPLOCAL_DEPS=ON"
   )
   if [ -n "${CMAKE_PREFIX_PATH:-}" ]; then
     cmake_args+=("-DCMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH")
@@ -58,6 +64,7 @@ else
     "-DCMAKE_BUILD_TYPE=$CONFIGURATION"
     "-DCMAKE_TOOLCHAIN_FILE=$TOOLCHAIN"
     "-DVCPKG_TARGET_TRIPLET=$TRIPLET"
+    "-DVCPKG_APPLOCAL_DEPS=ON"
   )
   if [ -n "${CMAKE_PREFIX_PATH:-}" ]; then
     cmake_args+=("-DCMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH")

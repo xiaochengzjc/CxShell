@@ -98,6 +98,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $rid = "${{ matrix.rid }}"
           $publishDir = Join-Path $env:GITHUB_WORKSPACE "artifacts\publish\$rid"
+          Get-ChildItem $publishDir -Filter "*.dll" | Sort-Object Name | Select-Object -ExpandProperty Name
           $required = @("CxRdpBridge.dll", "freerdp3.dll", "winpr3.dll")
           foreach ($file in $required) {
               $path = Join-Path $publishDir $file
@@ -215,7 +216,11 @@ jobs:
           rid="${{ matrix.rid }}"
           publish_dir="$GITHUB_WORKSPACE/artifacts/publish/$rid"
           test -f "$publish_dir/libCxRdpBridge.so"
-          find "$publish_dir" -maxdepth 1 \( -name "libfreerdp*.so*" -o -name "libwinpr*.so*" \) | grep -q .
+          ldd "$publish_dir/libCxRdpBridge.so"
+          if ldd "$publish_dir/libCxRdpBridge.so" | grep -q "not found"; then
+            echo "libCxRdpBridge.so has unresolved native dependencies." >&2
+            exit 1
+          fi
 
       - name: Create archive
         shell: bash

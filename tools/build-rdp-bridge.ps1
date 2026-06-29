@@ -10,6 +10,32 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Find-VsDevCmd {
+    param([string[]]$FallbackPaths)
+
+    $paths = @()
+    $vswhereCandidates = @(
+        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe",
+        "${env:ProgramFiles}\Microsoft Visual Studio\Installer\vswhere.exe"
+    )
+
+    foreach ($vswhere in $vswhereCandidates) {
+        if (!(Test-Path $vswhere)) {
+            continue
+        }
+
+        $installations = & $vswhere -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+        foreach ($installation in $installations) {
+            if (![string]::IsNullOrWhiteSpace($installation)) {
+                $paths += (Join-Path $installation "Common7\Tools\VsDevCmd.bat")
+            }
+        }
+    }
+
+    $paths += $FallbackPaths
+    return $paths | Where-Object { Test-Path $_ } | Select-Object -First 1
+}
+
 if ([string]::IsNullOrWhiteSpace($VcpkgRoot)) {
     $VcpkgRoot = "D:\develop\vcpkg"
 }
@@ -32,9 +58,10 @@ if ($Triplet -like "*windows*") {
             "${env:ProgramFiles}\Microsoft Visual Studio\2022\Community\Common7\Tools\VsDevCmd.bat",
             "${env:ProgramFiles}\Microsoft Visual Studio\2022\Professional\Common7\Tools\VsDevCmd.bat",
             "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat",
+            "${env:ProgramFiles}\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat",
             "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat"
         )
-        $VsDevCmdPath = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+        $VsDevCmdPath = Find-VsDevCmd -FallbackPaths $candidates
     }
 
     if ([string]::IsNullOrWhiteSpace($VsDevCmdPath) -or !(Test-Path $VsDevCmdPath)) {
@@ -96,6 +123,15 @@ if ([string]::IsNullOrWhiteSpace($NinjaPath) -or !(Test-Path $NinjaPath)) {
 
 $env:PATH = "$(Split-Path $NinjaPath);$env:PATH"
 
+Write-Host "Using vcpkg: $vcpkgExe"
+Write-Host "Using CMake: $CMakePath"
+Write-Host "Using Ninja: $NinjaPath"
+if ($Triplet -like "*windows*") {
+    Write-Host "Using VsDevCmd: $VsDevCmdPath"
+}
+& $CMakePath --version
+& $NinjaPath --version
+
 & $vcpkgExe install "freerdp:$Triplet"
 if ($LASTEXITCODE -ne 0) {
     throw "vcpkg install freerdp:$Triplet failed."
@@ -104,7 +140,8 @@ if ($LASTEXITCODE -ne 0) {
 & $CMakePath -S $sourceDir -B $buildDir -G Ninja `
     "-DCMAKE_TOOLCHAIN_FILE=$toolchain" `
     "-DCMAKE_BUILD_TYPE=$Configuration" `
-    "-DVCPKG_TARGET_TRIPLET=$Triplet"
+    "-DVCPKG_TARGET_TRIPLET=$Triplet" `
+    "-DVCPKG_APPLOCAL_DEPS=ON"
 if ($LASTEXITCODE -ne 0) {
     throw "CMake configure failed."
 }
@@ -119,6 +156,10 @@ if (![string]::IsNullOrWhiteSpace($OutputDir)) {
     Get-ChildItem $buildDir -Filter "*.dll" | Copy-Item -Destination $OutputDir -Force
 
     $vcpkgBin = Join-Path $VcpkgRoot "installed\$Triplet\bin"
+    if (Test-Path $vcpkgBin) {
+        Get-ChildItem $vcpkgBin -Filter "*.dll" | Copy-Item -Destination $OutputDir -Force
+    }
+
     $legacyProvider = Join-Path $vcpkgBin "legacy.dll"
     if (Test-Path $legacyProvider) {
         Copy-Item $legacyProvider -Destination $OutputDir -Force
