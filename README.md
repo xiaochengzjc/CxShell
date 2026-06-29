@@ -332,6 +332,12 @@ CxShell is currently closer to a fast-moving usable preview than a long-term sta
 
 Issues, feature requests, and pull requests are welcome. For changes related to protocols, terminal rendering, or file transfer, please include reproduction steps, target server or system information when possible, and manual verification results.
 
+## License
+
+CxShell is licensed under the [Apache License 2.0](LICENSE). You may use it for free, including for commercial purposes.
+
+If you redistribute modified source code or binaries, keep the copyright, license, and NOTICE information, and make clear which files or parts were changed.
+
 ## Thanks
 
 CxShell uses AtomUI's Avalonia controls and theme capabilities for much of its interface. Thanks to the AtomUI open-source project for providing the desktop control ecosystem and design foundation.

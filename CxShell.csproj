@@ -10,6 +10,10 @@
         <Product>CxShell</Product>
         <Title>CxShell</Title>
         <PackageId>CxShell</PackageId>
+        <Authors>xiaochengzjc</Authors>
+        <Copyright>Copyright 2026 xiaochengzjc</Copyright>
+        <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+        <RepositoryUrl>https://github.com/xiaochengzjc/CxShell</RepositoryUrl>
         <ApplicationManifest>app.manifest</ApplicationManifest>
         <ApplicationIcon>Assets\CxShellLogo.ico</ApplicationIcon>
         <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
