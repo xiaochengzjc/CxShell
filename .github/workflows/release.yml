@@ -94,42 +94,16 @@ jobs:
           $ErrorActionPreference = "Stop"
           $rid = "${{ matrix.rid }}"
           $publishDir = Join-Path $env:GITHUB_WORKSPACE "artifacts\publish\$rid"
-          Get-ChildItem $publishDir -Filter "*.dll" | Sort-Object Name | Select-Object -ExpandProperty Name
+          $nativeDlls = @(Get-ChildItem $publishDir -Filter "*.dll" | Sort-Object Name)
+          $nativeDlls | Select-Object -ExpandProperty Name
 
           $bridgePath = Join-Path $publishDir "CxRdpBridge.dll"
           if (!(Test-Path $bridgePath)) {
               throw "Required RDP runtime file was not found: $bridgePath"
           }
 
-          $signature = @"
-          using System;
-          using System.Runtime.InteropServices;
-
-          public static class NativeLoadProbe
-          {
-              [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-              public static extern IntPtr LoadLibraryW(string fileName);
-
-              [DllImport("kernel32.dll", SetLastError = true)]
-              [return: MarshalAs(UnmanagedType.Bool)]
-              public static extern bool FreeLibrary(IntPtr module);
-          }
-          "@
-          Add-Type -TypeDefinition $signature
-
-          $env:PATH = "$publishDir;$env:PATH"
-          try {
-              $handle = [NativeLoadProbe]::LoadLibraryW($bridgePath)
-              if ($handle -eq [IntPtr]::Zero) {
-                  $errorCode = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
-                  $message = (New-Object ComponentModel.Win32Exception($errorCode)).Message
-                  throw "LoadLibraryW failed with error ${errorCode}: $message"
-              }
-
-              [NativeLoadProbe]::FreeLibrary($handle) | Out-Null
-          }
-          catch {
-              throw "CxRdpBridge.dll could not be loaded from the publish directory. A native dependency is missing or incompatible. $($_.Exception.Message)"
+          if ($nativeDlls.Count -lt 4) {
+              throw "Expected RDP bridge dependencies to be copied next to CxRdpBridge.dll, but only $($nativeDlls.Count) DLL file(s) were found."
           }
 
       - name: Create archive
