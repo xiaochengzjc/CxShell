@@ -21,7 +21,7 @@ env:
 jobs:
   windows:
     name: Build Windows ${{ matrix.rid }}
-    runs-on: windows-latest
+    runs-on: windows-2022
     env:
       VCPKG_ROOT: ${{ github.workspace }}\.vcpkg
     strategy:

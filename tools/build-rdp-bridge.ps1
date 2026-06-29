@@ -25,6 +25,10 @@ function Find-VsDevCmd {
         }
 
         $installations = & $vswhere -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+        if ($installations.Count -eq 0) {
+            $installations = & $vswhere -products * -property installationPath
+        }
+
         foreach ($installation in $installations) {
             if (![string]::IsNullOrWhiteSpace($installation)) {
                 $paths += (Join-Path $installation "Common7\Tools\VsDevCmd.bat")
@@ -55,6 +59,10 @@ if ($Triplet -like "*windows*") {
     if ([string]::IsNullOrWhiteSpace($VsDevCmdPath)) {
         $candidates = @(
             "D:\develop\BuildTools\Common7\Tools\VsDevCmd.bat",
+            "${env:ProgramFiles}\Microsoft Visual Studio\2026\Community\Common7\Tools\VsDevCmd.bat",
+            "${env:ProgramFiles}\Microsoft Visual Studio\2026\Professional\Common7\Tools\VsDevCmd.bat",
+            "${env:ProgramFiles}\Microsoft Visual Studio\2026\Enterprise\Common7\Tools\VsDevCmd.bat",
+            "${env:ProgramFiles}\Microsoft Visual Studio\2026\BuildTools\Common7\Tools\VsDevCmd.bat",
             "${env:ProgramFiles}\Microsoft Visual Studio\2022\Community\Common7\Tools\VsDevCmd.bat",
             "${env:ProgramFiles}\Microsoft Visual Studio\2022\Professional\Common7\Tools\VsDevCmd.bat",
             "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat",
