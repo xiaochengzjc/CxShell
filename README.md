@@ -301,14 +301,12 @@ It can be triggered in two ways:
 The workflow builds and uploads these GitHub Release assets:
 
 - `CxShell-<tag>-win-x64.zip`
-- `CxShell-<tag>-win-arm64.zip`
-- `CxShell-<tag>-win-x86.zip`
 - `CxShell-<tag>-linux-x64.tar.gz`
 - `CxShell-<tag>-linux-arm64.tar.gz`
 - `CxShell-<tag>-macos-arm64.tar.gz`
 - `CxShell-<tag>-macos-x64.tar.gz`
 
-The packages are self-contained application builds. Windows, macOS, and Linux packages include the native RDP bridge and adjacent FreeRDP/WinPR runtime libraries for the matching CPU architecture.
+The packages are self-contained application builds. Automated Windows release packaging currently targets `win-x64`; macOS and Linux publish both x64 and arm64 packages. These packages include the native RDP bridge and adjacent FreeRDP/WinPR runtime libraries for the matching CPU architecture.
 
 To publish a release from the command line:
 

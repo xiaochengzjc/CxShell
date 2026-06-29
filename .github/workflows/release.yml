@@ -30,10 +30,6 @@ jobs:
         include:
           - rid: win-x64
             triplet: x64-windows
-          - rid: win-arm64
-            triplet: arm64-windows
-          - rid: win-x86
-            triplet: x86-windows
 
     steps:
       - name: Check out source
@@ -99,12 +95,41 @@ jobs:
           $rid = "${{ matrix.rid }}"
           $publishDir = Join-Path $env:GITHUB_WORKSPACE "artifacts\publish\$rid"
           Get-ChildItem $publishDir -Filter "*.dll" | Sort-Object Name | Select-Object -ExpandProperty Name
-          $required = @("CxRdpBridge.dll", "freerdp3.dll", "winpr3.dll")
-          foreach ($file in $required) {
-              $path = Join-Path $publishDir $file
-              if (!(Test-Path $path)) {
-                  throw "Required RDP runtime file was not found: $path"
+
+          $bridgePath = Join-Path $publishDir "CxRdpBridge.dll"
+          if (!(Test-Path $bridgePath)) {
+              throw "Required RDP runtime file was not found: $bridgePath"
+          }
+
+          $signature = @"
+          using System;
+          using System.Runtime.InteropServices;
+
+          public static class NativeLoadProbe
+          {
+              [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+              public static extern IntPtr LoadLibraryW(string fileName);
+
+              [DllImport("kernel32.dll", SetLastError = true)]
+              [return: MarshalAs(UnmanagedType.Bool)]
+              public static extern bool FreeLibrary(IntPtr module);
+          }
+          "@
+          Add-Type -TypeDefinition $signature
+
+          $env:PATH = "$publishDir;$env:PATH"
+          try {
+              $handle = [NativeLoadProbe]::LoadLibraryW($bridgePath)
+              if ($handle -eq [IntPtr]::Zero) {
+                  $errorCode = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+                  $message = (New-Object ComponentModel.Win32Exception($errorCode)).Message
+                  throw "LoadLibraryW failed with error ${errorCode}: $message"
               }
+
+              [NativeLoadProbe]::FreeLibrary($handle) | Out-Null
+          }
+          catch {
+              throw "CxRdpBridge.dll could not be loaded from the publish directory. A native dependency is missing or incompatible. $($_.Exception.Message)"
           }
 
       - name: Create archive

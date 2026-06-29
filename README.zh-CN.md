@@ -301,14 +301,12 @@ bash tools/build-rdp-bridge.sh
 工作流会构建并上传以下 GitHub Release 产物：
 
 - `CxShell-<tag>-win-x64.zip`
-- `CxShell-<tag>-win-arm64.zip`
-- `CxShell-<tag>-win-x86.zip`
 - `CxShell-<tag>-linux-x64.tar.gz`
 - `CxShell-<tag>-linux-arm64.tar.gz`
 - `CxShell-<tag>-macos-arm64.tar.gz`
 - `CxShell-<tag>-macos-x64.tar.gz`
 
-这些包都是自包含应用构建。Windows、macOS 和 Linux 包会包含对应 CPU 架构的原生 RDP bridge，以及相邻的 FreeRDP/WinPR 运行时库。
+这些包都是自包含应用构建。当前自动化 Windows release 先发布 `win-x64`；macOS 和 Linux 会发布 x64 与 arm64。包内会包含对应 CPU 架构的原生 RDP bridge，以及相邻的 FreeRDP/WinPR 运行时库。
 
 命令行发布示例：
 
