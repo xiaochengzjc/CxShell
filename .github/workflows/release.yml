@@ -278,7 +278,7 @@ jobs:
 
     steps:
       - name: Download package artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           path: release-assets
           merge-multiple: true
@@ -300,8 +300,16 @@ jobs:
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" release-assets/* --clobber
           else
-            gh release create "$tag" release-assets/* \
-              --title "CxShell $tag" \
-              --notes "$notes" \
-              --target "$GITHUB_SHA"
+            create_args=(
+              --title "CxShell $tag"
+              --notes "$notes"
+            )
+
+            if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+              create_args+=(--verify-tag)
+            else
+              create_args+=(--target "$GITHUB_SHA")
+            fi
+
+            gh release create "$tag" release-assets/* "${create_args[@]}"
           fi
