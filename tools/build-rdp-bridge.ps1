@@ -25,7 +25,7 @@ if (!(Test-Path $toolchain)) {
     throw "vcpkg toolchain file was not found at $toolchain."
 }
 
-if ($Triplet -like "*windows*" -and !(Get-Command cl.exe -ErrorAction SilentlyContinue)) {
+if ($Triplet -like "*windows*") {
     if ([string]::IsNullOrWhiteSpace($VsDevCmdPath)) {
         $candidates = @(
             "D:\develop\BuildTools\Common7\Tools\VsDevCmd.bat",
@@ -41,7 +41,17 @@ if ($Triplet -like "*windows*" -and !(Get-Command cl.exe -ErrorAction SilentlyCo
         throw "VsDevCmd.bat was not found. Install Visual Studio Build Tools or pass -VsDevCmdPath."
     }
 
-    $devEnv = cmd /c "`"call `"$VsDevCmdPath`" -arch=x64 -host_arch=x64 >nul && set`""
+    $vsArch = if ($Triplet -like "arm64-*") {
+        "arm64"
+    }
+    elseif ($Triplet -like "x86-*") {
+        "x86"
+    }
+    else {
+        "x64"
+    }
+
+    $devEnv = cmd /c "`"call `"$VsDevCmdPath`" -arch=$vsArch -host_arch=x64 >nul && set`""
     foreach ($line in $devEnv) {
         $index = $line.IndexOf("=")
         if ($index -gt 0) {
@@ -115,9 +125,8 @@ if (![string]::IsNullOrWhiteSpace($OutputDir)) {
         $providerDir = Join-Path $OutputDir "ossl-modules"
         New-Item -ItemType Directory -Force -Path $providerDir | Out-Null
         Copy-Item $legacyProvider -Destination $providerDir -Force
-        $cryptoDll = Join-Path $vcpkgBin "libcrypto-3-x64.dll"
-        if (Test-Path $cryptoDll) {
-            Copy-Item $cryptoDll -Destination $providerDir -Force
+        Get-ChildItem $vcpkgBin -Filter "libcrypto-3*.dll" -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item $_.FullName -Destination $providerDir -Force
         }
     }
 }

@@ -70,13 +70,13 @@ cmake --build "$BUILD_DIR" --config "$CONFIGURATION"
 if [ -n "$OUTPUT_DIR" ]; then
   mkdir -p "$OUTPUT_DIR"
   find "$BUILD_DIR" -maxdepth 1 \( -name "*.so*" -o -name "*.dylib" \) -exec cp -f {} "$OUTPUT_DIR" \;
-  if [ "$(uname -s)" = "Darwin" ] && [ "$USE_SYSTEM_FREERDP" != "1" ]; then
+  if [ "$USE_SYSTEM_FREERDP" != "1" ]; then
     VCPKG_INSTALL_DIR="$VCPKG_ROOT/installed/$TRIPLET"
     if [ -d "$VCPKG_INSTALL_DIR/lib" ]; then
-      find "$VCPKG_INSTALL_DIR/lib" -maxdepth 1 -name "*.dylib" -exec cp -f {} "$OUTPUT_DIR" \;
+      find "$VCPKG_INSTALL_DIR/lib" -maxdepth 1 \( -name "*.so*" -o -name "*.dylib" \) -exec cp -f {} "$OUTPUT_DIR" \;
     fi
     if [ -d "$VCPKG_INSTALL_DIR/bin" ]; then
-      find "$VCPKG_INSTALL_DIR/bin" -maxdepth 1 -name "*.dylib" -exec cp -f {} "$OUTPUT_DIR" \;
+      find "$VCPKG_INSTALL_DIR/bin" -maxdepth 1 \( -name "*.so*" -o -name "*.dylib" \) -exec cp -f {} "$OUTPUT_DIR" \;
     fi
     for module_dir in "$VCPKG_INSTALL_DIR/lib/ossl-modules" "$VCPKG_INSTALL_DIR/bin/ossl-modules"; do
       if [ -d "$module_dir" ]; then

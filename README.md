@@ -308,7 +308,7 @@ The workflow builds and uploads these GitHub Release assets:
 - `CxShell-<tag>-macos-arm64.tar.gz`
 - `CxShell-<tag>-macos-x64.tar.gz`
 
-The macOS packages contain a `.app` bundle and include the native RDP bridge. Windows and Linux packages are self-contained application builds; their RDP native bridge files can be added through the `runtimes/<rid>/native` packaging path when platform bridge CI is enabled.
+The packages are self-contained application builds. Windows, macOS, and Linux packages include the native RDP bridge and adjacent FreeRDP/WinPR runtime libraries for the matching CPU architecture.
 
 To publish a release from the command line:
 

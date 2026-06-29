@@ -22,13 +22,18 @@ jobs:
   windows:
     name: Build Windows ${{ matrix.rid }}
     runs-on: windows-latest
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}\.vcpkg
     strategy:
       fail-fast: false
       matrix:
-        rid:
-          - win-x64
-          - win-arm64
-          - win-x86
+        include:
+          - rid: win-x64
+            triplet: x64-windows
+          - rid: win-arm64
+            triplet: arm64-windows
+          - rid: win-x86
+            triplet: x86-windows
 
     steps:
       - name: Check out source
@@ -38,6 +43,25 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
+          & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat"
+
+      - name: Cache vcpkg packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.VCPKG_ROOT }}\downloads
+            ${{ env.VCPKG_ROOT }}\installed
+            ${{ env.VCPKG_ROOT }}\buildtrees
+            ${{ env.VCPKG_ROOT }}\packages
+          key: ${{ runner.os }}-${{ matrix.triplet }}-vcpkg-freerdp-${{ hashFiles('tools/build-rdp-bridge.ps1', 'native/CxRdpBridge/CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.triplet }}-vcpkg-freerdp-
 
       - name: Publish app
         shell: pwsh
@@ -55,6 +79,32 @@ jobs:
             /p:IncludeNativeLibrariesForSelfExtract=true `
             /p:DebugType=none `
             /p:DebugSymbols=false
+
+      - name: Build RDP bridge
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $rid = "${{ matrix.rid }}"
+          $publishDir = Join-Path $env:GITHUB_WORKSPACE "artifacts\publish\$rid"
+
+          tools\build-rdp-bridge.ps1 `
+            -VcpkgRoot $env:VCPKG_ROOT `
+            -Triplet "${{ matrix.triplet }}" `
+            -OutputDir $publishDir
+
+      - name: Validate RDP bridge
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $rid = "${{ matrix.rid }}"
+          $publishDir = Join-Path $env:GITHUB_WORKSPACE "artifacts\publish\$rid"
+          $required = @("CxRdpBridge.dll", "freerdp3.dll", "winpr3.dll")
+          foreach ($file in $required) {
+              $path = Join-Path $publishDir $file
+              if (!(Test-Path $path)) {
+                  throw "Required RDP runtime file was not found: $path"
+              }
+          }
 
       - name: Create archive
         shell: pwsh
@@ -81,13 +131,19 @@ jobs:
 
   linux:
     name: Build Linux ${{ matrix.rid }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runs_on }}
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
     strategy:
       fail-fast: false
       matrix:
-        rid:
-          - linux-x64
-          - linux-arm64
+        include:
+          - rid: linux-x64
+            triplet: x64-linux
+            runs_on: ubuntu-latest
+          - rid: linux-arm64
+            triplet: arm64-linux
+            runs_on: ubuntu-24.04-arm
 
     steps:
       - name: Check out source
@@ -97,6 +153,30 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Install build tools
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build pkg-config
+
+      - name: Bootstrap vcpkg
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh"
+
+      - name: Cache vcpkg packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.VCPKG_ROOT }}/downloads
+            ${{ env.VCPKG_ROOT }}/installed
+            ${{ env.VCPKG_ROOT }}/buildtrees
+            ${{ env.VCPKG_ROOT }}/packages
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ matrix.triplet }}-vcpkg-freerdp-${{ hashFiles('tools/build-rdp-bridge.sh', 'native/CxRdpBridge/CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-${{ matrix.triplet }}-vcpkg-freerdp-
 
       - name: Publish app
         shell: bash
@@ -118,6 +198,24 @@ jobs:
           if [ -f "$publish_dir/CxShell" ]; then
             chmod +x "$publish_dir/CxShell"
           fi
+
+      - name: Build RDP bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          rid="${{ matrix.rid }}"
+          export OUTPUT_DIR="$GITHUB_WORKSPACE/artifacts/publish/$rid"
+          export TRIPLET="${{ matrix.triplet }}"
+          bash tools/build-rdp-bridge.sh
+
+      - name: Validate RDP bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          rid="${{ matrix.rid }}"
+          publish_dir="$GITHUB_WORKSPACE/artifacts/publish/$rid"
+          test -f "$publish_dir/libCxRdpBridge.so"
+          find "$publish_dir" -maxdepth 1 \( -name "libfreerdp*.so*" -o -name "libwinpr*.so*" \) | grep -q .
 
       - name: Create archive
         shell: bash

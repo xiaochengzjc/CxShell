@@ -308,7 +308,7 @@ bash tools/build-rdp-bridge.sh
 - `CxShell-<tag>-macos-arm64.tar.gz`
 - `CxShell-<tag>-macos-x64.tar.gz`
 
-macOS 包内包含 `.app` bundle，并包含原生 RDP bridge。Windows 和 Linux 包是自包含应用构建；后续启用对应平台 bridge CI 后，可以通过 `runtimes/<rid>/native` 打包路径加入 RDP 原生桥接文件。
+这些包都是自包含应用构建。Windows、macOS 和 Linux 包会包含对应 CPU 架构的原生 RDP bridge，以及相邻的 FreeRDP/WinPR 运行时库。
 
 命令行发布示例：
 
