@@ -162,6 +162,9 @@ if ($LASTEXITCODE -ne 0) {
 if (![string]::IsNullOrWhiteSpace($OutputDir)) {
     New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
     Get-ChildItem $buildDir -Filter "*.dll" | Copy-Item -Destination $OutputDir -Force
+    Get-ChildItem $buildDir -Recurse -Filter "*.dll" |
+        Where-Object { $_.FullName -notmatch "\\debug\\" } |
+        Copy-Item -Destination $OutputDir -Force
 
     $vcpkgBin = Join-Path $VcpkgRoot "installed\$Triplet\bin"
     if (Test-Path $vcpkgBin) {
