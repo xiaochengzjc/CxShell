@@ -40,6 +40,163 @@ function Find-VsDevCmd {
     return $paths | Where-Object { Test-Path $_ } | Select-Object -First 1
 }
 
+function Get-CMakeCacheValue {
+    param(
+        [string]$CachePath,
+        [string]$Key
+    )
+
+    if (!(Test-Path $CachePath)) {
+        return $null
+    }
+
+    $line = Select-String -Path $CachePath -Pattern "^$([regex]::Escape($Key)):" -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($null -eq $line) {
+        return $null
+    }
+
+    $index = $line.Line.IndexOf("=")
+    if ($index -lt 0) {
+        return $null
+    }
+
+    return $line.Line.Substring($index + 1)
+}
+
+function Copy-FirstExistingFile {
+    param(
+        [string]$FileName,
+        [string[]]$SearchDirectories,
+        [string]$DestinationDirectory
+    )
+
+    foreach ($directory in $SearchDirectories | Where-Object { ![string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique) {
+        $candidate = Join-Path $directory $FileName
+        if (Test-Path $candidate) {
+            Copy-Item $candidate -Destination $DestinationDirectory -Force
+            Write-Host "Copied native dependency: $candidate"
+            return $true
+        }
+    }
+
+    $whereOutput = & where.exe $FileName 2>$null
+    foreach ($candidate in $whereOutput) {
+        if (Test-Path $candidate) {
+            Copy-Item $candidate -Destination $DestinationDirectory -Force
+            Write-Host "Copied native dependency: $candidate"
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Get-WindowsDllDependents {
+    param([string]$BinaryPath)
+
+    if (!(Test-Path $BinaryPath)) {
+        return @()
+    }
+
+    $dumpbinCommand = Get-Command dumpbin.exe -ErrorAction SilentlyContinue
+    if (!$dumpbinCommand) {
+        Write-Host "dumpbin.exe was not found; skipping dependency inspection for $BinaryPath"
+        return @()
+    }
+
+    $output = & $dumpbinCommand.Source /dependents $BinaryPath
+    $dependents = @()
+    foreach ($line in $output) {
+        $trimmed = $line.Trim()
+        if ($trimmed -match "^[A-Za-z0-9_.+\-]+\.dll$") {
+            $dependents += $trimmed
+        }
+    }
+
+    return $dependents
+}
+
+function Copy-WindowsToolchainRuntimeDependencies {
+    param(
+        [string]$BuildDirectory,
+        [string]$VcpkgRootPath,
+        [string]$TripletName,
+        [string]$DestinationDirectory
+    )
+
+    $searchDirectories = New-Object System.Collections.Generic.List[string]
+    foreach ($pathEntry in $env:PATH.Split([IO.Path]::PathSeparator, [StringSplitOptions]::RemoveEmptyEntries)) {
+        $searchDirectories.Add($pathEntry)
+    }
+
+    $cachePath = Join-Path $BuildDirectory "CMakeCache.txt"
+    foreach ($key in @("CMAKE_C_COMPILER", "CMAKE_CXX_COMPILER")) {
+        $compilerPath = Get-CMakeCacheValue -CachePath $cachePath -Key $key
+        if (![string]::IsNullOrWhiteSpace($compilerPath)) {
+            $compilerDirectory = Split-Path $compilerPath -Parent
+            if (![string]::IsNullOrWhiteSpace($compilerDirectory)) {
+                $searchDirectories.Add($compilerDirectory)
+            }
+        }
+    }
+
+    $searchDirectories.Add((Join-Path $VcpkgRootPath "installed\$TripletName\bin"))
+    $searchDirectories.Add((Join-Path $VcpkgRootPath "downloads\tools\msys2\mingw64\bin"))
+    $searchDirectories.Add((Join-Path $VcpkgRootPath "downloads\tools\msys2\ucrt64\bin"))
+    $searchDirectories.Add((Join-Path $VcpkgRootPath "downloads\tools\perl\5.42.2.1\c\bin"))
+    $searchDirectories.Add("C:\msys64\mingw64\bin")
+    $searchDirectories.Add("C:\msys64\ucrt64\bin")
+
+    $dependencyNames = @(
+        "libgcc_s_seh-1.dll",
+        "libstdc++-6.dll",
+        "libwinpthread-1.dll"
+    )
+
+    $bridgePath = Join-Path $DestinationDirectory "CxRdpBridge.dll"
+    if (!(Test-Path $bridgePath)) {
+        $bridgePath = Join-Path $DestinationDirectory "libCxRdpBridge.dll"
+    }
+
+    $detectedDependents = @(Get-WindowsDllDependents -BinaryPath $bridgePath)
+    if ($detectedDependents.Count -eq 0) {
+        Write-Host "No optional MinGW runtime dependency inspection result for $bridgePath."
+        return
+    }
+
+    $dependencyNames = @($dependencyNames | Where-Object {
+        $dependencyName = $_
+        $detectedDependents | Where-Object { [string]::Equals($_, $dependencyName, [StringComparison]::OrdinalIgnoreCase) }
+    })
+
+    if ($dependencyNames.Count -eq 0) {
+        Write-Host "No MinGW runtime dependencies detected for $bridgePath."
+        return
+    }
+
+    foreach ($dependencyName in $dependencyNames) {
+        if (Test-Path (Join-Path $DestinationDirectory $dependencyName)) {
+            continue
+        }
+
+        if (Copy-FirstExistingFile -FileName $dependencyName -SearchDirectories $searchDirectories.ToArray() -DestinationDirectory $DestinationDirectory) {
+            continue
+        }
+
+        $found = Get-ChildItem $VcpkgRootPath -Recurse -Filter $dependencyName -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch "\\debug\\" } |
+            Select-Object -First 1
+        if ($found) {
+            Copy-Item $found.FullName -Destination $DestinationDirectory -Force
+            Write-Host "Copied native dependency: $($found.FullName)"
+        }
+        else {
+            Write-Host "Optional native dependency was not found: $dependencyName"
+        }
+    }
+}
+
 if ([string]::IsNullOrWhiteSpace($VcpkgRoot)) {
     $VcpkgRoot = "D:\develop\vcpkg"
 }
@@ -93,11 +250,55 @@ if ($Triplet -like "*windows*") {
             [Environment]::SetEnvironmentVariable($line.Substring(0, $index), $line.Substring($index + 1), "Process")
         }
     }
+
+    $clCommand = Get-Command cl.exe -ErrorAction SilentlyContinue
+    if ($clCommand) {
+        Write-Host "Using MSVC compiler: $($clCommand.Source)"
+    }
 }
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $sourceDir = Join-Path $repoRoot "native\CxRdpBridge"
 $buildDir = Join-Path $sourceDir "build\$Triplet"
+
+if ($Triplet -like "*windows*") {
+    $cachePath = Join-Path $buildDir "CMakeCache.txt"
+    $clCommand = Get-Command cl.exe -ErrorAction SilentlyContinue
+    if ((Test-Path $cachePath) -and $clCommand) {
+        $cachedCCompiler = Get-CMakeCacheValue -CachePath $cachePath -Key "CMAKE_C_COMPILER"
+        $cachedCxxCompiler = Get-CMakeCacheValue -CachePath $cachePath -Key "CMAKE_CXX_COMPILER"
+        $cachedFreeRdpDir = Get-CMakeCacheValue -CachePath $cachePath -Key "FreeRDP_DIR"
+        $expectedCompiler = [IO.Path]::GetFullPath($clCommand.Source)
+        $cachedCompilers = @($cachedCCompiler, $cachedCxxCompiler) |
+            Where-Object { ![string]::IsNullOrWhiteSpace($_) } |
+            ForEach-Object {
+                try {
+                    [IO.Path]::GetFullPath($_)
+                }
+                catch {
+                    $_
+                }
+            }
+
+        $compilerMismatch = $cachedCompilers |
+            Where-Object { ![string]::Equals($_, $expectedCompiler, [StringComparison]::Ordinal) } |
+            Select-Object -First 1
+
+        $packagePathMissing = ![string]::IsNullOrWhiteSpace($cachedFreeRdpDir) -and
+            $cachedFreeRdpDir.EndsWith("-NOTFOUND", [StringComparison]::OrdinalIgnoreCase)
+
+        if ($compilerMismatch -or $packagePathMissing) {
+            $resolvedBuildDir = [IO.Path]::GetFullPath($buildDir)
+            $resolvedSourceDir = [IO.Path]::GetFullPath($sourceDir)
+            if (!$resolvedBuildDir.StartsWith($resolvedSourceDir, [StringComparison]::OrdinalIgnoreCase)) {
+                throw "Refusing to remove build directory outside native source: $resolvedBuildDir"
+            }
+
+            Write-Host "Removing stale CMake build directory: $buildDir"
+            Remove-Item -LiteralPath $buildDir -Recurse -Force
+        }
+    }
+}
 
 if ([string]::IsNullOrWhiteSpace($CMakePath)) {
     $cmakeCommand = Get-Command cmake -ErrorAction SilentlyContinue
@@ -145,11 +346,25 @@ if ($LASTEXITCODE -ne 0) {
     throw "vcpkg install freerdp:$Triplet failed."
 }
 
-& $CMakePath -S $sourceDir -B $buildDir -G Ninja `
-    "-DCMAKE_TOOLCHAIN_FILE=$toolchain" `
-    "-DCMAKE_BUILD_TYPE=$Configuration" `
-    "-DVCPKG_TARGET_TRIPLET=$Triplet" `
+$cmakeArgs = @(
+    "-S", $sourceDir,
+    "-B", $buildDir,
+    "-G", "Ninja",
+    "-DCMAKE_TOOLCHAIN_FILE=$toolchain",
+    "-DCMAKE_BUILD_TYPE=$Configuration",
+    "-DVCPKG_TARGET_TRIPLET=$Triplet",
     "-DVCPKG_APPLOCAL_DEPS=ON"
+)
+
+if ($Triplet -like "*windows*") {
+    $clCommand = Get-Command cl.exe -ErrorAction SilentlyContinue
+    if ($clCommand) {
+        $cmakeArgs += "-DCMAKE_C_COMPILER=$($clCommand.Source)"
+        $cmakeArgs += "-DCMAKE_CXX_COMPILER=$($clCommand.Source)"
+    }
+}
+
+& $CMakePath @cmakeArgs
 if ($LASTEXITCODE -ne 0) {
     throw "CMake configure failed."
 }
@@ -176,6 +391,10 @@ if (![string]::IsNullOrWhiteSpace($OutputDir)) {
         Get-ChildItem $vcpkgInstalled -Recurse -Filter "*.dll" |
             Where-Object { $_.FullName -notmatch "\\debug\\" } |
             Copy-Item -Destination $OutputDir -Force
+    }
+
+    if ($Triplet -like "*windows*") {
+        Copy-WindowsToolchainRuntimeDependencies -BuildDirectory $buildDir -VcpkgRootPath $VcpkgRoot -TripletName $Triplet -DestinationDirectory $OutputDir
     }
 
     $prefixedBridge = Join-Path $OutputDir "libCxRdpBridge.dll"

@@ -30,6 +30,8 @@ public sealed class RdpBridgeClient : IDisposable
 {
     private const string LibraryName = "CxRdpBridge";
     private static readonly object DebugLogLock = new();
+    private static readonly object NativeLoadFailureLock = new();
+    private static string? _lastNativeLoadFailure;
     private readonly FrameCallback _frameCallback;
     private readonly StatusCallback _statusCallback;
     private readonly DisconnectCallback _disconnectCallback;
@@ -47,6 +49,15 @@ public sealed class RdpBridgeClient : IDisposable
     public event Action? Disconnected;
 
     public static string DebugLogPath => Path.Combine(GetDebugLogDirectory(), "rdp-debug.log");
+
+    public static string? LastNativeLoadFailure
+    {
+        get
+        {
+            lock (NativeLoadFailureLock)
+                return _lastNativeLoadFailure;
+        }
+    }
 
     public RdpBridgeClient()
     {
@@ -272,18 +283,60 @@ public sealed class RdpBridgeClient : IDisposable
         return "libCxRdpBridge.so";
     }
 
+    public static string GetNativeLibraryLoadErrorMessage(Exception exception)
+    {
+        var loadFailure = LastNativeLoadFailure;
+        if (!string.IsNullOrWhiteSpace(loadFailure))
+            return loadFailure;
+
+        return $"{GetExpectedNativeLibraryName()} could not be loaded: {exception.Message}";
+    }
+
     private static IntPtr ResolveNativeLibrary(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
     {
         if (!string.Equals(libraryName, LibraryName, StringComparison.Ordinal))
             return IntPtr.Zero;
 
+        var failures = new List<string>();
+        var missing = new List<string>();
         foreach (var candidate in GetNativeLibraryCandidates())
         {
-            if (File.Exists(candidate) && NativeLibrary.TryLoad(candidate, out var handle))
+            if (!File.Exists(candidate))
+            {
+                missing.Add(candidate);
+                continue;
+            }
+
+            try
+            {
+                var handle = NativeLibrary.Load(candidate);
+                SetLastNativeLoadFailure(null);
                 return handle;
+            }
+            catch (Exception ex) when (ex is DllNotFoundException or BadImageFormatException)
+            {
+                failures.Add($"{candidate}: {ex.Message}");
+            }
+        }
+
+        if (failures.Count > 0)
+        {
+            SetLastNativeLoadFailure(
+                $"{GetExpectedNativeLibraryName()} was found, but Windows could not load it. A dependent native DLL may be missing or the architecture may be wrong. {string.Join(" | ", failures)}");
+        }
+        else
+        {
+            SetLastNativeLoadFailure(
+                $"{GetExpectedNativeLibraryName()} was not found. Checked: {string.Join("; ", missing)}");
         }
 
         return IntPtr.Zero;
+    }
+
+    private static void SetLastNativeLoadFailure(string? message)
+    {
+        lock (NativeLoadFailureLock)
+            _lastNativeLoadFailure = message;
     }
 
     private static string[] GetNativeLibraryCandidates()

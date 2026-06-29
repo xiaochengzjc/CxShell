@@ -57,12 +57,12 @@ public partial class RdpViewModel : ObservableObject, IDisposable
                 _client.Connect(Session, Password);
                 Dispatcher.UIThread.Post(() => IsConnected = false);
             }
-            catch (DllNotFoundException)
+            catch (DllNotFoundException ex)
             {
                 Dispatcher.UIThread.Post(() =>
                 {
                     _started = false;
-                    StatusText = $"{RdpBridgeClient.GetExpectedNativeLibraryName()} was not found. Build native/CxRdpBridge and copy the native library next to CxShell or into runtimes/<rid>/native.";
+                    StatusText = $"RDP native library load failed: {RdpBridgeClient.GetNativeLibraryLoadErrorMessage(ex)}";
                 });
             }
             catch (EntryPointNotFoundException ex)

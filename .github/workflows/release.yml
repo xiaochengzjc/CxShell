@@ -88,6 +88,40 @@ jobs:
             -Triplet "${{ matrix.triplet }}" `
             -OutputDir $publishDir
 
+      - name: Validate RDP bridge
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $rid = "${{ matrix.rid }}"
+          $publishDir = Join-Path $env:GITHUB_WORKSPACE "artifacts\publish\$rid"
+          $bridgePath = Join-Path $publishDir "CxRdpBridge.dll"
+
+          if (!(Test-Path $bridgePath)) {
+            throw "CxRdpBridge.dll was not copied to $publishDir"
+          }
+
+          Add-Type -TypeDefinition @"
+          using System;
+          using System.Runtime.InteropServices;
+
+          public static class NativeLoadProbe
+          {
+              public static IntPtr Load(string path) => NativeLibrary.Load(path);
+              public static void Free(IntPtr handle) => NativeLibrary.Free(handle);
+          }
+          "@
+
+          try {
+            $handle = [NativeLoadProbe]::Load($bridgePath)
+            [NativeLoadProbe]::Free($handle)
+            Write-Host "Loaded $bridgePath successfully."
+          }
+          catch {
+            Write-Host "Native files in package:"
+            Get-ChildItem $publishDir -Filter "*.dll" | Select-Object Name, Length | Format-Table -AutoSize
+            throw
+          }
+
       - name: Create archive
         shell: pwsh
         run: |
