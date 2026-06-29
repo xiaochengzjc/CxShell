@@ -161,18 +161,18 @@ function Copy-WindowsToolchainRuntimeDependencies {
 
     $detectedDependents = @(Get-WindowsDllDependents -BinaryPath $bridgePath)
     if ($detectedDependents.Count -eq 0) {
-        Write-Host "No optional MinGW runtime dependency inspection result for $bridgePath."
-        return
+        Write-Host "No MinGW runtime dependency inspection result for $bridgePath; copying any available optional runtime DLLs."
     }
+    else {
+        $dependencyNames = @($dependencyNames | Where-Object {
+            $dependencyName = $_
+            $detectedDependents | Where-Object { [string]::Equals($_, $dependencyName, [StringComparison]::OrdinalIgnoreCase) }
+        })
 
-    $dependencyNames = @($dependencyNames | Where-Object {
-        $dependencyName = $_
-        $detectedDependents | Where-Object { [string]::Equals($_, $dependencyName, [StringComparison]::OrdinalIgnoreCase) }
-    })
-
-    if ($dependencyNames.Count -eq 0) {
-        Write-Host "No MinGW runtime dependencies detected for $bridgePath."
-        return
+        if ($dependencyNames.Count -eq 0) {
+            Write-Host "No MinGW runtime dependencies detected for $bridgePath."
+            return
+        }
     }
 
     foreach ($dependencyName in $dependencyNames) {

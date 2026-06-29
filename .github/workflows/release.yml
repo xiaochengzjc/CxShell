@@ -100,6 +100,53 @@ jobs:
             throw "CxRdpBridge.dll was not copied to $publishDir"
           }
 
+          $dumpbin = Get-Command dumpbin.exe -ErrorAction SilentlyContinue
+          if (!$dumpbin) {
+            $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+            if (Test-Path $vswhere) {
+              $vsInstall = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+              if ($vsInstall) {
+                $dumpbinPath = Get-ChildItem -Path $vsInstall -Recurse -Filter dumpbin.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+                if ($dumpbinPath) {
+                  $dumpbin = Get-Item $dumpbinPath
+                }
+              }
+            }
+          }
+
+          if ($dumpbin) {
+            $packageDependencies = @(
+              "freerdp3.dll",
+              "freerdp-client3.dll",
+              "winpr3.dll",
+              "libcrypto-3-x64.dll",
+              "libssl-3-x64.dll",
+              "cjson.dll",
+              "z.dll",
+              "libgcc_s_seh-1.dll",
+              "libstdc++-6.dll",
+              "libwinpthread-1.dll"
+            )
+            $dependents = & $dumpbin.FullName /dependents $bridgePath |
+              ForEach-Object { $_.Trim() } |
+              Where-Object { $_ -match "^[A-Za-z0-9_.+\-]+\.dll$" }
+            $missing = @($dependents | Where-Object {
+              $dependency = $_
+              $packageDependencies -contains $dependency -and !(Test-Path (Join-Path $publishDir $dependency))
+            })
+
+            if ($missing.Count -gt 0) {
+              Write-Host "CxRdpBridge.dll depends on DLLs that were not copied to the package:"
+              $missing | ForEach-Object { Write-Host "  $_" }
+              Write-Host "Native files in package:"
+              Get-ChildItem $publishDir -Filter "*.dll" | Select-Object Name, Length | Format-Table -AutoSize
+              throw "Missing packaged RDP native dependencies."
+            }
+          }
+          else {
+            Write-Host "dumpbin.exe was not found; skipping packaged dependency inspection."
+          }
+
           Add-Type -TypeDefinition @"
           using System;
           using System.Runtime.InteropServices;
