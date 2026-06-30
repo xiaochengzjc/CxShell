@@ -23,6 +23,8 @@ public partial class RdpViewModel : ObservableObject, IDisposable
     [ObservableProperty] private int _remoteWidth;
     [ObservableProperty] private int _remoteHeight;
     [ObservableProperty] private bool _isFitToWindow = true;
+    [ObservableProperty] private bool _isClipboardChannelReady;
+    [ObservableProperty] private string _remoteClipboardText = string.Empty;
 
     public SessionInfo Session { get; }
     public string? Password { get; }
@@ -34,10 +36,12 @@ public partial class RdpViewModel : ObservableObject, IDisposable
         Password = password;
         _client.FramebufferUpdated += OnFramebufferUpdated;
         _client.StatusChanged += message => Dispatcher.UIThread.Post(() => HandleStatus(message));
+        _client.ClipboardTextReceived += OnClipboardTextReceived;
         _client.Disconnected += () => Dispatcher.UIThread.Post(() =>
         {
             _started = false;
             IsConnected = false;
+            IsClipboardChannelReady = false;
             StatusText = "RDP disconnected";
         });
     }
@@ -86,7 +90,13 @@ public partial class RdpViewModel : ObservableObject, IDisposable
 
     private void HandleStatus(string message)
     {
-        StatusText = message;
+        StatusText = GetDisplayStatusText(message);
+
+        if (message.StartsWith("RDP clipboard channel ready", StringComparison.OrdinalIgnoreCase))
+        {
+            IsClipboardChannelReady = true;
+            return;
+        }
 
         if (string.Equals(message, "RDP connected.", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(message, "RDP connected", StringComparison.OrdinalIgnoreCase))
@@ -102,7 +112,19 @@ public partial class RdpViewModel : ObservableObject, IDisposable
         {
             IsConnected = false;
             _started = false;
+            IsClipboardChannelReady = false;
         }
+    }
+
+    private static string GetDisplayStatusText(string message)
+    {
+        if (string.Equals(message, "RDP clipboard waiting for server MonitorReady.", StringComparison.OrdinalIgnoreCase))
+            return "Remote clipboard service is not responding. Restart rdpclip.exe on the remote Windows session.";
+
+        if (message.StartsWith("RDP clipboard channel ready", StringComparison.OrdinalIgnoreCase))
+            return "RDP clipboard ready";
+
+        return message;
     }
 
     public void Reconnect()
@@ -117,6 +139,7 @@ public partial class RdpViewModel : ObservableObject, IDisposable
         _client.Disconnect();
         _started = false;
         IsConnected = false;
+        IsClipboardChannelReady = false;
         StatusText = "RDP disconnected";
     }
 
@@ -136,6 +159,12 @@ public partial class RdpViewModel : ObservableObject, IDisposable
     {
         if (IsConnected)
             _client.SendUnicodeKey(key, down);
+    }
+
+    public void SetClipboardText(string text)
+    {
+        if (IsConnected)
+            _client.SetClipboardText(text);
     }
 
     [RelayCommand]
@@ -174,9 +203,15 @@ public partial class RdpViewModel : ObservableObject, IDisposable
         });
     }
 
+    private void OnClipboardTextReceived(string text)
+    {
+        Dispatcher.UIThread.Post(() => RemoteClipboardText = text);
+    }
+
     public void Dispose()
     {
         _client.FramebufferUpdated -= OnFramebufferUpdated;
+        _client.ClipboardTextReceived -= OnClipboardTextReceived;
         _client.Dispose();
     }
 }

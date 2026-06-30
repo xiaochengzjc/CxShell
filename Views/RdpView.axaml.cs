@@ -1,7 +1,9 @@
 using System;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using CxShell.ViewModels;
@@ -13,7 +15,12 @@ public partial class RdpView : UserControl
     private ushort _buttonFlags;
     private RdpViewModel? _boundVm;
     private bool _isAttached;
-    private bool _syntheticShiftDown;
+    private bool _controlDown;
+    private bool _shiftDown;
+    private bool _altDown;
+    private bool _suppressNextPasteKeyUp;
+    private bool _applyingRemoteClipboardText;
+    private string? _lastSyncedClipboardText;
 
     public RdpView()
     {
@@ -30,8 +37,11 @@ public partial class RdpView : UserControl
         DetachedFromVisualTree += (_, _) =>
         {
             _isAttached = false;
+            ReleaseTrackedModifiers();
             UnbindViewModel();
         };
+        GotFocus += (_, _) => _ = SyncLocalClipboardToRemoteAsync();
+        LostFocus += (_, _) => ReleaseTrackedModifiers();
         DataContextChanged += OnDataContextChanged;
     }
 
@@ -45,13 +55,20 @@ public partial class RdpView : UserControl
         vm.PropertyChanged += OnViewModelPropertyChanged;
         ApplyScaleMode(vm);
         if (_isAttached)
+        {
             vm.Start();
+            _ = SyncLocalClipboardToRemoteAsync();
+        }
     }
 
     private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
     {
         if (_boundVm != null && args.PropertyName == nameof(RdpViewModel.IsFitToWindow))
             ApplyScaleMode(_boundVm);
+        if (_boundVm != null && args.PropertyName == nameof(RdpViewModel.IsClipboardChannelReady) && _boundVm.IsClipboardChannelReady)
+            _ = SyncLocalClipboardToRemoteAsync();
+        if (_boundVm != null && args.PropertyName == nameof(RdpViewModel.RemoteClipboardText))
+            _ = ApplyRemoteClipboardTextAsync(_boundVm.RemoteClipboardText);
     }
 
     private void UnbindViewModel()
@@ -79,6 +96,7 @@ public partial class RdpView : UserControl
     private void OnFramebufferPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         Focus();
+        _ = SyncLocalClipboardToRemoteAsync();
         var point = e.GetCurrentPoint(FramebufferImage);
         if (point.Properties.IsLeftButtonPressed)
             _buttonFlags |= 0x1000;
@@ -119,11 +137,21 @@ public partial class RdpView : UserControl
 
     private void OnFramebufferKeyDown(object? sender, KeyEventArgs e)
     {
+        if (TryStartLocalClipboardPaste(e))
+            return;
+
         SendKey(e, true);
     }
 
     private void OnFramebufferKeyUp(object? sender, KeyEventArgs e)
     {
+        if (_suppressNextPasteKeyUp && e.Key == Key.V)
+        {
+            _suppressNextPasteKeyUp = false;
+            e.Handled = true;
+            return;
+        }
+
         SendKey(e, false);
     }
 
@@ -161,28 +189,17 @@ public partial class RdpView : UserControl
         if (DataContext is not RdpViewModel vm)
             return;
 
-        if (TryGetPrintableScancode(e, out var printableScancode, out var needsShift))
+        if (TrySendModifierKey(vm, e.Key, down))
         {
-            if (!needsShift && down && _syntheticShiftDown)
-            {
-                vm.SendKey(0x2A, false);
-                _syntheticShiftDown = false;
-            }
+            e.Handled = true;
+            return;
+        }
 
-            if (needsShift && down && !_syntheticShiftDown)
-            {
-                vm.SendKey(0x2A, true);
-                _syntheticShiftDown = true;
-            }
+        SyncModifierState(vm, e.KeyModifiers);
 
+        if (TryGetPrintableScancode(e, out var printableScancode, out _))
+        {
             vm.SendKey(printableScancode, down);
-
-            if (!down && _syntheticShiftDown)
-            {
-                vm.SendKey(0x2A, false);
-                _syntheticShiftDown = false;
-            }
-
             e.Handled = true;
             return;
         }
@@ -193,6 +210,204 @@ public partial class RdpView : UserControl
 
         vm.SendKey(key, down);
         e.Handled = true;
+    }
+
+    private bool TryStartLocalClipboardPaste(KeyEventArgs e)
+    {
+        if (e.Key != Key.V || !e.KeyModifiers.HasFlag(KeyModifiers.Control))
+            return false;
+
+        _suppressNextPasteKeyUp = true;
+        e.Handled = true;
+        _ = PasteClipboardViaRdpAsync();
+        return true;
+    }
+
+    private async Task PasteClipboardViaRdpAsync()
+    {
+        if (DataContext is not RdpViewModel vm)
+            return;
+
+        var text = await TryReadLocalClipboardTextAsync();
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        if (!vm.IsClipboardChannelReady)
+        {
+            vm.SetClipboardText(text);
+            _lastSyncedClipboardText = text;
+            await PasteLocalClipboardTextAsync(text);
+            return;
+        }
+
+        vm.SetClipboardText(text);
+        _lastSyncedClipboardText = text;
+        await Task.Delay(300);
+        SendClipboardPasteShortcut(vm);
+    }
+
+    private async Task PasteLocalClipboardTextAsync(string text)
+    {
+        if (DataContext is not RdpViewModel vm)
+            return;
+
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        ReleaseTrackedModifiers(vm);
+        for (var i = 0; i < text.Length; i++)
+        {
+            var ch = text[i];
+            if (ch == '\r')
+            {
+                if (i + 1 < text.Length && text[i + 1] == '\n')
+                    continue;
+
+                SendScancodeTap(vm, 0x1C);
+                continue;
+            }
+
+            if (ch == '\n')
+            {
+                SendScancodeTap(vm, 0x1C);
+                continue;
+            }
+
+            if (ch == '\t')
+            {
+                SendScancodeTap(vm, 0x0F);
+                continue;
+            }
+
+            vm.SendUnicodeKey(ch, true);
+            vm.SendUnicodeKey(ch, false);
+
+            if (i % 128 == 127)
+                await Task.Yield();
+        }
+    }
+
+    private async Task<string?> TryReadLocalClipboardTextAsync()
+    {
+        try
+        {
+            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            return clipboard == null ? null : await clipboard.TryGetTextAsync();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private async Task SyncLocalClipboardToRemoteAsync()
+    {
+        if (_applyingRemoteClipboardText || DataContext is not RdpViewModel vm || !vm.IsClipboardChannelReady)
+            return;
+
+        var text = await TryReadLocalClipboardTextAsync();
+        if (text == null || string.Equals(text, _lastSyncedClipboardText, StringComparison.Ordinal))
+            return;
+
+        vm.SetClipboardText(text);
+        _lastSyncedClipboardText = text;
+    }
+
+    private async Task ApplyRemoteClipboardTextAsync(string text)
+    {
+        _applyingRemoteClipboardText = true;
+        try
+        {
+            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            if (clipboard != null)
+            {
+                await clipboard.SetTextAsync(text);
+                _lastSyncedClipboardText = text;
+            }
+        }
+        catch
+        {
+            // Clipboard access may fail on some desktop backends.
+        }
+        finally
+        {
+            _applyingRemoteClipboardText = false;
+        }
+    }
+
+    private void SendClipboardPasteShortcut(RdpViewModel vm)
+    {
+        ReleaseTrackedModifiers(vm);
+        vm.SendKey(0x1D, true);
+        SendScancodeTap(vm, 0x2F);
+        vm.SendKey(0x1D, false);
+    }
+
+    private static void SendScancodeTap(RdpViewModel vm, uint scancode)
+    {
+        vm.SendKey(scancode, true);
+        vm.SendKey(scancode, false);
+    }
+
+    private void ReleaseTrackedModifiers()
+    {
+        if (DataContext is RdpViewModel vm)
+            ReleaseTrackedModifiers(vm);
+        else
+            ClearTrackedModifiers();
+    }
+
+    private void ReleaseTrackedModifiers(RdpViewModel vm)
+    {
+        SetModifierState(vm, ref _controlDown, false, 0x1D);
+        SetModifierState(vm, ref _shiftDown, false, 0x2A);
+        SetModifierState(vm, ref _altDown, false, 0x38);
+    }
+
+    private void ClearTrackedModifiers()
+    {
+        _controlDown = false;
+        _shiftDown = false;
+        _altDown = false;
+    }
+
+    private void SyncModifierState(RdpViewModel vm, KeyModifiers modifiers)
+    {
+        SetModifierState(vm, ref _controlDown, modifiers.HasFlag(KeyModifiers.Control), 0x1D);
+        SetModifierState(vm, ref _shiftDown, modifiers.HasFlag(KeyModifiers.Shift), 0x2A);
+        SetModifierState(vm, ref _altDown, modifiers.HasFlag(KeyModifiers.Alt), 0x38);
+    }
+
+    private bool TrySendModifierKey(RdpViewModel vm, Key key, bool down)
+    {
+        switch (key)
+        {
+            case Key.LeftCtrl:
+            case Key.RightCtrl:
+                SetModifierState(vm, ref _controlDown, down, key == Key.RightCtrl ? 0x0100u | 0x1D : 0x1D);
+                return true;
+            case Key.LeftShift:
+                SetModifierState(vm, ref _shiftDown, down, 0x2A);
+                return true;
+            case Key.RightShift:
+                SetModifierState(vm, ref _shiftDown, down, 0x36);
+                return true;
+            case Key.LeftAlt:
+            case Key.RightAlt:
+                SetModifierState(vm, ref _altDown, down, key == Key.RightAlt ? 0x0100u | 0x38 : 0x38);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static void SetModifierState(RdpViewModel vm, ref bool current, bool desired, uint scancode)
+    {
+        if (current == desired)
+            return;
+
+        vm.SendKey(scancode, desired);
+        current = desired;
     }
 
     private static bool TryGetPrintableScancode(KeyEventArgs e, out uint scancode, out bool needsShift)

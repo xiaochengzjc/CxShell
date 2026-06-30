@@ -31,10 +31,12 @@ public sealed class RdpBridgeClient : IDisposable
     private const string LibraryName = "CxRdpBridge";
     private static readonly object DebugLogLock = new();
     private static readonly object NativeLoadFailureLock = new();
+    private static readonly bool DetailedDebugLogEnabled = IsEnvironmentFlagEnabled("CXSHELL_RDP_DEBUG_LOG");
     private static string? _lastNativeLoadFailure;
     private readonly FrameCallback _frameCallback;
     private readonly StatusCallback _statusCallback;
     private readonly DisconnectCallback _disconnectCallback;
+    private readonly ClipboardTextCallback _clipboardTextCallback;
     private IntPtr _handle;
     private SshClient? _sshTunnelClient;
     private ForwardedPortLocal? _sshTunnelPort;
@@ -47,6 +49,7 @@ public sealed class RdpBridgeClient : IDisposable
     public event EventHandler<RdpFramebufferEventArgs>? FramebufferUpdated;
     public event Action<string>? StatusChanged;
     public event Action? Disconnected;
+    public event Action<string>? ClipboardTextReceived;
 
     public static string DebugLogPath => Path.Combine(GetDebugLogDirectory(), "rdp-debug.log");
 
@@ -64,6 +67,7 @@ public sealed class RdpBridgeClient : IDisposable
         _frameCallback = OnFrame;
         _statusCallback = OnStatus;
         _disconnectCallback = OnDisconnected;
+        _clipboardTextCallback = OnClipboardText;
     }
 
     public void Connect(SessionInfo session, string? password)
@@ -90,6 +94,7 @@ public sealed class RdpBridgeClient : IDisposable
         }
 
         NativeMethods.cxrdp_set_callbacks(_handle, _frameCallback, _statusCallback, _disconnectCallback, IntPtr.Zero);
+        NativeMethods.cxrdp_set_clipboard_callback(_handle, _clipboardTextCallback);
 
         var result = NativeMethods.cxrdp_connect(
             _handle,
@@ -203,6 +208,13 @@ public sealed class RdpBridgeClient : IDisposable
     {
         if (_handle != IntPtr.Zero)
             NativeMethods.cxrdp_send_unicode_key(_handle, key, down ? 1 : 0);
+    }
+
+    public void SetClipboardText(string text)
+    {
+        DebugLogDetailed($"clipboard set local length={text?.Length ?? 0}");
+        if (_handle != IntPtr.Zero)
+            NativeMethods.cxrdp_set_clipboard_text(_handle, text ?? string.Empty);
     }
 
     public void Disconnect()
@@ -408,7 +420,7 @@ public sealed class RdpBridgeClient : IDisposable
         var text = message == IntPtr.Zero ? string.Empty : Marshal.PtrToStringUTF8(message) ?? string.Empty;
         if (!string.IsNullOrWhiteSpace(text))
         {
-            DebugLog($"status {SanitizeLogValue(text)}");
+            DebugLogStatus(text);
             StatusChanged?.Invoke(text);
         }
     }
@@ -417,6 +429,13 @@ public sealed class RdpBridgeClient : IDisposable
     {
         DebugLog("disconnected callback");
         Disconnected?.Invoke();
+    }
+
+    private void OnClipboardText(IntPtr userData, IntPtr text)
+    {
+        var value = text == IntPtr.Zero ? string.Empty : Marshal.PtrToStringUTF8(text) ?? string.Empty;
+        DebugLogDetailed($"clipboard received remote length={value.Length}");
+        ClipboardTextReceived?.Invoke(value);
     }
 
     private static string GetDebugLogDirectory()
@@ -443,6 +462,40 @@ public sealed class RdpBridgeClient : IDisposable
         }
     }
 
+    private static void DebugLogDetailed(string message)
+    {
+        if (DetailedDebugLogEnabled)
+            DebugLog(message);
+    }
+
+    private static void DebugLogStatus(string status)
+    {
+        if (DetailedDebugLogEnabled || ShouldLogStatus(status))
+            DebugLog($"status {SanitizeLogValue(status)}");
+    }
+
+    private static bool ShouldLogStatus(string status)
+    {
+        if (!status.StartsWith("RDP clipboard ", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return status.Contains("failed", StringComparison.OrdinalIgnoreCase) ||
+               status.Contains("closed", StringComparison.OrdinalIgnoreCase) ||
+               status.Contains("disabled", StringComparison.OrdinalIgnoreCase) ||
+               status.Contains("waiting for server MonitorReady", StringComparison.OrdinalIgnoreCase) ||
+               status.StartsWith("RDP clipboard channel ready", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsEnvironmentFlagEnabled(string name)
+    {
+        var value = Environment.GetEnvironmentVariable(name);
+        return !string.IsNullOrWhiteSpace(value) &&
+               !string.Equals(value, "0", StringComparison.OrdinalIgnoreCase) &&
+               !string.Equals(value, "false", StringComparison.OrdinalIgnoreCase) &&
+               !string.Equals(value, "off", StringComparison.OrdinalIgnoreCase) &&
+               !string.Equals(value, "no", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string SanitizeLogValue(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -461,6 +514,9 @@ public sealed class RdpBridgeClient : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void DisconnectCallback(IntPtr userData);
 
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void ClipboardTextCallback(IntPtr userData, IntPtr text);
+
     private static class NativeMethods
     {
         [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
@@ -476,6 +532,11 @@ public sealed class RdpBridgeClient : IDisposable
             StatusCallback statusCallback,
             DisconnectCallback disconnectCallback,
             IntPtr userData);
+
+        [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void cxrdp_set_clipboard_callback(
+            IntPtr handle,
+            ClipboardTextCallback clipboardTextCallback);
 
         [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
         public static extern int cxrdp_connect(
@@ -498,6 +559,11 @@ public sealed class RdpBridgeClient : IDisposable
 
         [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
         public static extern void cxrdp_send_unicode_key(IntPtr handle, ushort code, int down);
+
+        [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void cxrdp_set_clipboard_text(
+            IntPtr handle,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string text);
 
         [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
         public static extern IntPtr cxrdp_get_last_error(IntPtr handle);
