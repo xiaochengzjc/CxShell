@@ -416,12 +416,13 @@ if ($Triplet -like "*windows*") {
 
     $clCommand = Get-Command cl.exe -ErrorAction SilentlyContinue
     if (!$clCommand) {
-        throw "cl.exe was not found after loading VsDevCmd.bat. Windows RDP bridge must be built with MSVC."
+        Write-Warning "cl.exe was not found after loading VsDevCmd.bat. Continuing with the Visual Studio CMake generator."
     }
-
-    $env:CC = $clCommand.Source
-    $env:CXX = $clCommand.Source
-    Write-Host "Using MSVC compiler: $($clCommand.Source)"
+    else {
+        $env:CC = $clCommand.Source
+        $env:CXX = $clCommand.Source
+        Write-Host "Using MSVC compiler: $($clCommand.Source)"
+    }
 }
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
@@ -546,12 +547,13 @@ $cmakeArgs = @(
 
 if ($Triplet -like "*windows*") {
     $clCommand = Get-Command cl.exe -ErrorAction SilentlyContinue
-    if (!$clCommand) {
-        throw "cl.exe was not found. Windows RDP bridge must be built with MSVC."
+    if ($clCommand) {
+        $env:CC = $clCommand.Source
+        $env:CXX = $clCommand.Source
     }
-
-    $env:CC = $clCommand.Source
-    $env:CXX = $clCommand.Source
+    else {
+        Write-Warning "cl.exe is not in PATH. CMake will use the Visual Studio generator to locate the MSVC toolchain."
+    }
 
     $cmakePlatform = if ($Triplet -like "arm64-*") {
         "ARM64"
