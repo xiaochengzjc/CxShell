@@ -114,10 +114,52 @@ jobs:
           $rid = "${{ matrix.rid }}"
           $publishDir = Join-Path $env:GITHUB_WORKSPACE "artifacts\publish\$rid"
 
-          tools\build-rdp-bridge.ps1 `
-            -VcpkgRoot $env:VCPKG_ROOT `
-            -Triplet "${{ matrix.triplet }}" `
-            -OutputDir $publishDir
+          try {
+            $scriptPath = Join-Path $env:GITHUB_WORKSPACE "tools\build-rdp-bridge.ps1"
+            $vcpkgExe = Join-Path $env:VCPKG_ROOT "vcpkg.exe"
+            $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+            $vsDevCmd = $null
+
+            Write-Host "GITHUB_WORKSPACE=$env:GITHUB_WORKSPACE"
+            Write-Host "VCPKG_ROOT=$env:VCPKG_ROOT"
+            Write-Host "Build script=$scriptPath"
+            Write-Host "Publish dir=$publishDir"
+
+            if (!(Test-Path $scriptPath)) {
+              throw "RDP bridge build script was not found at $scriptPath"
+            }
+            if (!(Test-Path $vcpkgExe)) {
+              throw "vcpkg.exe was not found at $vcpkgExe"
+            }
+            if (Test-Path $vswhere) {
+              $vsInstall = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+              if (![string]::IsNullOrWhiteSpace($vsInstall)) {
+                $candidate = Join-Path $vsInstall "Common7\Tools\VsDevCmd.bat"
+                if (Test-Path $candidate) {
+                  $vsDevCmd = $candidate
+                }
+              }
+            }
+            if ([string]::IsNullOrWhiteSpace($vsDevCmd)) {
+              throw "VsDevCmd.bat was not found. Windows RDP bridge packages must be built with MSVC."
+            }
+
+            & $scriptPath `
+              -VcpkgRoot $env:VCPKG_ROOT `
+              -VsDevCmdPath $vsDevCmd `
+              -Triplet "${{ matrix.triplet }}" `
+              -OutputDir $publishDir
+
+            if ($LASTEXITCODE -ne 0) {
+              throw "RDP bridge build script exited with code $LASTEXITCODE"
+            }
+          }
+          catch {
+            $message = $_.Exception.Message.Replace("`r", " ").Replace("`n", " ")
+            Write-Host "::error title=Build RDP bridge failed::$message"
+            $_ | Format-List * -Force
+            exit 1
+          }
 
       - name: Validate RDP bridge
         shell: pwsh
