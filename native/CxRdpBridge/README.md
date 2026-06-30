@@ -10,6 +10,8 @@ The supported dependency path is vcpkg + FreeRDP 3.x. On Windows:
 tools\build-rdp-bridge.ps1 -VcpkgRoot D:\develop\vcpkg -OutputDir .buildcheck-rdp
 ```
 
+Windows builds must use the MSVC toolchain from Visual Studio Build Tools. The PowerShell script rejects MinGW runtime dependencies and copies the required Visual C++ runtime DLLs beside the bridge.
+
 On macOS/Linux:
 
 ```bash

@@ -112,9 +112,10 @@ Windows RDP bridge requirements:
 
 - Visual Studio 2022 Build Tools or Visual Studio C++ toolchain
 - CMake
-- Ninja
 - vcpkg
 - FreeRDP 3.x installed through vcpkg
+
+Windows RDP bridge builds are expected to be pure MSVC. The Windows script uses the Visual Studio CMake generator, rejects MinGW runtime dependencies, and copies the required Visual C++ runtime DLLs into the output package.
 
 macOS/Linux RDP bridge requirements:
 

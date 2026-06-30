@@ -112,9 +112,10 @@ Windows 构建 RDP bridge 需要：
 
 - Visual Studio 2022 Build Tools 或 Visual Studio C++ toolchain
 - CMake
-- Ninja
 - vcpkg
 - 通过 vcpkg 安装 FreeRDP 3.x
+
+Windows RDP bridge 预期使用纯 MSVC 构建。Windows 脚本会使用 Visual Studio CMake generator，拒绝 MinGW 运行库依赖，并把需要的 Visual C++ runtime DLL 一起复制到输出包。
 
 macOS/Linux 构建 RDP bridge 需要：
 

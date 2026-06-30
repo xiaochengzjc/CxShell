@@ -72,6 +72,19 @@ function Get-WindowsForbiddenRuntimeDependencies {
     )
 }
 
+function Get-WindowsMsvcRuntimeNames {
+    return @(
+        "concrt140.dll",
+        "msvcp140.dll",
+        "msvcp140_1.dll",
+        "msvcp140_2.dll",
+        "msvcp140_atomic_wait.dll",
+        "msvcp140_codecvt_ids.dll",
+        "vcruntime140.dll",
+        "vcruntime140_1.dll"
+    )
+}
+
 function Resolve-DumpbinPath {
     $dumpbinCommand = Get-Command dumpbin.exe -ErrorAction SilentlyContinue
     if ($dumpbinCommand) {
@@ -129,6 +142,50 @@ function Get-WindowsDllDependents {
     return $dependents
 }
 
+function Write-CMakeCacheDiagnostics {
+    param([string]$BuildDirectory)
+
+    $cachePath = Join-Path $BuildDirectory "CMakeCache.txt"
+    if (!(Test-Path $cachePath)) {
+        Write-Host "CMake cache was not found at $cachePath"
+        return
+    }
+
+    Write-Host "CMake cache diagnostics:"
+    $keys = @(
+        "CMAKE_GENERATOR",
+        "CMAKE_GENERATOR_PLATFORM",
+        "CMAKE_GENERATOR_INSTANCE",
+        "CMAKE_C_COMPILER",
+        "CMAKE_CXX_COMPILER",
+        "CMAKE_LINKER",
+        "CMAKE_VS_PLATFORM_TOOLSET",
+        "FreeRDP_DIR",
+        "WinPR_DIR",
+        "OpenSSL_DIR",
+        "CMAKE_PREFIX_PATH"
+    )
+
+    foreach ($key in $keys) {
+        $value = Get-CMakeCacheValue -CachePath $cachePath -Key $key
+        if (![string]::IsNullOrWhiteSpace($value)) {
+            Write-Host "  ${key}=$value"
+        }
+    }
+}
+
+function Test-IsMsvcCompilerPath {
+    param([string]$Compiler)
+
+    if ([string]::IsNullOrWhiteSpace($Compiler)) {
+        return $false
+    }
+
+    $compilerName = [IO.Path]::GetFileName($Compiler)
+    return [string]::Equals($compilerName, "cl.exe", [StringComparison]::OrdinalIgnoreCase) -or
+        [string]::Equals($compilerName, "cl", [StringComparison]::OrdinalIgnoreCase)
+}
+
 function Assert-WindowsMsvcCompiler {
     param([string]$BuildDirectory)
 
@@ -144,17 +201,16 @@ function Assert-WindowsMsvcCompiler {
             Write-Host "CMake generator is $generator with MSVC linker: $linker"
             return
         }
+
+        Write-Host "CMake generator is $generator; Visual Studio generators use the MSVC toolchain."
+        return
     }
 
     $cCompiler = Get-CMakeCacheValue -CachePath $cachePath -Key "CMAKE_C_COMPILER"
     $cxxCompiler = Get-CMakeCacheValue -CachePath $cachePath -Key "CMAKE_CXX_COMPILER"
     foreach ($compiler in @($cCompiler, $cxxCompiler)) {
-        if ([string]::IsNullOrWhiteSpace($compiler)) {
+        if (!(Test-IsMsvcCompilerPath -Compiler $compiler)) {
             throw "CMake did not record an MSVC compiler in $cachePath."
-        }
-
-        if (![string]::Equals([IO.Path]::GetFileName($compiler), "cl.exe", [StringComparison]::OrdinalIgnoreCase)) {
-            throw "Windows RDP bridge must be built with MSVC cl.exe, but CMake selected: $compiler"
         }
     }
 }
@@ -218,6 +274,88 @@ function Remove-WindowsForbiddenRuntimeFiles {
         if (Test-Path $path) {
             Remove-Item -LiteralPath $path -Force
             Write-Host "Removed forbidden MinGW runtime from output: $path"
+        }
+    }
+}
+
+function Get-WindowsMsvcRuntimeDirectory {
+    param([string]$TripletName)
+
+    $architecture = if ($TripletName -like "arm64-*") {
+        "arm64"
+    }
+    elseif ($TripletName -like "x86-*") {
+        "x86"
+    }
+    else {
+        "x64"
+    }
+
+    $candidateRoots = @()
+    if (![string]::IsNullOrWhiteSpace($env:VCToolsRedistDir)) {
+        $candidateRoots += $env:VCToolsRedistDir
+    }
+    if (![string]::IsNullOrWhiteSpace($env:VCINSTALLDIR)) {
+        $candidateRoots += (Join-Path $env:VCINSTALLDIR "Redist\MSVC")
+    }
+
+    $vswhereCandidates = @(
+        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe",
+        "${env:ProgramFiles}\Microsoft Visual Studio\Installer\vswhere.exe"
+    )
+
+    foreach ($vswhere in $vswhereCandidates) {
+        if (!(Test-Path $vswhere)) {
+            continue
+        }
+
+        $installations = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+        foreach ($installation in $installations) {
+            if (![string]::IsNullOrWhiteSpace($installation)) {
+                $candidateRoots += (Join-Path $installation "VC\Redist\MSVC")
+            }
+        }
+    }
+
+    foreach ($root in $candidateRoots | Where-Object { ![string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique) {
+        if (!(Test-Path $root)) {
+            continue
+        }
+
+        $crtDirectory = Get-ChildItem -Path $root -Directory -Recurse -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.FullName -match "\\$([regex]::Escape($architecture))\\Microsoft\.VC\d+\.CRT$" -or
+                $_.FullName -match "/$([regex]::Escape($architecture))/Microsoft\.VC\d+\.CRT$"
+            } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+
+        if ($crtDirectory) {
+            return $crtDirectory.FullName
+        }
+    }
+
+    return $null
+}
+
+function Copy-WindowsMsvcRuntimeFiles {
+    param(
+        [string]$TripletName,
+        [string]$DestinationDirectory
+    )
+
+    $runtimeDirectory = Get-WindowsMsvcRuntimeDirectory -TripletName $TripletName
+    if ([string]::IsNullOrWhiteSpace($runtimeDirectory) -or !(Test-Path $runtimeDirectory)) {
+        Write-Host "MSVC redistributable CRT directory was not found; package may require the Visual C++ Redistributable."
+        return
+    }
+
+    $runtimeNames = Get-WindowsMsvcRuntimeNames
+    foreach ($runtimeName in $runtimeNames) {
+        $source = Join-Path $runtimeDirectory $runtimeName
+        if (Test-Path $source) {
+            Copy-Item $source -Destination $DestinationDirectory -Force
+            Write-Host "Copied MSVC runtime: $runtimeName"
         }
     }
 }
@@ -295,6 +433,7 @@ if ($Triplet -like "*windows*") {
     $clCommand = Get-Command cl.exe -ErrorAction SilentlyContinue
     if ((Test-Path $cachePath) -and $clCommand) {
         $cachedGenerator = Get-CMakeCacheValue -CachePath $cachePath -Key "CMAKE_GENERATOR"
+        $cachedGeneratorPlatform = Get-CMakeCacheValue -CachePath $cachePath -Key "CMAKE_GENERATOR_PLATFORM"
         $cachedCCompiler = Get-CMakeCacheValue -CachePath $cachePath -Key "CMAKE_C_COMPILER"
         $cachedCxxCompiler = Get-CMakeCacheValue -CachePath $cachePath -Key "CMAKE_CXX_COMPILER"
         $cachedFreeRdpDir = Get-CMakeCacheValue -CachePath $cachePath -Key "FreeRDP_DIR"
@@ -311,7 +450,7 @@ if ($Triplet -like "*windows*") {
             }
 
         $compilerMismatch = $cachedCompilers |
-            Where-Object { ![string]::Equals($_, $expectedCompiler, [StringComparison]::Ordinal) } |
+            Where-Object { ![string]::Equals($_, $expectedCompiler, [StringComparison]::OrdinalIgnoreCase) } |
             Select-Object -First 1
 
         $packagePathMissing = ![string]::IsNullOrWhiteSpace($cachedFreeRdpDir) -and
@@ -319,8 +458,19 @@ if ($Triplet -like "*windows*") {
 
         $generatorMismatch = ![string]::IsNullOrWhiteSpace($cachedGenerator) -and
             !$cachedGenerator.StartsWith("Visual Studio", [StringComparison]::OrdinalIgnoreCase)
+        $expectedGeneratorPlatform = if ($Triplet -like "arm64-*") {
+            "ARM64"
+        }
+        elseif ($Triplet -like "x86-*") {
+            "Win32"
+        }
+        else {
+            "x64"
+        }
+        $generatorPlatformMismatch = ![string]::IsNullOrWhiteSpace($cachedGeneratorPlatform) -and
+            ![string]::Equals($cachedGeneratorPlatform, $expectedGeneratorPlatform, [StringComparison]::OrdinalIgnoreCase)
 
-        if ($compilerMismatch -or $packagePathMissing -or $generatorMismatch) {
+        if ($compilerMismatch -or $packagePathMissing -or $generatorMismatch -or $generatorPlatformMismatch) {
             $resolvedBuildDir = [IO.Path]::GetFullPath($buildDir)
             $resolvedSourceDir = [IO.Path]::GetFullPath($sourceDir)
             if (!$resolvedBuildDir.StartsWith($resolvedSourceDir, [StringComparison]::OrdinalIgnoreCase)) {
@@ -344,7 +494,7 @@ if ([string]::IsNullOrWhiteSpace($CMakePath)) {
     }
 }
 
-if ([string]::IsNullOrWhiteSpace($NinjaPath)) {
+if (($Triplet -notlike "*windows*") -and [string]::IsNullOrWhiteSpace($NinjaPath)) {
     $ninjaCommand = Get-Command ninja -ErrorAction SilentlyContinue
     if ($ninjaCommand) {
         $NinjaPath = $ninjaCommand.Source
@@ -363,20 +513,20 @@ if (($Triplet -notlike "*windows*") -and ([string]::IsNullOrWhiteSpace($NinjaPat
     throw "ninja was not found. Install Ninja or pass -NinjaPath."
 }
 
-if (![string]::IsNullOrWhiteSpace($NinjaPath) -and (Test-Path $NinjaPath)) {
+if (($Triplet -notlike "*windows*") -and ![string]::IsNullOrWhiteSpace($NinjaPath) -and (Test-Path $NinjaPath)) {
     $env:PATH = "$(Split-Path $NinjaPath);$env:PATH"
 }
 
 Write-Host "Using vcpkg: $vcpkgExe"
 Write-Host "Using CMake: $CMakePath"
-if (![string]::IsNullOrWhiteSpace($NinjaPath)) {
+if (($Triplet -notlike "*windows*") -and ![string]::IsNullOrWhiteSpace($NinjaPath)) {
     Write-Host "Using Ninja: $NinjaPath"
 }
 if ($Triplet -like "*windows*") {
     Write-Host "Using VsDevCmd: $VsDevCmdPath"
 }
 & $CMakePath --version
-if (![string]::IsNullOrWhiteSpace($NinjaPath) -and (Test-Path $NinjaPath)) {
+if (($Triplet -notlike "*windows*") -and ![string]::IsNullOrWhiteSpace($NinjaPath) -and (Test-Path $NinjaPath)) {
     & $NinjaPath --version
 }
 
@@ -421,8 +571,11 @@ else {
 
 & $CMakePath @cmakeArgs
 if ($LASTEXITCODE -ne 0) {
+    Write-CMakeCacheDiagnostics -BuildDirectory $buildDir
     throw "CMake configure failed."
 }
+
+Write-CMakeCacheDiagnostics -BuildDirectory $buildDir
 
 if ($Triplet -like "*windows*") {
     Assert-WindowsMsvcCompiler -BuildDirectory $buildDir
@@ -459,6 +612,7 @@ if (![string]::IsNullOrWhiteSpace($OutputDir)) {
 
     if ($Triplet -like "*windows*") {
         Remove-WindowsForbiddenRuntimeFiles -Directory $OutputDir
+        Copy-WindowsMsvcRuntimeFiles -TripletName $Triplet -DestinationDirectory $OutputDir
     }
 
     $prefixedBridge = Join-Path $OutputDir "libCxRdpBridge.dll"

@@ -55,9 +55,35 @@ jobs:
             ${{ env.VCPKG_ROOT }}\installed
             ${{ env.VCPKG_ROOT }}\buildtrees
             ${{ env.VCPKG_ROOT }}\packages
-          key: ${{ runner.os }}-${{ matrix.triplet }}-vcpkg-freerdp-${{ hashFiles('tools/build-rdp-bridge.ps1', 'native/CxRdpBridge/CMakeLists.txt') }}
+          key: ${{ runner.os }}-${{ matrix.triplet }}-vcpkg-freerdp-msvc-${{ hashFiles('tools/build-rdp-bridge.ps1', 'native/CxRdpBridge/CMakeLists.txt') }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.triplet }}-vcpkg-freerdp-
+            ${{ runner.os }}-${{ matrix.triplet }}-vcpkg-freerdp-msvc-
+
+      - name: Show MSVC toolchain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          if (Test-Path $vswhere) {
+            & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          }
+
+          $vsDevCmd = $null
+          if (Test-Path $vswhere) {
+            $vsInstall = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+            if ($vsInstall) {
+              $candidate = Join-Path $vsInstall "Common7\Tools\VsDevCmd.bat"
+              if (Test-Path $candidate) {
+                $vsDevCmd = $candidate
+              }
+            }
+          }
+
+          if (!$vsDevCmd) {
+            throw "VsDevCmd.bat was not found on the Windows runner."
+          }
+
+          cmd /c "`"call `"$vsDevCmd`" -arch=x64 -host_arch=x64 >nul && where cl && where link && where dumpbin && where cmake`""
 
       - name: Publish app
         shell: pwsh
@@ -122,7 +148,16 @@ jobs:
               "libcrypto-3-x64.dll",
               "libssl-3-x64.dll",
               "cjson.dll",
-              "z.dll"
+              "z.dll",
+              "zlib1.dll",
+              "concrt140.dll",
+              "msvcp140.dll",
+              "msvcp140_1.dll",
+              "msvcp140_2.dll",
+              "msvcp140_atomic_wait.dll",
+              "msvcp140_codecvt_ids.dll",
+              "vcruntime140.dll",
+              "vcruntime140_1.dll"
             )
             $dependents = & $dumpbin.FullName /dependents $bridgePath |
               ForEach-Object { $_.Trim() } |
