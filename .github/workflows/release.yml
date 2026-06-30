@@ -122,14 +122,37 @@ jobs:
               "libcrypto-3-x64.dll",
               "libssl-3-x64.dll",
               "cjson.dll",
-              "z.dll",
-              "libgcc_s_seh-1.dll",
-              "libstdc++-6.dll",
-              "libwinpthread-1.dll"
+              "z.dll"
             )
             $dependents = & $dumpbin.FullName /dependents $bridgePath |
               ForEach-Object { $_.Trim() } |
               Where-Object { $_ -match "^[A-Za-z0-9_.+\-]+\.dll$" }
+            $forbiddenDependencies = @(
+              "libgcc_s_seh-1.dll",
+              "libstdc++-6.dll",
+              "libwinpthread-1.dll"
+            )
+            $forbiddenDependents = @($dependents | Where-Object {
+              $dependency = $_
+              $forbiddenDependencies -contains $dependency
+            })
+            $forbiddenFiles = @($forbiddenDependencies | Where-Object {
+              Test-Path (Join-Path $publishDir $_)
+            })
+
+            if ($forbiddenDependents.Count -gt 0 -or $forbiddenFiles.Count -gt 0) {
+              Write-Host "Windows RDP bridge must be pure MSVC. MinGW runtime dependencies/files are not allowed."
+              if ($forbiddenDependents.Count -gt 0) {
+                Write-Host "Forbidden dependencies:"
+                $forbiddenDependents | ForEach-Object { Write-Host "  $_" }
+              }
+              if ($forbiddenFiles.Count -gt 0) {
+                Write-Host "Forbidden files in package:"
+                $forbiddenFiles | ForEach-Object { Write-Host "  $_" }
+              }
+              throw "Windows RDP bridge has MinGW runtime dependencies."
+            }
+
             $missing = @($dependents | Where-Object {
               $dependency = $_
               $packageDependencies -contains $dependency -and !(Test-Path (Join-Path $publishDir $dependency))
@@ -144,7 +167,7 @@ jobs:
             }
           }
           else {
-            Write-Host "dumpbin.exe was not found; skipping packaged dependency inspection."
+            throw "dumpbin.exe was not found; Windows RDP bridge dependencies cannot be validated."
           }
 
           Add-Type -TypeDefinition @"

@@ -64,32 +64,45 @@ function Get-CMakeCacheValue {
     return $line.Line.Substring($index + 1)
 }
 
-function Copy-FirstExistingFile {
-    param(
-        [string]$FileName,
-        [string[]]$SearchDirectories,
-        [string]$DestinationDirectory
+function Get-WindowsForbiddenRuntimeDependencies {
+    return @(
+        "libgcc_s_seh-1.dll",
+        "libstdc++-6.dll",
+        "libwinpthread-1.dll"
+    )
+}
+
+function Resolve-DumpbinPath {
+    $dumpbinCommand = Get-Command dumpbin.exe -ErrorAction SilentlyContinue
+    if ($dumpbinCommand) {
+        return $dumpbinCommand.Source
+    }
+
+    $vswhereCandidates = @(
+        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe",
+        "${env:ProgramFiles}\Microsoft Visual Studio\Installer\vswhere.exe"
     )
 
-    foreach ($directory in $SearchDirectories | Where-Object { ![string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique) {
-        $candidate = Join-Path $directory $FileName
-        if (Test-Path $candidate) {
-            Copy-Item $candidate -Destination $DestinationDirectory -Force
-            Write-Host "Copied native dependency: $candidate"
-            return $true
+    foreach ($vswhere in $vswhereCandidates) {
+        if (!(Test-Path $vswhere)) {
+            continue
+        }
+
+        $installations = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+        foreach ($installation in $installations) {
+            if ([string]::IsNullOrWhiteSpace($installation)) {
+                continue
+            }
+
+            $dumpbinPath = Get-ChildItem -Path $installation -Recurse -Filter dumpbin.exe -ErrorAction SilentlyContinue |
+                Select-Object -First 1 -ExpandProperty FullName
+            if (![string]::IsNullOrWhiteSpace($dumpbinPath) -and (Test-Path $dumpbinPath)) {
+                return $dumpbinPath
+            }
         }
     }
 
-    $whereOutput = & where.exe $FileName 2>$null
-    foreach ($candidate in $whereOutput) {
-        if (Test-Path $candidate) {
-            Copy-Item $candidate -Destination $DestinationDirectory -Force
-            Write-Host "Copied native dependency: $candidate"
-            return $true
-        }
-    }
-
-    return $false
+    return $null
 }
 
 function Get-WindowsDllDependents {
@@ -99,13 +112,12 @@ function Get-WindowsDllDependents {
         return @()
     }
 
-    $dumpbinCommand = Get-Command dumpbin.exe -ErrorAction SilentlyContinue
-    if (!$dumpbinCommand) {
-        Write-Host "dumpbin.exe was not found; skipping dependency inspection for $BinaryPath"
-        return @()
+    $dumpbinPath = Resolve-DumpbinPath
+    if ([string]::IsNullOrWhiteSpace($dumpbinPath)) {
+        throw "dumpbin.exe was not found. Install Visual Studio Build Tools so Windows native dependencies can be validated."
     }
 
-    $output = & $dumpbinCommand.Source /dependents $BinaryPath
+    $output = & $dumpbinPath /dependents $BinaryPath
     $dependents = @()
     foreach ($line in $output) {
         $trimmed = $line.Trim()
@@ -117,82 +129,55 @@ function Get-WindowsDllDependents {
     return $dependents
 }
 
-function Copy-WindowsToolchainRuntimeDependencies {
-    param(
-        [string]$BuildDirectory,
-        [string]$VcpkgRootPath,
-        [string]$TripletName,
-        [string]$DestinationDirectory
-    )
-
-    $searchDirectories = New-Object System.Collections.Generic.List[string]
-    foreach ($pathEntry in $env:PATH.Split([IO.Path]::PathSeparator, [StringSplitOptions]::RemoveEmptyEntries)) {
-        $searchDirectories.Add($pathEntry)
-    }
+function Assert-WindowsMsvcCompiler {
+    param([string]$BuildDirectory)
 
     $cachePath = Join-Path $BuildDirectory "CMakeCache.txt"
-    foreach ($key in @("CMAKE_C_COMPILER", "CMAKE_CXX_COMPILER")) {
-        $compilerPath = Get-CMakeCacheValue -CachePath $cachePath -Key $key
-        if (![string]::IsNullOrWhiteSpace($compilerPath)) {
-            $compilerDirectory = Split-Path $compilerPath -Parent
-            if (![string]::IsNullOrWhiteSpace($compilerDirectory)) {
-                $searchDirectories.Add($compilerDirectory)
-            }
+    $cCompiler = Get-CMakeCacheValue -CachePath $cachePath -Key "CMAKE_C_COMPILER"
+    $cxxCompiler = Get-CMakeCacheValue -CachePath $cachePath -Key "CMAKE_CXX_COMPILER"
+    foreach ($compiler in @($cCompiler, $cxxCompiler)) {
+        if ([string]::IsNullOrWhiteSpace($compiler)) {
+            throw "CMake did not record an MSVC compiler in $cachePath."
+        }
+
+        if (![string]::Equals([IO.Path]::GetFileName($compiler), "cl.exe", [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Windows RDP bridge must be built with MSVC cl.exe, but CMake selected: $compiler"
         }
     }
+}
 
-    $searchDirectories.Add((Join-Path $VcpkgRootPath "installed\$TripletName\bin"))
-    $searchDirectories.Add((Join-Path $VcpkgRootPath "downloads\tools\msys2\mingw64\bin"))
-    $searchDirectories.Add((Join-Path $VcpkgRootPath "downloads\tools\msys2\ucrt64\bin"))
-    $searchDirectories.Add((Join-Path $VcpkgRootPath "downloads\tools\perl\5.42.2.1\c\bin"))
-    $searchDirectories.Add("C:\msys64\mingw64\bin")
-    $searchDirectories.Add("C:\msys64\ucrt64\bin")
-
-    $dependencyNames = @(
-        "libgcc_s_seh-1.dll",
-        "libstdc++-6.dll",
-        "libwinpthread-1.dll"
+function Assert-WindowsMsvcBridge {
+    param(
+        [string]$BridgePath,
+        [string]$Context
     )
 
-    $bridgePath = Join-Path $DestinationDirectory "CxRdpBridge.dll"
-    if (!(Test-Path $bridgePath)) {
-        $bridgePath = Join-Path $DestinationDirectory "libCxRdpBridge.dll"
+    if (!(Test-Path $BridgePath)) {
+        throw "CxRdpBridge.dll was not found for validation: $BridgePath"
     }
 
-    $detectedDependents = @(Get-WindowsDllDependents -BinaryPath $bridgePath)
-    if ($detectedDependents.Count -eq 0) {
-        Write-Host "No MinGW runtime dependency inspection result for $bridgePath; copying any available optional runtime DLLs."
-    }
-    else {
-        $dependencyNames = @($dependencyNames | Where-Object {
-            $dependencyName = $_
-            $detectedDependents | Where-Object { [string]::Equals($_, $dependencyName, [StringComparison]::OrdinalIgnoreCase) }
-        })
+    $dependents = @(Get-WindowsDllDependents -BinaryPath $BridgePath)
+    $forbiddenDependencies = Get-WindowsForbiddenRuntimeDependencies
+    $forbiddenFound = @($dependents | Where-Object {
+        $dependency = $_
+        $forbiddenDependencies | Where-Object { [string]::Equals($_, $dependency, [StringComparison]::OrdinalIgnoreCase) }
+    })
 
-        if ($dependencyNames.Count -eq 0) {
-            Write-Host "No MinGW runtime dependencies detected for $bridgePath."
-            return
-        }
+    if ($forbiddenFound.Count -gt 0) {
+        throw "Windows RDP bridge must be pure MSVC. $Context depends on MinGW runtime DLLs: $($forbiddenFound -join ', ')"
     }
 
-    foreach ($dependencyName in $dependencyNames) {
-        if (Test-Path (Join-Path $DestinationDirectory $dependencyName)) {
-            continue
-        }
+    Write-Host "$Context uses MSVC-compatible native dependencies."
+}
 
-        if (Copy-FirstExistingFile -FileName $dependencyName -SearchDirectories $searchDirectories.ToArray() -DestinationDirectory $DestinationDirectory) {
-            continue
-        }
+function Remove-WindowsForbiddenRuntimeFiles {
+    param([string]$Directory)
 
-        $found = Get-ChildItem $VcpkgRootPath -Recurse -Filter $dependencyName -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -notmatch "\\debug\\" } |
-            Select-Object -First 1
-        if ($found) {
-            Copy-Item $found.FullName -Destination $DestinationDirectory -Force
-            Write-Host "Copied native dependency: $($found.FullName)"
-        }
-        else {
-            Write-Host "Optional native dependency was not found: $dependencyName"
+    foreach ($fileName in Get-WindowsForbiddenRuntimeDependencies) {
+        $path = Join-Path $Directory $fileName
+        if (Test-Path $path) {
+            Remove-Item -LiteralPath $path -Force
+            Write-Host "Removed forbidden MinGW runtime from output: $path"
         }
     }
 }
@@ -252,9 +237,13 @@ if ($Triplet -like "*windows*") {
     }
 
     $clCommand = Get-Command cl.exe -ErrorAction SilentlyContinue
-    if ($clCommand) {
-        Write-Host "Using MSVC compiler: $($clCommand.Source)"
+    if (!$clCommand) {
+        throw "cl.exe was not found after loading VsDevCmd.bat. Windows RDP bridge must be built with MSVC."
     }
+
+    $env:CC = $clCommand.Source
+    $env:CXX = $clCommand.Source
+    Write-Host "Using MSVC compiler: $($clCommand.Source)"
 }
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
@@ -358,10 +347,14 @@ $cmakeArgs = @(
 
 if ($Triplet -like "*windows*") {
     $clCommand = Get-Command cl.exe -ErrorAction SilentlyContinue
-    if ($clCommand) {
-        $cmakeArgs += "-DCMAKE_C_COMPILER=$($clCommand.Source)"
-        $cmakeArgs += "-DCMAKE_CXX_COMPILER=$($clCommand.Source)"
+    if (!$clCommand) {
+        throw "cl.exe was not found. Windows RDP bridge must be built with MSVC."
     }
+
+    $env:CC = $clCommand.Source
+    $env:CXX = $clCommand.Source
+    $cmakeArgs += "-DCMAKE_C_COMPILER=$($clCommand.Source)"
+    $cmakeArgs += "-DCMAKE_CXX_COMPILER=$($clCommand.Source)"
 }
 
 & $CMakePath @cmakeArgs
@@ -369,9 +362,17 @@ if ($LASTEXITCODE -ne 0) {
     throw "CMake configure failed."
 }
 
+if ($Triplet -like "*windows*") {
+    Assert-WindowsMsvcCompiler -BuildDirectory $buildDir
+}
+
 & $CMakePath --build $buildDir --config $Configuration
 if ($LASTEXITCODE -ne 0) {
     throw "CMake build failed."
+}
+
+if ($Triplet -like "*windows*") {
+    Assert-WindowsMsvcBridge -BridgePath (Join-Path $buildDir "CxRdpBridge.dll") -Context "Built CxRdpBridge.dll"
 }
 
 if (![string]::IsNullOrWhiteSpace($OutputDir)) {
@@ -394,7 +395,7 @@ if (![string]::IsNullOrWhiteSpace($OutputDir)) {
     }
 
     if ($Triplet -like "*windows*") {
-        Copy-WindowsToolchainRuntimeDependencies -BuildDirectory $buildDir -VcpkgRootPath $VcpkgRoot -TripletName $Triplet -DestinationDirectory $OutputDir
+        Remove-WindowsForbiddenRuntimeFiles -Directory $OutputDir
     }
 
     $prefixedBridge = Join-Path $OutputDir "libCxRdpBridge.dll"
@@ -412,6 +413,10 @@ if (![string]::IsNullOrWhiteSpace($OutputDir)) {
         Get-ChildItem $vcpkgBin -Filter "libcrypto-3*.dll" -ErrorAction SilentlyContinue | ForEach-Object {
             Copy-Item $_.FullName -Destination $providerDir -Force
         }
+    }
+
+    if ($Triplet -like "*windows*") {
+        Assert-WindowsMsvcBridge -BridgePath (Join-Path $OutputDir "CxRdpBridge.dll") -Context "Packaged CxRdpBridge.dll"
     }
 }
 
