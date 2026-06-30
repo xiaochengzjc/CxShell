@@ -62,7 +62,7 @@ jobs:
       - name: Show MSVC toolchain
         shell: pwsh
         run: |
-          $ErrorActionPreference = "Stop"
+          $ErrorActionPreference = "Continue"
           $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
           if (Test-Path $vswhere) {
             & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
@@ -80,10 +80,15 @@ jobs:
           }
 
           if (!$vsDevCmd) {
-            throw "VsDevCmd.bat was not found on the Windows runner."
+            Write-Warning "VsDevCmd.bat was not found on the Windows runner. The build script will perform the final MSVC check."
+            exit 0
           }
 
           cmd /c "`"call `"$vsDevCmd`" -arch=x64 -host_arch=x64 >nul && where cl && where link && where dumpbin && where cmake`""
+          if ($LASTEXITCODE -ne 0) {
+            Write-Warning "MSVC toolchain diagnostic command exited with $LASTEXITCODE. The build script will perform the final MSVC check."
+            exit 0
+          }
 
       - name: Publish app
         shell: pwsh
