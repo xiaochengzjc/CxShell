@@ -133,6 +133,19 @@ function Assert-WindowsMsvcCompiler {
     param([string]$BuildDirectory)
 
     $cachePath = Join-Path $BuildDirectory "CMakeCache.txt"
+    $generator = Get-CMakeCacheValue -CachePath $cachePath -Key "CMAKE_GENERATOR"
+    if (![string]::IsNullOrWhiteSpace($generator) -and
+        $generator.StartsWith("Visual Studio", [StringComparison]::OrdinalIgnoreCase)) {
+        $linker = Get-CMakeCacheValue -CachePath $cachePath -Key "CMAKE_LINKER"
+        if (![string]::IsNullOrWhiteSpace($linker) -and
+            [string]::Equals([IO.Path]::GetFileName($linker), "link.exe", [StringComparison]::OrdinalIgnoreCase) -and
+            ($linker.IndexOf("\VC\Tools\MSVC\", [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+             $linker.IndexOf("/VC/Tools/MSVC/", [StringComparison]::OrdinalIgnoreCase) -ge 0)) {
+            Write-Host "CMake generator is $generator with MSVC linker: $linker"
+            return
+        }
+    }
+
     $cCompiler = Get-CMakeCacheValue -CachePath $cachePath -Key "CMAKE_C_COMPILER"
     $cxxCompiler = Get-CMakeCacheValue -CachePath $cachePath -Key "CMAKE_CXX_COMPILER"
     foreach ($compiler in @($cCompiler, $cxxCompiler)) {
@@ -152,7 +165,7 @@ function Assert-WindowsMsvcBridge {
         [string]$Context
     )
 
-    if (!(Test-Path $BridgePath)) {
+    if ([string]::IsNullOrWhiteSpace($BridgePath) -or !(Test-Path $BridgePath)) {
         throw "CxRdpBridge.dll was not found for validation: $BridgePath"
     }
 
@@ -168,6 +181,33 @@ function Assert-WindowsMsvcBridge {
     }
 
     Write-Host "$Context uses MSVC-compatible native dependencies."
+}
+
+function Get-WindowsBridgeBinaryPath {
+    param(
+        [string]$BuildDirectory,
+        [string]$ConfigurationName
+    )
+
+    $candidates = @(
+        (Join-Path $BuildDirectory "$ConfigurationName\CxRdpBridge.dll"),
+        (Join-Path $BuildDirectory "CxRdpBridge.dll")
+    )
+
+    foreach ($candidate in $candidates) {
+        if (Test-Path $candidate) {
+            return $candidate
+        }
+    }
+
+    $found = Get-ChildItem $BuildDirectory -Recurse -Filter "CxRdpBridge.dll" -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -notmatch "\\debug\\" } |
+        Select-Object -First 1
+    if ($found) {
+        return $found.FullName
+    }
+
+    return $null
 }
 
 function Remove-WindowsForbiddenRuntimeFiles {
@@ -254,6 +294,7 @@ if ($Triplet -like "*windows*") {
     $cachePath = Join-Path $buildDir "CMakeCache.txt"
     $clCommand = Get-Command cl.exe -ErrorAction SilentlyContinue
     if ((Test-Path $cachePath) -and $clCommand) {
+        $cachedGenerator = Get-CMakeCacheValue -CachePath $cachePath -Key "CMAKE_GENERATOR"
         $cachedCCompiler = Get-CMakeCacheValue -CachePath $cachePath -Key "CMAKE_C_COMPILER"
         $cachedCxxCompiler = Get-CMakeCacheValue -CachePath $cachePath -Key "CMAKE_CXX_COMPILER"
         $cachedFreeRdpDir = Get-CMakeCacheValue -CachePath $cachePath -Key "FreeRDP_DIR"
@@ -276,7 +317,10 @@ if ($Triplet -like "*windows*") {
         $packagePathMissing = ![string]::IsNullOrWhiteSpace($cachedFreeRdpDir) -and
             $cachedFreeRdpDir.EndsWith("-NOTFOUND", [StringComparison]::OrdinalIgnoreCase)
 
-        if ($compilerMismatch -or $packagePathMissing) {
+        $generatorMismatch = ![string]::IsNullOrWhiteSpace($cachedGenerator) -and
+            !$cachedGenerator.StartsWith("Visual Studio", [StringComparison]::OrdinalIgnoreCase)
+
+        if ($compilerMismatch -or $packagePathMissing -or $generatorMismatch) {
             $resolvedBuildDir = [IO.Path]::GetFullPath($buildDir)
             $resolvedSourceDir = [IO.Path]::GetFullPath($sourceDir)
             if (!$resolvedBuildDir.StartsWith($resolvedSourceDir, [StringComparison]::OrdinalIgnoreCase)) {
@@ -315,20 +359,26 @@ if ([string]::IsNullOrWhiteSpace($CMakePath) -or !(Test-Path $CMakePath)) {
     throw "cmake was not found. Install CMake or pass -CMakePath."
 }
 
-if ([string]::IsNullOrWhiteSpace($NinjaPath) -or !(Test-Path $NinjaPath)) {
+if (($Triplet -notlike "*windows*") -and ([string]::IsNullOrWhiteSpace($NinjaPath) -or !(Test-Path $NinjaPath))) {
     throw "ninja was not found. Install Ninja or pass -NinjaPath."
 }
 
-$env:PATH = "$(Split-Path $NinjaPath);$env:PATH"
+if (![string]::IsNullOrWhiteSpace($NinjaPath) -and (Test-Path $NinjaPath)) {
+    $env:PATH = "$(Split-Path $NinjaPath);$env:PATH"
+}
 
 Write-Host "Using vcpkg: $vcpkgExe"
 Write-Host "Using CMake: $CMakePath"
-Write-Host "Using Ninja: $NinjaPath"
+if (![string]::IsNullOrWhiteSpace($NinjaPath)) {
+    Write-Host "Using Ninja: $NinjaPath"
+}
 if ($Triplet -like "*windows*") {
     Write-Host "Using VsDevCmd: $VsDevCmdPath"
 }
 & $CMakePath --version
-& $NinjaPath --version
+if (![string]::IsNullOrWhiteSpace($NinjaPath) -and (Test-Path $NinjaPath)) {
+    & $NinjaPath --version
+}
 
 & $vcpkgExe install "freerdp:$Triplet"
 if ($LASTEXITCODE -ne 0) {
@@ -338,7 +388,6 @@ if ($LASTEXITCODE -ne 0) {
 $cmakeArgs = @(
     "-S", $sourceDir,
     "-B", $buildDir,
-    "-G", "Ninja",
     "-DCMAKE_TOOLCHAIN_FILE=$toolchain",
     "-DCMAKE_BUILD_TYPE=$Configuration",
     "-DVCPKG_TARGET_TRIPLET=$Triplet",
@@ -353,8 +402,21 @@ if ($Triplet -like "*windows*") {
 
     $env:CC = $clCommand.Source
     $env:CXX = $clCommand.Source
-    $cmakeArgs += "-DCMAKE_C_COMPILER=$($clCommand.Source)"
-    $cmakeArgs += "-DCMAKE_CXX_COMPILER=$($clCommand.Source)"
+
+    $cmakePlatform = if ($Triplet -like "arm64-*") {
+        "ARM64"
+    }
+    elseif ($Triplet -like "x86-*") {
+        "Win32"
+    }
+    else {
+        "x64"
+    }
+
+    $cmakeArgs += @("-G", "Visual Studio 17 2022", "-A", $cmakePlatform)
+}
+else {
+    $cmakeArgs += @("-G", "Ninja")
 }
 
 & $CMakePath @cmakeArgs
@@ -372,7 +434,8 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 if ($Triplet -like "*windows*") {
-    Assert-WindowsMsvcBridge -BridgePath (Join-Path $buildDir "CxRdpBridge.dll") -Context "Built CxRdpBridge.dll"
+    $builtBridgePath = Get-WindowsBridgeBinaryPath -BuildDirectory $buildDir -ConfigurationName $Configuration
+    Assert-WindowsMsvcBridge -BridgePath $builtBridgePath -Context "Built CxRdpBridge.dll"
 }
 
 if (![string]::IsNullOrWhiteSpace($OutputDir)) {
