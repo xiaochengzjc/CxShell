@@ -77,11 +77,25 @@ public partial class SessionTreeViewModel : ObservableObject
     public string SearchPlaceholderText => L.Text("SessionManager.SearchPlaceholder");
     public string ConnectText => L.Text("Toolbar.Connect");
     public string CloseText => L.Text("SessionManager.Close");
+    public string ShowOnStartupText => L.Text("SessionManager.ShowOnStartup");
     public string ColumnNameText => L.Text("SessionManager.ColumnName");
     public string ColumnHostText => L.Text("SessionManager.ColumnHost");
     public string ColumnUsernameText => L.Text("SessionManager.ColumnUsername");
     public string ColumnProtocolText => L.Text("SessionManager.ColumnProtocol");
     public string ColumnPortText => L.Text("SessionManager.ColumnPort");
+    public bool ShowSessionManagerOnStartup
+    {
+        get => Settings.ShowSessionManagerOnStartup;
+        set
+        {
+            if (Settings.ShowSessionManagerOnStartup == value)
+                return;
+
+            Settings.ShowSessionManagerOnStartup = value;
+            SaveSettings(Settings);
+            OnPropertyChanged();
+        }
+    }
 
     public SessionTreeViewModel(MainWindowViewModel mainWindow)
     {
@@ -107,6 +121,7 @@ public partial class SessionTreeViewModel : ObservableObject
         OnPropertyChanged(nameof(SearchPlaceholderText));
         OnPropertyChanged(nameof(ConnectText));
         OnPropertyChanged(nameof(CloseText));
+        OnPropertyChanged(nameof(ShowOnStartupText));
         OnPropertyChanged(nameof(ColumnNameText));
         OnPropertyChanged(nameof(ColumnHostText));
         OnPropertyChanged(nameof(ColumnUsernameText));

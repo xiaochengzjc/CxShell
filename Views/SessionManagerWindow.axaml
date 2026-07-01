@@ -22,9 +22,16 @@
                 BorderBrush="{atom:SharedTokenResource ColorSplit}"
                 BorderThickness="0,1,0,0"
                 Padding="20,12">
-            <StackPanel Orientation="Horizontal"
-                        HorizontalAlignment="Right"
-                        Spacing="8">
+            <Grid ColumnDefinitions="*,Auto">
+                <atom:CheckBox Grid.Column="0"
+                               Content="{Binding ShowOnStartupText}"
+                               IsChecked="{Binding ShowSessionManagerOnStartup, Mode=TwoWay}"
+                               VerticalAlignment="Center"/>
+
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            Spacing="8">
                 <atom:Button x:Name="ConnectButton"
                              ButtonType="Primary"
                              Icon="{antdicons:AntDesignIconProvider Kind=LinkOutlined}"
@@ -34,7 +41,8 @@
                 <atom:Button Icon="{antdicons:AntDesignIconProvider Kind=CloseOutlined}"
                              Content="{Binding CloseText}"
                              Click="OnCloseClick"/>
-            </StackPanel>
+                </StackPanel>
+            </Grid>
         </Border>
     </Grid>
 </atom:Window>

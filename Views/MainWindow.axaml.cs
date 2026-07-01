@@ -84,6 +84,7 @@ public partial class MainWindow : Window
     {
         base.OnLoaded(e);
         StartRdpSmokeIfRequested();
+        ShowSessionManagerOnStartupIfNeeded();
     }
 
     protected override void OnUnloaded(RoutedEventArgs e)
@@ -506,6 +507,17 @@ public partial class MainWindow : Window
 
             await vm.ConnectSession(session);
         });
+    }
+
+    private void ShowSessionManagerOnStartupIfNeeded()
+    {
+        if (Array.IndexOf(_startupArgs, "--rdp-smoke") >= 0 ||
+            DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        Dispatcher.UIThread.Post(vm.ShowSessionManagerOnStartupIfEnabled, DispatcherPriority.Background);
     }
 
     private string? GetStartupArg(string name)

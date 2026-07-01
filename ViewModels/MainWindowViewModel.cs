@@ -482,6 +482,12 @@ public partial class MainWindowViewModel : ObservableObject
         _sessionManagerWindow.Show(owner);
     }
 
+    public void ShowSessionManagerOnStartupIfEnabled()
+    {
+        if (_sessionTreeVm.Settings.ShowSessionManagerOnStartup)
+            ShowSessionManager();
+    }
+
     [RelayCommand]
     private void ToggleMonitor()
     {

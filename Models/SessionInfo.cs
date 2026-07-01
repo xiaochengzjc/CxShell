@@ -187,6 +187,7 @@ public class HighlightSet
 public class ApplicationSettings
 {
     public string UiLanguage { get; set; } = "zh-CN";
+    public bool ShowSessionManagerOnStartup { get; set; } = true;
 }
 
 public class SessionInfo
