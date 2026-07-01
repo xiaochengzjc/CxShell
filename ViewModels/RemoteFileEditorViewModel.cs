@@ -3,10 +3,12 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace CxShell.ViewModels;
 
-public partial class RemoteFileEditorViewModel : ObservableObject
+public partial class RemoteFileEditorViewModel : ObservableObject, IDisposable
 {
     private readonly Func<string, Task> _saveAsync;
+    private readonly Action? _disposeAction;
     private string _savedText;
+    private bool _isDisposed;
 
     [ObservableProperty] private string _text;
     [ObservableProperty] private bool _isDirty;
@@ -22,7 +24,8 @@ public partial class RemoteFileEditorViewModel : ObservableObject
         string remotePath,
         string text,
         string statusText,
-        Func<string, Task> saveAsync)
+        Func<string, Task> saveAsync,
+        Action? disposeAction = null)
     {
         FileName = fileName;
         RemotePath = remotePath;
@@ -30,6 +33,7 @@ public partial class RemoteFileEditorViewModel : ObservableObject
         _savedText = text;
         _statusText = statusText;
         _saveAsync = saveAsync;
+        _disposeAction = disposeAction;
     }
 
     partial void OnTextChanged(string value)
@@ -60,11 +64,19 @@ public partial class RemoteFileEditorViewModel : ObservableObject
         catch (Exception ex)
         {
             StatusText = $"Save failed: {ex.Message}";
-            throw;
         }
         finally
         {
             IsSaving = false;
         }
+    }
+
+    public void Dispose()
+    {
+        if (_isDisposed)
+            return;
+
+        _isDisposed = true;
+        _disposeAction?.Invoke();
     }
 }

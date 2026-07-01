@@ -290,11 +290,38 @@ jobs:
           Get-ChildItem -Path $packageDir -Recurse -Filter "*.pdb" | Remove-Item -Force
           Compress-Archive -Path $packageDir -DestinationPath $archivePath -Force
 
+      - name: Create Velopack package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $rid = "${{ matrix.rid }}"
+          $version = $env:RELEASE_TAG
+          if ($version.StartsWith("v")) {
+            $version = $version.Substring(1)
+          }
+          $publishDir = Join-Path $env:GITHUB_WORKSPACE "artifacts\publish\$rid"
+          $outputDir = Join-Path $env:GITHUB_WORKSPACE "artifacts\velopack\$rid"
+
+          dotnet tool install vpk --tool-path ".tmp\vpk" --version 1.2.0
+          & ".tmp\vpk\vpk.exe" pack `
+            --packId "CxShell-$rid" `
+            --packVersion $version `
+            --packDir $publishDir `
+            --packAuthors "xiaochengzjc" `
+            --packTitle "CxShell" `
+            --mainExe "CxShell.exe" `
+            --runtime $rid `
+            --channel $rid `
+            --icon "Assets\CxShellLogo.ico" `
+            --outputDir $outputDir
+
       - name: Upload package artifact
         uses: actions/upload-artifact@v4
         with:
           name: CxShell-${{ env.RELEASE_TAG }}-${{ matrix.rid }}
-          path: artifacts/CxShell-${{ env.RELEASE_TAG }}-${{ matrix.rid }}.zip
+          path: |
+            artifacts/CxShell-${{ env.RELEASE_TAG }}-${{ matrix.rid }}.zip
+            artifacts/velopack/${{ matrix.rid }}/**
           if-no-files-found: error
 
   linux:
@@ -404,11 +431,35 @@ jobs:
           find "$package_dir" -name "*.pdb" -delete
           tar -czf "$GITHUB_WORKSPACE/artifacts/$package_name.tar.gz" -C "$package_root" "$package_name"
 
+      - name: Create Velopack package
+        shell: bash
+        run: |
+          set -euo pipefail
+          rid="${{ matrix.rid }}"
+          version="${RELEASE_TAG#v}"
+          publish_dir="$GITHUB_WORKSPACE/artifacts/publish/$rid"
+          output_dir="$GITHUB_WORKSPACE/artifacts/velopack/$rid"
+
+          dotnet tool install vpk --tool-path ".tmp/vpk" --version 1.2.0
+          ".tmp/vpk/vpk" pack \
+            --packId "CxShell-$rid" \
+            --packVersion "$version" \
+            --packDir "$publish_dir" \
+            --packAuthors "xiaochengzjc" \
+            --packTitle "CxShell" \
+            --mainExe "CxShell" \
+            --runtime "$rid" \
+            --channel "$rid" \
+            --icon "Assets/CxShellLogo.png" \
+            --outputDir "$output_dir"
+
       - name: Upload package artifact
         uses: actions/upload-artifact@v4
         with:
           name: CxShell-${{ env.RELEASE_TAG }}-${{ matrix.rid }}
-          path: artifacts/CxShell-${{ env.RELEASE_TAG }}-${{ matrix.rid }}.tar.gz
+          path: |
+            artifacts/CxShell-${{ env.RELEASE_TAG }}-${{ matrix.rid }}.tar.gz
+            artifacts/velopack/${{ matrix.rid }}/**
           if-no-files-found: error
 
   macos:
@@ -531,11 +582,36 @@ jobs:
           package_name="CxShell-$RELEASE_TAG-${{ matrix.package_suffix }}"
           tar -czf "artifacts/$package_name.tar.gz" -C artifacts/package "$package_name"
 
+      - name: Create Velopack package
+        shell: bash
+        run: |
+          set -euo pipefail
+          rid="${{ matrix.rid }}"
+          version="${RELEASE_TAG#v}"
+          package_name="CxShell-$RELEASE_TAG-${{ matrix.package_suffix }}"
+          app_path="$GITHUB_WORKSPACE/artifacts/package/$package_name/CxShell.app"
+          output_dir="$GITHUB_WORKSPACE/artifacts/velopack/$rid"
+
+          dotnet tool install vpk --tool-path ".tmp/vpk" --version 1.2.0
+          ".tmp/vpk/vpk" pack \
+            --packId "CxShell-$rid" \
+            --packVersion "$version" \
+            --packDir "$app_path" \
+            --packAuthors "xiaochengzjc" \
+            --packTitle "CxShell" \
+            --mainExe "CxShell" \
+            --runtime "$rid" \
+            --channel "$rid" \
+            --icon "Assets/CxShellLogo.png" \
+            --outputDir "$output_dir"
+
       - name: Upload package artifact
         uses: actions/upload-artifact@v4
         with:
           name: CxShell-${{ env.RELEASE_TAG }}-${{ matrix.package_suffix }}
-          path: artifacts/CxShell-${{ env.RELEASE_TAG }}-${{ matrix.package_suffix }}.tar.gz
+          path: |
+            artifacts/CxShell-${{ env.RELEASE_TAG }}-${{ matrix.package_suffix }}.tar.gz
+            artifacts/velopack/${{ matrix.rid }}/**
           if-no-files-found: error
 
   release:
@@ -556,7 +632,7 @@ jobs:
       - name: List release assets
         shell: bash
         run: |
-          find release-assets -maxdepth 1 -type f -print | sort
+          find release-assets -type f -print | sort
 
       - name: Create or update release
         env:
@@ -568,8 +644,7 @@ jobs:
           tag="$RELEASE_TAG"
           notes="Automated CxShell packages for Windows, macOS, and Linux."
 
-          shopt -s nullglob
-          assets=(release-assets/*)
+          mapfile -d '' assets < <(find release-assets -type f -print0 | sort -z)
           if [ "${#assets[@]}" -eq 0 ]; then
             echo "No release assets were downloaded." >&2
             exit 1
@@ -587,6 +662,10 @@ jobs:
               create_args+=(--verify-tag)
             else
               create_args+=(--target "$GITHUB_SHA")
+            fi
+
+            if [[ "$tag" == *-* ]]; then
+              create_args+=(--prerelease)
             fi
 
             gh release create "$tag" "${assets[@]}" --repo "$GH_REPO" "${create_args[@]}"

@@ -1,5 +1,7 @@
 using System;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Collections.ObjectModel;
 using Avalonia.Threading;
 using CxShell.Models;
@@ -61,7 +63,11 @@ public partial class ServerMonitorViewModel : ObservableObject, IDisposable
         LocalizationService.Shared.LanguageChanged += OnLanguageChanged;
     }
 
-    public void SwitchConnection(SessionInfo session, string? password)
+    public void SwitchConnection(
+        SessionInfo session,
+        string? password,
+        Func<string, TimeSpan, CancellationToken, Task<string>>? commandRunner = null,
+        bool isWindowsOpenSsh = false)
     {
         _service.Stop();
         IsMonitoring = false;
@@ -69,7 +75,7 @@ public partial class ServerMonitorViewModel : ObservableObject, IDisposable
         HostLabel = $"{session.Username}@{session.Host}";
         ClearData();
 
-        _ = _service.StartAsync(session, password);
+        _ = _service.StartAsync(session, password, commandRunner, isWindowsOpenSsh);
 
         IsMonitoring = true;
     }

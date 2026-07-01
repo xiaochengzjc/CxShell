@@ -23,10 +23,12 @@
                 BorderThickness="0,1,0,0"
                 Padding="20,12">
             <Grid ColumnDefinitions="*,Auto">
-                <atom:CheckBox Grid.Column="0"
-                               Content="{Binding ShowOnStartupText}"
-                               IsChecked="{Binding ShowSessionManagerOnStartup, Mode=TwoWay}"
-                               VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="0"
+                            Spacing="4"
+                            VerticalAlignment="Center">
+                    <atom:CheckBox Content="{Binding ShowOnStartupText}"
+                                   IsChecked="{Binding ShowSessionManagerOnStartup, Mode=TwoWay}"/>
+                </StackPanel>
 
                 <StackPanel Grid.Column="1"
                             Orientation="Horizontal"

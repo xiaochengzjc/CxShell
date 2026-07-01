@@ -95,6 +95,8 @@ public partial class RemoteFileEditorWindow : AtomWindow
     {
         _textMateInstallation?.Dispose();
         _textMateInstallation = null;
+        if (DataContext is IDisposable disposable)
+            disposable.Dispose();
     }
 
     private async void OnClosing(object? sender, CancelEventArgs e)

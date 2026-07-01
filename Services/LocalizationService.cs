@@ -398,9 +398,47 @@ public sealed class LocalizationService : INotifyPropertyChanged
         EnglishTexts["TabMenu.Close"] = "Close";
         EnglishTexts["TabMenu.Properties"] = "Properties";
         EnglishTexts["TabMenu.AddQuick"] = "Add to quick bar";
+        EnglishTexts["Toolbar.Update"] = "Update";
+        EnglishTexts["Toolbar.UpdateTip"] = "Check for CxShell updates";
+        EnglishTexts["Toolbar.UpdateChecking"] = "Checking...";
+        EnglishTexts["Toolbar.UpdateDownloading"] = "Update {0}%";
+        EnglishTexts["Toolbar.Help"] = "Help";
+        EnglishTexts["Toolbar.HelpTip"] = "About CxShell and updates";
+        EnglishTexts["Help.AboutCxShell"] = "About CxShell";
+        EnglishTexts["About.Title"] = "About CxShell";
+        EnglishTexts["About.Message"] = "CxShell\nVersion: {0}\n\nA cross-platform remote session client for SSH, SFTP, FTP, TELNET, RLOGIN, SERIAL, VNC, and RDP.\n\nBuilt with Avalonia, AtomUI, SSH.NET, FluentFTP, FreeRDP, and Velopack.\n\nGitHub: https://github.com/xiaochengzjc/CxShell";
+        EnglishTexts["SessionManager.AutoCheckUpdates"] = "Automatically check for updates";
+        EnglishTexts["SessionManager.IncludePrereleaseUpdates"] = "Receive preview updates";
+        EnglishTexts["Update.Title"] = "CxShell Update";
+        EnglishTexts["Update.NotInstalled"] = "The current app is not an installed Velopack package. Automatic updates are only available for the installed package edition.";
+        EnglishTexts["Update.NoUpdate"] = "CxShell is up to date.";
+        EnglishTexts["Update.Failed"] = "Update check failed: {0}";
+        EnglishTexts["Update.AvailableMessage"] = "Version {0} is available. Current version: {1}.\nDownload and install it now?";
+        EnglishTexts["Update.DownloadedMessage"] = "Version {0} has been downloaded. Restart CxShell now to apply the update?";
+        EnglishTexts["Update.Downloading"] = "Downloading update...";
+        EnglishTexts["Update.ReleaseNotes"] = "Release notes:";
         ChineseTexts["TabMenu.Close"] = "\u5173\u95ed";
         ChineseTexts["TabMenu.Properties"] = "\u5c5e\u6027";
         ChineseTexts["TabMenu.AddQuick"] = "\u6dfb\u52a0\u5230\u6807\u7b7e";
+        ChineseTexts["Toolbar.Update"] = "\u66f4\u65b0";
+        ChineseTexts["Toolbar.UpdateTip"] = "\u68c0\u67e5 CxShell \u66f4\u65b0";
+        ChineseTexts["Toolbar.UpdateChecking"] = "\u68c0\u67e5\u4e2d...";
+        ChineseTexts["Toolbar.UpdateDownloading"] = "\u66f4\u65b0 {0}%";
+        ChineseTexts["Toolbar.Help"] = "\u5e2e\u52a9";
+        ChineseTexts["Toolbar.HelpTip"] = "\u5173\u4e8e CxShell \u548c\u66f4\u65b0";
+        ChineseTexts["Help.AboutCxShell"] = "\u5173\u4e8e CxShell";
+        ChineseTexts["About.Title"] = "\u5173\u4e8e CxShell";
+        ChineseTexts["About.Message"] = "CxShell\n\u7248\u672c\uff1a{0}\n\n\u8de8\u5e73\u53f0\u8fdc\u7a0b\u4f1a\u8bdd\u5ba2\u6237\u7aef\uff0c\u652f\u6301 SSH\u3001SFTP\u3001FTP\u3001TELNET\u3001RLOGIN\u3001SERIAL\u3001VNC \u548c RDP\u3002\n\n\u57fa\u4e8e Avalonia\u3001AtomUI\u3001SSH.NET\u3001FluentFTP\u3001FreeRDP \u548c Velopack \u6784\u5efa\u3002\n\nGitHub\uff1ahttps://github.com/xiaochengzjc/CxShell";
+        ChineseTexts["SessionManager.AutoCheckUpdates"] = "\u81ea\u52a8\u68c0\u67e5\u66f4\u65b0";
+        ChineseTexts["SessionManager.IncludePrereleaseUpdates"] = "\u63a5\u6536\u9884\u89c8\u7248\u66f4\u65b0";
+        ChineseTexts["Update.Title"] = "CxShell \u66f4\u65b0";
+        ChineseTexts["Update.NotInstalled"] = "\u5f53\u524d\u8fd0\u884c\u7684\u4e0d\u662f Velopack \u5b89\u88c5\u7248\u3002\u81ea\u52a8\u66f4\u65b0\u4ec5\u652f\u6301\u901a\u8fc7\u5b89\u88c5\u5305\u5b89\u88c5\u7684\u7248\u672c\u3002";
+        ChineseTexts["Update.NoUpdate"] = "CxShell \u5df2\u662f\u6700\u65b0\u7248\u672c\u3002";
+        ChineseTexts["Update.Failed"] = "\u68c0\u67e5\u66f4\u65b0\u5931\u8d25\uff1a{0}";
+        ChineseTexts["Update.AvailableMessage"] = "\u53d1\u73b0\u65b0\u7248\u672c {0}\uff0c\u5f53\u524d\u7248\u672c\uff1a{1}\u3002\n\u662f\u5426\u7acb\u5373\u4e0b\u8f7d\u5e76\u5b89\u88c5\uff1f";
+        ChineseTexts["Update.DownloadedMessage"] = "\u66f4\u65b0 {0} \u5df2\u4e0b\u8f7d\u5b8c\u6210\u3002\u662f\u5426\u7acb\u5373\u91cd\u542f CxShell \u5e76\u5e94\u7528\u66f4\u65b0\uff1f";
+        ChineseTexts["Update.Downloading"] = "\u6b63\u5728\u4e0b\u8f7d\u66f4\u65b0...";
+        ChineseTexts["Update.ReleaseNotes"] = "\u66f4\u65b0\u8bf4\u660e\uff1a";
     }
 
     private static void AddDialogTexts(Dictionary<string, string> english, Dictionary<string, string> chinese)

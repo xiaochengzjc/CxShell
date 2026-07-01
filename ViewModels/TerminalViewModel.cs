@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
@@ -25,6 +26,7 @@ public partial class TerminalViewModel : ObservableObject
     public string PasteText => L.Text("Terminal.Paste");
 
     [ObservableProperty] private bool _isConnected;
+    [ObservableProperty] private bool _supportsPosixShellFeatures = true;
     [ObservableProperty] private string _hostInfo = string.Empty;
     [ObservableProperty] private int _columns = 80;
     [ObservableProperty] private int _rows = 24;
@@ -67,12 +69,24 @@ public partial class TerminalViewModel : ObservableObject
     private List<LoginScriptRule> _pendingLoginScriptRules = new();
     private readonly object _recentOutputLock = new();
     private readonly StringBuilder _recentOutputBuffer = new();
-    private readonly object _hiddenInputEchoLock = new();
     private DateTimeOffset _lastBellAt = DateTimeOffset.MinValue;
     private DateTimeOffset _bellMutedUntil = DateTimeOffset.MinValue;
-    private string? _hiddenInputEcho;
-    private int _hiddenInputEchoMatchIndex;
+    private string? _remoteHomeDirectory;
+    private string? _previousRemoteCurrentDirectory;
+    private int _remoteDirectoryQueryId;
     private SessionLogWriter? _sessionLogWriter;
+    private static readonly Regex WindowsPromptPathRegex = new(
+        @"(?m)(?:^|[\r\n])(?:[^\r\n<>]*?\s)?(?<path>[A-Za-z]:\\[^\r\n<>]*)>\s*$",
+        RegexOptions.CultureInvariant);
+
+    private enum DirectoryChangeKind
+    {
+        Home,
+        Previous,
+        Path
+    }
+
+    private readonly record struct DirectoryChangeRequest(DirectoryChangeKind Kind, string? Path);
 
     public Func<Task<IReadOnlyList<string>>>? PickZmodemUploadFilesAsync { get; set; }
     public Func<Task<string?>>? PickZmodemDownloadFolderAsync { get; set; }
@@ -171,6 +185,15 @@ public partial class TerminalViewModel : ObservableObject
     public event Action<string>? RemoteCurrentDirectoryChanged;
     public string? RemoteCurrentDirectory { get; private set; }
 
+    public Task<string> RunRemoteCommandAsync(string commandText, TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        var connection = _connection as SshConnectionService;
+        if (connection == null || !connection.IsConnected)
+            throw new InvalidOperationException("Current terminal connection does not support remote commands.");
+
+        return connection.RunCommandAsync(commandText, timeout, cancellationToken);
+    }
+
     public async Task ConnectAsync(SessionInfo session, string? password)
     {
         Disconnect();
@@ -216,6 +239,10 @@ public partial class TerminalViewModel : ObservableObject
         Parser = new AnsiParser(Buffer);
         AttachParserHandlers(Parser);
         RemoteCurrentDirectory = null;
+        _remoteHomeDirectory = null;
+        _previousRemoteCurrentDirectory = null;
+        _remoteDirectoryQueryId = 0;
+        SupportsPosixShellFeatures = true;
         _terminalByteDecoder.Reset();
         lock (_recentOutputLock)
             _recentOutputBuffer.Clear();
@@ -252,12 +279,12 @@ public partial class TerminalViewModel : ObservableObject
 
                     var terminalData = ProcessAnswerback(data, connection);
                     terminalData = TerminalSessionOptions.NormalizeReceiveLineEndings(terminalData, _session);
-                    terminalData = FilterHiddenInputEcho(terminalData);
                     if (string.IsNullOrEmpty(terminalData))
                         return;
 
                     LogTerminalData(terminalData);
                     AppendRecentOutput(terminalData);
+                    TryUpdateWindowsCurrentDirectoryFromOutput(terminalData, connection);
                     HandleLoginScriptData(generation, connection, terminalData);
                     TryDetectPendingXymodemUploadFromOutput(terminalData);
                     TryStartPendingXymodemDownloadFromOutput(generation, terminalData);
@@ -286,6 +313,7 @@ public partial class TerminalViewModel : ObservableObject
             };
 
             await connection.ConnectAsync(_session, _password, Columns, Rows, cancellationToken);
+            SupportsPosixShellFeatures = ConnectionSupportsPosixShellFeatures(connection);
 
             cancellationToken.ThrowIfCancellationRequested();
             if (generation != _connectionGeneration || _manualDisconnect)
@@ -317,9 +345,26 @@ public partial class TerminalViewModel : ObservableObject
         if (!TryParseOsc7CurrentDirectory(command, out var path))
             return;
 
+        SetRemoteCurrentDirectory(path);
+    }
+
+    private void TryUpdateWindowsCurrentDirectoryFromOutput(string data, ITerminalConnectionService connection)
+    {
+        if (ConnectionSupportsPosixShellFeatures(connection) || string.IsNullOrEmpty(data))
+            return;
+
+        if (!TryParseWindowsPromptCurrentDirectory(data, out var path))
+            return;
+
+        SetRemoteCurrentDirectory(path);
+    }
+
+    private void SetRemoteCurrentDirectory(string path)
+    {
         if (string.Equals(RemoteCurrentDirectory, path, StringComparison.Ordinal))
             return;
 
+        _previousRemoteCurrentDirectory = RemoteCurrentDirectory;
         RemoteCurrentDirectory = path;
         RemoteCurrentDirectoryChanged?.Invoke(path);
     }
@@ -369,6 +414,33 @@ public partial class TerminalViewModel : ObservableObject
 
         path = pathPart;
         return true;
+    }
+
+    private static bool TryParseWindowsPromptCurrentDirectory(string data, out string path)
+    {
+        path = string.Empty;
+
+        var normalized = data.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
+        var match = WindowsPromptPathRegex.Matches(normalized).Cast<Match>().LastOrDefault(match => match.Success);
+        if (match == null)
+            return false;
+
+        var windowsPath = match.Groups["path"].Value.Trim();
+        if (windowsPath.Length < 3 ||
+            windowsPath[1] != ':' ||
+            windowsPath[2] != '\\' ||
+            !char.IsLetter(windowsPath[0]) ||
+            windowsPath.Contains('\0'))
+        {
+            return false;
+        }
+
+        var drive = char.ToUpperInvariant(windowsPath[0]);
+        var rest = windowsPath[2..].Replace('\\', '/').TrimStart('/');
+        path = string.IsNullOrEmpty(rest)
+            ? $"/{drive}:/"
+            : $"/{drive}:/{rest}";
+        return path.Length <= 4096;
     }
 
     private void OnBellReceived()
@@ -694,7 +766,8 @@ public partial class TerminalViewModel : ObservableObject
     {
         if (session.Protocol != SessionProtocol.SSH ||
             session.SshNoTerminal ||
-            !session.SftpFollowTerminalDirectory)
+            !session.SftpFollowTerminalDirectory ||
+            !ConnectionSupportsPosixShellFeatures(connection))
         {
             return;
         }
@@ -707,10 +780,7 @@ public partial class TerminalViewModel : ObservableObject
                 if (generation != _connectionGeneration || _manualDisconnect || !connection.IsConnected)
                     return;
 
-                var bootstrap = BuildRemoteDirectoryTrackingBootstrap();
-                RegisterHiddenInputEcho(bootstrap);
-                var text = TerminalSessionOptions.NormalizeSendLineEndings(bootstrap + "\r", session);
-                connection.SendData(text);
+                await InitializeRemoteDirectoryTrackingAsync(generation, connection, cancellationToken);
             }
             catch (OperationCanceledException)
             {
@@ -718,75 +788,375 @@ public partial class TerminalViewModel : ObservableObject
         }, cancellationToken);
     }
 
-    private void RegisterHiddenInputEcho(string text)
+    private async Task InitializeRemoteDirectoryTrackingAsync(
+        int generation,
+        ITerminalConnectionService connection,
+        CancellationToken cancellationToken)
     {
-        if (string.IsNullOrEmpty(text))
+        if (connection is not SshConnectionService sshConnection)
             return;
 
-        lock (_hiddenInputEchoLock)
+        try
         {
-            _hiddenInputEcho = text;
-            _hiddenInputEchoMatchIndex = 0;
+            var output = await sshConnection
+                .RunCommandAsync("printf '__CXSHELL_HOME__%s\\n' \"$HOME\"; printf '__CXSHELL_PWD__'; pwd -P", TimeSpan.FromSeconds(5), cancellationToken)
+                .ConfigureAwait(false);
+
+            var home = ExtractMarkedRemotePath(output, "__CXSHELL_HOME__");
+            var current = ExtractMarkedRemotePath(output, "__CXSHELL_PWD__");
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (generation != _connectionGeneration || _manualDisconnect || !connection.IsConnected)
+                    return;
+
+                if (!string.IsNullOrWhiteSpace(home))
+                    _remoteHomeDirectory = home;
+
+                if (!string.IsNullOrWhiteSpace(current) && string.IsNullOrWhiteSpace(RemoteCurrentDirectory))
+                    SetRemoteCurrentDirectory(current);
+            });
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            System.Diagnostics.Debug.WriteLine($"Remote directory initialization failed: {ex.Message}");
         }
     }
 
-    private string FilterHiddenInputEcho(string data)
+    private void HandlePotentialDirectoryChangeCommand(string typedCommandLine, string? visibleCommandLine)
     {
-        if (string.IsNullOrEmpty(data))
-            return data;
-
-        lock (_hiddenInputEchoLock)
+        if (_session == null ||
+            _session.Protocol != SessionProtocol.SSH ||
+            !_session.SftpFollowTerminalDirectory ||
+            _connection == null ||
+            !_connection.IsConnected ||
+            !ConnectionSupportsPosixShellFeatures(_connection))
         {
-            if (string.IsNullOrEmpty(_hiddenInputEcho))
-                return data;
+            return;
+        }
 
-            var output = new StringBuilder(data.Length);
-            foreach (var ch in data)
+        if (!TryExtractDirectoryChange(typedCommandLine, allowPromptPrefix: false, out var request) &&
+            !TryExtractDirectoryChange(visibleCommandLine, allowPromptPrefix: true, out request))
+        {
+            return;
+        }
+
+        var generation = _connectionGeneration;
+        var queryId = Interlocked.Increment(ref _remoteDirectoryQueryId);
+        var cancellationToken = _connectionCts?.Token ?? CancellationToken.None;
+        _ = ResolveRemoteDirectoryChangeAsync(generation, queryId, request, cancellationToken);
+    }
+
+    private async Task ResolveRemoteDirectoryChangeAsync(
+        int generation,
+        int queryId,
+        DirectoryChangeRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken);
+            if (generation != _connectionGeneration ||
+                queryId != _remoteDirectoryQueryId ||
+                _manualDisconnect ||
+                _connection is not SshConnectionService sshConnection ||
+                !sshConnection.IsConnected)
             {
-                var target = _hiddenInputEcho;
-                if (string.IsNullOrEmpty(target))
-                {
-                    output.Append(ch);
-                    continue;
-                }
-
-                if (ch == target[_hiddenInputEchoMatchIndex])
-                {
-                    _hiddenInputEchoMatchIndex++;
-                    if (_hiddenInputEchoMatchIndex == target.Length)
-                    {
-                        _hiddenInputEcho = null;
-                        _hiddenInputEchoMatchIndex = 0;
-                    }
-
-                    continue;
-                }
-
-                if (_hiddenInputEchoMatchIndex > 0)
-                {
-                    output.Append(target.AsSpan(0, _hiddenInputEchoMatchIndex));
-                    _hiddenInputEchoMatchIndex = 0;
-
-                    if (ch == target[0])
-                    {
-                        _hiddenInputEchoMatchIndex = 1;
-                        continue;
-                    }
-                }
-
-                output.Append(ch);
+                return;
             }
 
-            return output.ToString();
+            var candidate = ResolveDirectoryChangeCandidate(request);
+            if (string.IsNullOrWhiteSpace(candidate))
+                return;
+
+            var command = $"cd {QuotePosixShellArgument(candidate)} 2>/dev/null && pwd -P";
+            var output = await sshConnection
+                .RunCommandAsync(command, TimeSpan.FromSeconds(5), cancellationToken)
+                .ConfigureAwait(false);
+            var resolvedPath = NormalizeRemoteDirectoryPath(output);
+            if (string.IsNullOrWhiteSpace(resolvedPath))
+                return;
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (generation == _connectionGeneration &&
+                    queryId == _remoteDirectoryQueryId &&
+                    !_manualDisconnect &&
+                    sshConnection.IsConnected)
+                {
+                    SetRemoteCurrentDirectory(resolvedPath);
+                }
+            });
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            System.Diagnostics.Debug.WriteLine($"Remote directory update failed: {ex.Message}");
         }
     }
 
-    private static string BuildRemoteDirectoryTrackingBootstrap()
+    private string? ResolveDirectoryChangeCandidate(DirectoryChangeRequest request)
     {
-        return "__cxshell_osc7(){ __cxshell_h=$(hostname 2>/dev/null||printf localhost); printf '\\033]7;file://%s%s\\007' \"$__cxshell_h\" \"$PWD\"; }; " +
-               "if [ -n \"${ZSH_VERSION-}\" ]; then case \" ${precmd_functions[*]-} \" in *\" __cxshell_osc7 \"*) ;; *) eval 'precmd_functions+=(__cxshell_osc7)' ;; esac; " +
-               "elif [ -n \"${BASH_VERSION-}\" ]; then case \";${PROMPT_COMMAND-};\" in *\";__cxshell_osc7;\"*) ;; *) PROMPT_COMMAND=\"__cxshell_osc7${PROMPT_COMMAND:+;$PROMPT_COMMAND}\" ;; esac; fi; " +
-               "if [ -n \"${BASH_VERSION-}${ZSH_VERSION-}\" ]; then __cxshell_osc7; fi";
+        return request.Kind switch
+        {
+            DirectoryChangeKind.Home => _remoteHomeDirectory,
+            DirectoryChangeKind.Previous => _previousRemoteCurrentDirectory,
+            DirectoryChangeKind.Path => ResolveRemoteDirectoryPath(request.Path),
+            _ => null
+        };
+    }
+
+    private static string? ExtractMarkedRemotePath(string output, string marker)
+    {
+        if (string.IsNullOrWhiteSpace(output))
+            return null;
+
+        var lines = output
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        foreach (var line in lines)
+        {
+            if (line.StartsWith(marker, StringComparison.Ordinal))
+                return NormalizeRemoteDirectoryPath(line[marker.Length..]);
+        }
+
+        return null;
+    }
+
+    private string? ResolveRemoteDirectoryPath(string? path)
+    {
+        var value = path?.Trim();
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        value = value.Replace('\\', '/');
+        if (value == "~")
+            return _remoteHomeDirectory;
+
+        if (value.StartsWith("~/", StringComparison.Ordinal))
+        {
+            return string.IsNullOrWhiteSpace(_remoteHomeDirectory)
+                ? null
+                : CollapseRemotePath(CombineRemotePath(_remoteHomeDirectory, value[2..]));
+        }
+
+        if (value.StartsWith("~", StringComparison.Ordinal))
+            return null;
+
+        if (value.StartsWith("/", StringComparison.Ordinal))
+            return CollapseRemotePath(value);
+
+        var current = RemoteCurrentDirectory ?? _remoteHomeDirectory;
+        return string.IsNullOrWhiteSpace(current)
+            ? null
+            : CollapseRemotePath(CombineRemotePath(current, value));
+    }
+
+    private static string? NormalizeRemoteDirectoryPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return null;
+
+        var value = path
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .LastOrDefault()
+            ?.Trim();
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        value = value.Replace('\\', '/');
+        if (value.Length > 4096 ||
+            value.Contains('\0') ||
+            !value.StartsWith("/", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return CollapseRemotePath(value);
+    }
+
+    private static bool TryExtractDirectoryChange(
+        string? commandLine,
+        bool allowPromptPrefix,
+        out DirectoryChangeRequest request)
+    {
+        request = default;
+        var command = ExtractDirectoryCommandText(commandLine, allowPromptPrefix);
+        if (string.IsNullOrWhiteSpace(command) || !StartsWithCdCommand(command))
+            return false;
+
+        var remainder = command.Length > 2 ? command[2..] : string.Empty;
+        var tokens = ReadShellPrefixTokens(remainder);
+        var index = 0;
+        while (index < tokens.Count && IsCdOption(tokens[index]))
+            index++;
+
+        if (index >= tokens.Count)
+        {
+            request = new DirectoryChangeRequest(DirectoryChangeKind.Home, null);
+            return true;
+        }
+
+        if (tokens.Count > index + 1)
+            return false;
+
+        var target = tokens[index];
+        request = string.Equals(target, "-", StringComparison.Ordinal)
+            ? new DirectoryChangeRequest(DirectoryChangeKind.Previous, null)
+            : new DirectoryChangeRequest(DirectoryChangeKind.Path, target);
+        return true;
+    }
+
+    private static string? ExtractDirectoryCommandText(string? commandLine, bool allowPromptPrefix)
+    {
+        var text = commandLine?.Trim();
+        if (string.IsNullOrWhiteSpace(text))
+            return null;
+
+        if (!allowPromptPrefix)
+            return text;
+
+        var promptIndex = LastPromptMarkerIndex(text);
+        if (promptIndex >= 0)
+            return text[(promptIndex + 2)..].TrimStart();
+
+        var commandIndex = FindCommandToken(text, "cd");
+        return commandIndex >= 0 ? text[commandIndex..].TrimStart() : text;
+    }
+
+    private static int LastPromptMarkerIndex(string text)
+    {
+        var best = -1;
+        foreach (var marker in new[] { "$ ", "# ", "> ", "% " })
+        {
+            var index = text.LastIndexOf(marker, StringComparison.Ordinal);
+            if (index > best)
+                best = index;
+        }
+
+        return best;
+    }
+
+    private static bool StartsWithCdCommand(string command)
+    {
+        return command.StartsWith("cd", StringComparison.Ordinal) &&
+               (command.Length == 2 ||
+                char.IsWhiteSpace(command[2]) ||
+                IsShellCommandSeparatorStart(command, 2));
+    }
+
+    private static bool IsCdOption(string token)
+    {
+        return token is "--" or "-L" or "-P" or "-e";
+    }
+
+    private static List<string> ReadShellPrefixTokens(string text)
+    {
+        var tokens = new List<string>();
+        var index = 0;
+        while (index < text.Length)
+        {
+            while (index < text.Length && char.IsWhiteSpace(text[index]))
+                index++;
+
+            if (index >= text.Length || IsShellCommandSeparatorStart(text, index))
+                break;
+
+            var token = new StringBuilder();
+            while (index < text.Length)
+            {
+                var ch = text[index];
+                if (char.IsWhiteSpace(ch) || IsShellCommandSeparatorStart(text, index))
+                    break;
+
+                if (ch is '\'' or '"')
+                {
+                    var quote = ch;
+                    index++;
+                    while (index < text.Length)
+                    {
+                        ch = text[index++];
+                        if (ch == quote)
+                            break;
+
+                        if (ch == '\\' && quote == '"' && index < text.Length)
+                            ch = text[index++];
+
+                        token.Append(ch);
+                    }
+                    continue;
+                }
+
+                if (ch == '\\' && index + 1 < text.Length)
+                {
+                    token.Append(text[index + 1]);
+                    index += 2;
+                    continue;
+                }
+
+                token.Append(ch);
+                index++;
+            }
+
+            if (token.Length > 0)
+                tokens.Add(token.ToString());
+
+            while (index < text.Length && char.IsWhiteSpace(text[index]))
+                index++;
+
+            if (index < text.Length && IsShellCommandSeparatorStart(text, index))
+                break;
+        }
+
+        return tokens;
+    }
+
+    private static bool IsShellCommandSeparatorStart(string text, int index)
+    {
+        if (index < 0 || index >= text.Length)
+            return false;
+
+        return text[index] is ';' or '|' or '&';
+    }
+
+    private static string CombineRemotePath(string parent, string child)
+    {
+        if (string.IsNullOrWhiteSpace(parent) || parent == "/")
+            return "/" + child.TrimStart('/');
+
+        return parent.TrimEnd('/') + "/" + child.TrimStart('/');
+    }
+
+    private static string CollapseRemotePath(string path)
+    {
+        var parts = new Stack<string>();
+        foreach (var rawPart in path.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (rawPart == ".")
+                continue;
+
+            if (rawPart == "..")
+            {
+                if (parts.Count > 0)
+                    parts.Pop();
+                continue;
+            }
+
+            parts.Push(rawPart);
+        }
+
+        return parts.Count == 0 ? "/" : "/" + string.Join("/", parts.Reverse());
+    }
+
+    private static string QuotePosixShellArgument(string value)
+    {
+        return "'" + value.Replace("'", "'\"'\"'", StringComparison.Ordinal) + "'";
+    }
+
+    private static bool ConnectionSupportsPosixShellFeatures(ITerminalConnectionService connection)
+    {
+        return connection is not SshConnectionService { SupportsPosixShellFeatures: false };
     }
 
     private static string NormalizeScriptSendText(string text)
@@ -1454,9 +1824,12 @@ public partial class TerminalViewModel : ObservableObject
         {
             if (ch is '\r' or '\n')
             {
-                var commandLine = GetVisibleXymodemCommandLine() ?? _outgoingCommandLine.ToString();
+                var typedCommandLine = _outgoingCommandLine.ToString();
+                var visibleCommandLine = GetVisibleXymodemCommandLine();
+                var commandLine = visibleCommandLine ?? typedCommandLine;
                 _outgoingCommandLine.Clear();
                 HandlePotentialXymodemCommand(commandLine);
+                HandlePotentialDirectoryChangeCommand(typedCommandLine, visibleCommandLine);
                 continue;
             }
 
@@ -1975,6 +2348,7 @@ public partial class TerminalViewModel : ObservableObject
         ClearXymodemTransfer();
         _outgoingCommandLine.Clear();
         IsConnected = false;
+        SupportsPosixShellFeatures = true;
         HostInfo = string.Empty;
 
         if (!string.IsNullOrWhiteSpace(statusMessage))
@@ -1999,6 +2373,7 @@ public partial class TerminalViewModel : ObservableObject
         ClearXymodemTransfer();
         _outgoingCommandLine.Clear();
         IsConnected = false;
+        SupportsPosixShellFeatures = true;
         HostInfo = string.Empty;
         StopSessionLog();
 

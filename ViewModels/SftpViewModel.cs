@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Threading;
 using CxShell.Models;
@@ -33,6 +34,7 @@ public partial class SftpViewModel : ObservableObject
     private SessionInfo? _currentSession;
     private string? _currentPassword;
     private string _homeDirectory = "/";
+    private readonly SemaphoreSlim _serviceGate = new(1, 1);
     private const long MaxEditableFileSize = 5 * 1024 * 1024;
 
     [ObservableProperty] private bool _isConnected;
@@ -61,7 +63,15 @@ public partial class SftpViewModel : ObservableObject
     public Func<string, Task<string?>>? PickDownloadPathAsync { get; set; }
     public Func<string, Task<bool>>? ShowConfirmDialogAsync { get; set; }
     public Func<string, string, Task<string?>>? ShowInputDialogAsync { get; set; }
+    public Func<string, Task<bool>>? TryActivateRemoteFileEditorAsync { get; set; }
     public Func<RemoteFileEditorViewModel, Task>? ShowRemoteFileEditorAsync { get; set; }
+    public string RemoteEditorConnectionKey { get; private set; } = string.Empty;
+
+    public bool IsBrowsingSession(SessionInfo session)
+    {
+        return _service.IsConnected &&
+               string.Equals(RemoteEditorConnectionKey, BuildConnectionKey(session), StringComparison.Ordinal);
+    }
 
     public SftpViewModel()
     {
@@ -126,6 +136,7 @@ public partial class SftpViewModel : ObservableObject
         _currentPassword = password;
         ProtocolLabel = session.Protocol.ToString();
         HostLabel = $"{session.Username}@{session.Host}";
+        RemoteEditorConnectionKey = BuildConnectionKey(session);
         LocalStartDirectory = session.SftpLocalStartDirectory ?? string.Empty;
         ErrorMessage = null;
 
@@ -180,8 +191,8 @@ public partial class SftpViewModel : ObservableObject
 
         try
         {
-            await _service.ConnectAsync(_currentSession, _currentPassword);
-            _homeDirectory = await _service.GetHomeDirectoryAsync();
+            await RunServiceAsync(service => service.ConnectAsync(_currentSession, _currentPassword));
+            _homeDirectory = await RunServiceAsync(service => service.GetHomeDirectoryAsync());
             var startDirectory = string.IsNullOrWhiteSpace(_currentSession.SftpRemoteStartDirectory)
                 ? _homeDirectory
                 : _currentSession.SftpRemoteStartDirectory.Trim();
@@ -211,7 +222,7 @@ public partial class SftpViewModel : ObservableObject
 
         try
         {
-            var items = await _service.ListDirectoryAsync(path);
+            var items = await RunServiceAsync(service => service.ListDirectoryAsync(path));
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 CurrentPath = path;
@@ -386,6 +397,12 @@ public partial class SftpViewModel : ObservableObject
         if (item == null || item.IsDirectory)
             return;
 
+        if (TryActivateRemoteFileEditorAsync != null &&
+            await TryActivateRemoteFileEditorAsync(item.FullPath))
+        {
+            return;
+        }
+
         if (ShowRemoteFileEditorAsync == null)
         {
             ErrorMessage = "Editor is not available.";
@@ -398,7 +415,18 @@ public partial class SftpViewModel : ObservableObject
             return;
         }
 
+        if (_currentSession == null)
+        {
+            ErrorMessage = "Current session is not available.";
+            return;
+        }
+
+        var editorSession = CloneTransferSession(_currentSession);
+        var editorPassword = _currentPassword;
+        var editorConnectionKey = RemoteEditorConnectionKey;
         string? tempPath = null;
+        IFileTransferService? editorService = null;
+        var editorShown = false;
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             IsLoading = true;
@@ -407,8 +435,13 @@ public partial class SftpViewModel : ObservableObject
 
         try
         {
-            tempPath = CreateTempEditFilePath(item.Name);
-            await _service.DownloadFileAsync(item.FullPath, tempPath);
+            var remotePath = item.FullPath;
+            var fileName = item.Name;
+            editorService = CreateService(editorSession.Protocol);
+            await RunServiceAsync(service => service.ConnectAsync(editorSession, editorPassword), editorService);
+
+            tempPath = CreateTempEditFilePath(fileName);
+            await RunServiceAsync(service => service.DownloadFileAsync(remotePath, tempPath), editorService);
             var bytes = await File.ReadAllBytesAsync(tempPath);
             if (LooksBinary(bytes))
             {
@@ -422,14 +455,16 @@ public partial class SftpViewModel : ObservableObject
 
             var snapshot = DecodeEditableText(bytes);
             var editorVm = new RemoteFileEditorViewModel(
-                item.Name,
-                item.FullPath,
+                fileName,
+                remotePath,
                 snapshot.Text,
                 $"{FormatByteSize(bytes.Length)} · {snapshot.Encoding.WebName}",
-                text => SaveEditedRemoteFileAsync(item, snapshot, text));
+                text => SaveEditedRemoteFileAsync(editorService!, editorConnectionKey, fileName, remotePath, snapshot, text),
+                () => DisposeFileTransferService(editorService!));
 
             await Dispatcher.UIThread.InvokeAsync(() => IsLoading = false);
             await ShowRemoteFileEditorAsync(editorVm);
+            editorShown = true;
         }
         catch (Exception ex)
         {
@@ -443,19 +478,34 @@ public partial class SftpViewModel : ObservableObject
         {
             if (tempPath != null)
                 TryDeleteFile(tempPath);
+
+            if (!editorShown && editorService != null)
+                DisposeFileTransferService(editorService);
         }
     }
 
-    private async Task SaveEditedRemoteFileAsync(SftpFileItem item, EditableTextSnapshot snapshot, string text)
+    private async Task SaveEditedRemoteFileAsync(
+        IFileTransferService editorService,
+        string editorConnectionKey,
+        string fileName,
+        string remotePath,
+        EditableTextSnapshot snapshot,
+        string text)
     {
         string? tempPath = null;
         try
         {
-            tempPath = CreateTempEditFilePath(item.Name);
+            tempPath = CreateTempEditFilePath(fileName);
             var bytes = EncodeEditableText(snapshot, text);
             await File.WriteAllBytesAsync(tempPath, bytes);
-            await _service.UploadFileAsync(tempPath, item.FullPath);
-            await LoadDirectoryAsync(CurrentPath);
+            await RunServiceAsync(service => service.UploadFileAsync(tempPath, remotePath), editorService);
+
+            if (string.Equals(editorConnectionKey, RemoteEditorConnectionKey, StringComparison.Ordinal) &&
+                _service.IsConnected &&
+                string.Equals(GetRemoteParentPath(remotePath), CurrentPath, StringComparison.Ordinal))
+            {
+                await LoadDirectoryAsync(CurrentPath);
+            }
         }
         finally
         {
@@ -580,6 +630,24 @@ public partial class SftpViewModel : ObservableObject
         return Path.Combine(root, $"{Guid.NewGuid():N}-{name}");
     }
 
+    private static string GetRemoteParentPath(string remotePath)
+    {
+        var trimmed = remotePath.Replace('\\', '/').TrimEnd('/');
+        if (string.IsNullOrWhiteSpace(trimmed) || trimmed == "/")
+            return "/";
+
+        var slashIndex = trimmed.LastIndexOf('/');
+        if (slashIndex <= 0)
+            return "/";
+
+        return trimmed[..slashIndex];
+    }
+
+    private static string BuildConnectionKey(SessionInfo session)
+    {
+        return $"{session.Id}|{session.Protocol}|{session.Username}@{session.Host}:{session.Port}";
+    }
+
     private static void TryDeleteFile(string path)
     {
         try
@@ -621,7 +689,7 @@ public partial class SftpViewModel : ObservableObject
 
         try
         {
-            await _service.UploadFileAsync(localPath, remotePath);
+            await RunServiceAsync(service => service.UploadFileAsync(localPath, remotePath));
             await LoadDirectoryAsync(CurrentPath);
         }
         catch (Exception ex)
@@ -685,7 +753,7 @@ public partial class SftpViewModel : ObservableObject
             if (string.IsNullOrWhiteSpace(fileName))
                 return;
 
-            await _service.UploadFileAsync(localPath, CombineRemotePath(remoteDirectory, fileName));
+            await RunServiceAsync(service => service.UploadFileAsync(localPath, CombineRemotePath(remoteDirectory, fileName)));
             return;
         }
 
@@ -703,7 +771,7 @@ public partial class SftpViewModel : ObservableObject
         {
             var fileName = Path.GetFileName(file);
             if (!string.IsNullOrWhiteSpace(fileName))
-                await _service.UploadFileAsync(file, CombineRemotePath(remotePath, fileName));
+                await RunServiceAsync(service => service.UploadFileAsync(file, CombineRemotePath(remotePath, fileName)));
         }
 
         foreach (var directory in Directory.EnumerateDirectories(localPath))
@@ -714,7 +782,7 @@ public partial class SftpViewModel : ObservableObject
     {
         try
         {
-            await _service.CreateDirectoryAsync(remotePath);
+            await RunServiceAsync(service => service.CreateDirectoryAsync(remotePath));
         }
         catch
         {
@@ -782,7 +850,7 @@ public partial class SftpViewModel : ObservableObject
         string relativeDirectory,
         List<VirtualDragFile> files)
     {
-        var children = await _service.ListDirectoryAsync(remoteDirectory);
+        var children = await RunServiceAsync(service => service.ListDirectoryAsync(remoteDirectory));
         foreach (var child in children)
         {
             var relativePath = relativeDirectory + "\\" + SanitizeLocalName(child.Name);
@@ -842,7 +910,7 @@ public partial class SftpViewModel : ObservableObject
             if (item.IsDirectory)
                 await DownloadRemoteDirectoryAsync(item.FullPath, localPath);
             else
-                await _service.DownloadFileAsync(item.FullPath, localPath);
+                await RunServiceAsync(service => service.DownloadFileAsync(item.FullPath, localPath));
 
             await SetDragExportLoadingAsync(useInvoke, false, null);
             return localPath;
@@ -881,14 +949,14 @@ public partial class SftpViewModel : ObservableObject
     {
         Directory.CreateDirectory(localPath);
 
-        var children = await _service.ListDirectoryAsync(remotePath);
+        var children = await RunServiceAsync(service => service.ListDirectoryAsync(remotePath));
         foreach (var child in children)
         {
             var childLocalPath = Path.Combine(localPath, SanitizeLocalName(child.Name));
             if (child.IsDirectory)
                 await DownloadRemoteDirectoryAsync(child.FullPath, childLocalPath);
             else
-                await _service.DownloadFileAsync(child.FullPath, childLocalPath);
+                await RunServiceAsync(service => service.DownloadFileAsync(child.FullPath, childLocalPath));
         }
     }
 
@@ -920,7 +988,7 @@ public partial class SftpViewModel : ObservableObject
 
         try
         {
-            await _service.DownloadFileAsync(SelectedFile.FullPath, localPath);
+            await RunServiceAsync(service => service.DownloadFileAsync(SelectedFile.FullPath, localPath));
             await Dispatcher.UIThread.InvokeAsync(() => IsLoading = false);
         }
         catch (Exception ex)
@@ -959,7 +1027,7 @@ public partial class SftpViewModel : ObservableObject
         {
             try
             {
-                await _service.DeleteAsync(item.FullPath, item.IsDirectory);
+                await RunServiceAsync(service => service.DeleteAsync(item.FullPath, item.IsDirectory));
             }
             catch (Exception ex)
             {
@@ -1005,7 +1073,7 @@ public partial class SftpViewModel : ObservableObject
         var newPath = CurrentPath.TrimEnd('/') + "/" + newName;
         try
         {
-            await _service.RenameAsync(item.FullPath, newPath);
+            await RunServiceAsync(service => service.RenameAsync(item.FullPath, newPath));
             await LoadDirectoryAsync(CurrentPath);
         }
         catch (Exception ex)
@@ -1046,7 +1114,7 @@ public partial class SftpViewModel : ObservableObject
         var newPath = CurrentPath.TrimEnd('/') + "/" + name;
         try
         {
-            await _service.CreateDirectoryAsync(newPath);
+            await RunServiceAsync(service => service.CreateDirectoryAsync(newPath));
             await LoadDirectoryAsync(CurrentPath);
         }
         catch (Exception ex)
@@ -1099,6 +1167,57 @@ public partial class SftpViewModel : ObservableObject
             SessionProtocol.FTP => new FtpService(),
             _ => new SftpService()
         };
+    }
+
+    private static SessionInfo CloneTransferSession(SessionInfo source)
+    {
+        var clone = new SessionInfo
+        {
+            Id = source.Id,
+            Name = source.Name,
+            GroupId = source.GroupId
+        };
+        SessionTreeViewModel.CopySessionValues(clone, source);
+        return clone;
+    }
+
+    private static void DisposeFileTransferService(IFileTransferService service)
+    {
+        try
+        {
+            service.Disconnect();
+            if (service is IDisposable disposable)
+                disposable.Dispose();
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task RunServiceAsync(Func<IFileTransferService, Task> action, IFileTransferService? service = null)
+    {
+        await _serviceGate.WaitAsync();
+        try
+        {
+            await action(service ?? _service);
+        }
+        finally
+        {
+            _serviceGate.Release();
+        }
+    }
+
+    private async Task<T> RunServiceAsync<T>(Func<IFileTransferService, Task<T>> action, IFileTransferService? service = null)
+    {
+        await _serviceGate.WaitAsync();
+        try
+        {
+            return await action(service ?? _service);
+        }
+        finally
+        {
+            _serviceGate.Release();
+        }
     }
 
     private void SetService(IFileTransferService service)

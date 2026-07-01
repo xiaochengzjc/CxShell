@@ -11,6 +11,12 @@ namespace CxShell.Services;
 public class SftpService : IFileTransferService, IDisposable
 {
     private SftpClient? _client;
+    private static readonly TimeSpan[] ConnectRetryDelays =
+    [
+        TimeSpan.Zero,
+        TimeSpan.FromSeconds(2),
+        TimeSpan.FromSeconds(5)
+    ];
 
     public bool IsConnected => _client?.IsConnected ?? false;
 
@@ -36,7 +42,7 @@ public class SftpService : IFileTransferService, IDisposable
 
         try
         {
-            await Task.Run(() => _client.Connect());
+            await ConnectWithRetryAsync(session, password);
         }
         catch (Exception ex)
         {
@@ -56,6 +62,43 @@ public class SftpService : IFileTransferService, IDisposable
         }
         catch { }
         _client = null;
+    }
+
+    private async Task ConnectWithRetryAsync(SessionInfo session, string? password)
+    {
+        Exception? lastError = null;
+        foreach (var delay in ConnectRetryDelays)
+        {
+            if (delay > TimeSpan.Zero)
+                await Task.Delay(delay);
+
+            _client?.Dispose();
+            _client = CreateClient(session, password);
+
+            try
+            {
+                await Task.Run(() => _client.Connect());
+                return;
+            }
+            catch (Exception ex) when (delay != ConnectRetryDelays[^1] && SshServerInfo.IsLikelyTransientOpenFailure(ex))
+            {
+                lastError = ex;
+            }
+        }
+
+        if (lastError != null)
+            throw lastError;
+    }
+
+    private static SftpClient CreateClient(SessionInfo session, string? password)
+    {
+        var authMethods = SshAgentAuthService.CreateAuthenticationMethods(session, password);
+        var connectionInfo = ProxyConnectionFactory.CreateSshConnectionInfo(session, authMethods);
+        SshAlgorithmPreferenceService.Apply(connectionInfo, session);
+        return new SftpClient(connectionInfo)
+        {
+            KeepAliveInterval = TimeSpan.FromSeconds(30)
+        };
     }
 
     public async Task<string> GetHomeDirectoryAsync()

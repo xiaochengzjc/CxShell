@@ -23,12 +23,14 @@ public class SshConnectionService : ITerminalConnectionService
     private CancellationTokenSource? _readCts;
     private Task? _readTask;
     private readonly object _writeLock = new();
+    private readonly SemaphoreSlim _commandGate = new(1, 1);
     private Encoding _terminalEncoding = Encoding.UTF8;
     private Decoder _terminalDecoder = Encoding.UTF8.GetDecoder();
     private SessionInfo? _session;
     private const string Utf8LocaleBootstrapCommand =
         "unset LC_ALL; [ \"${LANG:-C}\" = C ] && LANG=en_US.UTF-8; export LANG; export LC_CTYPE=$LANG; clear; history -d $((HISTCMD-1)) 2>/dev/null\r";
 
+    public bool SupportsPosixShellFeatures { get; private set; } = true;
     public bool IsConnected => _sshClient?.IsConnected ?? false;
 
     public event Action<string>? DataReceived;
@@ -45,6 +47,7 @@ public class SshConnectionService : ITerminalConnectionService
         Disconnect();
         _x11StatusMessage = null;
         _session = session;
+        SupportsPosixShellFeatures = true;
         _terminalEncoding = TerminalSessionOptions.GetEncoding(session);
         _terminalDecoder = _terminalEncoding.GetDecoder();
 
@@ -70,9 +73,11 @@ public class SshConnectionService : ITerminalConnectionService
         {
             TraceSshProtocol($"connecting to {session.Username}@{session.Host}:{session.Port}");
             await Task.Run(() => _sshClient.Connect(), cancellationToken);
+            SupportsPosixShellFeatures = !SshServerInfo.IsWindowsOpenSshServer(connectionInfo.ServerVersion);
             TraceSshProtocol($"connected; SSH version policy={session.SshVersionPolicy}, auth={session.AuthMethod}");
             StartForwardedPorts(session);
-            StartX11Forwarding(session);
+            if (SupportsPosixShellFeatures)
+                StartX11Forwarding(session);
 
             TraceSshProtocol(session.SshNoTerminal
                 ? "opening shell channel without PTY"
@@ -91,8 +96,9 @@ public class SshConnectionService : ITerminalConnectionService
                 _agentForwarding.Start(_shellStream);
             }
 
-            SendX11DisplayExport();
-            if (!session.SshNoTerminal && _terminalEncoding.CodePage == Encoding.UTF8.CodePage)
+            if (SupportsPosixShellFeatures)
+                SendX11DisplayExport();
+            if (SupportsPosixShellFeatures && !session.SshNoTerminal && _terminalEncoding.CodePage == Encoding.UTF8.CodePage)
                 SendUtf8LocaleBootstrap();
             SendRemoteCommand(session.SshRemoteCommand);
             _terminalDecoder.Reset();
@@ -102,8 +108,12 @@ public class SshConnectionService : ITerminalConnectionService
         }
         catch (Exception ex)
         {
-            ErrorOccurred?.Invoke(ex.Message);
+            var displayMessage = SshServerInfo.BuildConnectionErrorMessage(ex);
+            ErrorOccurred?.Invoke(displayMessage);
             Disconnect();
+            if (!string.Equals(displayMessage, ex.Message, StringComparison.Ordinal))
+                throw new InvalidOperationException(displayMessage, ex);
+
             throw;
         }
     }
@@ -433,6 +443,39 @@ public class SshConnectionService : ITerminalConnectionService
         // SSH.NET sends SSH keepalive automatically through KeepAliveInterval.
     }
 
+    public async Task<string> RunCommandAsync(string commandText, TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        if (_sshClient == null || !_sshClient.IsConnected)
+            throw new InvalidOperationException("SSH connection is not connected.");
+
+        await _commandGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await Task.Run(() =>
+            {
+                if (_sshClient == null || !_sshClient.IsConnected)
+                    throw new InvalidOperationException("SSH connection is not connected.");
+
+                using var command = _sshClient.CreateCommand(commandText);
+                command.CommandTimeout = timeout;
+                var result = command.Execute();
+                if (command.ExitStatus != 0)
+                {
+                    var error = string.IsNullOrWhiteSpace(command.Error)
+                        ? $"Remote command exited with code {command.ExitStatus}."
+                        : command.Error.Trim();
+                    throw new InvalidOperationException(error);
+                }
+
+                return result;
+            }, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _commandGate.Release();
+        }
+    }
+
     public void ResizeTerminal(int columns, int rows)
     {
         try
@@ -595,5 +638,6 @@ public class SshConnectionService : ITerminalConnectionService
     public void Dispose()
     {
         Disconnect();
+        _commandGate.Dispose();
     }
 }

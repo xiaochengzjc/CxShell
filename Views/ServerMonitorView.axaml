@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:services="using:CxShell.Services"
              xmlns:atom="https://atomui.net"
+             xmlns:antdicons="https://atomui.net/icons/antdesign"
              xmlns:vm="using:CxShell.ViewModels"
              xmlns:models="using:CxShell.Models"
              xmlns:controls="using:CxShell.Controls"
@@ -15,26 +16,50 @@
         <StackPanel Spacing="0">
 
             <!-- 头部：主机名 + 状态 -->
-            <Border Padding="12,10" Background="{atom:SharedTokenResource ColorBgContainer}">
-                <Grid ColumnDefinitions="*,Auto">
-                    <StackPanel Grid.Column="0" Spacing="2">
-                        <TextBlock Text="{Binding MonitorTitleText}"
-                                   FontSize="11" Foreground="{atom:SharedTokenResource ColorTextTertiary}"
-                                   FontWeight="Bold"/>
+            <Border Padding="12,10,4,10" Background="{atom:SharedTokenResource ColorBgContainer}">
+                <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Row="0"
+                               Grid.Column="0"
+                               Text="{Binding MonitorTitleText}"
+                               FontSize="11" Foreground="{atom:SharedTokenResource ColorTextTertiary}"
+                               FontWeight="Bold"/>
+                    <StackPanel Grid.Row="1"
+                                Grid.Column="0"
+                                Orientation="Horizontal"
+                                Spacing="6">
                         <TextBlock Text="{Binding HostLabel}"
                                    FontSize="12" Foreground="{atom:SharedTokenResource ColorText}"
-                                   TextTrimming="CharacterEllipsis"/>
-                    </StackPanel>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal"
-                                Spacing="4" VerticalAlignment="Center">
-                        <Ellipse Width="8" Height="8">
+                                   TextTrimming="CharacterEllipsis"
+                                   MaxWidth="168"
+                                   VerticalAlignment="Center"/>
+                        <Ellipse Width="8"
+                                 Height="8"
+                                 VerticalAlignment="Center">
                             <Ellipse.Fill>
                                 <SolidColorBrush Color="{Binding IsMonitoring, Converter={x:Static controls:MonitorColorConverter.Instance}}"/>
                             </Ellipse.Fill>
                         </Ellipse>
                         <TextBlock Text="{Binding MonitorStatusText}"
-                                   FontSize="11" Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+                                   FontSize="11" Foreground="{atom:SharedTokenResource ColorTextTertiary}"
+                                   VerticalAlignment="Center"/>
                     </StackPanel>
+                    <atom:Button Grid.Row="0"
+                                 Grid.Column="1"
+                                 Width="20"
+                                 Height="20"
+                                 Padding="0"
+                                 Margin="0,-8,-1,0"
+                                 ButtonType="Text"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 Content="×"
+                                 FontSize="18"
+                                 Command="{Binding $parent[UserControl].PanelCloseCommand, x:CompileBindings=False}"
+                                 IsVisible="{Binding $parent[UserControl].IsPanelCloseButtonVisible, x:CompileBindings=False}"
+                                 HorizontalAlignment="Right"
+                                 VerticalAlignment="Top"
+                                 HorizontalContentAlignment="Center"
+                                 VerticalContentAlignment="Center"/>
                 </Grid>
             </Border>
 

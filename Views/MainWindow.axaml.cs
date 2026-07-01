@@ -85,6 +85,8 @@ public partial class MainWindow : Window
         base.OnLoaded(e);
         StartRdpSmokeIfRequested();
         ShowSessionManagerOnStartupIfNeeded();
+        if (DataContext is MainWindowViewModel vm)
+            vm.StartAutomaticUpdateCheck(_startupArgs);
     }
 
     protected override void OnUnloaded(RoutedEventArgs e)
@@ -267,6 +269,17 @@ public partial class MainWindow : Window
     private void OnLanguageMenuItemClick(object? sender, RoutedEventArgs e)
     {
         LanguagePopup.Close();
+    }
+
+    private void OnHelpButtonClick(object? sender, RoutedEventArgs e)
+    {
+        HelpPopup.PlacementTarget = HelpButton;
+        HelpPopup.IsOpen = true;
+    }
+
+    private void OnHelpMenuItemClick(object? sender, RoutedEventArgs e)
+    {
+        HelpPopup.Close();
     }
 
     private void OnTabGroupPanePointerPressed(object? sender, PointerPressedEventArgs e)

@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:atom="https://atomui.net"
+             xmlns:antdicons="https://atomui.net/icons/antdesign"
              xmlns:vm="using:CxShell.ViewModels"
              xmlns:models="using:CxShell.Models"
              x:Class="CxShell.Views.SftpPanelView"
@@ -10,11 +11,13 @@
 
         <Border Grid.Row="0"
                 Background="{atom:SharedTokenResource ColorBgContainer}"
-                Padding="10,8">
-            <Grid ColumnDefinitions="*,Auto">
+                Padding="10,8,4,8">
+            <Grid ColumnDefinitions="*,Auto"
+                  VerticalAlignment="Center">
                 <StackPanel Grid.Column="0"
                             Orientation="Horizontal"
-                            Spacing="6">
+                            Spacing="6"
+                            VerticalAlignment="Center">
                     <TextBlock Text="📁"
                                FontSize="14"
                                VerticalAlignment="Center"
@@ -27,7 +30,8 @@
                 </StackPanel>
                 <StackPanel Grid.Column="1"
                             Orientation="Horizontal"
-                            Spacing="6">
+                            Spacing="6"
+                            VerticalAlignment="Center">
                     <TextBlock Text="{Binding HostLabel}"
                                FontSize="11"
                                Foreground="{atom:SharedTokenResource ColorTextTertiary}"
@@ -36,6 +40,19 @@
                              Height="8"
                              VerticalAlignment="Center"
                              Fill="{Binding IsConnected, Converter={x:Static vm:SftpStatusColorConverter.Instance}}"/>
+                    <atom:Button Width="20"
+                                 Height="20"
+                                 Padding="0"
+                                 Margin="0,0,-1,0"
+                                 ButtonType="Text"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 Icon="{antdicons:AntDesignIconProvider Kind=CloseOutlined}"
+                                 Command="{Binding $parent[UserControl].PanelCloseCommand, x:CompileBindings=False}"
+                                 IsVisible="{Binding $parent[UserControl].IsPanelCloseButtonVisible, x:CompileBindings=False}"
+                                 VerticalAlignment="Center"
+                                 HorizontalContentAlignment="Center"
+                                 VerticalContentAlignment="Center"/>
                 </StackPanel>
             </Grid>
         </Border>

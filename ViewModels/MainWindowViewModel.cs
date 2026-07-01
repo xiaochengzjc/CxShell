@@ -35,8 +35,11 @@ public partial class MainWindowViewModel : ObservableObject
 
     private readonly SessionTreeViewModel _sessionTreeVm;
     private readonly LocalizationService _localization = LocalizationService.Shared;
+    private readonly SftpViewModel _emptySftp = new();
+    private readonly AppUpdateService _appUpdateService = new();
 
     [ObservableProperty] private SessionTreeViewModel _sessionTree;
+    [ObservableProperty] private SftpViewModel _sftp = null!;
     [ObservableProperty] private bool _isMonitorVisible = false;
     [ObservableProperty] private bool _isSftpVisible = false;
     [ObservableProperty] private GridLength _sftpPanelWidth = new(0);
@@ -47,6 +50,8 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty] private bool _isDarkMode;
     [ObservableProperty] private bool _isTerminalFullScreen;
     [ObservableProperty] private bool _isFullScreenHintVisible;
+    [ObservableProperty] private bool _isCheckingForUpdates;
+    [ObservableProperty] private string? _updateProgressText;
     [ObservableProperty] private TabArrangementMode _tabArrangementMode = TabArrangementMode.Single;
 
     public ObservableCollection<TerminalTabViewModel> Tabs { get; } = new();
@@ -78,7 +83,6 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsSelectedFileTransferSession => SelectedTab?.IsFileTransferSession == true;
 
     public ServerMonitorViewModel Monitor { get; } = new();
-    public SftpViewModel Sftp { get; } = new();
     public ObservableCollection<SessionInfo> QuickSessions => _sessionTreeVm.QuickSessions;
     public string ThemeIcon => IsDarkMode ? "\u263E" : "\u2600";
     public string LanguageIcon => _localization.IsEnglish ? "EN" : "中";
@@ -98,6 +102,13 @@ public partial class MainWindowViewModel : ObservableObject
     public string ArrangeText => _localization.Text("Toolbar.Arrange");
     public string ArrangeToolTip => _localization.Text("Toolbar.ArrangeTip");
     public string LanguageToolTip => _localization.Text("Toolbar.LanguageTip");
+    public string HelpText => _localization.Text("Toolbar.Help");
+    public string HelpToolTip => _localization.Text("Toolbar.HelpTip");
+    public string UpdateText => IsCheckingForUpdates
+        ? UpdateProgressText ?? _localization.Text("Toolbar.UpdateChecking")
+        : _localization.Text("Toolbar.Update");
+    public string UpdateToolTip => _localization.Text("Toolbar.UpdateTip");
+    public string AboutCxShellText => _localization.Text("Help.AboutCxShell");
     public string AddQuickSessionToolTip => _localization.Text("Toolbar.AddQuickSessionTip");
     public string ArrangeVerticalText => _localization.Text("Arrange.Vertical");
     public string ArrangeHorizontalText => _localization.Text("Arrange.Horizontal");
@@ -119,6 +130,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         _sessionTreeVm = new SessionTreeViewModel(this);
         _sessionTree = _sessionTreeVm;
+        _sftp = _emptySftp;
         _localization.SetLanguage(_sessionTreeVm.Settings.UiLanguage);
 
         Tabs.CollectionChanged += (_, _) =>
@@ -170,6 +182,17 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(ThemeIcon));
     }
 
+    partial void OnIsCheckingForUpdatesChanged(bool value)
+    {
+        OnPropertyChanged(nameof(UpdateText));
+        CheckForUpdatesCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnUpdateProgressTextChanged(string? value)
+    {
+        OnPropertyChanged(nameof(UpdateText));
+    }
+
     [RelayCommand]
     private void SetLanguage(string? language)
     {
@@ -177,6 +200,200 @@ public partial class MainWindowViewModel : ObservableObject
         _sessionTreeVm.Settings.UiLanguage = _localization.Language;
         _sessionTreeVm.SaveSettings(_sessionTreeVm.Settings);
         NotifyLocalizationChanged();
+    }
+
+    public void StartAutomaticUpdateCheck(string[] startupArgs)
+    {
+        if (!_sessionTreeVm.Settings.AutoCheckForUpdates)
+            return;
+
+        _ = StartAutomaticUpdateCheckAsync(startupArgs);
+    }
+
+    private async Task StartAutomaticUpdateCheckAsync(string[] startupArgs)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(4));
+            await CheckForUpdatesCoreAsync(isManual: false, startupArgs);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Automatic update check failed: {ex.Message}");
+        }
+    }
+
+    private bool CanCheckForUpdates() => !IsCheckingForUpdates;
+
+    [RelayCommand(CanExecute = nameof(CanCheckForUpdates))]
+    private async Task CheckForUpdates()
+    {
+        await CheckForUpdatesCoreAsync(isManual: true, Array.Empty<string>());
+    }
+
+    [RelayCommand]
+    private async Task ShowAbout()
+    {
+        var owner = GetMainWindow();
+        if (owner == null)
+            return;
+
+        await AtomUiDialogService.ShowMessageAsync(
+            owner,
+            _localization.Text("About.Title"),
+            BuildAboutMessage(),
+            AtomUI.Desktop.Controls.MessageBoxStyle.Information);
+    }
+
+    private string BuildAboutMessage()
+    {
+        var version = typeof(MainWindowViewModel).Assembly.GetName().Version?.ToString(3) ?? "unknown";
+        return string.Format(_localization.Text("About.Message"), version);
+    }
+
+    private async Task CheckForUpdatesCoreAsync(bool isManual, string[] restartArgs)
+    {
+        if (IsCheckingForUpdates)
+            return;
+
+        var owner = GetMainWindow();
+        IsCheckingForUpdates = true;
+        UpdateProgressText = _localization.Text("Toolbar.UpdateChecking");
+
+        try
+        {
+            var result = await _appUpdateService.CheckForUpdatesAsync(_sessionTreeVm.Settings.IncludePrereleaseUpdates);
+            switch (result.Status)
+            {
+                case AppUpdateCheckStatus.NotInstalled:
+                    if (isManual && owner != null)
+                    {
+                        await AtomUiDialogService.ShowMessageAsync(
+                            owner,
+                            _localization.Text("Update.Title"),
+                            _localization.Text("Update.NotInstalled"),
+                            AtomUI.Desktop.Controls.MessageBoxStyle.Warning);
+                    }
+                    break;
+
+                case AppUpdateCheckStatus.NoUpdate:
+                    if (isManual && owner != null)
+                    {
+                        await AtomUiDialogService.ShowMessageAsync(
+                            owner,
+                            _localization.Text("Update.Title"),
+                            _localization.Text("Update.NoUpdate"),
+                            AtomUI.Desktop.Controls.MessageBoxStyle.Success);
+                    }
+                    break;
+
+                case AppUpdateCheckStatus.PendingRestart:
+                    if (result.Update != null)
+                        await PromptRestartForUpdateAsync(result.Update, restartArgs);
+                    break;
+
+                case AppUpdateCheckStatus.UpdateAvailable:
+                    if (result.Update != null)
+                        await PromptDownloadUpdateAsync(result.Update, restartArgs);
+                    break;
+
+                case AppUpdateCheckStatus.Failed:
+                    if (isManual && owner != null)
+                    {
+                        await AtomUiDialogService.ShowMessageAsync(
+                            owner,
+                            _localization.Text("Update.Title"),
+                            string.Format(_localization.Text("Update.Failed"), result.ErrorMessage ?? "unknown"),
+                            AtomUI.Desktop.Controls.MessageBoxStyle.Error);
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Automatic update check failed: {result.ErrorMessage}");
+                    }
+                    break;
+            }
+        }
+        finally
+        {
+            IsCheckingForUpdates = false;
+            UpdateProgressText = null;
+        }
+    }
+
+    private async Task PromptDownloadUpdateAsync(AppUpdateHandle update, string[] restartArgs)
+    {
+        var owner = GetMainWindow();
+        if (owner == null)
+            return;
+
+        var message = BuildUpdateAvailableMessage(update);
+        var shouldDownload = await AtomUiDialogService.ShowConfirmAsync(
+            owner,
+            _localization.Text("Update.Title"),
+            message);
+        if (!shouldDownload)
+            return;
+
+        UpdateProgressText = _localization.Text("Update.Downloading");
+        await _appUpdateService.DownloadUpdatesAsync(update, progress =>
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                UpdateProgressText = string.Format(_localization.Text("Toolbar.UpdateDownloading"), progress);
+            });
+        });
+
+        await PromptRestartForUpdateAsync(update, restartArgs);
+    }
+
+    private async Task PromptRestartForUpdateAsync(AppUpdateHandle update, string[] restartArgs)
+    {
+        var owner = GetMainWindow();
+        if (owner == null)
+            return;
+
+        var restart = await AtomUiDialogService.ShowConfirmAsync(
+            owner,
+            _localization.Text("Update.Title"),
+            string.Format(_localization.Text("Update.DownloadedMessage"), update.TargetVersion));
+        if (!restart)
+            return;
+
+        PrepareForUpdateRestart();
+        _appUpdateService.ApplyUpdatesAndRestart(update, restartArgs);
+    }
+
+    private string BuildUpdateAvailableMessage(AppUpdateHandle update)
+    {
+        var message = string.Format(
+            _localization.Text("Update.AvailableMessage"),
+            update.TargetVersion,
+            update.CurrentVersion);
+
+        var notes = BuildReleaseNotesPreview(update.ReleaseNotes);
+        if (!string.IsNullOrWhiteSpace(notes))
+            message += Environment.NewLine + Environment.NewLine + _localization.Text("Update.ReleaseNotes") + Environment.NewLine + notes;
+
+        return message;
+    }
+
+    private static string BuildReleaseNotesPreview(string? releaseNotes)
+    {
+        if (string.IsNullOrWhiteSpace(releaseNotes))
+            return string.Empty;
+
+        var normalized = releaseNotes.Replace("\r\n", "\n").Replace('\r', '\n').Trim();
+        return normalized.Length <= 700
+            ? normalized
+            : normalized[..700] + "...";
+    }
+
+    private void PrepareForUpdateRestart()
+    {
+        foreach (var tab in Tabs.ToList())
+            CloseTab(tab);
+
+        Monitor.StopMonitoring();
     }
 
     private void NotifyLocalizationChanged()
@@ -198,6 +415,11 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(ArrangeText));
         OnPropertyChanged(nameof(ArrangeToolTip));
         OnPropertyChanged(nameof(LanguageToolTip));
+        OnPropertyChanged(nameof(HelpText));
+        OnPropertyChanged(nameof(HelpToolTip));
+        OnPropertyChanged(nameof(UpdateText));
+        OnPropertyChanged(nameof(UpdateToolTip));
+        OnPropertyChanged(nameof(AboutCxShellText));
         OnPropertyChanged(nameof(AddQuickSessionToolTip));
         OnPropertyChanged(nameof(ArrangeVerticalText));
         OnPropertyChanged(nameof(ArrangeHorizontalText));
@@ -298,7 +520,6 @@ public partial class MainWindowViewModel : ObservableObject
         else
         {
             CollapseSftpPanelWidth();
-            Sftp.StopBrowsing();
         }
     }
 
@@ -379,15 +600,23 @@ public partial class MainWindowViewModel : ObservableObject
     private void UpdateMonitor(TerminalTabViewModel? tab)
     {
         if (!IsMonitorVisible) return;
-        if (tab == null || tab.Vnc != null || tab.Rdp != null || !tab.Terminal.IsConnected || tab.Session.Protocol != SessionProtocol.SSH)
+        if (tab == null ||
+            tab.Vnc != null ||
+            tab.Rdp != null ||
+            !tab.Terminal.IsConnected ||
+            tab.Session.Protocol != SessionProtocol.SSH)
         {
             Monitor.StopMonitoring();
             return;
         }
-        Monitor.SwitchConnection(tab.Session, tab.ConnectedPassword);
+        Monitor.SwitchConnection(
+            tab.Session,
+            tab.ConnectedPassword,
+            tab.Terminal.RunRemoteCommandAsync,
+            !tab.Terminal.SupportsPosixShellFeatures);
     }
 
-    private void UpdateCompanionPanelsAfterTerminalConnect(TerminalTabViewModel tab)
+    private async Task UpdateCompanionPanelsAfterTerminalConnectAsync(TerminalTabViewModel tab)
     {
         if (tab.Session.Protocol != SessionProtocol.SSH)
         {
@@ -395,6 +624,8 @@ public partial class MainWindowViewModel : ObservableObject
             UpdateSftp(tab);
             return;
         }
+
+        var isWindowsOpenSsh = !tab.Terminal.SupportsPosixShellFeatures;
 
         if (tab.Session.SshAutoOpenMonitorPanel)
         {
@@ -408,6 +639,14 @@ public partial class MainWindowViewModel : ObservableObject
             UpdateMonitor(tab);
         }
 
+        if (tab.Session.SshAutoOpenSftpPanel &&
+            isWindowsOpenSsh)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(2500));
+            if (SelectedTab != tab || !tab.Terminal.IsConnected)
+                return;
+        }
+
         if (tab.Session.SshAutoOpenSftpPanel)
         {
             if (!IsSftpVisible)
@@ -419,6 +658,7 @@ public partial class MainWindowViewModel : ObservableObject
         {
             UpdateSftp(tab);
         }
+
     }
 
     private void UpdateSftp(TerminalTabViewModel? tab)
@@ -426,14 +666,22 @@ public partial class MainWindowViewModel : ObservableObject
         if (!IsSftpVisible) return;
         if (tab == null ||
             tab.Vnc != null ||
+            tab.Rdp != null ||
             tab.FileTransfer != null ||
             !tab.Terminal.IsConnected ||
             tab.Session.Protocol != SessionProtocol.SSH)
         {
-            Sftp.StopBrowsing();
+            if (!ReferenceEquals(Sftp, _emptySftp))
+                Sftp = _emptySftp;
             return;
         }
-        Sftp.SwitchConnection(tab.Session, tab.ConnectedPassword);
+
+        var target = tab.CompanionSftp;
+        if (!ReferenceEquals(Sftp, target))
+            Sftp = target;
+
+        if (!target.IsBrowsingSession(tab.Session) && !target.IsLoading)
+            target.SwitchConnection(tab.Session, tab.ConnectedPassword);
     }
 
     private double _lastSftpPanelWidth = DefaultSftpPanelWidth;
@@ -910,7 +1158,7 @@ public partial class MainWindowViewModel : ObservableObject
             await tab.Terminal.ConnectAsync(session, password);
 
             tab.ConnectedPassword = password;
-            UpdateCompanionPanelsAfterTerminalConnect(tab);
+            await UpdateCompanionPanelsAfterTerminalConnectAsync(tab);
         }
         catch (Exception ex)
         {
@@ -1065,7 +1313,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (tab != SelectedTab ||
             !IsSftpVisible ||
-            !Sftp.IsConnected ||
+            !tab.CompanionSftp.IsConnected ||
             tab.Session.Protocol != SessionProtocol.SSH ||
             !tab.Session.SftpFollowTerminalDirectory ||
             tab.Vnc != null ||
@@ -1075,7 +1323,7 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        await Sftp.TryNavigateToRemotePathAsync(path);
+        await tab.CompanionSftp.TryNavigateToRemotePathAsync(path);
     }
 
     public void CloseTab(TerminalTabViewModel tab)
@@ -1103,7 +1351,7 @@ public partial class MainWindowViewModel : ObservableObject
             TabGroups.Clear();
             SetSelectedTabGroup(null);
             Monitor.StopMonitoring();
-            Sftp.StopBrowsing();
+            Sftp = _emptySftp;
             UpdateStatusBar();
             UpdateTerminalSize();
             return;
@@ -1141,6 +1389,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
         tab.Rdp?.Dispose();
         tab.FileTransfer?.StopBrowsing();
+        tab.CompanionSftp.StopBrowsing();
     }
 
     [RelayCommand]
@@ -1169,7 +1418,10 @@ public partial class MainWindowViewModel : ObservableObject
         else if (SelectedTab?.FileTransfer != null)
             SelectedTab.FileTransfer.StopBrowsing();
         else
+        {
             SelectedTab?.Terminal.Disconnect();
+            SelectedTab?.CompanionSftp.StopBrowsing();
+        }
     }
 
     private bool CanCurrentConnect()
@@ -1266,7 +1518,7 @@ public partial class MainWindowViewModel : ObservableObject
             ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FAAD14"));
             await tab.Terminal.ConnectAsync(tab.Session, password);
             tab.ConnectedPassword = password;
-            UpdateCompanionPanelsAfterTerminalConnect(tab);
+            await UpdateCompanionPanelsAfterTerminalConnectAsync(tab);
         }
         catch (Exception ex)
         {
@@ -1293,10 +1545,12 @@ public partial class MainWindowViewModel : ObservableObject
         else if (SelectedTab?.FileTransfer != null)
             SelectedTab.FileTransfer.StopBrowsing();
         else
+        {
             SelectedTab?.Terminal.Disconnect("[Current session disconnected]");
+            SelectedTab?.CompanionSftp.StopBrowsing();
+        }
 
         Monitor.StopMonitoring();
-        Sftp.StopBrowsing();
         UpdateStatusBar();
         UpdateTerminalSize();
     }
@@ -1305,6 +1559,12 @@ public partial class MainWindowViewModel : ObservableObject
     {
         var password = PasswordEncryptionService.Decrypt(session.Password);
         return string.IsNullOrEmpty(password) ? null : password;
+    }
+
+    private static Window? GetMainWindow()
+    {
+        var lifetime = Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
+        return lifetime?.MainWindow;
     }
 
     private async Task<string?> ShowPasswordDialog(SessionInfo session)
@@ -1401,10 +1661,10 @@ public partial class MainWindowViewModel : ObservableObject
         dialog.Content = panel;
         dialog.Opened += (_, _) => passwordBox.Focus();
 
-        var lifetime = Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
-        if (lifetime?.MainWindow != null)
+        var mainWindow = GetMainWindow();
+        if (mainWindow != null)
         {
-            await dialog.ShowDialog(lifetime.MainWindow);
+            await dialog.ShowDialog(mainWindow);
         }
 
         return result;

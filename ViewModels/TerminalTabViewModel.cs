@@ -17,6 +17,7 @@ public partial class TerminalTabViewModel : ObservableObject
     public VncViewModel? Vnc { get; }
     public RdpViewModel? Rdp { get; }
     public SftpViewModel? FileTransfer { get; }
+    public SftpViewModel CompanionSftp { get; }
     public bool IsVncSession => Vnc != null;
     public bool IsRdpSession => Rdp != null;
     public bool IsFileTransferSession => FileTransfer != null;
@@ -62,6 +63,7 @@ public partial class TerminalTabViewModel : ObservableObject
         Vnc = vnc;
         Rdp = rdp;
         FileTransfer = fileTransfer;
+        CompanionSftp = new SftpViewModel();
         _title = session.Name;
         Terminal = new TerminalViewModel();
 

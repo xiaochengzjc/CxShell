@@ -188,6 +188,8 @@ public class ApplicationSettings
 {
     public string UiLanguage { get; set; } = "zh-CN";
     public bool ShowSessionManagerOnStartup { get; set; } = true;
+    public bool AutoCheckForUpdates { get; set; } = true;
+    public bool IncludePrereleaseUpdates { get; set; }
 }
 
 public class SessionInfo

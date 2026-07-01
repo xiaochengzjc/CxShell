@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -29,6 +30,12 @@ namespace CxShell.Views;
 
 public partial class SftpPanelView : UserControl
 {
+    public static readonly StyledProperty<bool> IsPanelCloseButtonVisibleProperty =
+        AvaloniaProperty.Register<SftpPanelView, bool>(nameof(IsPanelCloseButtonVisible));
+
+    public static readonly StyledProperty<ICommand?> PanelCloseCommandProperty =
+        AvaloniaProperty.Register<SftpPanelView, ICommand?>(nameof(PanelCloseCommand));
+
     private SftpViewModel? _attachedViewModel;
     private Models.SftpFileItem? _dragSourceItem;
     private Models.SftpFileItem? _selectionAnchorItem;
@@ -38,12 +45,25 @@ public partial class SftpPanelView : UserControl
     private bool _isHandlingDropUpload;
     private bool _doubleTapHandlerAttached;
     private bool _isFileGridColumnUpdateQueued;
+    private readonly Dictionary<string, RemoteFileEditorWindow> _remoteFileEditorWindows = new(StringComparer.Ordinal);
     private const double DragStartDistance = 6;
     private const double FileNameColumnMinWidth = 100;
     private const double FileSizeColumnMinWidth = 82;
     private const double FileModifiedColumnMinWidth = 118;
     private const double FileNameColumnWeight = 0.38;
     private const double FileSizeColumnWeight = 0.20;
+
+    public bool IsPanelCloseButtonVisible
+    {
+        get => GetValue(IsPanelCloseButtonVisibleProperty);
+        set => SetValue(IsPanelCloseButtonVisibleProperty, value);
+    }
+
+    public ICommand? PanelCloseCommand
+    {
+        get => GetValue(PanelCloseCommandProperty);
+        set => SetValue(PanelCloseCommandProperty, value);
+    }
 
     public SftpPanelView()
     {
@@ -119,7 +139,11 @@ public partial class SftpPanelView : UserControl
         }
 
         if (_attachedViewModel != null)
+        {
             _attachedViewModel.PropertyChanged -= OnVmPropertyChanged;
+            _attachedViewModel.TryActivateRemoteFileEditorAsync = null;
+            _attachedViewModel.ShowRemoteFileEditorAsync = null;
+        }
 
         _attachedViewModel = viewModel;
 
@@ -771,18 +795,58 @@ public partial class SftpPanelView : UserControl
             return window == null ? null : await ShowInputWindow(window, title, defaultValue);
         };
 
+        vm.TryActivateRemoteFileEditorAsync = remotePath =>
+        {
+            var key = GetRemoteFileEditorKey(vm, remotePath);
+            if (!_remoteFileEditorWindows.TryGetValue(key, out var existingWindow))
+                return Task.FromResult(false);
+
+            ActivateRemoteFileEditor(existingWindow);
+            return Task.FromResult(true);
+        };
+
         vm.ShowRemoteFileEditorAsync = async editorVm =>
         {
+            var key = GetRemoteFileEditorKey(vm, editorVm.RemotePath);
+            if (_remoteFileEditorWindows.TryGetValue(key, out var existingWindow))
+            {
+                ActivateRemoteFileEditor(existingWindow);
+                return;
+            }
+
             var dialog = new RemoteFileEditorWindow
             {
                 DataContext = editorVm
             };
 
+            _remoteFileEditorWindows[key] = dialog;
+            dialog.Closed += (_, _) =>
+            {
+                if (_remoteFileEditorWindows.TryGetValue(key, out var current) && ReferenceEquals(current, dialog))
+                    _remoteFileEditorWindows.Remove(key);
+            };
+
             if (topLevel is Window owner)
-                await dialog.ShowDialog(owner);
+                dialog.Show(owner);
             else
                 dialog.Show();
+
+            ActivateRemoteFileEditor(dialog);
+            await Task.CompletedTask;
         };
+    }
+
+    private static string GetRemoteFileEditorKey(SftpViewModel vm, string remotePath)
+    {
+        return $"{vm.RemoteEditorConnectionKey}|{remotePath}";
+    }
+
+    private static void ActivateRemoteFileEditor(Window window)
+    {
+        if (window.WindowState == WindowState.Minimized)
+            window.WindowState = WindowState.Normal;
+
+        window.Activate();
     }
 
     private static async Task<IStorageFolder?> GetSuggestedLocalFolderAsync(TopLevel topLevel, SftpViewModel vm)

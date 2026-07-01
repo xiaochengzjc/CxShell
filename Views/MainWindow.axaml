@@ -26,20 +26,32 @@
 
     <atom:Window.Styles>
         <Style Selector="atom|Button.quick-session-bar-button">
-            <Setter Property="Background" Value="{atom:SharedTokenResource ColorBgLayout}"/>
+            <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{atom:SharedTokenResource ColorText}"/>
+        </Style>
+        <Style Selector="atom|Button.quick-session-bar-button /template/ atom|IconPresenter#PART_ButtonIcon">
+            <Setter Property="IconBrush" Value="{atom:SharedTokenResource ColorTextSecondary}"/>
         </Style>
         <Style Selector="atom|Button.quick-session-bar-button:pointerover">
-            <Setter Property="Background" Value="{atom:SharedTokenResource ColorFillSecondary}"/>
+            <Setter Property="Background" Value="{atom:SharedTokenResource ColorPrimaryBg}"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{atom:SharedTokenResource ColorPrimaryHover}"/>
+        </Style>
+        <Style Selector="atom|Button.quick-session-bar-button:pointerover /template/ atom|IconPresenter#PART_ButtonIcon">
+            <Setter Property="IconBrush" Value="{atom:SharedTokenResource ColorPrimaryHover}"/>
         </Style>
         <Style Selector="atom|Button.quick-session-bar-button:pressed">
-            <Setter Property="Background" Value="{atom:SharedTokenResource ColorFill}"/>
+            <Setter Property="Background" Value="{atom:SharedTokenResource ColorPrimaryBgHover}"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{atom:SharedTokenResource ColorPrimaryActive}"/>
+        </Style>
+        <Style Selector="atom|Button.quick-session-bar-button:pressed /template/ atom|IconPresenter#PART_ButtonIcon">
+            <Setter Property="IconBrush" Value="{atom:SharedTokenResource ColorPrimaryActive}"/>
         </Style>
         <Style Selector="atom|Button.quick-session-bar-button:disabled">
-            <Setter Property="Background" Value="{atom:SharedTokenResource ColorBgLayout}"/>
+            <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
         </Style>
     </atom:Window.Styles>
@@ -225,6 +237,13 @@
                         <atom:TextBlock Text="▾" FontSize="10" VerticalAlignment="Center" Opacity="0.75"/>
                     </StackPanel>
                 </atom:Button>
+                <atom:Button x:Name="HelpButton"
+                             ButtonType="Default"
+                             Icon="{antdicons:AntDesignIconProvider Kind=QuestionCircleOutlined}"
+                             Content="{Binding HelpText}"
+                             Click="OnHelpButtonClick"
+                             atom:ToolTip.Tip="{Binding HelpToolTip}"
+                             atom:ToolTip.Placement="Bottom"/>
                 <atom:Popup x:Name="LanguagePopup"
                             Placement="Bottom"
                             IsLightDismissEnabled="True">
@@ -249,6 +268,37 @@
                                          Command="{Binding SetLanguageCommand}"
                                          CommandParameter="en-US"
                                          Click="OnLanguageMenuItemClick"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         HorizontalAlignment="Stretch"
+                                         HorizontalContentAlignment="Left"
+                                         Padding="16,7"
+                                         FontSize="13"/>
+                        </StackPanel>
+                    </Border>
+                </atom:Popup>
+                <atom:Popup x:Name="HelpPopup"
+                            Placement="Bottom"
+                            IsLightDismissEnabled="True">
+                    <Border Background="{atom:SharedTokenResource ColorBgElevated}"
+                            BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="0,4"
+                            MinWidth="150">
+                        <StackPanel Spacing="0">
+                            <atom:Button Content="{Binding AboutCxShellText}"
+                                         Command="{Binding ShowAboutCommand}"
+                                         Click="OnHelpMenuItemClick"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         HorizontalAlignment="Stretch"
+                                         HorizontalContentAlignment="Left"
+                                         Padding="16,7"
+                                         FontSize="13"/>
+                            <atom:Button Content="{Binding UpdateText}"
+                                         Command="{Binding CheckForUpdatesCommand}"
+                                         Click="OnHelpMenuItemClick"
                                          Background="Transparent"
                                          BorderThickness="0"
                                          HorizontalAlignment="Stretch"
@@ -357,14 +407,14 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="models:SessionInfo">
-                                <atom:Button ButtonType="Default"
+                                <atom:Button ButtonType="Text"
                                              Classes="quick-session-bar-button"
                                              SizeType="Middle"
                                              Height="30"
                                              MinHeight="30"
                                              Icon="{antdicons:AntDesignIconProvider CloudServerOutlined}"
                                              Content="{Binding Name}"
-                                             Padding="10,0"
+                                             Padding="8,0"
                                              Margin="0,2,4,2"
                                              Cursor="Hand"
                                              VerticalAlignment="Center"
@@ -411,7 +461,9 @@
                         HorizontalAlignment="Left"
                         VerticalAlignment="Stretch"
                         ClipToBounds="True">
-                    <views:SftpPanelView DataContext="{Binding Sftp, x:CompileBindings=False}"/>
+                    <views:SftpPanelView DataContext="{Binding Sftp, x:CompileBindings=False}"
+                                         IsPanelCloseButtonVisible="True"
+                                         PanelCloseCommand="{Binding $parent[Window].DataContext.ToggleSftpCommand, x:CompileBindings=False}"/>
                 </Border>
                 <Border Grid.Column="1"
                         x:Name="SftpSplitterHandle"
@@ -559,7 +611,9 @@
                     <GridSplitter Width="3" HorizontalAlignment="Left"
                                   Background="{atom:SharedTokenResource ColorSplit}"/>
                     <views:ServerMonitorView DataContext="{Binding Monitor, x:CompileBindings=False}"
-                                             Width="280"/>
+                                             Width="280"
+                                             IsPanelCloseButtonVisible="True"
+                                             PanelCloseCommand="{Binding $parent[Window].DataContext.ToggleMonitorCommand, x:CompileBindings=False}"/>
                 </StackPanel>
             </Grid>
 
