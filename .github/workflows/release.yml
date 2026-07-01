@@ -590,13 +590,14 @@ jobs:
           version="${RELEASE_TAG#v}"
           package_name="CxShell-$RELEASE_TAG-${{ matrix.package_suffix }}"
           app_path="$GITHUB_WORKSPACE/artifacts/package/$package_name/CxShell.app"
+          velopack_pack_dir="$app_path/Contents/MacOS"
           output_dir="$GITHUB_WORKSPACE/artifacts/velopack/$rid"
 
           dotnet tool install vpk --tool-path ".tmp/vpk" --version 1.2.0
           ".tmp/vpk/vpk" pack \
             --packId "CxShell-$rid" \
             --packVersion "$version" \
-            --packDir "$app_path" \
+            --packDir "$velopack_pack_dir" \
             --packAuthors "xiaochengzjc" \
             --packTitle "CxShell" \
             --mainExe "CxShell" \
