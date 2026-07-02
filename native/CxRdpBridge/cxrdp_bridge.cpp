@@ -56,6 +56,7 @@ struct CxRdpSession
     std::mutex callback_mutex;
     std::string host;
     std::string username;
+    std::string domain;
     std::string password;
     int port = 3389;
     int width = 1024;
@@ -97,6 +98,12 @@ struct SecurityProfile
     bool rdp;
     bool negotiate;
     bool useRdpSecurityLayer;
+};
+
+struct ParsedCredentials
+{
+    std::string username;
+    std::string domain;
 };
 
 std::once_flag addin_provider_once;
@@ -150,6 +157,30 @@ CxRdpSession* get_session(rdpContext* context)
         return nullptr;
 
     return reinterpret_cast<CxRdpContext*>(context)->session;
+}
+
+std::string trim_copy(const std::string& value)
+{
+    const auto first = value.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos)
+        return "";
+
+    const auto last = value.find_last_not_of(" \t\r\n");
+    return value.substr(first, last - first + 1);
+}
+
+ParsedCredentials parse_rdp_credentials(const char* rawUsername)
+{
+    ParsedCredentials result;
+    result.username = trim_copy(rawUsername ? rawUsername : "");
+
+    const auto separator = result.username.find('\\');
+    if (separator == std::string::npos || separator == 0 || separator + 1 >= result.username.size())
+        return result;
+
+    result.domain = result.username.substr(0, separator);
+    result.username = result.username.substr(separator + 1);
+    return result;
 }
 
 rdpSettings* get_settings(CxRdpSession* session)
@@ -1016,8 +1047,9 @@ BOOL cx_authenticate(
 
     std::ostringstream message;
     message << "RDP authenticate callback reason=" << auth_reason_name(reason)
-            << " usernameLen=" << session->username.size()
-            << " passwordLen=" << session->password.size();
+             << " usernameLen=" << session->username.size()
+             << " domainLen=" << session->domain.size()
+             << " passwordLen=" << session->password.size();
     notify_status(session, message.str().c_str());
 
     if (username)
@@ -1035,7 +1067,7 @@ BOOL cx_authenticate(
     if (domain)
     {
         std::free(*domain);
-        *domain = duplicate_string("");
+        *domain = duplicate_string(session->domain);
     }
 
     return TRUE;
@@ -1579,7 +1611,9 @@ void connection_thread(CxRdpSession* session)
 
     std::ostringstream target;
     target << "RDP target host=" << session->host << " port=" << session->port
-           << " user=" << session->username << " size=" << session->width << "x" << session->height;
+           << " domain=" << session->domain
+           << " user=" << session->username
+           << " size=" << session->width << "x" << session->height;
     notify_status(session, target.str().c_str());
 
     const SecurityProfile profiles[] = {
@@ -1643,7 +1677,7 @@ void connection_thread(CxRdpSession* session)
             freerdp_settings_set_uint32(settings, FreeRDP_ServerPort, static_cast<uint32_t>(session->port > 0 ? session->port : 3389));
             freerdp_settings_set_string(settings, FreeRDP_Username, session->username.c_str());
             freerdp_settings_set_string(settings, FreeRDP_Password, session->password.c_str());
-            freerdp_settings_set_string(settings, FreeRDP_Domain, "");
+            freerdp_settings_set_string(settings, FreeRDP_Domain, session->domain.c_str());
             freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth, static_cast<uint32_t>(session->width > 0 ? session->width : 1024));
             freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, static_cast<uint32_t>(session->height > 0 ? session->height : 768));
             freerdp_settings_set_uint32(settings, FreeRDP_ColorDepth, 32);
@@ -1846,7 +1880,9 @@ CX_RDP_API int cxrdp_connect(
 
     session->host = host ? host : "";
     session->port = port > 0 ? port : 3389;
-    session->username = username ? username : "";
+    const auto credentials = parse_rdp_credentials(username);
+    session->username = credentials.username;
+    session->domain = credentials.domain;
     session->password = password ? password : "";
     session->width = width > 0 ? width : 1024;
     session->height = height > 0 ? height : 768;

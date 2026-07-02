@@ -160,7 +160,6 @@ public partial class MainWindow : Window
         if (properties.IsLeftButtonPressed || properties.PointerUpdateKind == PointerUpdateKind.LeftButtonPressed)
         {
             vm.SelectTabCommand.Execute(tab);
-            e.Handled = true;
             return;
         }
 

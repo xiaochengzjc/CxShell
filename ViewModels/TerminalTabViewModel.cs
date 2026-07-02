@@ -176,11 +176,12 @@ public partial class TerminalTabViewModel : ObservableObject
     private Color ResolveMutedTabColor()
     {
         var color = ResolveTabColor();
+        var target = ResolveDefaultTabBackground();
         return Color.FromArgb(
             color.A,
-            Blend(color.R, 255, 0.86),
-            Blend(color.G, 255, 0.86),
-            Blend(color.B, 255, 0.86));
+            Blend(color.R, target.R, 0.82),
+            Blend(color.G, target.G, 0.82),
+            Blend(color.B, target.B, 0.82));
     }
 
     private static byte Blend(byte source, byte target, double amount)
@@ -188,9 +189,11 @@ public partial class TerminalTabViewModel : ObservableObject
 
     private Color ResolveDefaultTabBackground()
     {
-        return IsSelected
-            ? ThemeTokenColorHelper.GetColor(AtomUI.Theme.Styling.SharedTokenKind.ColorBgContainer, Color.Parse("#1E1E1E"))
-            : ThemeTokenColorHelper.GetColor(AtomUI.Theme.Styling.SharedTokenKind.ColorFillQuaternary, Color.Parse("#151515"));
+        return ThemeTokenColorHelper.GetColor(
+            IsSelected
+                ? AtomUI.Theme.Styling.SharedTokenKind.ColorBgContainer
+                : AtomUI.Theme.Styling.SharedTokenKind.ColorBgLayout,
+            IsSelected ? Color.Parse("#FFFFFF") : Color.Parse("#F5F5F5"));
     }
 
     [RelayCommand]

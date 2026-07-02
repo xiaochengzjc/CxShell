@@ -90,8 +90,8 @@ public class TabSelectedFgConverter : IValueConverter
 
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
         => new SolidColorBrush(value is true
-            ? ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorText, Color.Parse("#FFFFFF"))
-            : ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorTextTertiary, Color.Parse("#888888")));
+            ? ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorPrimary, Color.Parse("#1677FF"))
+            : ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorText, Color.Parse("#262626")));
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
         => throw new NotSupportedException();
