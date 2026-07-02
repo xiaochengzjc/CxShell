@@ -37,6 +37,8 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly LocalizationService _localization = LocalizationService.Shared;
     private readonly SftpViewModel _emptySftp = new();
     private readonly AppUpdateService _appUpdateService = new();
+    private UpdateProgressWindow? _updateProgressWindow;
+    private UpdateProgressViewModel? _updateProgressViewModel;
 
     [ObservableProperty] private SessionTreeViewModel _sessionTree;
     [ObservableProperty] private SftpViewModel _sftp = null!;
@@ -348,16 +350,99 @@ public partial class MainWindowViewModel : ObservableObject
         if (!shouldDownload)
             return;
 
+        using var downloadCts = new CancellationTokenSource();
+        var progressWindow = ShowUpdateProgressWindow(owner, update, downloadCts);
         UpdateProgressText = _localization.Text("Update.Downloading");
-        await _appUpdateService.DownloadUpdatesAsync(update, progress =>
+
+        try
         {
-            Dispatcher.UIThread.Post(() =>
+            await _appUpdateService.DownloadUpdatesAsync(update, progress =>
             {
-                UpdateProgressText = string.Format(_localization.Text("Toolbar.UpdateDownloading"), progress);
-            });
-        });
+                Dispatcher.UIThread.Post(() =>
+                {
+                    UpdateProgressText = string.Format(_localization.Text("Toolbar.UpdateDownloading"), progress);
+                    if (_updateProgressViewModel != null)
+                    {
+                        _updateProgressViewModel.IsIndeterminate = false;
+                        _updateProgressViewModel.Progress = Math.Clamp(progress, 0, 100);
+                        _updateProgressViewModel.StatusText = UpdateProgressText;
+                    }
+                });
+            }, downloadCts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            await AtomUiDialogService.ShowMessageAsync(
+                owner,
+                _localization.Text("Update.Title"),
+                string.Format(_localization.Text("Update.Failed"), BuildUpdateErrorMessage(ex.Message)),
+                AtomUI.Desktop.Controls.MessageBoxStyle.Error);
+            return;
+        }
+        finally
+        {
+            CloseUpdateProgressWindow(progressWindow);
+        }
 
         await PromptRestartForUpdateAsync(update, restartArgs);
+    }
+
+    private UpdateProgressWindow ShowUpdateProgressWindow(
+        TopLevel owner,
+        AppUpdateHandle update,
+        CancellationTokenSource downloadCts)
+    {
+        CloseUpdateProgressWindow(_updateProgressWindow);
+
+        _updateProgressViewModel = new UpdateProgressViewModel
+        {
+            Title = _localization.Text("Update.Title"),
+            StatusText = _localization.Text("Update.Downloading"),
+            VersionText = string.Format(_localization.Text("Update.ProgressVersion"), update.CurrentVersion, update.TargetVersion),
+            BackgroundText = _localization.Text("Update.Background"),
+            CancelText = _localization.Text("Update.Cancel")
+        };
+
+        var window = new UpdateProgressWindow
+        {
+            DataContext = _updateProgressViewModel
+        };
+        window.CancelRequested += (_, _) => downloadCts.Cancel();
+        _updateProgressWindow = window;
+
+        if (owner is Window ownerWindow)
+            window.Show(ownerWindow);
+        else
+            window.Show();
+
+        return window;
+    }
+
+    private void CloseUpdateProgressWindow(UpdateProgressWindow? window)
+    {
+        if (window == null)
+            return;
+
+        try
+        {
+            window.CloseForCompletion();
+        }
+        catch
+        {
+            // Ignore close failures during shutdown or update restart.
+        }
+        finally
+        {
+            if (_updateProgressWindow == window)
+            {
+                _updateProgressWindow = null;
+                _updateProgressViewModel = null;
+            }
+        }
     }
 
     private async Task PromptRestartForUpdateAsync(AppUpdateHandle update, string[] restartArgs)

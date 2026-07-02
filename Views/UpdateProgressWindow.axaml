@@ -1,0 +1,57 @@
+<atom:Window xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:vm="using:CxShell.ViewModels"
+             x:Class="CxShell.Views.UpdateProgressWindow"
+             x:DataType="vm:UpdateProgressViewModel"
+             Title="{Binding Title}"
+             Width="420"
+             Height="210"
+             MinWidth="380"
+             MinHeight="190"
+             CanResize="False"
+             WindowStartupLocation="CenterOwner"
+             Background="{atom:SharedTokenResource ColorBgLayout}">
+
+    <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+            BorderBrush="{atom:SharedTokenResource ColorSplit}"
+            BorderThickness="1"
+            Padding="18">
+        <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="10">
+            <TextBlock Text="{Binding StatusText}"
+                       FontWeight="SemiBold"
+                       Foreground="{atom:SharedTokenResource ColorText}"/>
+
+            <TextBlock Grid.Row="1"
+                       Text="{Binding VersionText}"
+                       FontSize="12"
+                       TextTrimming="CharacterEllipsis"
+                       Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+
+            <atom:ProgressBar Grid.Row="2"
+                              Minimum="0"
+                              Maximum="100"
+                              Value="{Binding Progress}"
+                              IsIndeterminate="{Binding IsIndeterminate}"
+                              IsProgressInfoVisible="False"
+                              SizeType="Middle"/>
+
+            <TextBlock Grid.Row="3"
+                       Text="{Binding ProgressText}"
+                       HorizontalAlignment="Right"
+                       FontSize="12"
+                       Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+
+            <StackPanel Grid.Row="4"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Spacing="8">
+                <atom:Button Content="{Binding BackgroundText}"
+                             Click="OnBackgroundClick"/>
+                <atom:Button Content="{Binding CancelText}"
+                             IsEnabled="{Binding CanCancel}"
+                             Click="OnCancelClick"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</atom:Window>

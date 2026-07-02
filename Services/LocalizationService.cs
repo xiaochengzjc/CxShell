@@ -417,6 +417,10 @@ public sealed class LocalizationService : INotifyPropertyChanged
         EnglishTexts["Update.AvailableMessage"] = "Version {0} is available. Current version: {1}.\nDownload and install it now?";
         EnglishTexts["Update.DownloadedMessage"] = "Version {0} has been downloaded. Restart CxShell now to apply the update?";
         EnglishTexts["Update.Downloading"] = "Downloading update...";
+        EnglishTexts["Update.ProgressVersion"] = "Version {0} -> {1}";
+        EnglishTexts["Update.Background"] = "Run in background";
+        EnglishTexts["Update.Cancel"] = "Cancel";
+        EnglishTexts["Update.DownloadCancelled"] = "Update download was cancelled.";
         EnglishTexts["Update.ReleaseNotes"] = "Release notes:";
         ChineseTexts["TabMenu.Close"] = "\u5173\u95ed";
         ChineseTexts["TabMenu.Properties"] = "\u5c5e\u6027";
@@ -440,6 +444,10 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ChineseTexts["Update.AvailableMessage"] = "\u53d1\u73b0\u65b0\u7248\u672c {0}\uff0c\u5f53\u524d\u7248\u672c\uff1a{1}\u3002\n\u662f\u5426\u7acb\u5373\u4e0b\u8f7d\u5e76\u5b89\u88c5\uff1f";
         ChineseTexts["Update.DownloadedMessage"] = "\u66f4\u65b0 {0} \u5df2\u4e0b\u8f7d\u5b8c\u6210\u3002\u662f\u5426\u7acb\u5373\u91cd\u542f CxShell \u5e76\u5e94\u7528\u66f4\u65b0\uff1f";
         ChineseTexts["Update.Downloading"] = "\u6b63\u5728\u4e0b\u8f7d\u66f4\u65b0...";
+        ChineseTexts["Update.ProgressVersion"] = "\u7248\u672c {0} -> {1}";
+        ChineseTexts["Update.Background"] = "\u540e\u53f0\u6267\u884c";
+        ChineseTexts["Update.Cancel"] = "\u53d6\u6d88";
+        ChineseTexts["Update.DownloadCancelled"] = "\u66f4\u65b0\u4e0b\u8f7d\u5df2\u53d6\u6d88\u3002";
         ChineseTexts["Update.ReleaseNotes"] = "\u66f4\u65b0\u8bf4\u660e\uff1a";
     }
 
