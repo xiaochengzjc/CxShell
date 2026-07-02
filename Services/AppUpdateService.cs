@@ -46,7 +46,7 @@ public sealed record AppUpdateCheckResult(
 
 public sealed class AppUpdateService
 {
-    private const string RepositoryUrl = "https://github.com/xiaochengzjc/CxShell";
+    private const string ReleaseDownloadBaseUrl = "https://github.com/xiaochengzjc/CxShell/releases/latest/download";
 
     public async Task<AppUpdateCheckResult> CheckForUpdatesAsync(
         bool includePrerelease,
@@ -95,7 +95,9 @@ public sealed class AppUpdateService
 
     private static UpdateManager CreateManager(bool includePrerelease)
     {
-        var source = new GithubSource(RepositoryUrl, accessToken: null, prerelease: includePrerelease);
+        _ = includePrerelease;
+
+        var source = new SimpleWebSource(ReleaseDownloadBaseUrl, timeout: 2);
         var options = new UpdateOptions
         {
             MaximumDeltasBeforeFallback = 5

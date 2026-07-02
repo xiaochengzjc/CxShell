@@ -303,7 +303,7 @@ public partial class MainWindowViewModel : ObservableObject
                         await AtomUiDialogService.ShowMessageAsync(
                             owner,
                             _localization.Text("Update.Title"),
-                            string.Format(_localization.Text("Update.Failed"), result.ErrorMessage ?? "unknown"),
+                            string.Format(_localization.Text("Update.Failed"), BuildUpdateErrorMessage(result.ErrorMessage)),
                             AtomUI.Desktop.Controls.MessageBoxStyle.Error);
                     }
                     else
@@ -318,6 +318,20 @@ public partial class MainWindowViewModel : ObservableObject
             IsCheckingForUpdates = false;
             UpdateProgressText = null;
         }
+    }
+
+    private string BuildUpdateErrorMessage(string? errorMessage)
+    {
+        if (string.IsNullOrWhiteSpace(errorMessage))
+            return "unknown";
+
+        if (errorMessage.Contains("rate limit", StringComparison.OrdinalIgnoreCase) ||
+            errorMessage.Contains("403", StringComparison.OrdinalIgnoreCase))
+        {
+            return _localization.Text("Update.RateLimited");
+        }
+
+        return errorMessage;
     }
 
     private async Task PromptDownloadUpdateAsync(AppUpdateHandle update, string[] restartArgs)
