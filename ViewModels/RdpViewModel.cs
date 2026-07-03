@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Media.Imaging;
@@ -16,6 +17,9 @@ public partial class RdpViewModel : ObservableObject, IDisposable
 {
     private readonly RdpBridgeClient _client = new();
     private bool _started;
+    private CancellationTokenSource? _resizeReconnectCts;
+    private int? _runtimeDesktopWidth;
+    private int? _runtimeDesktopHeight;
 
     [ObservableProperty] private WriteableBitmap? _framebuffer;
     [ObservableProperty] private string _statusText = "RDP disconnected";
@@ -23,17 +27,23 @@ public partial class RdpViewModel : ObservableObject, IDisposable
     [ObservableProperty] private int _remoteWidth;
     [ObservableProperty] private int _remoteHeight;
     [ObservableProperty] private bool _isFitToWindow = true;
+    [ObservableProperty] private int _screenScalePercent = 100;
     [ObservableProperty] private bool _isClipboardChannelReady;
     [ObservableProperty] private string _remoteClipboardText = string.Empty;
 
     public SessionInfo Session { get; }
     public string? Password { get; }
-    public string ScaleModeText => IsFitToWindow ? "Fit to window" : "Original size";
+    public double FixedScaleFactor => Math.Clamp(ScreenScalePercent, 10, 500) / 100.0;
+    public string ScaleModeText => IsFitToWindow
+        ? "Fit to window"
+        : ScreenScalePercent == 100 ? "Original size" : $"{ScreenScalePercent}%";
 
     public RdpViewModel(SessionInfo session, string? password)
     {
         Session = session;
         Password = password;
+        ScreenScalePercent = ResolveScreenScalePercent(session);
+        IsFitToWindow = ResolveInitialFitToWindow(session, ScreenScalePercent);
         _client.FramebufferUpdated += OnFramebufferUpdated;
         _client.StatusChanged += message => Dispatcher.UIThread.Post(() => HandleStatus(message));
         _client.ClipboardTextReceived += OnClipboardTextReceived;
@@ -58,7 +68,7 @@ public partial class RdpViewModel : ObservableObject, IDisposable
         {
             try
             {
-                _client.Connect(Session, Password);
+                _client.Connect(Session, Password, _runtimeDesktopWidth, _runtimeDesktopHeight);
                 Dispatcher.UIThread.Post(() => IsConnected = false);
             }
             catch (DllNotFoundException ex)
@@ -129,6 +139,7 @@ public partial class RdpViewModel : ObservableObject, IDisposable
 
     public void Reconnect()
     {
+        _resizeReconnectCts?.Cancel();
         Disconnect();
         _started = false;
         Start();
@@ -136,11 +147,56 @@ public partial class RdpViewModel : ObservableObject, IDisposable
 
     public void Disconnect()
     {
+        _resizeReconnectCts?.Cancel();
         _client.Disconnect();
         _started = false;
         IsConnected = false;
         IsClipboardChannelReady = false;
         StatusText = "RDP disconnected";
+    }
+
+    public void RequestViewportResize(Size viewportSize)
+    {
+        if (!IsConnected ||
+            !UsesReconnectResizeMode(Session) ||
+            viewportSize.Width < 320 ||
+            viewportSize.Height < 240)
+        {
+            return;
+        }
+
+        var width = (int)Math.Clamp(Math.Round(viewportSize.Width), 320, 7680);
+        var height = (int)Math.Clamp(Math.Round(viewportSize.Height), 240, 4320);
+        var currentWidth = _runtimeDesktopWidth ?? Math.Max(1, Session.RdpDesktopWidth);
+        var currentHeight = _runtimeDesktopHeight ?? Math.Max(1, Session.RdpDesktopHeight);
+        if (Math.Abs(width - currentWidth) < 32 && Math.Abs(height - currentHeight) < 32)
+            return;
+
+        _resizeReconnectCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _resizeReconnectCts = cts;
+        _ = ReconnectAfterResizeDelayAsync(width, height, cts.Token);
+    }
+
+    private async Task ReconnectAfterResizeDelayAsync(int width, int height, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(900), cancellationToken).ConfigureAwait(false);
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (cancellationToken.IsCancellationRequested || !IsConnected)
+                    return;
+
+                _runtimeDesktopWidth = width;
+                _runtimeDesktopHeight = height;
+                StatusText = $"RDP resizing to {width}x{height}...";
+                Reconnect();
+            });
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 
     public void SendPointer(ushort flags, ushort x, ushort y)
@@ -176,6 +232,37 @@ public partial class RdpViewModel : ObservableObject, IDisposable
     partial void OnIsFitToWindowChanged(bool value)
     {
         OnPropertyChanged(nameof(ScaleModeText));
+        OnPropertyChanged(nameof(FixedScaleFactor));
+    }
+
+    partial void OnScreenScalePercentChanged(int value)
+    {
+        OnPropertyChanged(nameof(ScaleModeText));
+        OnPropertyChanged(nameof(FixedScaleFactor));
+    }
+
+    private static bool ResolveInitialFitToWindow(SessionInfo session, int screenScalePercent)
+    {
+        if (!string.Equals(session.RdpScreenScale, "Auto", StringComparison.OrdinalIgnoreCase) &&
+            screenScalePercent > 0)
+        {
+            return false;
+        }
+
+        return !string.Equals(session.RdpResizeMode, "NotUsed", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool UsesReconnectResizeMode(SessionInfo session)
+    {
+        return string.Equals(session.RdpResizeMode, "SmartReconnect", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(session.RdpResizeMode, "LegacyReconnect", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int ResolveScreenScalePercent(SessionInfo session)
+    {
+        return int.TryParse(session.RdpScreenScale, out var parsed) && parsed is >= 10 and <= 500
+            ? parsed
+            : 100;
     }
 
     private void OnFramebufferUpdated(object? sender, RdpFramebufferEventArgs e)
@@ -210,6 +297,8 @@ public partial class RdpViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _resizeReconnectCts?.Cancel();
+        _resizeReconnectCts?.Dispose();
         _client.FramebufferUpdated -= OnFramebufferUpdated;
         _client.ClipboardTextReceived -= OnClipboardTextReceived;
         _client.Dispose();

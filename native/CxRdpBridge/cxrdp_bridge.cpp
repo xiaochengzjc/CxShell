@@ -61,6 +61,7 @@ struct CxRdpSession
     int port = 3389;
     int width = 1024;
     int height = 768;
+    int color_depth = 32;
     bool wsa_started = false;
     bool openssl_providers_loaded = false;
     bool clipboard_channel_enabled = false;
@@ -1613,7 +1614,8 @@ void connection_thread(CxRdpSession* session)
     target << "RDP target host=" << session->host << " port=" << session->port
            << " domain=" << session->domain
            << " user=" << session->username
-           << " size=" << session->width << "x" << session->height;
+           << " size=" << session->width << "x" << session->height
+           << " colorDepth=" << session->color_depth;
     notify_status(session, target.str().c_str());
 
     const SecurityProfile profiles[] = {
@@ -1680,7 +1682,7 @@ void connection_thread(CxRdpSession* session)
             freerdp_settings_set_string(settings, FreeRDP_Domain, session->domain.c_str());
             freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth, static_cast<uint32_t>(session->width > 0 ? session->width : 1024));
             freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, static_cast<uint32_t>(session->height > 0 ? session->height : 768));
-            freerdp_settings_set_uint32(settings, FreeRDP_ColorDepth, 32);
+            freerdp_settings_set_uint32(settings, FreeRDP_ColorDepth, static_cast<uint32_t>(session->color_depth));
             freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate, TRUE);
             freerdp_settings_set_bool(settings, FreeRDP_AutoAcceptCertificate, TRUE);
             freerdp_settings_set_bool(settings, FreeRDP_Authentication, TRUE);
@@ -1851,7 +1853,8 @@ CX_RDP_API int cxrdp_connect(
     const char* username,
     const char* password,
     int width,
-    int height)
+    int height,
+    int color_depth)
 {
     auto* session = static_cast<CxRdpSession*>(handle);
     if (!session)
@@ -1886,6 +1889,9 @@ CX_RDP_API int cxrdp_connect(
     session->password = password ? password : "";
     session->width = width > 0 ? width : 1024;
     session->height = height > 0 ? height : 768;
+    session->color_depth = color_depth == 15 || color_depth == 16 || color_depth == 24 || color_depth == 32
+        ? color_depth
+        : 32;
     ensure_openssl_providers(session);
 
     session->running = true;

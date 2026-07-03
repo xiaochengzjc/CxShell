@@ -25,34 +25,52 @@
     </atom:Window.LogoTemplate>
 
     <atom:Window.Styles>
-        <Style Selector="atom|Button.quick-session-bar-button">
+        <Style Selector="Border.quick-session-bar-button">
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="6"/>
+        </Style>
+        <Style Selector="Border.quick-session-bar-button TextBlock">
             <Setter Property="Foreground" Value="{atom:SharedTokenResource ColorText}"/>
         </Style>
-        <Style Selector="atom|Button.quick-session-bar-button /template/ atom|IconPresenter#PART_ButtonIcon">
+        <Style Selector="Border.quick-session-bar-button atom|IconPresenter">
             <Setter Property="IconBrush" Value="{atom:SharedTokenResource ColorTextSecondary}"/>
         </Style>
-        <Style Selector="atom|Button.quick-session-bar-button:pointerover">
+        <Style Selector="Border.quick-session-bar-button:pointerover">
             <Setter Property="Background" Value="{atom:SharedTokenResource ColorPrimaryBg}"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="{atom:SharedTokenResource ColorPrimaryBorder}"/>
+        </Style>
+        <Style Selector="Border.quick-session-bar-button:pointerover TextBlock">
             <Setter Property="Foreground" Value="{atom:SharedTokenResource ColorPrimaryHover}"/>
         </Style>
-        <Style Selector="atom|Button.quick-session-bar-button:pointerover /template/ atom|IconPresenter#PART_ButtonIcon">
+        <Style Selector="Border.quick-session-bar-button:pointerover atom|IconPresenter">
             <Setter Property="IconBrush" Value="{atom:SharedTokenResource ColorPrimaryHover}"/>
         </Style>
-        <Style Selector="atom|Button.quick-session-bar-button:pressed">
+        <Style Selector="Border.quick-session-bar-button:pressed">
             <Setter Property="Background" Value="{atom:SharedTokenResource ColorPrimaryBgHover}"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="Foreground" Value="{atom:SharedTokenResource ColorPrimaryActive}"/>
+            <Setter Property="BorderBrush" Value="{atom:SharedTokenResource ColorPrimaryBorderHover}"/>
         </Style>
-        <Style Selector="atom|Button.quick-session-bar-button:pressed /template/ atom|IconPresenter#PART_ButtonIcon">
-            <Setter Property="IconBrush" Value="{atom:SharedTokenResource ColorPrimaryActive}"/>
-        </Style>
-        <Style Selector="atom|Button.quick-session-bar-button:disabled">
+        <Style Selector="Grid.quick-session-drag-active Border.quick-session-bar-button:pointerover">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <Style Selector="Grid.quick-session-drag-active Border.quick-session-bar-button:pointerover TextBlock">
+            <Setter Property="Foreground" Value="{atom:SharedTokenResource ColorText}"/>
+        </Style>
+        <Style Selector="Grid.quick-session-drag-active Border.quick-session-bar-button:pointerover atom|IconPresenter">
+            <Setter Property="IconBrush" Value="{atom:SharedTokenResource ColorTextSecondary}"/>
+        </Style>
+        <Style Selector="Border.quick-session-bar-button.quick-session-dragging">
+            <Setter Property="Opacity" Value="0.68"/>
+            <Setter Property="Background" Value="{atom:SharedTokenResource ColorPrimaryBgHover}"/>
+            <Setter Property="BorderBrush" Value="{atom:SharedTokenResource ColorPrimary}"/>
+        </Style>
+        <Style Selector="Border.quick-session-bar-button.quick-session-dragging TextBlock">
+            <Setter Property="Foreground" Value="{atom:SharedTokenResource ColorPrimaryActive}"/>
+        </Style>
+        <Style Selector="Border.quick-session-bar-button.quick-session-dragging atom|IconPresenter">
+            <Setter Property="IconBrush" Value="{atom:SharedTokenResource ColorPrimaryActive}"/>
         </Style>
         <Style Selector="atom|TabStrip.session-tab-strip /template/ Border#PART_SelectedItemIndicator">
             <Setter Property="Opacity" Value="0"/>
@@ -84,12 +102,16 @@
                 <Setter Property="BorderBrush" Value="{atom:SharedTokenResource ColorBorder}"/>
             </Style>
         </Style>
+        <Style Selector="Border.session-tab-header.tab-dragging">
+            <Setter Property="Opacity" Value="0.64"/>
+        </Style>
     </atom:Window.Styles>
 
     <atom:Window.Resources>
         <DataTemplate x:Key="TabHeaderTemplate" DataType="vm:TerminalTabViewModel">
             <Border MinWidth="72"
                     MaxWidth="220"
+                    Classes="session-tab-header"
                     Padding="8,0,0,0"
                     PointerPressed="OnTabHeaderPointerPressed">
                 <StackPanel Orientation="Horizontal"
@@ -419,44 +441,64 @@
                              Command="{Binding AddCurrentSessionToQuickBarCommand}"
                              atom:ToolTip.Tip="{Binding AddQuickSessionToolTip}"
                              atom:ToolTip.Placement="Bottom"/>
-                <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                              VerticalScrollBarVisibility="Disabled"
-                              Height="34"
-                              Margin="6,0,0,0"
-                              ClipToBounds="False"
-                              VerticalAlignment="Center">
-                    <ItemsControl ItemsSource="{Binding QuickSessions}"
+                <Grid x:Name="QuickSessionDropIndicatorHost"
+                      Height="34"
+                      Margin="6,0,0,0"
+                      ClipToBounds="False"
+                      VerticalAlignment="Center">
+                    <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                  VerticalScrollBarVisibility="Disabled"
                                   Height="34"
                                   ClipToBounds="False"
                                   VerticalAlignment="Center">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <StackPanel Orientation="Horizontal"
-                                            VerticalAlignment="Center"/>
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="models:SessionInfo">
-                                <atom:Button ButtonType="Text"
-                                             Classes="quick-session-bar-button"
-                                             SizeType="Middle"
-                                             Height="30"
-                                             MinHeight="30"
-                                             Icon="{antdicons:AntDesignIconProvider CloudServerOutlined}"
-                                             Content="{Binding Name}"
-                                             Padding="8,0"
-                                             Margin="0,2,4,2"
-                                             Cursor="Hand"
-                                             VerticalAlignment="Center"
-                                             HorizontalContentAlignment="Center"
-                                             VerticalContentAlignment="Center"
-                                             Command="{Binding $parent[Window].DataContext.ConnectQuickSessionCommand, x:CompileBindings=False}"
-                                             CommandParameter="{Binding}"
-                                             PointerPressed="OnQuickSessionTagPointerPressed"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
+                        <ItemsControl ItemsSource="{Binding QuickSessions}"
+                                      Height="34"
+                                      ClipToBounds="False"
+                                      VerticalAlignment="Center">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal"
+                                                VerticalAlignment="Center"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="models:SessionInfo">
+                                    <Border Classes="quick-session-bar-button"
+                                            Height="30"
+                                            MinHeight="30"
+                                            Padding="8,0"
+                                            Margin="0,2,4,2"
+                                            Cursor="Hand"
+                                            VerticalAlignment="Center"
+                                            PointerPressed="OnQuickSessionTagPointerPressed">
+                                        <StackPanel Orientation="Horizontal"
+                                                    Spacing="6"
+                                                    VerticalAlignment="Center">
+                                            <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider CloudServerOutlined}"
+                                                                Width="14"
+                                                                Height="14"
+                                                                VerticalAlignment="Center"/>
+                                            <TextBlock Text="{Binding Name}"
+                                                       FontSize="14"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       MaxWidth="160"
+                                                       VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                    <Border x:Name="QuickSessionDropIndicator"
+                            Width="2"
+                            Height="24"
+                            CornerRadius="1"
+                            Background="{atom:SharedTokenResource ColorPrimary}"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Center"
+                            IsHitTestVisible="False"
+                            IsVisible="False"/>
+                </Grid>
             </DockPanel>
         </Border>
 
@@ -650,5 +692,16 @@
             </Grid>
 
         </Grid>
+        <Canvas x:Name="TabDropOverlay"
+                Grid.RowSpan="4"
+                ClipToBounds="False"
+                IsHitTestVisible="False">
+            <Border x:Name="TabDropIndicator"
+                    Width="2"
+                    Height="24"
+                    CornerRadius="1"
+                    Background="{atom:SharedTokenResource ColorPrimary}"
+                    IsVisible="False"/>
+        </Canvas>
     </Grid>
 </atom:Window>

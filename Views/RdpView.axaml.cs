@@ -63,8 +63,15 @@ public partial class RdpView : UserControl
 
     private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
     {
-        if (_boundVm != null && args.PropertyName == nameof(RdpViewModel.IsFitToWindow))
+        if (_boundVm != null &&
+            (args.PropertyName == nameof(RdpViewModel.IsFitToWindow) ||
+             args.PropertyName == nameof(RdpViewModel.ScreenScalePercent) ||
+             args.PropertyName == nameof(RdpViewModel.RemoteWidth) ||
+             args.PropertyName == nameof(RdpViewModel.RemoteHeight)))
+        {
             ApplyScaleMode(_boundVm);
+        }
+
         if (_boundVm != null && args.PropertyName == nameof(RdpViewModel.IsClipboardChannelReady) && _boundVm.IsClipboardChannelReady)
             _ = SyncLocalClipboardToRemoteAsync();
         if (_boundVm != null && args.PropertyName == nameof(RdpViewModel.RemoteClipboardText))
@@ -85,7 +92,27 @@ public partial class RdpView : UserControl
         if (FramebufferImage == null)
             return;
 
-        FramebufferImage.Stretch = vm.IsFitToWindow ? Stretch.Uniform : Stretch.None;
+        if (vm.IsFitToWindow || vm.RemoteWidth <= 0 || vm.RemoteHeight <= 0)
+        {
+            FramebufferImage.Width = double.NaN;
+            FramebufferImage.Height = double.NaN;
+            FramebufferImage.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
+            FramebufferImage.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Stretch;
+            FramebufferImage.Stretch = Stretch.Uniform;
+            return;
+        }
+
+        FramebufferImage.Width = vm.RemoteWidth * vm.FixedScaleFactor;
+        FramebufferImage.Height = vm.RemoteHeight * vm.FixedScaleFactor;
+        FramebufferImage.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center;
+        FramebufferImage.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center;
+        FramebufferImage.Stretch = Stretch.Fill;
+    }
+
+    private void OnViewportSizeChanged(object? sender, SizeChangedEventArgs e)
+    {
+        if (DataContext is RdpViewModel vm)
+            vm.RequestViewportResize(e.NewSize);
     }
 
     private void OnFramebufferPointerMoved(object? sender, PointerEventArgs e)
@@ -174,13 +201,18 @@ public partial class RdpView : UserControl
         if (remoteWidth <= 0 || remoteHeight <= 0 || imageSize.Width <= 0 || imageSize.Height <= 0)
             return (0, 0);
 
-        var scale = fitToWindow ? Math.Min(imageSize.Width / remoteWidth, imageSize.Height / remoteHeight) : 1.0;
-        var displayedWidth = remoteWidth * scale;
-        var displayedHeight = remoteHeight * scale;
-        var offsetX = (imageSize.Width - displayedWidth) / 2;
-        var offsetY = (imageSize.Height - displayedHeight) / 2;
-        var x = (int)Math.Round((point.X - offsetX) / scale);
-        var y = (int)Math.Round((point.Y - offsetY) / scale);
+        var scaleX = fitToWindow
+            ? Math.Min(imageSize.Width / remoteWidth, imageSize.Height / remoteHeight)
+            : Math.Max(0.01, imageSize.Width / remoteWidth);
+        var scaleY = fitToWindow
+            ? scaleX
+            : Math.Max(0.01, imageSize.Height / remoteHeight);
+        var displayedWidth = remoteWidth * scaleX;
+        var displayedHeight = remoteHeight * scaleY;
+        var offsetX = fitToWindow ? (imageSize.Width - displayedWidth) / 2 : 0;
+        var offsetY = fitToWindow ? (imageSize.Height - displayedHeight) / 2 : 0;
+        var x = (int)Math.Round((point.X - offsetX) / scaleX);
+        var y = (int)Math.Round((point.Y - offsetY) / scaleY);
         return (Math.Clamp(x, 0, remoteWidth - 1), Math.Clamp(y, 0, remoteHeight - 1));
     }
 

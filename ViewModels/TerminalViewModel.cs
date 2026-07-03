@@ -24,6 +24,8 @@ public partial class TerminalViewModel : ObservableObject
     public string ConnectingText => L.Text("Terminal.Connecting");
     public string CopyText => L.Text("Terminal.Copy");
     public string PasteText => L.Text("Terminal.Paste");
+    public string QuickCommandsText => L.Text("TabMenu.QuickCommands");
+    public string QuickCommandsEmptyText => L.Text("TabMenu.QuickCommandsEmpty");
 
     [ObservableProperty] private bool _isConnected;
     [ObservableProperty] private bool _supportsPosixShellFeatures = true;
@@ -163,6 +165,8 @@ public partial class TerminalViewModel : ObservableObject
         OnPropertyChanged(nameof(ConnectingText));
         OnPropertyChanged(nameof(CopyText));
         OnPropertyChanged(nameof(PasteText));
+        OnPropertyChanged(nameof(QuickCommandsText));
+        OnPropertyChanged(nameof(QuickCommandsEmptyText));
     }
 
     public void RefreshSessionOptions()
@@ -184,6 +188,26 @@ public partial class TerminalViewModel : ObservableObject
     public event Action? BellRequested;
     public event Action<string>? RemoteCurrentDirectoryChanged;
     public string? RemoteCurrentDirectory { get; private set; }
+
+    public IReadOnlyList<QuickCommandItem> GetQuickCommands()
+    {
+        if (_session == null || !IsConnected)
+            return [];
+
+        return QuickCommandService.GetCommands(_session, SupportsPosixShellFeatures);
+    }
+
+    public void ExecuteQuickCommand(QuickCommandItem? command)
+    {
+        if (command == null ||
+            !IsConnected ||
+            string.IsNullOrWhiteSpace(command.CommandText))
+        {
+            return;
+        }
+
+        SendInput(command.CommandText.TrimEnd() + "\r");
+    }
 
     public Task<string> RunRemoteCommandAsync(string commandText, TimeSpan timeout, CancellationToken cancellationToken = default)
     {
@@ -235,7 +259,8 @@ public partial class TerminalViewModel : ObservableObject
             ParseColorOrDefault(session.AppearanceForegroundColor, "#CCCCCC"),
             ParseColorOrDefault(session.AppearanceBackgroundColor, "#000000"),
             ParseColorOrDefault(session.AppearanceBoldForegroundColor, "#33FF33"),
-            ParseAnsiColors(session.AppearanceAnsiColors));
+            ParseAnsiColors(session.AppearanceAnsiColors),
+            session.AppearanceBoldTextMode);
         Parser = new AnsiParser(Buffer);
         AttachParserHandlers(Parser);
         RemoteCurrentDirectory = null;
@@ -1352,13 +1377,13 @@ public partial class TerminalViewModel : ObservableObject
         return 0;
     }
 
-    private static bool ShouldSuppressZmodemPreamble(ZmodemTransferDirection direction, byte[] bytes)
+    private bool ShouldSuppressZmodemPreamble(ZmodemTransferDirection direction, byte[] bytes)
     {
         if (direction != ZmodemTransferDirection.Download || bytes.Length == 0)
             return false;
 
         var text = Encoding.ASCII.GetString(bytes).Trim('\r', '\n');
-        return text == "rz";
+        return MatchesConfiguredCommandText(text, _session?.FileTransferZmodemUploadCommand, "rz");
     }
 
     private bool TryStartPendingXymodemUpload(int generation, byte[] bytes)
@@ -1858,16 +1883,21 @@ public partial class TerminalViewModel : ObservableObject
         if (parts.Count == 0)
             return;
 
-        var executable = Path.GetFileName(parts[0]).ToLowerInvariant();
+        var executable = NormalizeCommandExecutable(parts[0]);
+        if (IsConfiguredCommandExecutable(executable, _session?.FileTransferXmodemUploadCommand, "rx"))
+        {
+            MarkPendingXymodemUpload(XymodemProtocol.Xmodem);
+            return;
+        }
+
+        if (IsConfiguredCommandExecutable(executable, _session?.FileTransferYmodemUploadCommand, "rb", "ry"))
+        {
+            MarkPendingXymodemUpload(XymodemProtocol.Ymodem);
+            return;
+        }
+
         switch (executable)
         {
-            case "rx":
-                MarkPendingXymodemUpload(XymodemProtocol.Xmodem);
-                break;
-            case "rb":
-            case "ry":
-                MarkPendingXymodemUpload(XymodemProtocol.Ymodem);
-                break;
             case "sx":
                 StartXymodemDownloadFromCommand(XymodemProtocol.Xmodem, parts);
                 break;
@@ -1896,18 +1926,17 @@ public partial class TerminalViewModel : ObservableObject
         return string.IsNullOrWhiteSpace(text) ? null : text;
     }
 
-    private static string ExtractXymodemCommandLine(string commandLine)
+    private string ExtractXymodemCommandLine(string commandLine)
     {
         var command = commandLine.Trim();
         if (string.IsNullOrWhiteSpace(command))
             return string.Empty;
 
         var directParts = SplitCommandLine(command);
-        if (directParts.Count > 0 && IsXymodemExecutable(Path.GetFileName(directParts[0])))
+        if (directParts.Count > 0 && IsXymodemExecutable(directParts[0]))
             return command;
 
-        var candidates = new[] { "rx", "rb", "ry", "sx", "sb" };
-        foreach (var candidate in candidates)
+        foreach (var candidate in GetXymodemCommandCandidates())
         {
             var index = FindCommandToken(command, candidate);
             if (index >= 0)
@@ -1943,9 +1972,83 @@ public partial class TerminalViewModel : ObservableObject
         return ch is '$' or '#' or '>' or ';' or '|';
     }
 
-    private static bool IsXymodemExecutable(string? executable)
+    private bool IsXymodemExecutable(string? executable)
     {
-        return executable?.ToLowerInvariant() is "rx" or "rb" or "ry" or "sx" or "sb";
+        var normalized = NormalizeCommandExecutable(executable);
+        return normalized is "sx" or "sb" ||
+               IsConfiguredCommandExecutable(normalized, _session?.FileTransferXmodemUploadCommand, "rx") ||
+               IsConfiguredCommandExecutable(normalized, _session?.FileTransferYmodemUploadCommand, "rb", "ry");
+    }
+
+    private IEnumerable<string> GetXymodemCommandCandidates()
+    {
+        var candidates = new[]
+        {
+            GetConfiguredCommandExecutable(_session?.FileTransferXmodemUploadCommand),
+            GetConfiguredCommandExecutable(_session?.FileTransferYmodemUploadCommand),
+            "rx",
+            "rb",
+            "ry",
+            "sx",
+            "sb"
+        };
+
+        return candidates
+            .Where(candidate => !string.IsNullOrWhiteSpace(candidate))
+            .Distinct(StringComparer.OrdinalIgnoreCase)!;
+    }
+
+    private static bool IsConfiguredCommandExecutable(string? executable, string? configuredCommand, params string[] fallbacks)
+    {
+        var normalized = NormalizeCommandExecutable(executable);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return false;
+
+        var configuredExecutable = GetConfiguredCommandExecutable(configuredCommand);
+        if (!string.IsNullOrWhiteSpace(configuredExecutable) &&
+            string.Equals(normalized, configuredExecutable, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return fallbacks.Any(fallback =>
+            string.Equals(normalized, NormalizeCommandExecutable(fallback), StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool MatchesConfiguredCommandText(string text, string? configuredCommand, params string[] fallbacks)
+    {
+        var trimmed = text.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed))
+            return false;
+
+        if (!string.IsNullOrWhiteSpace(configuredCommand) &&
+            string.Equals(trimmed, configuredCommand.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var parts = SplitCommandLine(trimmed);
+        if (parts.Count == 0)
+            return false;
+
+        return IsConfiguredCommandExecutable(parts[0], configuredCommand, fallbacks);
+    }
+
+    private static string? GetConfiguredCommandExecutable(string? command)
+    {
+        if (string.IsNullOrWhiteSpace(command))
+            return null;
+
+        var parts = SplitCommandLine(command.Trim());
+        return parts.Count == 0 ? null : NormalizeCommandExecutable(parts[0]);
+    }
+
+    private static string NormalizeCommandExecutable(string? executable)
+    {
+        if (string.IsNullOrWhiteSpace(executable))
+            return string.Empty;
+
+        return Path.GetFileName(executable.Trim()).ToLowerInvariant();
     }
 
     private void MarkPendingXymodemUpload(XymodemProtocol protocol)
@@ -2033,7 +2136,22 @@ public partial class TerminalViewModel : ObservableObject
             output.Contains("XMODEM", StringComparison.OrdinalIgnoreCase))
         {
             MarkPendingXymodemUpload(XymodemProtocol.Xmodem);
+            return;
         }
+
+        var configuredProtocol = GetConfiguredXymodemUploadProtocol();
+        if (configuredProtocol != null)
+            MarkPendingXymodemUpload(configuredProtocol.Value);
+    }
+
+    private XymodemProtocol? GetConfiguredXymodemUploadProtocol()
+    {
+        return _session?.FileTransferUploadProtocol?.Trim().ToLowerInvariant() switch
+        {
+            "xmodem" => XymodemProtocol.Xmodem,
+            "ymodem" => XymodemProtocol.Ymodem,
+            _ => null
+        };
     }
 
     private static bool OutputContainsReceivePrompt(string output, XymodemProtocol protocol)

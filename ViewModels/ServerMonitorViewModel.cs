@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.ObjectModel;
+using System.Runtime.CompilerServices;
 using Avalonia.Threading;
 using CxShell.Models;
 using CxShell.Services;
@@ -14,6 +15,7 @@ public partial class ServerMonitorViewModel : ObservableObject, IDisposable
 {
     private readonly ServerMonitorService _service = new();
     private LocalizationService L => LocalizationService.Shared;
+    private string? _currentTargetKey;
 
     [ObservableProperty] private bool _isMonitoring;
     [ObservableProperty] private string? _errorMessage;
@@ -69,11 +71,14 @@ public partial class ServerMonitorViewModel : ObservableObject, IDisposable
         Func<string, TimeSpan, CancellationToken, Task<string>>? commandRunner = null,
         bool isWindowsOpenSsh = false)
     {
+        var targetKey = BuildTargetKey(session, commandRunner, isWindowsOpenSsh);
+        if (IsMonitoring && string.Equals(_currentTargetKey, targetKey, StringComparison.Ordinal))
+            return;
+
+        _currentTargetKey = targetKey;
         _service.Stop();
-        IsMonitoring = false;
         ErrorMessage = null;
         HostLabel = $"{session.Username}@{session.Host}";
-        ClearData();
 
         _ = _service.StartAsync(session, password, commandRunner, isWindowsOpenSsh);
 
@@ -83,9 +88,32 @@ public partial class ServerMonitorViewModel : ObservableObject, IDisposable
     public void StopMonitoring()
     {
         _service.Stop();
+        _currentTargetKey = null;
         IsMonitoring = false;
         HostLabel = LocalizationService.Shared.Text("Monitor.NotConnected");
         ClearData();
+    }
+
+    private static string BuildTargetKey(
+        SessionInfo session,
+        Func<string, TimeSpan, CancellationToken, Task<string>>? commandRunner,
+        bool isWindowsOpenSsh)
+    {
+        var runnerTargetId = commandRunner?.Target == null
+            ? "direct"
+            : RuntimeHelpers.GetHashCode(commandRunner.Target).ToString();
+        var runnerMethod = commandRunner?.Method.Name ?? "ssh";
+        var targetKind = isWindowsOpenSsh ? "windows" : "linux";
+
+        return string.Join('|',
+            session.Id,
+            session.Protocol,
+            session.Username ?? string.Empty,
+            session.Host ?? string.Empty,
+            session.Port,
+            targetKind,
+            runnerMethod,
+            runnerTargetId);
     }
 
     private void OnLanguageChanged(object? sender, EventArgs e)
@@ -160,6 +188,7 @@ public partial class ServerMonitorViewModel : ObservableObject, IDisposable
         {
             ErrorMessage = message;
             IsMonitoring = false;
+            _currentTargetKey = null;
         });
     }
 

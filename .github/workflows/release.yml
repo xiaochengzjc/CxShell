@@ -96,12 +96,21 @@ jobs:
           $ErrorActionPreference = "Stop"
           $rid = "${{ matrix.rid }}"
           $publishDir = Join-Path $env:GITHUB_WORKSPACE "artifacts\publish\$rid"
+          $version = $env:RELEASE_TAG
+          if ($version.StartsWith("v")) {
+            $version = $version.Substring(1)
+          }
+          $assemblyVersion = ($version -split "-")[0]
 
           dotnet publish CxShell.csproj `
             -c Release `
             -r $rid `
             --self-contained true `
             -o $publishDir `
+            /p:Version=$version `
+            /p:AssemblyVersion=$assemblyVersion `
+            /p:FileVersion=$assemblyVersion `
+            /p:InformationalVersion=$version `
             /p:PublishSingleFile=true `
             /p:IncludeNativeLibrariesForSelfExtract=true `
             /p:DebugType=none `
@@ -379,12 +388,18 @@ jobs:
           set -euo pipefail
           rid="${{ matrix.rid }}"
           publish_dir="$GITHUB_WORKSPACE/artifacts/publish/$rid"
+          version="${RELEASE_TAG#v}"
+          assembly_version="${version%%-*}"
 
           dotnet publish CxShell.csproj \
             -c Release \
             -r "$rid" \
             --self-contained true \
             -o "$publish_dir" \
+            /p:Version="$version" \
+            /p:AssemblyVersion="$assembly_version" \
+            /p:FileVersion="$assembly_version" \
+            /p:InformationalVersion="$version" \
             /p:PublishSingleFile=true \
             /p:IncludeNativeLibrariesForSelfExtract=true \
             /p:DebugType=none \
@@ -518,11 +533,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          assembly_version="${version%%-*}"
           dotnet publish CxShell.csproj \
             -c Release \
             -r "${{ matrix.rid }}" \
             --self-contained true \
             -o "artifacts/publish/${{ matrix.rid }}" \
+            /p:Version="$version" \
+            /p:AssemblyVersion="$assembly_version" \
+            /p:FileVersion="$assembly_version" \
+            /p:InformationalVersion="$version" \
             /p:PublishSingleFile=false \
             /p:DebugType=none \
             /p:DebugSymbols=false

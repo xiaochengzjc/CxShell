@@ -18,6 +18,7 @@ public partial class TerminalTabViewModel : ObservableObject
     public RdpViewModel? Rdp { get; }
     public SftpViewModel? FileTransfer { get; }
     public SftpViewModel CompanionSftp { get; }
+    public ServerMonitorViewModel Monitor { get; } = new();
     public bool IsVncSession => Vnc != null;
     public bool IsRdpSession => Rdp != null;
     public bool IsFileTransferSession => FileTransfer != null;

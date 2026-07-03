@@ -185,8 +185,12 @@ public sealed class VncClientService : IDisposable
         var sshHost = string.IsNullOrWhiteSpace(session.VncSshHost) ? session.Host : session.VncSshHost.Trim();
         var sshPort = session.VncSshPort is >= 1 and <= 65535 ? session.VncSshPort : 22;
         var sshUser = session.VncSshUsername?.Trim() ?? string.Empty;
-        var remoteHost = string.IsNullOrWhiteSpace(session.Host) ? "127.0.0.1" : session.Host.Trim();
-        var remotePort = session.Port is >= 1 and <= 65535 ? session.Port : 5901;
+        var remoteHost = string.IsNullOrWhiteSpace(session.VncSshRemoteHost)
+            ? (string.IsNullOrWhiteSpace(session.Host) ? "127.0.0.1" : session.Host.Trim())
+            : session.VncSshRemoteHost.Trim();
+        var remotePort = session.VncSshRemotePort is >= 1 and <= 65535
+            ? session.VncSshRemotePort
+            : session.Port is >= 1 and <= 65535 ? session.Port : 5901;
         var localPort = GetFreeLoopbackPort();
 
         if (string.IsNullOrWhiteSpace(sshHost))

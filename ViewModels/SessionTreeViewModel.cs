@@ -553,6 +553,30 @@ public partial class SessionTreeViewModel : ObservableObject
         RefreshQuickSessions();
     }
 
+    public void MoveQuickSession(SessionInfo source, SessionInfo target, bool insertAfter)
+    {
+        if (source.Id == target.Id)
+            return;
+
+        var sourceIndex = _data.QuickSessionIds.IndexOf(source.Id);
+        var targetIndex = _data.QuickSessionIds.IndexOf(target.Id);
+        if (sourceIndex < 0 || targetIndex < 0)
+            return;
+
+        _data.QuickSessionIds.RemoveAt(sourceIndex);
+        var insertIndex = _data.QuickSessionIds.IndexOf(target.Id);
+        if (insertIndex < 0)
+            return;
+
+        if (insertAfter)
+            insertIndex++;
+
+        insertIndex = Math.Clamp(insertIndex, 0, _data.QuickSessionIds.Count);
+        _data.QuickSessionIds.Insert(insertIndex, source.Id);
+        _storage.Save(_data);
+        RefreshQuickSessions();
+    }
+
     private void RefreshQuickSessions()
     {
         QuickSessions.Clear();

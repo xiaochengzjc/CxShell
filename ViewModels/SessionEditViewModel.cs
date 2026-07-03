@@ -305,6 +305,8 @@ public partial class SessionEditViewModel : ObservableObject
     [ObservableProperty] private string _vncSshPassword = string.Empty;
     [ObservableProperty] private bool _vncSshUsePrivateKey;
     [ObservableProperty] private string _vncSshPrivateKeyPath = string.Empty;
+    [ObservableProperty] private string _vncSshRemoteHost = "127.0.0.1";
+    [ObservableProperty] private string _vncSshRemotePort = "5901";
 
     public bool HasValidationError => !string.IsNullOrWhiteSpace(ValidationMessage);
     public bool IsNameInvalid => NameStatus == InputControlStatus.Error;
@@ -619,9 +621,7 @@ public partial class SessionEditViewModel : ObservableObject
         new SelectOption { Header = "SOCKS4", Content = ProxyProtocol.Socks4.ToString() },
         new SelectOption { Header = "SOCKS4A", Content = ProxyProtocol.Socks4A.ToString() },
         new SelectOption { Header = "SOCKS5", Content = ProxyProtocol.Socks5.ToString() },
-        new SelectOption { Header = "HTTP 1.1", Content = ProxyProtocol.Http.ToString() },
-        new SelectOption { Header = "SSH_PASSTHROUGH", Content = ProxyProtocol.SshPassthrough.ToString() },
-        new SelectOption { Header = "JUMPHOST", Content = ProxyProtocol.JumpHost.ToString() }
+        new SelectOption { Header = "HTTP 1.1", Content = ProxyProtocol.Http.ToString() }
     ];
     public ObservableCollection<ProxySettings> ProxyServers { get; } = new();
 
@@ -1325,6 +1325,12 @@ public partial class SessionEditViewModel : ObservableObject
         VncSshPassword = PasswordEncryptionService.Decrypt(session.VncSshPassword);
         VncSshUsePrivateKey = session.VncSshUsePrivateKey;
         VncSshPrivateKeyPath = session.VncSshPrivateKeyPath ?? string.Empty;
+        VncSshRemoteHost = string.IsNullOrWhiteSpace(session.VncSshRemoteHost)
+            ? (string.IsNullOrWhiteSpace(session.Host) ? "127.0.0.1" : session.Host)
+            : session.VncSshRemoteHost;
+        VncSshRemotePort = Math.Clamp(session.VncSshRemotePort <= 0
+            ? (session.Port > 0 ? session.Port : 5901)
+            : session.VncSshRemotePort, 1, 65535).ToString();
         RefreshSerialPortOptions();
     }
 
@@ -1574,8 +1580,12 @@ public partial class SessionEditViewModel : ObservableObject
         session.VncSshPassword = VncSshUsePrivateKey ? string.Empty : PasswordEncryptionService.Encrypt(VncSshPassword);
         session.VncSshUsePrivateKey = VncSshUsePrivateKey;
         session.VncSshPrivateKeyPath = VncSshUsePrivateKey ? VncSshPrivateKeyPath.Trim() : string.Empty;
-        session.VncSshRemoteHost = session.Host;
-        session.VncSshRemotePort = session.Port;
+        session.VncSshRemoteHost = string.IsNullOrWhiteSpace(VncSshRemoteHost)
+            ? (string.IsNullOrWhiteSpace(session.Host) ? "127.0.0.1" : session.Host)
+            : VncSshRemoteHost.Trim();
+        session.VncSshRemotePort = int.TryParse(VncSshRemotePort, out var vncRemotePort)
+            ? Math.Clamp(vncRemotePort, 1, 65535)
+            : (session.Port > 0 ? session.Port : 5901);
         session.FileTransferAlwaysAskDownloadFolder = FileTransferAlwaysAskDownloadFolder;
         session.FileTransferDownloadDirectory = FileTransferDownloadDirectory.Trim();
         session.FileTransferUploadDirectory = FileTransferUploadDirectory.Trim();
@@ -2143,6 +2153,18 @@ public partial class SessionEditViewModel : ObservableObject
             if (string.IsNullOrWhiteSpace(VncSshUsername))
             {
                 ValidationMessage = "SSH username is required for VNC tunnel.";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(VncSshRemoteHost))
+            {
+                ValidationMessage = "Remote VNC host is required for VNC tunnel.";
+                return false;
+            }
+
+            if (!IsValidPortText(VncSshRemotePort))
+            {
+                ValidationMessage = "Remote VNC port must be an integer between 1 and 65535.";
                 return false;
             }
 

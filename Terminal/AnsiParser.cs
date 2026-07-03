@@ -580,8 +580,7 @@ public class AnsiParser
                     _buffer.ResetAttributes();
                     break;
                 case 1: // Bold
-                    _buffer.CurrentBold = true;
-                    _buffer.CurrentForeground = _buffer.BoldForegroundColor;
+                    _buffer.SetBoldIntensity(true);
                     break;
                 case 4: // Underline
                     _buffer.CurrentUnderline = true;
@@ -591,8 +590,7 @@ public class AnsiParser
                         _buffer.CurrentBlinking = true;
                     break;
                 case 22: // Normal intensity
-                    _buffer.CurrentBold = false;
-                    _buffer.CurrentForeground = _buffer.DefaultForegroundColor;
+                    _buffer.SetBoldIntensity(false);
                     break;
                 case 24: // No underline
                     _buffer.CurrentUnderline = false;
@@ -624,7 +622,7 @@ public class AnsiParser
                     }
                     break;
                 case 39: // Default foreground
-                    _buffer.CurrentForeground = _buffer.CurrentBold ? _buffer.BoldForegroundColor : _buffer.DefaultForegroundColor;
+                    _buffer.CurrentForeground = _buffer.GetDefaultForegroundForCurrentIntensity();
                     break;
                 case >= 40 and <= 47: // Standard background
                     _buffer.CurrentBackground = _buffer.GetAnsiColor(p - 40);

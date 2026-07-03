@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 using CxShell.Models;
 using Renci.SshNet;
 
@@ -21,6 +24,9 @@ public class ServerMonitorService : IDisposable
     private const string LinuxSectionSeparator = "---SEP---";
     private const string WindowsMonitorScript = """
 $ErrorActionPreference = 'SilentlyContinue'
+$ProgressPreference = 'SilentlyContinue'
+$WarningPreference = 'SilentlyContinue'
+$InformationPreference = 'SilentlyContinue'
 
 function To-Int64Value($value) {
     if ($null -eq $value) { return 0 }
@@ -34,7 +40,7 @@ function To-DoubleValue($value) {
 
 $invariant = [System.Globalization.CultureInfo]::InvariantCulture
 
-$cpuCounters = Get-CimInstance Win32_PerfFormattedData_PerfOS_Processor
+$cpuCounters = @(Get-CimInstance Win32_PerfFormattedData_PerfOS_Processor -ErrorAction SilentlyContinue)
 $totalCpu = $cpuCounters | Where-Object { $_.Name -eq '_Total' } | Select-Object -First 1
 if ($null -ne $totalCpu) {
     $cpuValue = (To-DoubleValue $totalCpu.PercentProcessorTime).ToString($invariant)
@@ -48,14 +54,31 @@ foreach ($cpu in ($cpuCounters | Where-Object { $_.Name -ne '_Total' } | Sort-Ob
     $coreIndex++
 }
 
-$os = Get-CimInstance Win32_OperatingSystem | Select-Object -First 1
+if ($null -eq $totalCpu) {
+    $processors = @(Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue)
+    $loadValues = @($processors | Where-Object { $null -ne $_.LoadPercentage } | ForEach-Object { To-DoubleValue $_.LoadPercentage })
+    if ($loadValues.Count -gt 0) {
+        $sumCpu = 0.0
+        foreach ($value in $loadValues) { $sumCpu += $value }
+        $avgCpu = ($sumCpu / [Math]::Max(1, $loadValues.Count)).ToString($invariant)
+        Write-Output ("CPU|0|{0}" -f $avgCpu)
+
+        $coreIndex = 1
+        foreach ($value in $loadValues) {
+            Write-Output ("CPU|{0}|{1}" -f $coreIndex, $value.ToString($invariant))
+            $coreIndex++
+        }
+    }
+}
+
+$os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($null -ne $os) {
     Write-Output ("MEM|{0}|{1}" -f (To-Int64Value $os.TotalVisibleMemorySize), (To-Int64Value $os.FreePhysicalMemory))
 }
 
 $rx = [int64]0
 $tx = [int64]0
-$networkCounters = Get-CimInstance Win32_PerfFormattedData_Tcpip_NetworkInterface
+$networkCounters = Get-CimInstance Win32_PerfFormattedData_Tcpip_NetworkInterface -ErrorAction SilentlyContinue
 foreach ($nic in $networkCounters) {
     $name = [string]$nic.Name
     if ($name -match 'Loopback|isatap|Teredo') { continue }
@@ -64,15 +87,17 @@ foreach ($nic in $networkCounters) {
 }
 Write-Output ("NET|{0}|{1}" -f $rx, $tx)
 
-Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | ForEach-Object {
+Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' -ErrorAction SilentlyContinue | ForEach-Object {
     Write-Output ("DISK|{0}|{1}|{2}" -f $_.DeviceID, (To-Int64Value $_.Size), (To-Int64Value $_.FreeSpace))
 }
 
-Get-CimInstance Win32_PerfFormattedData_PerfDisk_LogicalDisk |
+Get-CimInstance Win32_PerfFormattedData_PerfDisk_LogicalDisk -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -ne '_Total' -and $_.Name -notmatch '^HarddiskVolume' } |
     ForEach-Object {
         Write-Output ("DIO|{0}|{1}|{2}" -f $_.Name, (To-Int64Value $_.DiskReadBytesPersec), (To-Int64Value $_.DiskWriteBytesPersec))
     }
+
+exit 0
 """;
 
     private SshClient? _sshClient;
@@ -86,8 +111,11 @@ Get-CimInstance Win32_PerfFormattedData_PerfDisk_LogicalDisk |
     private List<long[]>? _prevCpuStat;
     private Dictionary<string, (long rx, long tx)>? _prevNetStat;
     private Dictionary<string, (long readSectors, long writeSectors)>? _prevDiskStat;
+    private readonly object _debugLogLock = new();
+    private bool _hasLoggedWindowsScript;
 
     public bool IsMonitoring => _monitorTask != null && !_monitorTask.IsCompleted;
+    public static string DebugLogPath => Path.Combine(GetDebugLogDirectory(), "server-monitor-debug.log");
 
     public event Action<MonitorSnapshot>? DataUpdated;
     public event Action<string>? ErrorOccurred;
@@ -102,6 +130,8 @@ Get-CimInstance Win32_PerfFormattedData_PerfDisk_LogicalDisk |
         _commandRunner = commandRunner;
         _ownsSshClient = commandRunner == null;
         _targetKind = isWindowsOpenSsh ? MonitorTargetKind.Windows : MonitorTargetKind.Linux;
+        _hasLoggedWindowsScript = false;
+        DebugLog($"start session={session.Username}@{session.Host}:{session.Port} protocol={session.Protocol} commandRunner={commandRunner != null} hintedTarget={_targetKind}");
 
         if (commandRunner != null)
         {
@@ -120,13 +150,15 @@ Get-CimInstance Win32_PerfFormattedData_PerfDisk_LogicalDisk |
         try
         {
             await ConnectWithRetryAsync(_sshClient, CancellationToken.None).ConfigureAwait(false);
-            _targetKind = SshServerInfo.IsWindowsOpenSshServer(connectionInfo.ServerVersion)
+            _targetKind = isWindowsOpenSsh || SshServerInfo.IsWindowsOpenSshServer(connectionInfo.ServerVersion)
                 ? MonitorTargetKind.Windows
                 : MonitorTargetKind.Linux;
+            DebugLog($"ssh monitor connected serverVersion={connectionInfo.ServerVersion} detectedTarget={_targetKind}");
         }
         catch (Exception ex)
         {
             var displayMessage = SshServerInfo.BuildConnectionErrorMessage(ex);
+            DebugLog($"ssh monitor connection failed message={displayMessage} exception={ex}");
             ErrorOccurred?.Invoke(string.Format(LocalizationService.Shared.Text("Monitor.ConnectionFailed"), displayMessage));
             _sshClient?.Dispose();
             _sshClient = null;
@@ -138,6 +170,7 @@ Get-CimInstance Win32_PerfFormattedData_PerfDisk_LogicalDisk |
 
     public void Stop()
     {
+        DebugLog("stop");
         _cts?.Cancel();
         try { _monitorTask?.Wait(TimeSpan.FromSeconds(3)); } catch { }
         if (_ownsSshClient)
@@ -167,6 +200,7 @@ Get-CimInstance Win32_PerfFormattedData_PerfDisk_LogicalDisk |
         _prevDiskStat = null;
 
         _cts = new CancellationTokenSource();
+        DebugLog($"monitor loop start target={_targetKind} ownsSshClient={_ownsSshClient} commandRunner={_commandRunner != null}");
         _monitorTask = Task.Run(() => MonitorLoop(_cts.Token));
     }
 
@@ -205,7 +239,14 @@ Get-CimInstance Win32_PerfFormattedData_PerfDisk_LogicalDisk |
             {
                 var snapshot = await CollectAsync(ct).ConfigureAwait(false);
                 if (snapshot != null)
+                {
+                    DebugLog($"collect success target={_targetKind} cpu={snapshot.CpuCores.Count} memory={snapshot.Memory != null} net={snapshot.NetworkSpeed != null} disks={snapshot.DiskPartitions.Count} diskIo={snapshot.DiskIo.Count}");
                     DataUpdated?.Invoke(snapshot);
+                }
+                else
+                {
+                    DebugLog($"collect returned null target={_targetKind}");
+                }
             }
             catch (OperationCanceledException)
             {
@@ -213,6 +254,7 @@ Get-CimInstance Win32_PerfFormattedData_PerfDisk_LogicalDisk |
             }
             catch (Exception ex)
             {
+                DebugLog($"collect exception target={_targetKind} exception={ex}");
                 ErrorOccurred?.Invoke(string.Format(LocalizationService.Shared.Text("Monitor.CollectFailed"), ex.Message));
             }
         }
@@ -237,7 +279,7 @@ Get-CimInstance Win32_PerfFormattedData_PerfDisk_LogicalDisk |
             $"cat /proc/diskstats; echo '{LinuxSectionSeparator}'; " +
             $"df -P";
 
-        var output = await TryRunRemoteCommandAsync(cmd, TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
+        var output = await TryRunRemoteCommandAsync(cmd, TimeSpan.FromSeconds(5), ct, "linux-monitor").ConfigureAwait(false);
         if (output == null)
             return null;
 
@@ -251,7 +293,10 @@ Get-CimInstance Win32_PerfFormattedData_PerfDisk_LogicalDisk |
             sections = normalizedOutput.Split($"{LinuxSectionSeparator}\n", StringSplitOptions.None);
 
         if (sections.Length < 5)
+        {
+            DebugLog($"linux parse skipped: expected 5 sections, got {sections.Length}. output={PreviewForLog(normalizedOutput)}");
             return null;
+        }
 
         var currCpuStat = LinuxProcParser.ParseProcStat(sections[0]);
         List<CpuCoreInfo> cpuCores;
@@ -296,8 +341,29 @@ Get-CimInstance Win32_PerfFormattedData_PerfDisk_LogicalDisk |
 
         var encodedScript = Convert.ToBase64String(Encoding.Unicode.GetBytes(WindowsMonitorScript));
         var cmd = $"powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {encodedScript}";
-        var output = await TryRunRemoteCommandAsync(cmd, TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
-        return output == null ? null : ParseWindowsMonitorOutput(output);
+        if (!_hasLoggedWindowsScript)
+        {
+            _hasLoggedWindowsScript = true;
+            DebugLog($"windows monitor script length={WindowsMonitorScript.Length} base64Length={encodedScript.Length}");
+        }
+
+        var output = await TryRunRemoteCommandAsync(cmd, TimeSpan.FromSeconds(10), ct, "windows-monitor").ConfigureAwait(false);
+        if (output == null)
+            return null;
+
+        if (IsPowerShellClixml(output))
+        {
+            var decoded = DecodePowerShellClixml(output);
+            DebugLog($"windows command returned CLIXML on stdout decoded={PreviewForLog(decoded)} raw={PreviewForLog(output)}");
+            throw new InvalidOperationException(decoded);
+        }
+
+        var snapshot = ParseWindowsMonitorOutput(output);
+        DebugLog($"windows parse result lines={CountNonEmptyLines(output)} cpu={snapshot.CpuCores.Count} memory={snapshot.Memory != null} net={snapshot.NetworkSpeed != null} disks={snapshot.DiskPartitions.Count} diskIo={snapshot.DiskIo.Count}");
+        if (snapshot.CpuCores.Count == 0 && snapshot.Memory == null && snapshot.NetworkSpeed == null && snapshot.DiskPartitions.Count == 0 && snapshot.DiskIo.Count == 0)
+            DebugLog($"windows parse produced empty snapshot. raw={PreviewForLog(output)}");
+
+        return snapshot;
     }
 
     private bool HasRemoteCommandSource()
@@ -305,28 +371,48 @@ Get-CimInstance Win32_PerfFormattedData_PerfDisk_LogicalDisk |
         return _commandRunner != null || _sshClient?.IsConnected == true;
     }
 
-    private async Task<string?> TryRunRemoteCommandAsync(string commandText, TimeSpan timeout, CancellationToken ct)
+    private async Task<string?> TryRunRemoteCommandAsync(string commandText, TimeSpan timeout, CancellationToken ct, string commandLabel)
     {
         try
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(timeout);
             if (_commandRunner != null)
-                return await _commandRunner(commandText, timeout, cts.Token).ConfigureAwait(false);
+            {
+                DebugLog($"run command via active terminal label={commandLabel} timeout={timeout.TotalSeconds:F0}s commandLength={commandText.Length}");
+                var output = await _commandRunner(commandText, timeout, cts.Token).ConfigureAwait(false);
+                DebugLog($"command completed via active terminal label={commandLabel} stdoutLength={output?.Length ?? 0} stdout={PreviewForLog(output)}");
+                return output;
+            }
 
             return await Task.Run(() =>
             {
                 if (_sshClient == null || !_sshClient.IsConnected)
                     return null;
 
+                DebugLog($"run command via monitor ssh label={commandLabel} timeout={timeout.TotalSeconds:F0}s commandLength={commandText.Length}");
                 using var command = _sshClient.CreateCommand(commandText);
                 command.CommandTimeout = timeout;
                 var result = command.Execute();
+                DebugLog($"command completed via monitor ssh label={commandLabel} exit={command.ExitStatus} stdoutLength={result?.Length ?? 0} stderrLength={command.Error?.Length ?? 0} stdout={PreviewForLog(result)} stderr={PreviewForLog(command.Error)}");
                 if (command.ExitStatus != 0)
                 {
+                    if (string.Equals(commandLabel, "windows-monitor", StringComparison.Ordinal) &&
+                        HasWindowsMonitorOutput(result))
+                    {
+                        DebugLog($"command ignored nonzero exit with usable windows output label={commandLabel} exit={command.ExitStatus}");
+                        return result;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(result) && IsPowerShellProgressOnlyClixml(command.Error))
+                    {
+                        DebugLog($"command ignored progress-only CLIXML stderr label={commandLabel} exit={command.ExitStatus}");
+                        return result;
+                    }
+
                     var error = string.IsNullOrWhiteSpace(command.Error)
                         ? $"Remote command exited with code {command.ExitStatus}."
-                        : command.Error.Trim();
+                        : DecodePowerShellClixml(command.Error.Trim());
                     throw new InvalidOperationException(error);
                 }
 
@@ -335,11 +421,14 @@ Get-CimInstance Win32_PerfFormattedData_PerfDisk_LogicalDisk |
         }
         catch (OperationCanceledException)
         {
+            DebugLog($"command cancelled label={commandLabel} timeout={timeout.TotalSeconds:F0}s");
             throw;
         }
         catch (Exception ex)
         {
-            ErrorOccurred?.Invoke(string.Format(LocalizationService.Shared.Text("Monitor.CommandFailed"), ex.Message));
+            var displayMessage = DecodePowerShellClixml(ex.Message);
+            DebugLog($"command failed label={commandLabel} displayMessage={PreviewForLog(displayMessage)} exception={ex}");
+            ErrorOccurred?.Invoke(string.Format(LocalizationService.Shared.Text("Monitor.CommandFailed"), displayMessage));
             return null;
         }
     }
@@ -429,6 +518,21 @@ Get-CimInstance Win32_PerfFormattedData_PerfDisk_LogicalDisk |
         return snapshot;
     }
 
+    private static bool HasWindowsMonitorOutput(string? output)
+    {
+        if (string.IsNullOrWhiteSpace(output))
+            return false;
+
+        return output
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Any(line =>
+                line.StartsWith("CPU|", StringComparison.Ordinal) ||
+                line.StartsWith("MEM|", StringComparison.Ordinal) ||
+                line.StartsWith("NET|", StringComparison.Ordinal) ||
+                line.StartsWith("DISK|", StringComparison.Ordinal) ||
+                line.StartsWith("DIO|", StringComparison.Ordinal));
+    }
+
     private static int ParseIntOrZero(string text)
     {
         return int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
@@ -448,6 +552,138 @@ Get-CimInstance Win32_PerfFormattedData_PerfDisk_LogicalDisk |
         return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
             ? value
             : 0;
+    }
+
+    private void DebugLog(string message)
+    {
+        try
+        {
+            var line = $"{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff zzz} {message}{Environment.NewLine}";
+            lock (_debugLogLock)
+            {
+                var path = DebugLogPath;
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.AppendAllText(path, line, Encoding.UTF8);
+            }
+        }
+        catch
+        {
+            // Monitor diagnostics must never affect the UI or collection loop.
+        }
+    }
+
+    private static string GetDebugLogDirectory()
+    {
+        try
+        {
+            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            if (!string.IsNullOrWhiteSpace(localAppData))
+                return Path.Combine(localAppData, "CxShell", "Logs");
+        }
+        catch
+        {
+        }
+
+        return AppContext.BaseDirectory;
+    }
+
+    private static bool IsPowerShellClixml(string? text)
+    {
+        return !string.IsNullOrWhiteSpace(text) &&
+               text.IndexOf("<Objs", StringComparison.OrdinalIgnoreCase) >= 0 &&
+               text.IndexOf("CLIXML", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private static string DecodePowerShellClixml(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text) || !IsPowerShellClixml(text))
+            return text?.Trim() ?? string.Empty;
+
+        if (IsPowerShellProgressOnlyClixml(text))
+            return "PowerShell progress stream.";
+
+        var xmlStart = text.IndexOf("<Objs", StringComparison.OrdinalIgnoreCase);
+        if (xmlStart < 0)
+            return text.Trim();
+
+        try
+        {
+            var doc = XDocument.Parse(text[xmlStart..].Trim());
+            var ns = doc.Root?.Name.Namespace ?? XNamespace.None;
+            var streamStrings = doc
+                .Descendants(ns + "S")
+                .Where(element =>
+                {
+                    var stream = element.Attribute("S")?.Value;
+                    return string.IsNullOrEmpty(stream) ||
+                           string.Equals(stream, "Error", StringComparison.OrdinalIgnoreCase);
+                })
+                .Select(element => DecodePowerShellEscapedString(element.Value))
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Distinct()
+                .ToList();
+
+            if (streamStrings.Count > 0)
+                return string.Join(Environment.NewLine, streamStrings).Trim();
+        }
+        catch
+        {
+        }
+
+        return text.Trim();
+    }
+
+    private static bool IsPowerShellProgressOnlyClixml(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text) || !IsPowerShellClixml(text))
+            return false;
+
+        var xmlStart = text.IndexOf("<Objs", StringComparison.OrdinalIgnoreCase);
+        if (xmlStart < 0)
+            return false;
+
+        try
+        {
+            var doc = XDocument.Parse(text[xmlStart..].Trim());
+            var ns = doc.Root?.Name.Namespace ?? XNamespace.None;
+            var streamObjects = doc
+                .Descendants(ns + "Obj")
+                .Select(element => element.Attribute("S")?.Value)
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .ToList();
+
+            return streamObjects.Count > 0 &&
+                   streamObjects.All(stream => string.Equals(stream, "progress", StringComparison.OrdinalIgnoreCase));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string DecodePowerShellEscapedString(string value)
+    {
+        return Regex.Replace(value, "_x(?<hex>[0-9A-Fa-f]{4})_", match =>
+        {
+            var code = int.Parse(match.Groups["hex"].Value, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+            return char.ConvertFromUtf32(code);
+        });
+    }
+
+    private static int CountNonEmptyLines(string text)
+    {
+        return text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length;
+    }
+
+    private static string PreviewForLog(string? text, int maxLength = 4000)
+    {
+        if (string.IsNullOrEmpty(text))
+            return "<empty>";
+
+        var normalized = text
+            .Replace("\r", "\\r", StringComparison.Ordinal)
+            .Replace("\n", "\\n", StringComparison.Ordinal);
+        return normalized.Length <= maxLength ? normalized : normalized[..maxLength] + "...<truncated>";
     }
 
     public void Dispose() => Stop();

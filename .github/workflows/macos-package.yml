@@ -72,11 +72,17 @@ jobs:
       - name: Publish app
         shell: bash
         run: |
+          version="${{ steps.version.outputs.value }}"
+          assembly_version="${version%%-*}"
           dotnet publish CxShell.csproj \
             -c Release \
             -r "${{ matrix.rid }}" \
             --self-contained true \
             -o "artifacts/publish/${{ matrix.rid }}" \
+            /p:Version="$version" \
+            /p:AssemblyVersion="$assembly_version" \
+            /p:FileVersion="$assembly_version" \
+            /p:InformationalVersion="$version" \
             /p:PublishSingleFile=false \
             /p:DebugType=none \
             /p:DebugSymbols=false

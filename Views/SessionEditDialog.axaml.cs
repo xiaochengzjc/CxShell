@@ -35,6 +35,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
     private string _currentCategoryKey = "Connection";
 
     public bool ShouldConnect { get; private set; }
+    public event Action<SessionInfo>? SessionSaved;
 
     protected override Type StyleKeyOverride { get; } = typeof(AtomUI.Desktop.Controls.Window);
 
@@ -354,9 +355,11 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             vm.SaveCommand.Execute(null);
             if (vm.SavedSession != null)
             {
+                SessionSaved?.Invoke(vm.SavedSession);
                 ShouldConnect = _saveAndConnectRequested;
                 _saveAndConnectRequested = false;
-                Close();
+                if (ShouldConnect)
+                    Close();
                 return;
             }
 
@@ -1610,7 +1613,8 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             OptionsSource = CreateProxyProtocolOptions(),
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
-        SelectOption(protocolSelect, editing.Protocol == ProxyProtocol.None ? ProxyProtocol.Socks5.ToString() : editing.Protocol.ToString());
+        var initialProtocol = IsSupportedProxyProtocol(editing.Protocol) ? editing.Protocol : ProxyProtocol.Socks5;
+        SelectOption(protocolSelect, initialProtocol == ProxyProtocol.None ? ProxyProtocol.Socks5.ToString() : initialProtocol.ToString());
 
         var hostBox = CreateLineEdit(editing.Host);
         var portBox = CreateLineEdit(editing.Port > 0 ? editing.Port.ToString() : "1080");
@@ -2712,10 +2716,13 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             new SelectOption { Header = "SOCKS4", Content = ProxyProtocol.Socks4.ToString() },
             new SelectOption { Header = "SOCKS4A", Content = ProxyProtocol.Socks4A.ToString() },
             new SelectOption { Header = "SOCKS5", Content = ProxyProtocol.Socks5.ToString() },
-            new SelectOption { Header = "HTTP 1.1", Content = ProxyProtocol.Http.ToString() },
-            new SelectOption { Header = "SSH_PASSTHROUGH", Content = ProxyProtocol.SshPassthrough.ToString() },
-            new SelectOption { Header = "JUMPHOST", Content = ProxyProtocol.JumpHost.ToString() }
+            new SelectOption { Header = "HTTP 1.1", Content = ProxyProtocol.Http.ToString() }
         ];
+    }
+
+    private static bool IsSupportedProxyProtocol(ProxyProtocol protocol)
+    {
+        return protocol is ProxyProtocol.Socks4 or ProxyProtocol.Socks4A or ProxyProtocol.Socks5 or ProxyProtocol.Http;
     }
 
     private static ProxyProtocol GetSelectedProxyProtocol(Select select)

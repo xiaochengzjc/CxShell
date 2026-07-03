@@ -7,9 +7,11 @@
              Focusable="True"
              Background="{atom:SharedTokenResource ColorBgLayout}">
     <Grid RowDefinitions="*,Auto">
-        <Border Grid.Row="0"
+        <Border x:Name="RdpViewport"
+                Grid.Row="0"
                 Background="#111111"
-                ClipToBounds="True">
+                ClipToBounds="True"
+                SizeChanged="OnViewportSizeChanged">
             <Image x:Name="FramebufferImage"
                    Source="{Binding Framebuffer}"
                    Stretch="Uniform"

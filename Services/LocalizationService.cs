@@ -36,6 +36,7 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ["Arrange.Merge"] = "Merge all tab groups",
         ["Quick.Properties"] = "Properties",
         ["Quick.Delete"] = "Delete",
+        ["TabMenu.Duplicate"] = "Duplicate",
         ["TabMenu.Close"] = "Close",
         ["TabMenu.Properties"] = "Properties",
         ["TabMenu.AddQuick"] = "Add to quick bar",
@@ -395,9 +396,12 @@ public sealed class LocalizationService : INotifyPropertyChanged
     {
         AddGeneratedTexts(EnglishTexts, ChineseTexts);
         AddDialogTexts(EnglishTexts, ChineseTexts);
+        EnglishTexts["TabMenu.Duplicate"] = "Duplicate";
         EnglishTexts["TabMenu.Close"] = "Close";
         EnglishTexts["TabMenu.Properties"] = "Properties";
         EnglishTexts["TabMenu.AddQuick"] = "Add to quick bar";
+        EnglishTexts["TabMenu.QuickCommands"] = "Quick Commands";
+        EnglishTexts["TabMenu.QuickCommandsEmpty"] = "No quick commands";
         EnglishTexts["Toolbar.Update"] = "Update";
         EnglishTexts["Toolbar.UpdateTip"] = "Check for CxShell updates";
         EnglishTexts["Toolbar.UpdateChecking"] = "Checking...";
@@ -407,6 +411,16 @@ public sealed class LocalizationService : INotifyPropertyChanged
         EnglishTexts["Help.AboutCxShell"] = "About CxShell";
         EnglishTexts["About.Title"] = "About CxShell";
         EnglishTexts["About.Message"] = "CxShell\nVersion: {0}\n\nA cross-platform remote session client for SSH, SFTP, FTP, TELNET, RLOGIN, SERIAL, VNC, and RDP.\n\nBuilt with Avalonia, AtomUI, SSH.NET, FluentFTP, FreeRDP, and Velopack.\n\nGitHub: https://github.com/xiaochengzjc/CxShell";
+        EnglishTexts["About.Version"] = "Version: {0}";
+        EnglishTexts["About.Description"] = "A cross-platform remote session client with support for SSH, SFTP, FTP, TELNET, RLOGIN, SERIAL, VNC, and RDP.";
+        EnglishTexts["About.BuiltWith"] = "Built with Avalonia, AtomUI, SSH.NET, FluentFTP, FreeRDP, and Velopack.";
+        EnglishTexts["About.GitHub"] = "GitHub:";
+        EnglishTexts["SessionEdit.Unsupported.SftpCustomServer"] = "Custom SFTP server commands need lower-level SFTP channel support and are not supported yet.";
+        EnglishTexts["SessionEdit.Unsupported.RdpDisplayPartial"] = "Color quality and screen scale are applied when connecting. Smart sizing scales locally; smart/legacy reconnect reconnects with the current viewport size after resize.";
+        EnglishTexts["SessionEdit.Unsupported.RdpScreenScale"] = "Screen scale is applied as the initial RDP display zoom.";
+        EnglishTexts["SessionEdit.Unsupported.RdpDevicesAudio"] = "RDP drive redirection, audio, and full system key-combination handling require native channel support and are not supported yet.";
+        EnglishTexts["SessionEdit.Unsupported.QuickCommands"] = "Quick commands are available from the terminal tab right-click menu. Use the default set, or enter custom commands as name=command separated by semicolons.";
+        EnglishTexts["SessionEdit.Unsupported.DuplicateSessionCd"] = "When duplicating an SSH terminal tab, CxShell sends cd to the current remote directory after the new tab connects.";
         EnglishTexts["SessionManager.AutoCheckUpdates"] = "Automatically check for updates";
         EnglishTexts["SessionManager.IncludePrereleaseUpdates"] = "Receive preview updates";
         EnglishTexts["Update.Title"] = "CxShell Update";
@@ -422,9 +436,12 @@ public sealed class LocalizationService : INotifyPropertyChanged
         EnglishTexts["Update.Cancel"] = "Cancel";
         EnglishTexts["Update.DownloadCancelled"] = "Update download was cancelled.";
         EnglishTexts["Update.ReleaseNotes"] = "Release notes:";
+        ChineseTexts["TabMenu.Duplicate"] = "\u590d\u5236";
         ChineseTexts["TabMenu.Close"] = "\u5173\u95ed";
         ChineseTexts["TabMenu.Properties"] = "\u5c5e\u6027";
         ChineseTexts["TabMenu.AddQuick"] = "\u6dfb\u52a0\u5230\u6807\u7b7e";
+        ChineseTexts["TabMenu.QuickCommands"] = "\u5feb\u901f\u547d\u4ee4";
+        ChineseTexts["TabMenu.QuickCommandsEmpty"] = "\u6ca1\u6709\u5feb\u901f\u547d\u4ee4";
         ChineseTexts["Toolbar.Update"] = "\u66f4\u65b0";
         ChineseTexts["Toolbar.UpdateTip"] = "\u68c0\u67e5 CxShell \u66f4\u65b0";
         ChineseTexts["Toolbar.UpdateChecking"] = "\u68c0\u67e5\u4e2d...";
@@ -434,6 +451,16 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ChineseTexts["Help.AboutCxShell"] = "\u5173\u4e8e CxShell";
         ChineseTexts["About.Title"] = "\u5173\u4e8e CxShell";
         ChineseTexts["About.Message"] = "CxShell\n\u7248\u672c\uff1a{0}\n\n\u8de8\u5e73\u53f0\u8fdc\u7a0b\u4f1a\u8bdd\u5ba2\u6237\u7aef\uff0c\u652f\u6301 SSH\u3001SFTP\u3001FTP\u3001TELNET\u3001RLOGIN\u3001SERIAL\u3001VNC \u548c RDP\u3002\n\n\u57fa\u4e8e Avalonia\u3001AtomUI\u3001SSH.NET\u3001FluentFTP\u3001FreeRDP \u548c Velopack \u6784\u5efa\u3002\n\nGitHub\uff1ahttps://github.com/xiaochengzjc/CxShell";
+        ChineseTexts["About.Version"] = "\u7248\u672c\uff1a{0}";
+        ChineseTexts["About.Description"] = "\u8de8\u5e73\u53f0\u8fdc\u7a0b\u4f1a\u8bdd\u5ba2\u6237\u7aef\uff0c\u652f\u6301 SSH\u3001SFTP\u3001FTP\u3001TELNET\u3001RLOGIN\u3001SERIAL\u3001VNC \u548c RDP\u3002";
+        ChineseTexts["About.BuiltWith"] = "\u57fa\u4e8e Avalonia\u3001AtomUI\u3001SSH.NET\u3001FluentFTP\u3001FreeRDP \u548c Velopack \u6784\u5efa\u3002";
+        ChineseTexts["About.GitHub"] = "GitHub\uff1a";
+        ChineseTexts["SessionEdit.Unsupported.SftpCustomServer"] = "\u81ea\u5b9a\u4e49 SFTP \u670d\u52a1\u5668\u547d\u4ee4\u9700\u8981\u5e95\u5c42 SFTP \u901a\u9053\u652f\u6301\uff0c\u5f53\u524d\u6682\u672a\u652f\u6301\u3002";
+        ChineseTexts["SessionEdit.Unsupported.RdpDisplayPartial"] = "\u989c\u8272\u8d28\u91cf\u548c\u5c4f\u5e55\u7f29\u653e\u4f1a\u5728\u8fde\u63a5\u65f6\u751f\u6548\u3002Smart sizing \u4f7f\u7528\u672c\u5730\u7f29\u653e\uff1bsmart/legacy reconnect \u4f1a\u5728\u7a97\u53e3\u5c3a\u5bf8\u7a33\u5b9a\u540e\u6309\u5f53\u524d\u89c6\u56fe\u5c3a\u5bf8\u91cd\u8fde\u3002";
+        ChineseTexts["SessionEdit.Unsupported.RdpScreenScale"] = "\u5c4f\u5e55\u7f29\u653e\u4f1a\u4f5c\u4e3a RDP \u521d\u59cb\u663e\u793a\u6bd4\u4f8b\u751f\u6548\u3002";
+        ChineseTexts["SessionEdit.Unsupported.RdpDevicesAudio"] = "RDP \u78c1\u76d8\u91cd\u5b9a\u5411\u3001\u97f3\u9891\u548c\u5b8c\u6574\u7cfb\u7edf\u6309\u952e\u7ec4\u5408\u9700\u8981 native channel \u652f\u6301\uff0c\u5f53\u524d\u6682\u672a\u652f\u6301\u3002";
+        ChineseTexts["SessionEdit.Unsupported.QuickCommands"] = "\u5feb\u901f\u547d\u4ee4\u53ef\u5728\u7ec8\u7aef Tab \u53f3\u952e\u83dc\u5355\u4e2d\u4f7f\u7528\u3002\u53ef\u4f7f\u7528\u9ed8\u8ba4\u96c6\uff0c\u4e5f\u53ef\u7528\u5206\u53f7\u8f93\u5165 name=command \u5f62\u5f0f\u7684\u81ea\u5b9a\u4e49\u547d\u4ee4\u3002";
+        ChineseTexts["SessionEdit.Unsupported.DuplicateSessionCd"] = "\u590d\u5236 SSH \u7ec8\u7aef tab \u65f6\uff0cCxShell \u4f1a\u5728\u65b0 tab \u8fde\u63a5\u540e cd \u5230\u5f53\u524d\u8fdc\u7a0b\u76ee\u5f55\u3002";
         ChineseTexts["SessionManager.AutoCheckUpdates"] = "\u81ea\u52a8\u68c0\u67e5\u66f4\u65b0";
         ChineseTexts["SessionManager.IncludePrereleaseUpdates"] = "\u63a5\u6536\u9884\u89c8\u7248\u66f4\u65b0";
         ChineseTexts["Update.Title"] = "CxShell \u66f4\u65b0";

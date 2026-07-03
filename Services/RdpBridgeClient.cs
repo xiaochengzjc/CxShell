@@ -70,12 +70,14 @@ public sealed class RdpBridgeClient : IDisposable
         _clipboardTextCallback = OnClipboardText;
     }
 
-    public void Connect(SessionInfo session, string? password)
+    public void Connect(SessionInfo session, string? password, int? desktopWidth = null, int? desktopHeight = null)
     {
         Disconnect();
 
         var host = session.Host ?? string.Empty;
         var port = session.Port > 0 ? session.Port : 3389;
+        var width = Math.Max(1, desktopWidth ?? session.RdpDesktopWidth);
+        var height = Math.Max(1, desktopHeight ?? session.RdpDesktopHeight);
         var targetDescription = $"{host}:{port}";
         if (session.RdpUseSshTunnel)
         {
@@ -84,7 +86,8 @@ public sealed class RdpBridgeClient : IDisposable
             targetDescription = $"{session.Host}:{(session.Port > 0 ? session.Port : 3389)} via SSH tunnel";
         }
 
-        DebugLog($"connect start host={SanitizeLogValue(host)} port={port} target={SanitizeLogValue(targetDescription)} user={SanitizeLogValue(session.Username)} size={session.RdpDesktopWidth}x{session.RdpDesktopHeight} hasPassword={!string.IsNullOrEmpty(password)} useSshTunnel={session.RdpUseSshTunnel}");
+        var colorDepth = ResolveColorDepth(session.RdpColorQuality);
+        DebugLog($"connect start host={SanitizeLogValue(host)} port={port} target={SanitizeLogValue(targetDescription)} user={SanitizeLogValue(session.Username)} size={width}x{height} colorDepth={colorDepth} hasPassword={!string.IsNullOrEmpty(password)} useSshTunnel={session.RdpUseSshTunnel}");
         _handle = NativeMethods.cxrdp_create();
         if (_handle == IntPtr.Zero)
         {
@@ -102,8 +105,9 @@ public sealed class RdpBridgeClient : IDisposable
             port,
             session.Username ?? string.Empty,
             password ?? string.Empty,
-            session.RdpDesktopWidth,
-            session.RdpDesktopHeight);
+            width,
+            height,
+            colorDepth);
 
         if (result != 0)
         {
@@ -505,6 +509,13 @@ public sealed class RdpBridgeClient : IDisposable
             .Replace("\n", "\\n", StringComparison.Ordinal);
     }
 
+    private static int ResolveColorDepth(string? value)
+    {
+        return int.TryParse(value, out var parsed) && parsed is 15 or 16 or 24 or 32
+            ? parsed
+            : 32;
+    }
+
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void FrameCallback(IntPtr userData, int width, int height, int stride, IntPtr bgraPixels);
 
@@ -546,7 +557,8 @@ public sealed class RdpBridgeClient : IDisposable
             [MarshalAs(UnmanagedType.LPUTF8Str)] string username,
             [MarshalAs(UnmanagedType.LPUTF8Str)] string password,
             int width,
-            int height);
+            int height,
+            int colorDepth);
 
         [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
         public static extern void cxrdp_disconnect(IntPtr handle);

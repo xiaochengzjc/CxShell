@@ -1,7 +1,11 @@
+using System.Diagnostics;
 using AtomUI.Desktop.Controls;
+using AtomUI.Theme.Styling;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using CxShell.ViewModels;
 
 namespace CxShell.Views;
 
@@ -56,5 +60,105 @@ internal static class AtomUiDialogService
             topLevel: owner);
 
         return result is DialogCode.Accepted;
+    }
+
+    public static async Task ShowAboutAsync(
+        TopLevel owner,
+        string title,
+        string appName,
+        string versionText,
+        string description,
+        string builtWith,
+        string githubLabel,
+        string githubUrl)
+    {
+        var link = new Avalonia.Controls.TextBlock
+        {
+            Text = githubUrl,
+            TextWrapping = TextWrapping.Wrap,
+            Cursor = new Cursor(StandardCursorType.Hand),
+            Foreground = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorPrimary, Color.Parse("#1677FF")))
+        };
+        link.PointerPressed += (_, _) => OpenUrl(githubUrl);
+
+        var content = new StackPanel
+        {
+            Spacing = 14,
+            Width = 430,
+            Children =
+            {
+                new StackPanel
+                {
+                    Spacing = 2,
+                    Children =
+                    {
+                        new Avalonia.Controls.TextBlock
+                        {
+                            Text = appName,
+                            FontWeight = FontWeight.SemiBold,
+                            Foreground = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorText, Color.Parse("#262626")))
+                        },
+                        new Avalonia.Controls.TextBlock
+                        {
+                            Text = versionText,
+                            Foreground = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorText, Color.Parse("#262626")))
+                        }
+                    }
+                },
+                new Avalonia.Controls.TextBlock
+                {
+                    Text = description,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorText, Color.Parse("#262626")))
+                },
+                new Avalonia.Controls.TextBlock
+                {
+                    Text = builtWith,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorText, Color.Parse("#262626")))
+                },
+                new StackPanel
+                {
+                    Spacing = 4,
+                    Children =
+                    {
+                        new Avalonia.Controls.TextBlock
+                        {
+                            Text = githubLabel,
+                            Foreground = new SolidColorBrush(ThemeTokenColorHelper.GetColor(SharedTokenKind.ColorText, Color.Parse("#262626")))
+                        },
+                        link
+                    }
+                }
+            }
+        };
+
+        await MessageBox.ShowMessageModalAsync(
+            content,
+            options: new MessageBoxOptions
+            {
+                Title = title,
+                Style = MessageBoxStyle.Information,
+                Width = 560,
+                MinHeight = 260,
+                PlacementTarget = owner as Control
+            },
+            topLevel: owner);
+    }
+
+    private static void OpenUrl(string url)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = url,
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            // Ignore shell integration failures; the visible URL can still be copied.
+        }
     }
 }

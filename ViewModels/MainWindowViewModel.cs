@@ -2,6 +2,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
+using System.Reflection;
 using System.Threading.Tasks;
 using AtomUI;
 using AtomUI.Controls;
@@ -36,6 +37,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly SessionTreeViewModel _sessionTreeVm;
     private readonly LocalizationService _localization = LocalizationService.Shared;
     private readonly SftpViewModel _emptySftp = new();
+    private readonly ServerMonitorViewModel _emptyMonitor = new();
     private readonly AppUpdateService _appUpdateService = new();
     private UpdateProgressWindow? _updateProgressWindow;
     private UpdateProgressViewModel? _updateProgressViewModel;
@@ -84,7 +86,7 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsSelectedRdpSession => SelectedTab?.IsRdpSession == true;
     public bool IsSelectedFileTransferSession => SelectedTab?.IsFileTransferSession == true;
 
-    public ServerMonitorViewModel Monitor { get; } = new();
+    public ServerMonitorViewModel Monitor => SelectedTab?.Monitor ?? _emptyMonitor;
     public ObservableCollection<SessionInfo> QuickSessions => _sessionTreeVm.QuickSessions;
     public string ThemeIcon => IsDarkMode ? "\u263E" : "\u2600";
     public string LanguageIcon => _localization.IsEnglish ? "EN" : "中";
@@ -118,9 +120,12 @@ public partial class MainWindowViewModel : ObservableObject
     public string ArrangeMergeText => _localization.Text("Arrange.Merge");
     public string QuickPropertiesText => _localization.Text("Quick.Properties");
     public string QuickDeleteText => _localization.Text("Quick.Delete");
+    public string TabDuplicateText => _localization.Text("TabMenu.Duplicate");
     public string TabCloseText => _localization.Text("TabMenu.Close");
     public string TabPropertiesText => _localization.Text("TabMenu.Properties");
     public string TabAddQuickText => _localization.Text("TabMenu.AddQuick");
+    public string TabQuickCommandsText => _localization.Text("TabMenu.QuickCommands");
+    public string TabQuickCommandsEmptyText => _localization.Text("TabMenu.QuickCommandsEmpty");
     public string WelcomeSelectSessionText => _localization.Text("Welcome.SelectSession");
     public string WelcomeBuiltWithAtomUiText => _localization.Text("Welcome.BuiltWithAtomUI");
     public string FullScreenEscBackText => _localization.Text("FullScreen.EscBack");
@@ -240,17 +245,27 @@ public partial class MainWindowViewModel : ObservableObject
         if (owner == null)
             return;
 
-        await AtomUiDialogService.ShowMessageAsync(
+        await AtomUiDialogService.ShowAboutAsync(
             owner,
             _localization.Text("About.Title"),
-            BuildAboutMessage(),
-            AtomUI.Desktop.Controls.MessageBoxStyle.Information);
+            "CxShell",
+            string.Format(_localization.Text("About.Version"), BuildAppVersion()),
+            _localization.Text("About.Description"),
+            _localization.Text("About.BuiltWith"),
+            _localization.Text("About.GitHub"),
+            "https://github.com/xiaochengzjc/CxShell");
     }
 
-    private string BuildAboutMessage()
+    private static string BuildAppVersion()
     {
-        var version = typeof(MainWindowViewModel).Assembly.GetName().Version?.ToString(3) ?? "unknown";
-        return string.Format(_localization.Text("About.Message"), version);
+        var assembly = typeof(MainWindowViewModel).Assembly;
+        var informationalVersion = assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion;
+        if (!string.IsNullOrWhiteSpace(informationalVersion))
+            return informationalVersion.Split('+')[0];
+
+        return assembly.GetName().Version?.ToString(3) ?? "unknown";
     }
 
     private async Task CheckForUpdatesCoreAsync(bool isManual, string[] restartArgs)
@@ -492,7 +507,7 @@ public partial class MainWindowViewModel : ObservableObject
         foreach (var tab in Tabs.ToList())
             CloseTab(tab);
 
-        Monitor.StopMonitoring();
+        StopAllMonitors();
     }
 
     private void NotifyLocalizationChanged()
@@ -526,9 +541,12 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(ArrangeMergeText));
         OnPropertyChanged(nameof(QuickPropertiesText));
         OnPropertyChanged(nameof(QuickDeleteText));
+        OnPropertyChanged(nameof(TabDuplicateText));
         OnPropertyChanged(nameof(TabCloseText));
         OnPropertyChanged(nameof(TabPropertiesText));
         OnPropertyChanged(nameof(TabAddQuickText));
+        OnPropertyChanged(nameof(TabQuickCommandsText));
+        OnPropertyChanged(nameof(TabQuickCommandsEmptyText));
         OnPropertyChanged(nameof(WelcomeSelectSessionText));
         OnPropertyChanged(nameof(WelcomeBuiltWithAtomUiText));
         OnPropertyChanged(nameof(FullScreenEscBackText));
@@ -544,6 +562,7 @@ public partial class MainWindowViewModel : ObservableObject
         ActivateTabGroupForSelectedTab(value);
 
         NotifySelectedContentVisibilityChanged();
+        OnPropertyChanged(nameof(Monitor));
         if (value?.Vnc != null)
         {
             if (IsSftpVisible)
@@ -601,9 +620,14 @@ public partial class MainWindowViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsMonitorPanelVisible));
         if (value)
+        {
+            OnPropertyChanged(nameof(Monitor));
             UpdateMonitor(SelectedTab);
+        }
         else
-            Monitor.StopMonitoring();
+        {
+            StopAllMonitors();
+        }
     }
 
     partial void OnIsSftpVisibleChanged(bool value)
@@ -705,14 +729,21 @@ public partial class MainWindowViewModel : ObservableObject
             !tab.Terminal.IsConnected ||
             tab.Session.Protocol != SessionProtocol.SSH)
         {
-            Monitor.StopMonitoring();
             return;
         }
-        Monitor.SwitchConnection(
+        var isWindowsOpenSsh = !tab.Terminal.SupportsPosixShellFeatures;
+        tab.Monitor.SwitchConnection(
             tab.Session,
             tab.ConnectedPassword,
-            tab.Terminal.RunRemoteCommandAsync,
-            !tab.Terminal.SupportsPosixShellFeatures);
+            isWindowsOpenSsh ? null : tab.Terminal.RunRemoteCommandAsync,
+            isWindowsOpenSsh);
+    }
+
+    private void StopAllMonitors()
+    {
+        _emptyMonitor.StopMonitoring();
+        foreach (var tab in Tabs)
+            tab.Monitor.StopMonitoring();
     }
 
     private async Task UpdateCompanionPanelsAfterTerminalConnectAsync(TerminalTabViewModel tab)
@@ -1077,6 +1108,20 @@ public partial class MainWindowViewModel : ObservableObject
         var dialog = new SessionEditDialog();
         var vm = new SessionEditViewModel(_sessionTreeVm.CreateSession());
         dialog.DataContext = vm;
+        SessionInfo? savedSession = null;
+        var sessionAdded = false;
+        dialog.SessionSaved += session =>
+        {
+            savedSession = session;
+            if (!sessionAdded)
+            {
+                _sessionTreeVm.AddSession(session);
+                sessionAdded = true;
+                return;
+            }
+
+            _sessionTreeVm.UpdateSession(session);
+        };
 
         var lifetime = Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
         if (lifetime?.MainWindow != null)
@@ -1084,14 +1129,10 @@ public partial class MainWindowViewModel : ObservableObject
             await dialog.ShowDialog(lifetime.MainWindow);
         }
 
-        if (vm.SavedSession != null)
+        if (dialog.ShouldConnect && savedSession != null)
         {
-            _sessionTreeVm.AddSession(vm.SavedSession);
-            if (dialog.ShouldConnect)
-            {
-                CloseSessionManagerWindow();
-                await ConnectSession(vm.SavedSession);
-            }
+            CloseSessionManagerWindow();
+            await ConnectSession(savedSession);
         }
     }
 
@@ -1110,6 +1151,13 @@ public partial class MainWindowViewModel : ObservableObject
         var dialog = new SessionEditDialog();
         var vm = new SessionEditViewModel(session);
         dialog.DataContext = vm;
+        SessionInfo? savedSession = null;
+        dialog.SessionSaved += saved =>
+        {
+            savedSession = saved;
+            _sessionTreeVm.UpdateSession(saved);
+            RefreshOpenTabsForSession(saved);
+        };
 
         var lifetime = Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
         if (lifetime?.MainWindow != null)
@@ -1117,15 +1165,10 @@ public partial class MainWindowViewModel : ObservableObject
             await dialog.ShowDialog(lifetime.MainWindow);
         }
 
-        if (vm.SavedSession != null)
+        if (dialog.ShouldConnect && savedSession != null)
         {
-            _sessionTreeVm.UpdateSession(vm.SavedSession);
-            RefreshOpenTabsForSession(vm.SavedSession);
-            if (dialog.ShouldConnect)
-            {
-                CloseSessionManagerWindow();
-                await ConnectSession(vm.SavedSession);
-            }
+            CloseSessionManagerWindow();
+            await ConnectSession(savedSession);
         }
     }
 
@@ -1193,6 +1236,91 @@ public partial class MainWindowViewModel : ObservableObject
         AddCurrentSessionToQuickBarCommand.NotifyCanExecuteChanged();
     }
 
+    public void MoveQuickSession(SessionInfo? source, SessionInfo? target, bool insertAfter)
+    {
+        if (source == null || target == null)
+            return;
+
+        _sessionTreeVm.MoveQuickSession(source, target, insertAfter);
+    }
+
+    public void MoveTabWithinSameStrip(TerminalTabViewModel? source, TerminalTabViewModel? target, bool insertAfter)
+    {
+        if (source == null || target == null || source == target)
+            return;
+
+        var sourceGroup = IsTabArrangementEnabled ? FindTabGroup(source) : null;
+        var targetGroup = IsTabArrangementEnabled ? FindTabGroup(target) : null;
+        if (IsTabArrangementEnabled && (sourceGroup == null || sourceGroup != targetGroup))
+            return;
+
+        MoveItemBeforeOrAfter(Tabs, source, target, insertAfter);
+        if (sourceGroup != null)
+        {
+            MoveItemBeforeOrAfter(sourceGroup.Tabs, source, target, insertAfter);
+            sourceGroup.SelectedTab = source;
+        }
+
+        SelectedTab = source;
+        ActivateTabGroupForSelectedTab(source);
+    }
+
+    private static void MoveItemBeforeOrAfter<T>(
+        ObservableCollection<T> collection,
+        T source,
+        T target,
+        bool insertAfter)
+    {
+        var oldIndex = collection.IndexOf(source);
+        var targetIndex = collection.IndexOf(target);
+        if (oldIndex < 0 || targetIndex < 0)
+            return;
+
+        var newIndex = targetIndex + (insertAfter ? 1 : 0);
+        if (oldIndex < newIndex)
+            newIndex--;
+
+        if (oldIndex == newIndex)
+            return;
+
+        collection.Move(oldIndex, newIndex);
+    }
+
+    public IReadOnlyList<QuickCommandItem> GetQuickCommands(TerminalTabViewModel? tab)
+    {
+        if (tab?.IsTerminalSession != true || !tab.Terminal.IsConnected)
+            return [];
+
+        return QuickCommandService.GetCommands(tab.Session, tab.Terminal.SupportsPosixShellFeatures);
+    }
+
+    public void ExecuteQuickCommand(TerminalTabViewModel? tab, QuickCommandItem? command)
+    {
+        if (tab?.IsTerminalSession != true ||
+            !tab.Terminal.IsConnected ||
+            command == null ||
+            string.IsNullOrWhiteSpace(command.CommandText))
+        {
+            return;
+        }
+
+        tab.Terminal.SendInput(command.CommandText.TrimEnd() + "\r");
+    }
+
+    public bool ExecuteQuickCommandByIndex(int index)
+    {
+        var tab = SelectedTab;
+        if (tab?.Session.AdvancedDisableQuickCommandShortcuts == true)
+            return false;
+
+        var commands = GetQuickCommands(tab);
+        if (index < 0 || index >= commands.Count)
+            return false;
+
+        ExecuteQuickCommand(tab, commands[index]);
+        return true;
+    }
+
     private void CloseSessionManagerWindow()
     {
         var window = _sessionManagerWindow;
@@ -1203,7 +1331,12 @@ public partial class MainWindowViewModel : ObservableObject
         window.Close();
     }
 
-    public async Task ConnectSession(SessionInfo session)
+    public Task ConnectSession(SessionInfo session)
+    {
+        return ConnectSession(session, null, null);
+    }
+
+    private async Task ConnectSession(SessionInfo session, string? passwordOverride, string? initialRemoteDirectory)
     {
         if (session.Protocol is SessionProtocol.SFTP or SessionProtocol.FTP)
         {
@@ -1230,7 +1363,9 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        string? password = GetSavedPassword(session);
+        string? password = string.IsNullOrEmpty(passwordOverride)
+            ? GetSavedPassword(session)
+            : passwordOverride;
 
         if (session.Protocol is SessionProtocol.SSH or SessionProtocol.TELNET or SessionProtocol.RLOGIN &&
             string.IsNullOrEmpty(password) &&
@@ -1258,6 +1393,7 @@ public partial class MainWindowViewModel : ObservableObject
 
             tab.ConnectedPassword = password;
             await UpdateCompanionPanelsAfterTerminalConnectAsync(tab);
+            StartInitialRemoteDirectoryChange(tab, initialRemoteDirectory);
         }
         catch (Exception ex)
         {
@@ -1314,7 +1450,9 @@ public partial class MainWindowViewModel : ObservableObject
 
         var sshHost = string.IsNullOrWhiteSpace(session.VncSshHost) ? host : session.VncSshHost.Trim();
         var sshPort = session.VncSshPort is >= 1 and <= 65535 ? session.VncSshPort : 22;
-        return $"{host}:{port} via SSH {sshHost}:{sshPort}";
+        var remoteHost = string.IsNullOrWhiteSpace(session.VncSshRemoteHost) ? host : session.VncSshRemoteHost.Trim();
+        var remotePort = session.VncSshRemotePort is >= 1 and <= 65535 ? session.VncSshRemotePort : port;
+        return $"{remoteHost}:{remotePort} via SSH {sshHost}:{sshPort}";
     }
 
     private async Task ConnectVncSession(SessionInfo session)
@@ -1425,6 +1563,84 @@ public partial class MainWindowViewModel : ObservableObject
         await tab.CompanionSftp.TryNavigateToRemotePathAsync(path);
     }
 
+    public async Task DuplicateTab(TerminalTabViewModel? source)
+    {
+        if (source == null)
+            return;
+
+        var initialRemoteDirectory = GetDuplicateInitialRemoteDirectory(source);
+        await ConnectSession(source.Session, source.ConnectedPassword, initialRemoteDirectory);
+    }
+
+    private static string? GetDuplicateInitialRemoteDirectory(TerminalTabViewModel source)
+    {
+        if (!source.IsTerminalSession ||
+            source.Session.Protocol != SessionProtocol.SSH ||
+            !source.Session.TerminalAdvancedDuplicateSessionCd ||
+            string.IsNullOrWhiteSpace(source.Terminal.RemoteCurrentDirectory))
+        {
+            return null;
+        }
+
+        return source.Terminal.RemoteCurrentDirectory;
+    }
+
+    private async void StartInitialRemoteDirectoryChange(TerminalTabViewModel tab, string? remoteDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(remoteDirectory) ||
+            tab.Session.Protocol != SessionProtocol.SSH)
+        {
+            return;
+        }
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(700));
+            if (!Tabs.Contains(tab) || !tab.Terminal.IsConnected)
+                return;
+
+            var command = BuildRemoteChangeDirectoryCommand(remoteDirectory, tab.Terminal.SupportsPosixShellFeatures);
+            if (!string.IsNullOrWhiteSpace(command))
+                tab.Terminal.SendInput(command);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Duplicate tab cd failed: {ex.Message}");
+        }
+    }
+
+    private static string BuildRemoteChangeDirectoryCommand(string remoteDirectory, bool supportsPosixShellFeatures)
+    {
+        return supportsPosixShellFeatures
+            ? $"cd {QuotePosixShellArgument(remoteDirectory)}\r"
+            : $"cd /d \"{EscapeWindowsCommandArgument(ToWindowsRemotePath(remoteDirectory))}\"\r";
+    }
+
+    private static string QuotePosixShellArgument(string value)
+    {
+        return $"'{value.Replace("'", "'\"'\"'", StringComparison.Ordinal)}'";
+    }
+
+    private static string ToWindowsRemotePath(string remoteDirectory)
+    {
+        var value = remoteDirectory.Trim();
+        if (value.Length >= 4 &&
+            value[0] == '/' &&
+            char.IsLetter(value[1]) &&
+            value[2] == ':' &&
+            value[3] == '/')
+        {
+            return $"{char.ToUpperInvariant(value[1])}:{value[3..].Replace('/', '\\')}";
+        }
+
+        return value.Replace('/', '\\');
+    }
+
+    private static string EscapeWindowsCommandArgument(string value)
+    {
+        return value.Replace("\"", "\"\"", StringComparison.Ordinal);
+    }
+
     public void CloseTab(TerminalTabViewModel tab)
     {
         var wasSelected = SelectedTab == tab;
@@ -1449,7 +1665,9 @@ public partial class MainWindowViewModel : ObservableObject
             IsTerminalFullScreen = false;
             TabGroups.Clear();
             SetSelectedTabGroup(null);
-            Monitor.StopMonitoring();
+            StopAllMonitors();
+            IsSftpVisible = false;
+            IsMonitorVisible = false;
             Sftp = _emptySftp;
             UpdateStatusBar();
             UpdateTerminalSize();
@@ -1489,6 +1707,7 @@ public partial class MainWindowViewModel : ObservableObject
         tab.Rdp?.Dispose();
         tab.FileTransfer?.StopBrowsing();
         tab.CompanionSftp.StopBrowsing();
+        tab.Monitor.Dispose();
     }
 
     [RelayCommand]
@@ -1520,6 +1739,7 @@ public partial class MainWindowViewModel : ObservableObject
         {
             SelectedTab?.Terminal.Disconnect();
             SelectedTab?.CompanionSftp.StopBrowsing();
+            SelectedTab?.Monitor.StopMonitoring();
         }
     }
 
@@ -1647,9 +1867,9 @@ public partial class MainWindowViewModel : ObservableObject
         {
             SelectedTab?.Terminal.Disconnect("[Current session disconnected]");
             SelectedTab?.CompanionSftp.StopBrowsing();
+            SelectedTab?.Monitor.StopMonitoring();
         }
 
-        Monitor.StopMonitoring();
         UpdateStatusBar();
         UpdateTerminalSize();
     }

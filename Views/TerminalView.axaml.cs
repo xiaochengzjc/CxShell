@@ -10,6 +10,7 @@ using Avalonia.Threading;
 using CxShell.ViewModels;
 using AtomContextMenu = AtomUI.Desktop.Controls.ContextMenu;
 using AtomMenuItem = AtomUI.Desktop.Controls.MenuItem;
+using AtomMenuSeparator = AtomUI.Desktop.Controls.MenuSeparator;
 
 namespace CxShell.Views;
 
@@ -270,7 +271,50 @@ public partial class TerminalView : UserControl
 
         menu.Items.Add(copyItem);
         menu.Items.Add(pasteItem);
+        menu.Items.Add(new AtomMenuSeparator());
+        AddQuickCommandMenuItems(menu);
         menu.Open(terminal);
+    }
+
+    private void AddQuickCommandMenuItems(AtomContextMenu menu)
+    {
+        if (_boundVm == null)
+            return;
+
+        var commands = _boundVm.GetQuickCommands();
+        var quickMenu = new AtomMenuItem
+        {
+            Header = _boundVm.QuickCommandsText,
+            IsEnabled = commands.Count > 0
+        };
+
+        if (commands.Count == 0)
+        {
+            quickMenu.Items.Add(new AtomMenuItem
+            {
+                Header = _boundVm.QuickCommandsEmptyText,
+                IsEnabled = false
+            });
+        }
+        else
+        {
+            foreach (var command in commands)
+            {
+                var item = new AtomMenuItem
+                {
+                    Header = command.Name
+                };
+                item.Click += (_, _) =>
+                {
+                    menu.Close();
+                    _boundVm.ExecuteQuickCommand(command);
+                    _terminal?.Focus();
+                };
+                quickMenu.Items.Add(item);
+            }
+        }
+
+        menu.Items.Add(quickMenu);
     }
 
     private async Task CopyTerminalSelectionAsync()

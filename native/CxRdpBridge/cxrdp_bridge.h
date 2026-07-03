@@ -36,7 +36,8 @@ CX_RDP_API int cxrdp_connect(
     const char* username,
     const char* password,
     int width,
-    int height);
+    int height,
+    int color_depth);
 CX_RDP_API void cxrdp_disconnect(void* handle);
 CX_RDP_API void cxrdp_send_pointer(void* handle, uint16_t flags, uint16_t x, uint16_t y);
 CX_RDP_API void cxrdp_send_key(void* handle, uint32_t key, int down);

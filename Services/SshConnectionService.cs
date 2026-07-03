@@ -23,12 +23,18 @@ public class SshConnectionService : ITerminalConnectionService
     private CancellationTokenSource? _readCts;
     private Task? _readTask;
     private readonly object _writeLock = new();
+    private readonly object _startupEchoLock = new();
     private readonly SemaphoreSlim _commandGate = new(1, 1);
+    private readonly List<string> _startupEchoSuppressions = new();
+    private readonly StringBuilder _startupEchoBuffer = new();
     private Encoding _terminalEncoding = Encoding.UTF8;
     private Decoder _terminalDecoder = Encoding.UTF8.GetDecoder();
     private SessionInfo? _session;
+    private DateTimeOffset _startupEchoSuppressUntil = DateTimeOffset.MinValue;
     private const string Utf8LocaleBootstrapCommand =
-        "unset LC_ALL; [ \"${LANG:-C}\" = C ] && LANG=en_US.UTF-8; export LANG; export LC_CTYPE=$LANG; clear; history -d $((HISTCMD-1)) 2>/dev/null\r";
+        "unset LC_ALL; [ \"${LANG:-C}\" = C ] && LANG=en_US.UTF-8; export LANG; export LC_CTYPE=$LANG\r";
+    private static readonly TimeSpan StartupEchoSuppressWindow = TimeSpan.FromSeconds(8);
+    private const int StartupEchoSuppressMaxBufferLength = 8192;
 
     public bool SupportsPosixShellFeatures { get; private set; } = true;
     public bool IsConnected => _sshClient?.IsConnected ?? false;
@@ -50,6 +56,7 @@ public class SshConnectionService : ITerminalConnectionService
         SupportsPosixShellFeatures = true;
         _terminalEncoding = TerminalSessionOptions.GetEncoding(session);
         _terminalDecoder = _terminalEncoding.GetDecoder();
+        ResetStartupEchoSuppression();
 
         if (string.Equals(session.SshVersionPolicy, "Ssh1Only", StringComparison.OrdinalIgnoreCase))
             throw new NotSupportedException("SSH1 is not supported. Please select SSH2 or a mixed SSH policy.");
@@ -98,8 +105,6 @@ public class SshConnectionService : ITerminalConnectionService
 
             if (SupportsPosixShellFeatures)
                 SendX11DisplayExport();
-            if (SupportsPosixShellFeatures && !session.SshNoTerminal && _terminalEncoding.CodePage == Encoding.UTF8.CodePage)
-                SendUtf8LocaleBootstrap();
             SendRemoteCommand(session.SshRemoteCommand);
             _terminalDecoder.Reset();
             _readCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -269,6 +274,7 @@ public class SshConnectionService : ITerminalConnectionService
         {
             var command = $"export DISPLAY={_remoteX11Display}\r";
             var bytes = _terminalEncoding.GetBytes(command);
+            RegisterStartupEchoSuppression(command);
             _shellStream?.Write(bytes, 0, bytes.Length);
             _shellStream?.Flush();
         }
@@ -315,6 +321,7 @@ public class SshConnectionService : ITerminalConnectionService
         try
         {
             var bytes = Encoding.UTF8.GetBytes(Utf8LocaleBootstrapCommand);
+            RegisterStartupEchoSuppression(Utf8LocaleBootstrapCommand);
             _shellStream?.Write(bytes, 0, bytes.Length);
             _shellStream?.Flush();
         }
@@ -322,6 +329,298 @@ public class SshConnectionService : ITerminalConnectionService
         {
             // Locale bootstrap is best-effort; the shell remains usable if it fails.
         }
+    }
+
+    private void RegisterStartupEchoSuppression(string command)
+    {
+        var normalizedCommand = command.TrimEnd('\r', '\n');
+        if (string.IsNullOrWhiteSpace(normalizedCommand))
+            return;
+
+        lock (_startupEchoLock)
+        {
+            _startupEchoSuppressions.Add(normalizedCommand);
+            _startupEchoSuppressUntil = DateTimeOffset.UtcNow.Add(StartupEchoSuppressWindow);
+        }
+    }
+
+    private void ResetStartupEchoSuppression()
+    {
+        lock (_startupEchoLock)
+        {
+            _startupEchoSuppressions.Clear();
+            _startupEchoBuffer.Clear();
+            _startupEchoSuppressUntil = DateTimeOffset.MinValue;
+        }
+    }
+
+    private string SuppressStartupCommandEchoes(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return string.Empty;
+
+        lock (_startupEchoLock)
+        {
+            if (_startupEchoSuppressions.Count == 0 && _startupEchoBuffer.Length == 0)
+                return text;
+
+            if (DateTimeOffset.UtcNow > _startupEchoSuppressUntil)
+            {
+                var flushed = _startupEchoBuffer.ToString() + text;
+                _startupEchoBuffer.Clear();
+                _startupEchoSuppressions.Clear();
+                return flushed;
+            }
+
+            _startupEchoBuffer.Append(text);
+            var output = new StringBuilder();
+
+            while (TryReadBufferedLine(_startupEchoBuffer, out var line))
+            {
+                if (!IsStartupCommandEchoLine(line))
+                    output.Append(line);
+            }
+
+            while (TrySuppressBufferedStartupCommandEcho(_startupEchoBuffer))
+            {
+            }
+
+            if (_startupEchoSuppressions.Count == 0)
+            {
+                output.Append(_startupEchoBuffer);
+                _startupEchoBuffer.Clear();
+            }
+            else if (_startupEchoBuffer.Length > StartupEchoSuppressMaxBufferLength)
+            {
+                output.Append(_startupEchoBuffer);
+                _startupEchoBuffer.Clear();
+                _startupEchoSuppressions.Clear();
+            }
+
+            return output.ToString();
+        }
+    }
+
+    private bool IsStartupCommandEchoLine(string line)
+    {
+        if (_startupEchoSuppressions.Count == 0)
+            return false;
+
+        var normalizedLine = SanitizeStartupEchoText(line).TrimEnd('\r', '\n');
+        var shouldSuppress = false;
+        for (var i = _startupEchoSuppressions.Count - 1; i >= 0; i--)
+        {
+            if (MatchesStartupSuppression(normalizedLine, _startupEchoSuppressions[i]))
+            {
+                _startupEchoSuppressions.RemoveAt(i);
+                shouldSuppress = true;
+            }
+        }
+
+        return shouldSuppress;
+    }
+
+    private bool TrySuppressBufferedStartupCommandEcho(StringBuilder buffer)
+    {
+        if (_startupEchoSuppressions.Count == 0 || buffer.Length == 0)
+            return false;
+
+        var text = buffer.ToString();
+        for (var i = _startupEchoSuppressions.Count - 1; i >= 0; i--)
+        {
+            if (!TryFindStartupCommandEchoRange(text, _startupEchoSuppressions[i], out var start, out var length))
+                continue;
+
+            buffer.Remove(start, length);
+            _startupEchoSuppressions.RemoveAt(i);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryFindStartupCommandEchoRange(string text, string suppression, out int start, out int length)
+    {
+        start = 0;
+        length = 0;
+
+        var commandIndex = text.IndexOf(suppression, StringComparison.Ordinal);
+        if (commandIndex >= 0)
+        {
+            start = FindStartupEchoLineStart(text, commandIndex);
+            length = commandIndex + suppression.Length - start;
+            return true;
+        }
+
+        if (IsLocaleBootstrapSuppression(suppression) &&
+            TryFindFragmentCommandEchoRange(text, "unset LC_ALL", "LC_CTYPE=$LANG", out start, out length))
+        {
+            return true;
+        }
+
+        if (IsX11DisplaySuppression(suppression) &&
+            TryFindFragmentCommandEchoRange(text, "export DISPLAY=", null, out start, out length))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryFindFragmentCommandEchoRange(
+        string text,
+        string firstFragment,
+        string? lastFragment,
+        out int start,
+        out int length)
+    {
+        start = 0;
+        length = 0;
+
+        var firstIndex = text.IndexOf(firstFragment, StringComparison.Ordinal);
+        if (firstIndex < 0)
+            return false;
+
+        var end = firstIndex + firstFragment.Length;
+        if (!string.IsNullOrEmpty(lastFragment))
+        {
+            var lastIndex = text.IndexOf(lastFragment, firstIndex, StringComparison.Ordinal);
+            if (lastIndex < 0)
+                return false;
+
+            end = lastIndex + lastFragment.Length;
+        }
+        else
+        {
+            var lineEnd = FindStartupEchoLineEnd(text, firstIndex);
+            if (lineEnd >= 0)
+                end = lineEnd;
+            else if (text.EndsWith('\r') || text.EndsWith('\n'))
+                end = text.Length;
+        }
+
+        start = FindStartupEchoLineStart(text, firstIndex);
+        length = end - start;
+        return length > 0;
+    }
+
+    private static int FindStartupEchoLineStart(string text, int index)
+    {
+        for (var i = index - 1; i >= 0; i--)
+        {
+            if (text[i] is '\r' or '\n')
+                return i + 1;
+        }
+
+        return 0;
+    }
+
+    private static int FindStartupEchoLineEnd(string text, int index)
+    {
+        for (var i = index; i < text.Length; i++)
+        {
+            if (text[i] is '\r' or '\n')
+                return i;
+        }
+
+        return -1;
+    }
+
+    private static bool MatchesStartupSuppression(string line, string suppression)
+    {
+        return line.Contains(suppression, StringComparison.Ordinal) ||
+               (IsLocaleBootstrapSuppression(suppression) && IsLocaleBootstrapEcho(line)) ||
+               (IsX11DisplaySuppression(suppression) && IsX11DisplayEcho(line));
+    }
+
+    private static bool IsLocaleBootstrapSuppression(string command)
+    {
+        return command.Contains("unset LC_ALL", StringComparison.Ordinal) &&
+               command.Contains("LC_CTYPE=$LANG", StringComparison.Ordinal);
+    }
+
+    private static bool IsLocaleBootstrapEcho(string line)
+    {
+        return line.Contains("unset LC_ALL", StringComparison.Ordinal) &&
+               line.Contains("LC_CTYPE=$LANG", StringComparison.Ordinal);
+    }
+
+    private static bool IsX11DisplaySuppression(string command)
+    {
+        return command.Contains("export DISPLAY=", StringComparison.Ordinal);
+    }
+
+    private static bool IsX11DisplayEcho(string line)
+    {
+        return line.Contains("export DISPLAY=", StringComparison.Ordinal);
+    }
+
+    private static string SanitizeStartupEchoText(string text)
+    {
+        if (string.IsNullOrEmpty(text) || text.IndexOf('\u001b') < 0)
+            return text;
+
+        var sanitized = new StringBuilder(text.Length);
+        for (var i = 0; i < text.Length; i++)
+        {
+            var ch = text[i];
+            if (ch != '\u001b')
+            {
+                sanitized.Append(ch);
+                continue;
+            }
+
+            if (i + 1 >= text.Length)
+                break;
+
+            var next = text[++i];
+            if (next == '[')
+            {
+                while (i + 1 < text.Length)
+                {
+                    var terminator = text[++i];
+                    if (terminator >= '@' && terminator <= '~')
+                        break;
+                }
+            }
+            else if (next == ']')
+            {
+                while (i + 1 < text.Length)
+                {
+                    var terminator = text[++i];
+                    if (terminator == '\a')
+                        break;
+
+                    if (terminator == '\u001b' && i + 1 < text.Length && text[i + 1] == '\\')
+                    {
+                        i++;
+                        break;
+                    }
+                }
+            }
+        }
+
+        return sanitized.ToString();
+    }
+
+    private static bool TryReadBufferedLine(StringBuilder buffer, out string line)
+    {
+        line = string.Empty;
+        for (var i = 0; i < buffer.Length; i++)
+        {
+            if (buffer[i] is not ('\r' or '\n'))
+                continue;
+
+            var end = i + 1;
+            while (end < buffer.Length && buffer[end] is '\r' or '\n')
+                end++;
+
+            line = buffer.ToString(0, end);
+            buffer.Remove(0, end);
+            return true;
+        }
+
+        return false;
     }
 
     private void SendRemoteCommand(string? remoteCommand)
@@ -364,7 +663,9 @@ public class SshConnectionService : ITerminalConnectionService
                     {
                         var chars = new char[charCount];
                         var charsRead = _terminalDecoder.GetChars(data, 0, data.Length, chars, 0);
-                        DataReceived?.Invoke(new string(chars, 0, charsRead));
+                        var text = SuppressStartupCommandEchoes(new string(chars, 0, charsRead));
+                        if (!string.IsNullOrEmpty(text))
+                            DataReceived?.Invoke(text);
                     }
                 }
                 else

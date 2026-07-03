@@ -36,6 +36,8 @@ public class TerminalBuffer
     public Color DefaultForegroundColor { get; set; } = TerminalColors.DefaultForeground;
     public Color DefaultBackgroundColor { get; set; } = TerminalColors.DefaultBackground;
     public Color BoldForegroundColor { get; set; } = Color.Parse("#33FF33");
+    public bool UseBoldColor { get; set; } = true;
+    public bool UseBoldFont { get; set; } = true;
     public Color[] AnsiColors { get; set; } = TerminalColors.Standard16.ToArray();
 
     public HashSet<int> DirtyRows { get; } = new();
@@ -43,6 +45,7 @@ public class TerminalBuffer
     // Current text attributes
     public Color CurrentForeground { get; set; } = TerminalColors.DefaultForeground;
     public Color CurrentBackground { get; set; } = TerminalColors.DefaultBackground;
+    public bool CurrentBoldIntensity { get; set; }
     public bool CurrentBold { get; set; }
     public bool CurrentUnderline { get; set; }
     public bool CurrentBlinking { get; set; }
@@ -73,7 +76,8 @@ public class TerminalBuffer
         Color? defaultForegroundColor = null,
         Color? defaultBackgroundColor = null,
         Color? boldForegroundColor = null,
-        Color[]? ansiColors = null)
+        Color[]? ansiColors = null,
+        string? boldTextMode = null)
     {
         Columns = columns;
         Rows = rows;
@@ -98,6 +102,7 @@ public class TerminalBuffer
         DefaultForegroundColor = defaultForegroundColor ?? TerminalColors.DefaultForeground;
         DefaultBackgroundColor = defaultBackgroundColor ?? TerminalColors.DefaultBackground;
         BoldForegroundColor = boldForegroundColor ?? Color.Parse("#33FF33");
+        ApplyBoldTextMode(boldTextMode);
         AnsiColors = ansiColors is { Length: >= 16 } ? ansiColors.Take(16).ToArray() : TerminalColors.Standard16.ToArray();
         _cells = new TerminalCell[rows, columns];
         ResetAttributes();
@@ -811,9 +816,30 @@ public class TerminalBuffer
     {
         CurrentForeground = DefaultForegroundColor;
         CurrentBackground = DefaultBackgroundColor;
+        CurrentBoldIntensity = false;
         CurrentBold = false;
         CurrentUnderline = false;
         CurrentBlinking = false;
+    }
+
+    public void ApplyBoldTextMode(string? mode)
+    {
+        UseBoldColor = !string.Equals(mode, "Font", StringComparison.OrdinalIgnoreCase);
+        UseBoldFont = !string.Equals(mode, "Color", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public void SetBoldIntensity(bool value)
+    {
+        CurrentBoldIntensity = value;
+        CurrentBold = value && UseBoldFont;
+
+        if (UseBoldColor)
+            CurrentForeground = value ? BoldForegroundColor : DefaultForegroundColor;
+    }
+
+    public Color GetDefaultForegroundForCurrentIntensity()
+    {
+        return UseBoldColor && CurrentBoldIntensity ? BoldForegroundColor : DefaultForegroundColor;
     }
 
     public void ApplyColorScheme(Color defaultForeground, Color defaultBackground, Color boldForeground, Color[] ansiColors)
