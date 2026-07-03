@@ -587,6 +587,10 @@ jobs:
 
           test -x "$app_path/Contents/MacOS/CxShell"
           test -f "$app_path/Contents/Info.plist"
+          test -f "$app_path/Contents/Resources/CxShell.icns"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$app_path/Contents/Info.plist")" = "CxShell"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$app_path/Contents/Info.plist")" = "CxShell"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$app_path/Contents/Info.plist")" = "CxShell.icns"
           test -f "$app_path/Contents/MacOS/libCxRdpBridge.dylib"
 
           if [ -d "$app_path/Contents/MacOS/runtimes/win-x64" ]; then

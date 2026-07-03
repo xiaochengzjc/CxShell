@@ -24,6 +24,10 @@ internal class Program
         return AppBuilder.Configure<App>()
             .UseReactiveUI(builder => { })
             .UsePlatformDetect()
+            .With(new MacOSPlatformOptions
+            {
+                DisableSetProcessName = true
+            })
             .WithAtomUIDefaultOptions()
             .LogToTrace();
     }
