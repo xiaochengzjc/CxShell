@@ -696,6 +696,52 @@
                 Grid.RowSpan="4"
                 ClipToBounds="False"
                 IsHitTestVisible="False">
+            <Border x:Name="QuickSessionDragGhost"
+                    Width="44"
+                    Height="14"
+                    CornerRadius="7"
+                    Background="{atom:SharedTokenResource ColorPrimaryBgHover}"
+                    BorderBrush="{atom:SharedTokenResource ColorPrimary}"
+                    BorderThickness="1"
+                    Opacity="0.9"
+                    IsVisible="False">
+                <StackPanel Orientation="Horizontal"
+                            Spacing="4"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center">
+                    <Border Width="12"
+                            Height="3"
+                            CornerRadius="1.5"
+                            Background="{atom:SharedTokenResource ColorPrimary}"/>
+                    <Border Width="12"
+                            Height="3"
+                            CornerRadius="1.5"
+                            Background="{atom:SharedTokenResource ColorPrimary}"/>
+                </StackPanel>
+            </Border>
+            <Border x:Name="TabDragGhost"
+                    Width="44"
+                    Height="14"
+                    CornerRadius="7"
+                    Background="{atom:SharedTokenResource ColorPrimaryBgHover}"
+                    BorderBrush="{atom:SharedTokenResource ColorPrimary}"
+                    BorderThickness="1"
+                    Opacity="0.9"
+                    IsVisible="False">
+                <StackPanel Orientation="Horizontal"
+                            Spacing="4"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center">
+                    <Border Width="12"
+                            Height="3"
+                            CornerRadius="1.5"
+                            Background="{atom:SharedTokenResource ColorPrimary}"/>
+                    <Border Width="12"
+                            Height="3"
+                            CornerRadius="1.5"
+                            Background="{atom:SharedTokenResource ColorPrimary}"/>
+                </StackPanel>
+            </Border>
             <Border x:Name="TabDropIndicator"
                     Width="2"
                     Height="24"

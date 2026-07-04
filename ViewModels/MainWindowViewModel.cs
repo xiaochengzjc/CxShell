@@ -348,6 +348,13 @@ public partial class MainWindowViewModel : ObservableObject
             return _localization.Text("Update.RateLimited");
         }
 
+        if (errorMessage.Contains("ResponseEnded", StringComparison.OrdinalIgnoreCase) ||
+            errorMessage.Contains("response ended prematurely", StringComparison.OrdinalIgnoreCase) ||
+            errorMessage.Contains("additional bytes expected", StringComparison.OrdinalIgnoreCase))
+        {
+            return _localization.Text("Update.NetworkInterrupted");
+        }
+
         return errorMessage;
     }
 
@@ -394,7 +401,7 @@ public partial class MainWindowViewModel : ObservableObject
             await AtomUiDialogService.ShowMessageAsync(
                 owner,
                 _localization.Text("Update.Title"),
-                string.Format(_localization.Text("Update.Failed"), BuildUpdateErrorMessage(ex.Message)),
+                string.Format(_localization.Text("Update.DownloadFailed"), BuildUpdateErrorMessage(ex.Message)),
                 AtomUI.Desktop.Controls.MessageBoxStyle.Error);
             return;
         }

@@ -428,9 +428,11 @@ public sealed class LocalizationService : INotifyPropertyChanged
         EnglishTexts["Update.NoUpdate"] = "CxShell is up to date.";
         EnglishTexts["Update.Failed"] = "Update check failed: {0}";
         EnglishTexts["Update.RateLimited"] = "GitHub temporarily rate-limited the update request. Please try again later.";
+        EnglishTexts["Update.NetworkInterrupted"] = "The update download connection was interrupted before the package finished downloading. Please check the network and try again.";
         EnglishTexts["Update.AvailableMessage"] = "Version {0} is available. Current version: {1}.\nDownload and install it now?";
         EnglishTexts["Update.DownloadedMessage"] = "Version {0} has been downloaded. Restart CxShell now to apply the update?";
         EnglishTexts["Update.Downloading"] = "Downloading update...";
+        EnglishTexts["Update.DownloadFailed"] = "Update download failed: {0}";
         EnglishTexts["Update.ProgressVersion"] = "Version {0} -> {1}";
         EnglishTexts["Update.Background"] = "Run in background";
         EnglishTexts["Update.Cancel"] = "Cancel";
@@ -468,9 +470,11 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ChineseTexts["Update.NoUpdate"] = "CxShell \u5df2\u662f\u6700\u65b0\u7248\u672c\u3002";
         ChineseTexts["Update.Failed"] = "\u68c0\u67e5\u66f4\u65b0\u5931\u8d25\uff1a{0}";
         ChineseTexts["Update.RateLimited"] = "GitHub \u6682\u65f6\u9650\u5236\u4e86\u66f4\u65b0\u8bf7\u6c42\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5\u3002";
+        ChineseTexts["Update.NetworkInterrupted"] = "\u66f4\u65b0\u5305\u5c1a\u672a\u4e0b\u8f7d\u5b8c\u6210\uff0c\u7f51\u7edc\u8fde\u63a5\u5df2\u4e2d\u65ad\u3002\u8bf7\u68c0\u67e5\u7f51\u7edc\u540e\u91cd\u8bd5\u3002";
         ChineseTexts["Update.AvailableMessage"] = "\u53d1\u73b0\u65b0\u7248\u672c {0}\uff0c\u5f53\u524d\u7248\u672c\uff1a{1}\u3002\n\u662f\u5426\u7acb\u5373\u4e0b\u8f7d\u5e76\u5b89\u88c5\uff1f";
         ChineseTexts["Update.DownloadedMessage"] = "\u66f4\u65b0 {0} \u5df2\u4e0b\u8f7d\u5b8c\u6210\u3002\u662f\u5426\u7acb\u5373\u91cd\u542f CxShell \u5e76\u5e94\u7528\u66f4\u65b0\uff1f";
         ChineseTexts["Update.Downloading"] = "\u6b63\u5728\u4e0b\u8f7d\u66f4\u65b0...";
+        ChineseTexts["Update.DownloadFailed"] = "\u4e0b\u8f7d\u66f4\u65b0\u5931\u8d25\uff1a{0}";
         ChineseTexts["Update.ProgressVersion"] = "\u7248\u672c {0} -> {1}";
         ChineseTexts["Update.Background"] = "\u540e\u53f0\u6267\u884c";
         ChineseTexts["Update.Cancel"] = "\u53d6\u6d88";

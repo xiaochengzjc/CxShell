@@ -7,6 +7,19 @@
              x:Class="CxShell.Views.SftpPanelView"
              x:DataType="vm:SftpViewModel">
 
+    <UserControl.Styles>
+        <Style Selector="atom|DataGrid.sftp-file-grid atom|DataGridCell">
+            <Setter Property="Padding" Value="6,0"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+        <Style Selector="atom|DataGrid.sftp-file-grid atom|DataGridColumnHeader /template/ Border#PART_ContentFrame">
+            <Setter Property="Padding" Value="6,5"/>
+        </Style>
+        <Style Selector="atom|DataGrid.sftp-file-grid atom|DataGridColumnHeader">
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+    </UserControl.Styles>
+
     <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" Background="{atom:SharedTokenResource ColorBgLayout}">
 
         <Border Grid.Row="0"
@@ -72,7 +85,51 @@
                                FontSize="12"
                                Height="32"
                                HorizontalAlignment="Stretch"
+                               GotFocus="OnRemotePathInputGotFocus"
                                KeyDown="OnRemotePathInputKeyDown"/>
+                <Popup x:Name="PathSuggestionPopup"
+                       IsOpen="{Binding IsPathSuggestionOpen}"
+                       PlacementTarget="{Binding ElementName=RemotePathInput}"
+                       Placement="Bottom"
+                       IsLightDismissEnabled="False">
+                    <Border Width="{Binding Bounds.Width, ElementName=RemotePathInput}"
+                            MaxHeight="220"
+                            Background="{atom:SharedTokenResource ColorBgElevated}"
+                            BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            BoxShadow="0 6 18 0 #26000000"
+                            Padding="2">
+                        <ListBox ItemsSource="{Binding PathSuggestions}"
+                                 SelectedIndex="{Binding SelectedPathSuggestionIndex, Mode=TwoWay}"
+                                 PointerReleased="OnPathSuggestionPointerReleased"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 Padding="0"
+                                 MaxHeight="214">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate DataType="vm:SftpPathSuggestionItem">
+                                    <Grid ColumnDefinitions="Auto,*"
+                                          ColumnSpacing="6"
+                                          MinHeight="28"
+                                          Margin="4,0">
+                                        <TextBlock Grid.Column="0"
+                                                   Text="{Binding Icon}"
+                                                   FontSize="12"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding CompletionPath}"
+                                                   FontSize="12"
+                                                   VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Foreground="{atom:SharedTokenResource ColorText}"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Border>
+                </Popup>
             </Grid>
         </Border>
 
@@ -230,12 +287,14 @@
                        HorizontalAlignment="Stretch"
                        VerticalAlignment="Stretch">
                 <atom:DataGrid x:Name="FileGrid"
+                               Classes="sftp-file-grid"
                                ItemsSource="{Binding Files}"
                                SelectedItem="{Binding SelectedFile, Mode=TwoWay}"
                                AutoGenerateColumns="False"
                                IsReadOnly="True"
                                SelectionMode="Extended"
-                               SizeType="Middle"
+                               SizeType="Small"
+                               RowHeight="30"
                                GridLinesVisibility="All"
                                CanUserResizeColumns="True"
                                CanUserSortColumns="True"

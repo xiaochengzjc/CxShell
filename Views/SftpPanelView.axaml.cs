@@ -310,16 +310,67 @@ public partial class SftpPanelView : UserControl
         _ = _attachedViewModel.ConfirmCreateDirectoryCommand.ExecuteAsync(null);
     }
 
+    public void OnRemotePathInputGotFocus(object? sender, RoutedEventArgs e)
+    {
+        _attachedViewModel?.SetPathInputActive(true);
+    }
+
     public void OnRemotePathInputKeyDown(object? sender, KeyEventArgs e)
     {
-        if (_attachedViewModel == null || e.Key != Key.Enter)
+        if (_attachedViewModel == null)
+            return;
+
+        if (e.Key == Key.Down)
+        {
+            e.Handled = _attachedViewModel.MoveSelectedPathSuggestion(1);
+            return;
+        }
+
+        if (e.Key == Key.Up)
+        {
+            e.Handled = _attachedViewModel.MoveSelectedPathSuggestion(-1);
+            return;
+        }
+
+        if (e.Key == Key.Tab)
+        {
+            e.Handled = _attachedViewModel.AcceptSelectedPathSuggestion();
+            if (e.Handled && sender is AtomLineEdit acceptedInput)
+                acceptedInput.Focus();
+            return;
+        }
+
+        if (e.Key == Key.Escape)
+        {
+            e.Handled = true;
+            _attachedViewModel.HidePathSuggestions();
+            return;
+        }
+
+        if (e.Key == Key.Enter)
+        {
+            e.Handled = true;
+            if (sender is AtomLineEdit input)
+                _attachedViewModel.PathInput = input.Text ?? _attachedViewModel.CurrentPath;
+
+            _ = _attachedViewModel.NavigateToTypedPathCommand.ExecuteAsync(null);
+        }
+    }
+
+    public void OnPathSuggestionPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (_attachedViewModel == null)
+            return;
+
+        var item = TryGetSuggestionFromVisual(e.Source as Avalonia.Visual);
+        if (item == null)
             return;
 
         e.Handled = true;
-        if (sender is AtomLineEdit input)
-            _attachedViewModel.PathInput = input.Text ?? _attachedViewModel.CurrentPath;
-
-        _ = _attachedViewModel.NavigateToTypedPathCommand.ExecuteAsync(null);
+        if (_attachedViewModel.AcceptPathSuggestion(item))
+        {
+            RemotePathInput.Focus();
+        }
     }
 
     public void OnFileListDragOver(object? sender, DragEventArgs e)
@@ -384,6 +435,13 @@ public partial class SftpPanelView : UserControl
 
     private void OnSftpPanelPointerPressed(object? sender, PointerPressedEventArgs e)
     {
+        if (_attachedViewModel?.IsPathSuggestionOpen == true &&
+            !IsInsideRemotePathInput(e.Source as Avalonia.Visual) &&
+            !IsInsidePathSuggestion(e.Source as Avalonia.Visual))
+        {
+            _attachedViewModel.HidePathSuggestions();
+        }
+
         if (_attachedViewModel?.RenamingItem is not { IsRenaming: true } renamingItem)
             return;
 
@@ -594,6 +652,37 @@ public partial class SftpPanelView : UserControl
         }
 
         return null;
+    }
+
+    private static SftpPathSuggestionItem? TryGetSuggestionFromVisual(Avalonia.Visual? visual)
+    {
+        while (visual != null)
+        {
+            if (visual.DataContext is SftpPathSuggestionItem item)
+                return item;
+
+            visual = visual.GetVisualParent() as Avalonia.Visual;
+        }
+
+        return null;
+    }
+
+    private bool IsInsideRemotePathInput(Avalonia.Visual? visual)
+    {
+        while (visual != null)
+        {
+            if (ReferenceEquals(visual, RemotePathInput))
+                return true;
+
+            visual = visual.GetVisualParent() as Avalonia.Visual;
+        }
+
+        return false;
+    }
+
+    private static bool IsInsidePathSuggestion(Avalonia.Visual? visual)
+    {
+        return TryGetSuggestionFromVisual(visual) != null;
     }
 
     private static IEnumerable<Models.SftpFileItem> GetSelectedFiles(AtomDataGrid grid)

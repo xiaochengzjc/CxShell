@@ -49,10 +49,15 @@ public partial class SftpViewModel : ObservableObject
     [ObservableProperty] private bool _isCreatingDirectory;
     [ObservableProperty] private string _newDirectoryName = "NewFolder";
     [ObservableProperty] private SftpFileItem? _renamingItem;
+    [ObservableProperty] private bool _isPathSuggestionOpen;
+    [ObservableProperty] private int _selectedPathSuggestionIndex = -1;
 
     public ObservableCollection<SftpFileItem> Files { get; } = new();
     public ObservableCollection<PathSegment> PathSegments { get; } = new();
+    public ObservableCollection<SftpPathSuggestionItem> PathSuggestions { get; } = new();
     private readonly List<SftpFileItem> _selectedFiles = new();
+    private bool _isPathInputActive;
+    private bool _isApplyingPathSuggestion;
 
     public IReadOnlyList<SftpFileItem> SelectedFiles => _selectedFiles;
     public int SelectedFileCount => _selectedFiles.Count;
@@ -102,6 +107,77 @@ public partial class SftpViewModel : ObservableObject
 
         if (newValue != null)
             newValue.IsSelected = true;
+    }
+
+    partial void OnPathInputChanged(string value)
+    {
+        RefreshPathSuggestions();
+    }
+
+    partial void OnIsConnectedChanged(bool value)
+    {
+        if (!value)
+            HidePathSuggestions();
+    }
+
+    public void SetPathInputActive(bool isActive)
+    {
+        _isPathInputActive = isActive;
+        if (isActive)
+            RefreshPathSuggestions();
+        else
+            HidePathSuggestions();
+    }
+
+    public void HidePathSuggestions()
+    {
+        IsPathSuggestionOpen = false;
+        SelectedPathSuggestionIndex = -1;
+    }
+
+    public bool MoveSelectedPathSuggestion(int offset)
+    {
+        if (!IsPathSuggestionOpen || PathSuggestions.Count == 0)
+            return false;
+
+        var next = SelectedPathSuggestionIndex < 0
+            ? 0
+            : SelectedPathSuggestionIndex + offset;
+
+        if (next < 0)
+            next = PathSuggestions.Count - 1;
+        else if (next >= PathSuggestions.Count)
+            next = 0;
+
+        SelectedPathSuggestionIndex = next;
+        return true;
+    }
+
+    public bool AcceptSelectedPathSuggestion()
+    {
+        if (!IsPathSuggestionOpen ||
+            SelectedPathSuggestionIndex < 0 ||
+            SelectedPathSuggestionIndex >= PathSuggestions.Count)
+        {
+            return false;
+        }
+
+        return AcceptPathSuggestion(PathSuggestions[SelectedPathSuggestionIndex]);
+    }
+
+    public bool AcceptPathSuggestion(SftpPathSuggestionItem suggestion)
+    {
+        _isApplyingPathSuggestion = true;
+        try
+        {
+            PathInput = suggestion.CompletionPath;
+            HidePathSuggestions();
+            return true;
+        }
+        finally
+        {
+            _isApplyingPathSuggestion = false;
+        }
     }
 
     public void SetSelectedFiles(IEnumerable<SftpFileItem> items)
@@ -233,6 +309,7 @@ public partial class SftpViewModel : ObservableObject
                     Files.Add(item);
                 SetSelectedFiles(Array.Empty<SftpFileItem>());
                 IsLoading = false;
+                RefreshPathSuggestions();
             });
         }
         catch (Exception ex)
@@ -281,6 +358,7 @@ public partial class SftpViewModel : ObservableObject
         if (!_service.IsConnected)
             return;
 
+        HidePathSuggestions();
         var targetPath = NormalizeRemotePath(PathInput);
         if (string.IsNullOrWhiteSpace(targetPath))
         {
@@ -341,6 +419,96 @@ public partial class SftpViewModel : ObservableObject
             return CollapseRemotePath(value);
 
         return CollapseRemotePath(CombineRemotePath(CurrentPath, value));
+    }
+
+    private void RefreshPathSuggestions()
+    {
+        if (!_isPathInputActive ||
+            _isApplyingPathSuggestion ||
+            !IsConnected ||
+            IsLoading ||
+            Files.Count == 0)
+        {
+            if (!_isApplyingPathSuggestion)
+                HidePathSuggestions();
+            return;
+        }
+
+        var suggestions = BuildPathSuggestions(PathInput);
+        PathSuggestions.Clear();
+        foreach (var suggestion in suggestions)
+            PathSuggestions.Add(suggestion);
+
+        IsPathSuggestionOpen = PathSuggestions.Count > 0;
+        SelectedPathSuggestionIndex = IsPathSuggestionOpen ? 0 : -1;
+    }
+
+    private IReadOnlyList<SftpPathSuggestionItem> BuildPathSuggestions(string? input)
+    {
+        var value = input?.Trim() ?? string.Empty;
+        if (value.Length == 0)
+            return [];
+
+        value = value.Replace('\\', '/');
+        if (!TryGetCurrentDirectorySuggestionPrefix(value, out var prefix))
+            return [];
+
+        return Files
+            .Where(item => item.Name is not "." and not "..")
+            .Where(item => string.IsNullOrEmpty(prefix) ||
+                           item.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(item => item.IsDirectory)
+            .ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .Take(10)
+            .Select(item =>
+            {
+                var path = CombineRemotePath(CurrentPath, item.Name);
+                if (item.IsDirectory)
+                    path = path.TrimEnd('/') + "/";
+
+                return new SftpPathSuggestionItem(
+                    item.Name,
+                    path,
+                    item.Icon,
+                    item.IsDirectory);
+            })
+            .ToList();
+    }
+
+    private bool TryGetCurrentDirectorySuggestionPrefix(string value, out string prefix)
+    {
+        prefix = string.Empty;
+
+        if (value == "~" || value.StartsWith("~/", StringComparison.Ordinal))
+        {
+            var rest = value.Length == 1 ? string.Empty : value[2..];
+            if (rest.Contains('/'))
+                return false;
+
+            if (!string.Equals(CollapseRemotePath(_homeDirectory), CurrentPath, StringComparison.Ordinal))
+                return false;
+
+            prefix = rest;
+            return true;
+        }
+
+        var slashIndex = value.LastIndexOf('/');
+        if (slashIndex < 0)
+        {
+            prefix = value;
+            return true;
+        }
+
+        var parent = slashIndex == 0
+            ? "/"
+            : value[..slashIndex];
+        prefix = value[(slashIndex + 1)..];
+
+        var normalizedParent = value.StartsWith("/", StringComparison.Ordinal)
+            ? CollapseRemotePath(parent)
+            : NormalizeRemotePath(parent);
+
+        return string.Equals(normalizedParent, CurrentPath, StringComparison.Ordinal);
     }
 
     private static string CombineRemotePath(string parent, string child)
@@ -1245,4 +1413,17 @@ public class PathSegment
 {
     public string Label { get; set; } = "";
     public string FullPath { get; set; } = "";
+}
+
+public sealed class SftpPathSuggestionItem(
+    string name,
+    string completionPath,
+    string icon,
+    bool isDirectory)
+{
+    public string Name { get; } = name;
+    public string CompletionPath { get; } = completionPath;
+    public string Icon { get; } = icon;
+    public bool IsDirectory { get; } = isDirectory;
+    public string TypeText => IsDirectory ? "目录" : "文件";
 }

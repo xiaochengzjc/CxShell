@@ -53,9 +53,16 @@ public partial class MainWindow : Window
     private const double MonitorPanelWidth = 283;
     private const double QuickSessionDragThreshold = 6;
     private const double QuickSessionDropIndicatorWidth = 2;
+    private const double QuickSessionDragGhostOffsetX = -22;
+    private const double QuickSessionDragGhostOffsetY = -7;
+    private const double QuickSessionDropVerticalTolerance = 8;
     private const double TabDragThreshold = 6;
     private const double TabDropIndicatorWidth = 2;
     private const double TabDropIndicatorHeight = 24;
+    private const double TabDropIndicatorVerticalOffset = 3;
+    private const double TabDragGhostOffsetX = -22;
+    private const double TabDragGhostOffsetY = -7;
+    private const double TabDropVerticalTolerance = 24;
     private const string QuickSessionButtonClass = "quick-session-bar-button";
     private const string QuickSessionDraggingClass = "quick-session-dragging";
     private const string QuickSessionDragActiveClass = "quick-session-drag-active";
@@ -174,6 +181,9 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (TryBeginTabHeaderDragFromPreview(source, e, vm))
+            return;
+
         foreach (var current in EnumerateControlLineage(source))
         {
             if (current.DataContext is TerminalTabViewModel tab)
@@ -188,6 +198,31 @@ public partial class MainWindow : Window
                 return;
             }
         }
+    }
+
+    private bool TryBeginTabHeaderDragFromPreview(
+        Avalonia.Controls.Control source,
+        PointerPressedEventArgs e,
+        MainWindowViewModel vm)
+    {
+        if (IsTabCloseButtonSource(source))
+            return false;
+
+        var tabItem = ResolveTabStripItem(source);
+        var tab = ResolveTabFromItem(tabItem);
+        var tabStrip = ResolveTabStrip(tabItem);
+        if (tabItem == null ||
+            tab == null ||
+            tabStrip == null)
+        {
+            return false;
+        }
+
+        var anchor = ResolveTabHeaderControl(source) ?? FindTabHeaderControl(tab) ?? tabItem;
+        BeginTabDrag(tab, anchor, tabStrip, e);
+        vm.SelectTabCommand.Execute(tab);
+        e.Handled = true;
+        return true;
     }
 
     private void OnQuickSessionTagPointerPressed(object? sender, PointerPressedEventArgs e)
@@ -237,8 +272,10 @@ public partial class MainWindow : Window
             _quickSessionDragMoved = true;
             SetQuickSessionDragActiveVisual(true);
             RefreshQuickSessionDragVisuals();
+            ShowQuickSessionDragGhost(position);
         }
 
+        ShowQuickSessionDragGhost(position);
         UpdateQuickSessionDropTarget(e.GetPosition(this));
         e.Handled = true;
     }
@@ -290,6 +327,7 @@ public partial class MainWindow : Window
     {
         SetQuickSessionClassControl(ref _quickSessionDragControl, null, QuickSessionDraggingClass);
         SetQuickSessionDragActiveVisual(false);
+        HideQuickSessionDragGhost();
         HideQuickSessionDropIndicator();
         _quickSessionDragSession = null;
         _isQuickSessionDragging = false;
@@ -301,12 +339,7 @@ public partial class MainWindow : Window
 
     private void UpdateQuickSessionDropTarget(Point point)
     {
-        var targetControl = ResolveQuickSessionControlAt(point);
-        var target = targetControl?.DataContext as SessionInfo;
-        if (targetControl == null ||
-            target == null ||
-            _quickSessionDragSession == null ||
-            target.Id == _quickSessionDragSession.Id)
+        if (_quickSessionDragSession == null)
         {
             _quickSessionDropTargetSession = null;
             _quickSessionDropInsertAfter = false;
@@ -315,12 +348,186 @@ public partial class MainWindow : Window
             return;
         }
 
-        var targetPoint = this.TranslatePoint(point, targetControl);
-        _quickSessionDropTargetSession = target;
-        _quickSessionDropInsertAfter = targetPoint?.X > targetControl.Bounds.Width / 2;
-        ShowQuickSessionDropIndicator(targetControl, _quickSessionDropInsertAfter);
+        var hostPoint = this.TranslatePoint(point, QuickSessionDropIndicatorHost);
+        if (hostPoint == null ||
+            hostPoint.Value.Y < -QuickSessionDropVerticalTolerance ||
+            hostPoint.Value.Y > QuickSessionDropIndicatorHost.Bounds.Height + QuickSessionDropVerticalTolerance)
+        {
+            _quickSessionDropTargetSession = null;
+            _quickSessionDropInsertAfter = false;
+            HideQuickSessionDropIndicator();
+            RefreshQuickSessionDragVisuals();
+            return;
+        }
+
+        var dropItems = GetQuickSessionDropItems();
+        if (dropItems.Count <= 1)
+        {
+            _quickSessionDropTargetSession = null;
+            _quickSessionDropInsertAfter = false;
+            HideQuickSessionDropIndicator();
+            RefreshQuickSessionDragVisuals();
+            return;
+        }
+
+        var insertIndex = ResolveQuickSessionDropIndex(dropItems, hostPoint.Value.X);
+        if (!TryResolveQuickSessionDropTarget(
+                dropItems,
+                insertIndex,
+                _quickSessionDragSession.Id,
+                out var targetSession,
+                out var insertAfter))
+        {
+            _quickSessionDropTargetSession = null;
+            _quickSessionDropInsertAfter = false;
+            HideQuickSessionDropIndicator();
+            RefreshQuickSessionDragVisuals();
+            return;
+        }
+
+        var indicatorX = ResolveQuickSessionDropIndicatorX(dropItems, insertIndex);
+
+        _quickSessionDropTargetSession = targetSession;
+        _quickSessionDropInsertAfter = insertAfter;
+        ShowQuickSessionDropIndicatorAt(indicatorX);
         RefreshQuickSessionDragVisuals();
     }
+
+    private List<QuickSessionDropItem> GetQuickSessionDropItems()
+    {
+        var items = new List<QuickSessionDropItem>();
+        foreach (var control in this.GetVisualDescendants().OfType<Avalonia.Controls.Control>())
+        {
+            if (!control.Classes.Contains(QuickSessionButtonClass) ||
+                control.DataContext is not SessionInfo session ||
+                control.Bounds.Width <= 0)
+            {
+                continue;
+            }
+
+            var leftPoint = control.TranslatePoint(new Point(0, 0), QuickSessionDropIndicatorHost);
+            if (leftPoint == null)
+                continue;
+
+            items.Add(new QuickSessionDropItem(
+                session,
+                leftPoint.Value.X,
+                leftPoint.Value.X + control.Bounds.Width));
+        }
+
+        items.Sort(static (left, right) => left.Left.CompareTo(right.Left));
+        return items;
+    }
+
+    private static int ResolveQuickSessionDropIndex(IReadOnlyList<QuickSessionDropItem> items, double pointerX)
+    {
+        for (var i = 0; i < items.Count; i++)
+        {
+            var itemCenter = items[i].Left + (items[i].Right - items[i].Left) / 2;
+            if (pointerX < itemCenter)
+                return i;
+        }
+
+        return items.Count;
+    }
+
+    private static bool TryResolveQuickSessionDropTarget(
+        IReadOnlyList<QuickSessionDropItem> items,
+        int insertIndex,
+        Guid draggingSessionId,
+        out SessionInfo? targetSession,
+        out bool insertAfter)
+    {
+        targetSession = null;
+        insertAfter = false;
+
+        var dragIndex = -1;
+        for (var i = 0; i < items.Count; i++)
+        {
+            if (items[i].Session.Id == draggingSessionId)
+            {
+                dragIndex = i;
+                break;
+            }
+        }
+
+        if (dragIndex < 0 ||
+            insertIndex == dragIndex ||
+            insertIndex == dragIndex + 1)
+        {
+            return false;
+        }
+
+        if (insertIndex <= 0)
+        {
+            targetSession = items[0].Session;
+            insertAfter = false;
+        }
+        else if (insertIndex >= items.Count)
+        {
+            targetSession = items[^1].Session;
+            insertAfter = true;
+        }
+        else
+        {
+            targetSession = items[insertIndex].Session;
+            insertAfter = false;
+        }
+
+        return targetSession.Id != draggingSessionId;
+    }
+
+    private static double ResolveQuickSessionDropIndicatorX(
+        IReadOnlyList<QuickSessionDropItem> items,
+        int insertIndex)
+    {
+        if (insertIndex <= 0)
+            return items[0].Left;
+
+        if (insertIndex >= items.Count)
+            return items[^1].Right;
+
+        return (items[insertIndex - 1].Right + items[insertIndex].Left) / 2;
+    }
+
+    private void ShowQuickSessionDropIndicatorAt(double indicatorX)
+    {
+        var left = Math.Round(indicatorX - QuickSessionDropIndicatorWidth / 2);
+        QuickSessionDropIndicator.Margin = new Thickness(
+            left,
+            0,
+            0,
+            0);
+        QuickSessionDropIndicator.IsVisible = true;
+    }
+
+    private void ShowQuickSessionDragGhost(Point pointerPosition)
+    {
+        var overlayPoint = this.TranslatePoint(pointerPosition, TabDropOverlay);
+        if (overlayPoint == null)
+        {
+            HideQuickSessionDragGhost();
+            return;
+        }
+
+        Avalonia.Controls.Canvas.SetLeft(
+            QuickSessionDragGhost,
+            Math.Round(overlayPoint.Value.X + QuickSessionDragGhostOffsetX));
+        Avalonia.Controls.Canvas.SetTop(
+            QuickSessionDragGhost,
+            Math.Round(overlayPoint.Value.Y + QuickSessionDragGhostOffsetY));
+        QuickSessionDragGhost.IsVisible = true;
+    }
+
+    private void HideQuickSessionDragGhost()
+    {
+        QuickSessionDragGhost.IsVisible = false;
+    }
+
+    private readonly record struct QuickSessionDropItem(
+        SessionInfo Session,
+        double Left,
+        double Right);
 
     private void RefreshQuickSessionDragVisuals()
     {
@@ -328,26 +535,6 @@ public partial class MainWindow : Window
             ? FindQuickSessionControlById(dragId) ?? _quickSessionDragControl
             : null;
         SetQuickSessionClassControl(ref _quickSessionDragControl, dragControl, QuickSessionDraggingClass);
-    }
-
-    private void ShowQuickSessionDropIndicator(Avalonia.Controls.Control targetControl, bool insertAfter)
-    {
-        var edgeX = insertAfter ? targetControl.Bounds.Width : 0;
-        var indicatorPoint = targetControl.TranslatePoint(
-            new Point(edgeX, targetControl.Bounds.Height / 2),
-            QuickSessionDropIndicatorHost);
-        if (indicatorPoint == null)
-        {
-            HideQuickSessionDropIndicator();
-            return;
-        }
-
-        QuickSessionDropIndicator.Margin = new Thickness(
-            indicatorPoint.Value.X - QuickSessionDropIndicatorWidth / 2,
-            0,
-            0,
-            0);
-        QuickSessionDropIndicator.IsVisible = true;
     }
 
     private void HideQuickSessionDropIndicator()
@@ -461,8 +648,8 @@ public partial class MainWindow : Window
         var properties = e.GetCurrentPoint(this).Properties;
         if (properties.IsLeftButtonPressed || properties.PointerUpdateKind == PointerUpdateKind.LeftButtonPressed)
         {
-            vm.SelectTabCommand.Execute(tab);
             BeginTabDrag(tab, anchor, e);
+            vm.SelectTabCommand.Execute(tab);
             e.Handled = true;
             return;
         }
@@ -479,7 +666,15 @@ public partial class MainWindow : Window
 
     private void BeginTabDrag(TerminalTabViewModel tab, Avalonia.Controls.Control anchor, PointerPressedEventArgs e)
     {
-        var tabStrip = ResolveTabStrip(anchor);
+        BeginTabDrag(tab, anchor, ResolveTabStrip(anchor), e);
+    }
+
+    private void BeginTabDrag(
+        TerminalTabViewModel tab,
+        Avalonia.Controls.Control anchor,
+        TabStrip? tabStrip,
+        PointerPressedEventArgs e)
+    {
         if (tabStrip == null)
             return;
 
@@ -513,8 +708,10 @@ public partial class MainWindow : Window
             _isTabDragging = true;
             _tabDragMoved = true;
             RefreshTabDragVisuals();
+            ShowTabDragGhost(position);
         }
 
+        ShowTabDragGhost(position);
         UpdateTabDropTarget(position);
         e.Handled = true;
     }
@@ -562,6 +759,7 @@ public partial class MainWindow : Window
     {
         SetQuickSessionVisualClass(_tabDragControl, SessionTabDraggingClass, false);
         HideTabDropIndicator();
+        HideTabDragGhost();
         _tabDragTab = null;
         _tabDropTargetTab = null;
         _tabDragControl = null;
@@ -575,16 +773,8 @@ public partial class MainWindow : Window
 
     private void UpdateTabDropTarget(Point point)
     {
-        var targetItem = ResolveTabStripItemAt(point);
-        var target = ResolveTabFromItem(targetItem);
-        var targetStrip = ResolveTabStrip(targetItem);
-        if (targetItem == null ||
-            target == null ||
-            targetStrip == null ||
-            _tabDragTab == null ||
-            _tabDragStrip == null ||
-            target == _tabDragTab ||
-            targetStrip != _tabDragStrip)
+        if (_tabDragTab == null ||
+            _tabDragStrip == null)
         {
             _tabDropTargetTab = null;
             _tabDropInsertAfter = false;
@@ -593,10 +783,49 @@ public partial class MainWindow : Window
             return;
         }
 
-        var targetPoint = this.TranslatePoint(point, targetItem);
-        _tabDropTargetTab = target;
-        _tabDropInsertAfter = targetPoint?.X > targetItem.Bounds.Width / 2;
-        ShowTabDropIndicator(targetItem, _tabDropInsertAfter);
+        var stripPoint = this.TranslatePoint(point, _tabDragStrip);
+        if (stripPoint == null ||
+            stripPoint.Value.Y < -TabDropVerticalTolerance ||
+            stripPoint.Value.Y > _tabDragStrip.Bounds.Height + TabDropVerticalTolerance)
+        {
+            _tabDropTargetTab = null;
+            _tabDropInsertAfter = false;
+            HideTabDropIndicator();
+            RefreshTabDragVisuals();
+            return;
+        }
+
+        var dropItems = GetTabDropItems(_tabDragStrip, _tabDragTab);
+        if (dropItems.Count == 0)
+        {
+            _tabDropTargetTab = null;
+            _tabDropInsertAfter = false;
+            HideTabDropIndicator();
+            RefreshTabDragVisuals();
+            return;
+        }
+
+        var overlayPoint = this.TranslatePoint(point, TabDropOverlay);
+        if (overlayPoint == null)
+        {
+            _tabDropTargetTab = null;
+            _tabDropInsertAfter = false;
+            HideTabDropIndicator();
+            RefreshTabDragVisuals();
+            return;
+        }
+
+        var insertIndex = ResolveTabDropIndex(dropItems, overlayPoint.Value.X);
+        var insertAfter = insertIndex >= dropItems.Count;
+        var targetItem = insertAfter
+            ? dropItems[^1]
+            : dropItems[insertIndex];
+        var indicatorX = ResolveTabDropIndicatorX(dropItems, insertIndex);
+        var indicatorY = ResolveTabDropIndicatorY(dropItems);
+
+        _tabDropTargetTab = targetItem.Tab;
+        _tabDropInsertAfter = insertAfter;
+        ShowTabDropIndicatorAt(indicatorX, indicatorY);
         RefreshTabDragVisuals();
     }
 
@@ -615,22 +844,106 @@ public partial class MainWindow : Window
         SetQuickSessionVisualClass(_tabDragControl, SessionTabDraggingClass, _tabDragControl != null);
     }
 
-    private void ShowTabDropIndicator(Avalonia.Controls.Control targetControl, bool insertAfter)
+    private List<TabDropItem> GetTabDropItems(TabStrip tabStrip, TerminalTabViewModel draggingTab)
     {
-        var edgeX = insertAfter ? targetControl.Bounds.Width : 0;
-        var indicatorPoint = targetControl.TranslatePoint(
-            new Point(edgeX, targetControl.Bounds.Height / 2),
-            TabDropOverlay);
-        if (indicatorPoint == null)
+        var items = new List<TabDropItem>();
+        foreach (var item in this.GetVisualDescendants().OfType<TabStripItem>())
         {
-            HideTabDropIndicator();
+            var tab = ResolveTabFromItem(item);
+            if (tab == null ||
+                tab == draggingTab ||
+                ResolveTabStrip(item) != tabStrip ||
+                item.Bounds.Width <= 0)
+            {
+                continue;
+            }
+
+            var topLeft = item.TranslatePoint(new Point(0, 0), TabDropOverlay);
+            if (topLeft == null)
+                continue;
+
+            items.Add(new TabDropItem(
+                tab,
+                topLeft.Value.X,
+                topLeft.Value.X + item.Bounds.Width,
+                topLeft.Value.Y,
+                topLeft.Value.Y + item.Bounds.Height));
+        }
+
+        items.Sort(static (left, right) => left.Left.CompareTo(right.Left));
+        return items;
+    }
+
+    private static int ResolveTabDropIndex(IReadOnlyList<TabDropItem> items, double pointerX)
+    {
+        for (var i = 0; i < items.Count; i++)
+        {
+            var itemCenter = items[i].Left + (items[i].Right - items[i].Left) / 2;
+            if (pointerX < itemCenter)
+                return i;
+        }
+
+        return items.Count;
+    }
+
+    private static double ResolveTabDropIndicatorX(IReadOnlyList<TabDropItem> items, int insertIndex)
+    {
+        if (insertIndex <= 0)
+            return items[0].Left;
+
+        if (insertIndex >= items.Count)
+            return items[^1].Right;
+
+        return (items[insertIndex - 1].Right + items[insertIndex].Left) / 2;
+    }
+
+    private static double ResolveTabDropIndicatorY(IReadOnlyList<TabDropItem> items)
+    {
+        var top = items.Min(static item => item.Top);
+        var bottom = items.Max(static item => item.Bottom);
+        return top + (bottom - top) / 2;
+    }
+
+    private void ShowTabDropIndicatorAt(double indicatorX, double indicatorY)
+    {
+        Avalonia.Controls.Canvas.SetLeft(
+            TabDropIndicator,
+            Math.Round(indicatorX - TabDropIndicatorWidth / 2));
+        Avalonia.Controls.Canvas.SetTop(
+            TabDropIndicator,
+            Math.Round(indicatorY - TabDropIndicatorHeight / 2 + TabDropIndicatorVerticalOffset));
+        TabDropIndicator.IsVisible = true;
+    }
+
+    private void ShowTabDragGhost(Point pointerPosition)
+    {
+        var overlayPoint = this.TranslatePoint(pointerPosition, TabDropOverlay);
+        if (overlayPoint == null)
+        {
+            HideTabDragGhost();
             return;
         }
 
-        Avalonia.Controls.Canvas.SetLeft(TabDropIndicator, indicatorPoint.Value.X - TabDropIndicatorWidth / 2);
-        Avalonia.Controls.Canvas.SetTop(TabDropIndicator, indicatorPoint.Value.Y - TabDropIndicatorHeight / 2);
-        TabDropIndicator.IsVisible = true;
+        Avalonia.Controls.Canvas.SetLeft(
+            TabDragGhost,
+            Math.Round(overlayPoint.Value.X + TabDragGhostOffsetX));
+        Avalonia.Controls.Canvas.SetTop(
+            TabDragGhost,
+            Math.Round(overlayPoint.Value.Y + TabDragGhostOffsetY));
+        TabDragGhost.IsVisible = true;
     }
+
+    private void HideTabDragGhost()
+    {
+        TabDragGhost.IsVisible = false;
+    }
+
+    private readonly record struct TabDropItem(
+        TerminalTabViewModel Tab,
+        double Left,
+        double Right,
+        double Top,
+        double Bottom);
 
     private void HideTabDropIndicator()
     {
@@ -680,6 +993,28 @@ public partial class MainWindow : Window
         }
 
         return null;
+    }
+
+    private static Avalonia.Controls.Control? ResolveTabHeaderControl(Avalonia.Controls.Control? source)
+    {
+        foreach (var current in EnumerateControlLineage(source))
+        {
+            if (current.Classes.Contains(SessionTabHeaderClass))
+                return current;
+        }
+
+        return null;
+    }
+
+    private static bool IsTabCloseButtonSource(Avalonia.Controls.Control source)
+    {
+        foreach (var current in EnumerateControlLineage(source))
+        {
+            if (current.Name == "PART_ItemCloseButton")
+                return true;
+        }
+
+        return false;
     }
 
     private static IEnumerable<Avalonia.Controls.Control> EnumerateControlLineage(Avalonia.Controls.Control? source)

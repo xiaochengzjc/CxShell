@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http;
 using Velopack;
 using Velopack.Sources;
 
@@ -47,6 +49,7 @@ public sealed record AppUpdateCheckResult(
 public sealed class AppUpdateService
 {
     private const string ReleaseDownloadBaseUrl = "https://github.com/xiaochengzjc/CxShell/releases/latest/download";
+    private const double UpdateDownloadTimeoutMinutes = 15;
 
     public async Task<AppUpdateCheckResult> CheckForUpdatesAsync(
         bool includePrerelease,
@@ -97,11 +100,107 @@ public sealed class AppUpdateService
     {
         _ = includePrerelease;
 
-        var source = new SimpleWebSource(ReleaseDownloadBaseUrl, timeout: 2);
+        var source = new SimpleWebSource(
+            ReleaseDownloadBaseUrl,
+            new RetryingFileDownloader(),
+            timeout: UpdateDownloadTimeoutMinutes);
         var options = new UpdateOptions
         {
             MaximumDeltasBeforeFallback = 5
         };
         return new UpdateManager(source, options);
+    }
+
+    private sealed class RetryingFileDownloader : HttpClientFileDownloader
+    {
+        private const int MaxAttempts = 3;
+
+        public override async Task DownloadFile(
+            string url,
+            string targetFile,
+            Action<int> progress,
+            IDictionary<string, string>? headers,
+            double timeout,
+            CancellationToken cancelToken = default)
+        {
+            for (var attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    await base.DownloadFile(url, targetFile, progress, headers, timeout, cancelToken);
+                    return;
+                }
+                catch (Exception ex) when (ShouldRetry(ex, cancelToken, attempt))
+                {
+                    TryDeletePartialFile(targetFile);
+                    await Task.Delay(GetRetryDelay(attempt), cancelToken);
+                }
+            }
+        }
+
+        public override async Task<byte[]> DownloadBytes(
+            string url,
+            IDictionary<string, string>? headers,
+            double timeout)
+        {
+            for (var attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    return await base.DownloadBytes(url, headers, timeout);
+                }
+                catch (Exception ex) when (ShouldRetry(ex, CancellationToken.None, attempt))
+                {
+                    await Task.Delay(GetRetryDelay(attempt));
+                }
+            }
+        }
+
+        public override async Task<string> DownloadString(
+            string url,
+            IDictionary<string, string>? headers,
+            double timeout)
+        {
+            for (var attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    return await base.DownloadString(url, headers, timeout);
+                }
+                catch (Exception ex) when (ShouldRetry(ex, CancellationToken.None, attempt))
+                {
+                    await Task.Delay(GetRetryDelay(attempt));
+                }
+            }
+        }
+
+        private static bool ShouldRetry(Exception ex, CancellationToken cancellationToken, int attempt)
+        {
+            if (attempt >= MaxAttempts || cancellationToken.IsCancellationRequested)
+                return false;
+
+            if (ex is HttpRequestException { StatusCode: HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound })
+                return false;
+
+            return true;
+        }
+
+        private static TimeSpan GetRetryDelay(int attempt)
+        {
+            return TimeSpan.FromSeconds(Math.Min(2 * attempt, 8));
+        }
+
+        private static void TryDeletePartialFile(string path)
+        {
+            try
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch
+            {
+                // A stale partial update file will be overwritten on the next retry.
+            }
+        }
     }
 }
