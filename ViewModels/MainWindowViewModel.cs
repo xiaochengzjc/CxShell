@@ -85,6 +85,8 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsSelectedVncSession => SelectedTab?.IsVncSession == true;
     public bool IsSelectedRdpSession => SelectedTab?.IsRdpSession == true;
     public bool IsSelectedFileTransferSession => SelectedTab?.IsFileTransferSession == true;
+    public bool IsSelectedVncToolbarVisible => SelectedTab?.IsVncSession == true &&
+                                               SelectedTab.Session.VncShowToolbarButtons;
 
     public ServerMonitorViewModel Monitor => SelectedTab?.Monitor ?? _emptyMonitor;
     public ObservableCollection<SessionInfo> QuickSessions => _sessionTreeVm.QuickSessions;
@@ -621,6 +623,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsSelectedVncSession));
         OnPropertyChanged(nameof(IsSelectedRdpSession));
         OnPropertyChanged(nameof(IsSelectedFileTransferSession));
+        OnPropertyChanged(nameof(IsSelectedVncToolbarVisible));
     }
 
     partial void OnIsMonitorVisibleChanged(bool value)

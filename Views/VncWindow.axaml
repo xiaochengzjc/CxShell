@@ -1,5 +1,6 @@
 <atom:Window xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:CxShell.Controls"
              xmlns:services="using:CxShell.Services"
              xmlns:atom="https://atomui.net"
              xmlns:vm="using:CxShell.ViewModels"
@@ -16,18 +17,17 @@
         <Border Grid.Row="0"
                 Background="#111111"
                 ClipToBounds="True">
-            <Image x:Name="FramebufferImage"
-                   Source="{Binding Framebuffer}"
-                   Stretch="Uniform"
-                   HorizontalAlignment="Stretch"
-                   VerticalAlignment="Stretch"
-                   Focusable="True"
-                   PointerMoved="OnFramebufferPointerMoved"
-                   PointerPressed="OnFramebufferPointerPressed"
-                   PointerReleased="OnFramebufferPointerReleased"
-                   PointerWheelChanged="OnFramebufferPointerWheelChanged"
-                   KeyDown="OnFramebufferKeyDown"
-                   KeyUp="OnFramebufferKeyUp"/>
+            <controls:VncClientView x:Name="RemoteView"
+                                    Connection="{Binding Connection}"
+                                    DisplayMode="{Binding DisplayMode}"
+                                    ScalePercent="{Binding ScalePercent}"
+                                    IsKeyboardInputEnabled="{Binding EnableKeyboardInput}"
+                                    IsMouseInputEnabled="{Binding EnableMouseInput}"
+                                    CaptureShortcuts="{Binding CaptureShortcuts}"
+                                    CursorMode="{Binding CursorMode}"
+                                    ClipboardMode="{Binding ClipboardMode}"
+                                    ResizeMode="{Binding ResizeMode}"
+                                    Focusable="True"/>
         </Border>
 
         <Border Grid.Row="1"
@@ -48,6 +48,10 @@
                 <atom:Button Content="{Binding [UiText.259], Source={x:Static services:LocalizationService.Shared}}"
                              Padding="10,2"
                              Click="OnSendClipboardClick"/>
+                <atom:Button Content="Ctrl+Alt+Del"
+                             Padding="10,2"
+                             IsEnabled="{Binding IsConnected}"
+                             Command="{Binding SendCtrlAltDeleteCommand}"/>
             </StackPanel>
         </Border>
     </Grid>

@@ -136,7 +136,11 @@ public partial class SessionTreeViewModel : ObservableObject
             Id = Guid.NewGuid(),
             Name = string.Empty,
             Host = string.Empty,
-            Username = string.Empty
+            Username = string.Empty,
+            VncScalePercent = SessionInfo.DefaultVncScalePercent,
+            VncFramebufferUpdateDelayMilliseconds = SessionInfo.DefaultVncFramebufferUpdateDelayMilliseconds,
+            VncCompressionLevel = SessionInfo.DefaultVncCompressionLevel,
+            VncJpegQualityLevel = SessionInfo.DefaultVncJpegQualityLevel
         };
     }
 
@@ -225,6 +229,21 @@ public partial class SessionTreeViewModel : ObservableObject
         target.RdpSshPassword = source.RdpSshPassword;
         target.RdpSshUsePrivateKey = source.RdpSshUsePrivateKey;
         target.RdpSshPrivateKeyPath = source.RdpSshPrivateKeyPath;
+        target.VncDisplayMode = source.VncDisplayMode;
+        target.VncScalePercent = source.VncScalePercent;
+        target.VncResizeMode = source.VncResizeMode;
+        target.VncReadOnlyMode = source.VncReadOnlyMode;
+        target.VncEnableKeyboardInput = source.VncEnableKeyboardInput;
+        target.VncEnableMouseInput = source.VncEnableMouseInput;
+        target.VncCaptureShortcuts = source.VncCaptureShortcuts;
+        target.VncCursorMode = source.VncCursorMode;
+        target.VncShowToolbarButtons = source.VncShowToolbarButtons;
+        target.VncClipboardMode = source.VncClipboardMode;
+        target.VncEncodingProfile = source.VncEncodingProfile;
+        target.VncFramebufferUpdateDelayMilliseconds = source.VncFramebufferUpdateDelayMilliseconds;
+        target.VncCompressionLevel = source.VncCompressionLevel;
+        target.VncJpegQualityLevel = source.VncJpegQualityLevel;
+        target.VncJpegSubsampling = source.VncJpegSubsampling;
         target.VncUseSshTunnel = source.VncUseSshTunnel;
         target.VncSshHost = source.VncSshHost;
         target.VncSshPort = source.VncSshPort;
@@ -723,6 +742,21 @@ public partial class SessionTreeViewModel : ObservableObject
             RdpSshPassword = source.RdpSshPassword,
             RdpSshUsePrivateKey = source.RdpSshUsePrivateKey,
             RdpSshPrivateKeyPath = source.RdpSshPrivateKeyPath,
+            VncDisplayMode = source.VncDisplayMode,
+            VncScalePercent = source.VncScalePercent,
+            VncResizeMode = source.VncResizeMode,
+            VncReadOnlyMode = source.VncReadOnlyMode,
+            VncEnableKeyboardInput = source.VncEnableKeyboardInput,
+            VncEnableMouseInput = source.VncEnableMouseInput,
+            VncCaptureShortcuts = source.VncCaptureShortcuts,
+            VncCursorMode = source.VncCursorMode,
+            VncShowToolbarButtons = source.VncShowToolbarButtons,
+            VncClipboardMode = source.VncClipboardMode,
+            VncEncodingProfile = source.VncEncodingProfile,
+            VncFramebufferUpdateDelayMilliseconds = source.VncFramebufferUpdateDelayMilliseconds,
+            VncCompressionLevel = source.VncCompressionLevel,
+            VncJpegQualityLevel = source.VncJpegQualityLevel,
+            VncJpegSubsampling = source.VncJpegSubsampling,
             VncUseSshTunnel = source.VncUseSshTunnel,
             VncSshHost = source.VncSshHost,
             VncSshPort = source.VncSshPort,

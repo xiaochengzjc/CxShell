@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <!-- NuGet Package Properties -->
+        <PackageId>Community.MarcusW.VncClient</PackageId>
+        <Description>Community-maintained VNC client library for .NET. High-performance, cross-platform implementation with enhanced features, modern .NET 10 support, and comprehensive protocol compatibility. 🔗 Maintained at: https://github.com/karbonbaron/MarcusW.VncClient</Description>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageIcon>vnc-client-icon.png</PackageIcon>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.2" />
+      <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.2" />
+      <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.102" PrivateAssets="All" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Compile Update="RfbConnection.Helpers.cs">
+        <DependentUpon>RfbConnection.cs</DependentUpon>
+      </Compile>
+      <Compile Update="RfbConnection.Connection.cs">
+        <DependentUpon>RfbConnection.cs</DependentUpon>
+      </Compile>
+      <Compile Update="RfbConnection.Details.cs">
+        <DependentUpon>RfbConnection.cs</DependentUpon>
+      </Compile>
+      <Compile Update="RfbConnection.Messages.cs">
+        <DependentUpon>RfbConnection.cs</DependentUpon>
+      </Compile>
+    </ItemGroup>
+
+    <ItemGroup>
+        <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+            <_Parameter1>MarcusW.VncClient.Tests</_Parameter1>
+        </AssemblyAttribute>
+        <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+            <_Parameter1>DynamicProxyGenAssembly2</_Parameter1>
+        </AssemblyAttribute>
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="README.md" Pack="true" PackagePath="/" />
+            <None Include="vnc-client-icon.png" Pack="true" PackagePath="/" />
+    </ItemGroup>
+
+</Project>

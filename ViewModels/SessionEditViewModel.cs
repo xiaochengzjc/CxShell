@@ -298,6 +298,21 @@ public partial class SessionEditViewModel : ObservableObject
     [ObservableProperty] private string _rdpSshPassword = string.Empty;
     [ObservableProperty] private bool _rdpSshUsePrivateKey;
     [ObservableProperty] private string _rdpSshPrivateKeyPath = string.Empty;
+    [ObservableProperty] private string _vncDisplayMode = "Fit";
+    [ObservableProperty] private decimal _vncScalePercent = SessionInfo.DefaultVncScalePercent;
+    [ObservableProperty] private string _vncResizeMode = "None";
+    [ObservableProperty] private bool _vncReadOnlyMode;
+    [ObservableProperty] private bool _vncEnableKeyboardInput = true;
+    [ObservableProperty] private bool _vncEnableMouseInput = true;
+    [ObservableProperty] private bool _vncCaptureShortcuts = true;
+    [ObservableProperty] private string _vncCursorMode = "Default";
+    [ObservableProperty] private bool _vncShowToolbarButtons = true;
+    [ObservableProperty] private string _vncClipboardMode = "ManualAndRemoteToLocal";
+    [ObservableProperty] private string _vncEncodingProfile = "Compatibility";
+    [ObservableProperty] private decimal _vncFramebufferUpdateDelayMilliseconds = SessionInfo.DefaultVncFramebufferUpdateDelayMilliseconds;
+    [ObservableProperty] private decimal _vncCompressionLevel = SessionInfo.DefaultVncCompressionLevel;
+    [ObservableProperty] private decimal _vncJpegQualityLevel = SessionInfo.DefaultVncJpegQualityLevel;
+    [ObservableProperty] private string _vncJpegSubsampling = "ChrominanceSubsampling4X";
     [ObservableProperty] private bool _vncUseSshTunnel;
     [ObservableProperty] private string _vncSshHost = string.Empty;
     [ObservableProperty] private string _vncSshPort = "22";
@@ -935,6 +950,48 @@ public partial class SessionEditViewModel : ObservableObject
         new SelectOption { Header = "Do not play", Content = "DoNotPlay" },
         new SelectOption { Header = "Play on remote computer", Content = "PlayRemote" }
     ];
+    public ObservableCollection<ISelectOption> VncDisplayModeOptions { get; } =
+    [
+        new SelectOption { Header = "完整显示", Content = "Fit" },
+        new SelectOption { Header = "原始大小", Content = "Original" },
+        new SelectOption { Header = "固定缩放", Content = "FixedScale" }
+    ];
+    public ObservableCollection<ISelectOption> VncResizeModeOptions { get; } =
+    [
+        new SelectOption { Header = "不调整远端分辨率", Content = "None" },
+        new SelectOption { Header = "连接时调整", Content = "Connect" },
+        new SelectOption { Header = "窗口变化时调整", Content = "Dynamic" }
+    ];
+    public ObservableCollection<ISelectOption> VncClipboardModeOptions { get; } =
+    [
+        new SelectOption { Header = "手动发送，接收远端剪贴板", Content = "ManualAndRemoteToLocal" },
+        new SelectOption { Header = "仅手动发送", Content = "ManualOnly" },
+        new SelectOption { Header = "本机到远端自动同步", Content = "LocalToRemote" },
+        new SelectOption { Header = "远端到本机自动同步", Content = "RemoteToLocal" },
+        new SelectOption { Header = "双向自动同步", Content = "Bidirectional" }
+    ];
+    public ObservableCollection<ISelectOption> VncCursorModeOptions { get; } =
+    [
+        new SelectOption { Header = "默认指针", Content = "Default" },
+        new SelectOption { Header = "隐藏本机指针", Content = "Hidden" },
+        new SelectOption { Header = "十字指针", Content = "Crosshair" }
+    ];
+    public ObservableCollection<ISelectOption> VncEncodingProfileOptions { get; } =
+    [
+        new SelectOption { Header = "兼容优先", Content = "Compatibility" },
+        new SelectOption { Header = "性能优先", Content = "Performance" },
+        new SelectOption { Header = "质量优先", Content = "Quality" },
+        new SelectOption { Header = "Raw 保底", Content = "Raw" }
+    ];
+    public ObservableCollection<ISelectOption> VncJpegSubsamplingOptions { get; } =
+    [
+        new SelectOption { Header = "4:2:0 性能优先", Content = "ChrominanceSubsampling4X" },
+        new SelectOption { Header = "不降采样", Content = "None" },
+        new SelectOption { Header = "4:2:2 平衡", Content = "ChrominanceSubsampling2X" },
+        new SelectOption { Header = "灰度", Content = "Grayscale" },
+        new SelectOption { Header = "8X 更省带宽", Content = "ChrominanceSubsampling8X" },
+        new SelectOption { Header = "16X 最省带宽", Content = "ChrominanceSubsampling16X" }
+    ];
 
     public ObservableCollection<ISelectOption> AdvancedIpVersionOptions { get; } =
     [
@@ -1318,6 +1375,29 @@ public partial class SessionEditViewModel : ObservableObject
         RdpSshPassword = PasswordEncryptionService.Decrypt(session.RdpSshPassword);
         RdpSshUsePrivateKey = session.RdpSshUsePrivateKey;
         RdpSshPrivateKeyPath = session.RdpSshPrivateKeyPath ?? string.Empty;
+        VncDisplayMode = string.IsNullOrWhiteSpace(session.VncDisplayMode) ? "Fit" : session.VncDisplayMode;
+        VncScalePercent = Math.Clamp(session.VncScalePercent <= 0
+            ? SessionInfo.DefaultVncScalePercent
+            : session.VncScalePercent, 25, 300);
+        VncResizeMode = string.IsNullOrWhiteSpace(session.VncResizeMode) ? "None" : session.VncResizeMode;
+        VncReadOnlyMode = session.VncReadOnlyMode;
+        VncEnableKeyboardInput = session.VncEnableKeyboardInput;
+        VncEnableMouseInput = session.VncEnableMouseInput;
+        VncCaptureShortcuts = session.VncCaptureShortcuts;
+        VncCursorMode = string.IsNullOrWhiteSpace(session.VncCursorMode) ? "Default" : session.VncCursorMode;
+        VncShowToolbarButtons = session.VncShowToolbarButtons;
+        VncClipboardMode = string.IsNullOrWhiteSpace(session.VncClipboardMode) ? "ManualAndRemoteToLocal" : session.VncClipboardMode;
+        VncEncodingProfile = string.IsNullOrWhiteSpace(session.VncEncodingProfile) ? "Compatibility" : session.VncEncodingProfile;
+        VncFramebufferUpdateDelayMilliseconds = Math.Clamp(session.VncFramebufferUpdateDelayMilliseconds <= 0
+            ? SessionInfo.DefaultVncFramebufferUpdateDelayMilliseconds
+            : session.VncFramebufferUpdateDelayMilliseconds, 1, 1000);
+        VncCompressionLevel = Math.Clamp(session.VncCompressionLevel, 0, 9);
+        VncJpegQualityLevel = Math.Clamp(session.VncJpegQualityLevel <= 0
+            ? SessionInfo.DefaultVncJpegQualityLevel
+            : session.VncJpegQualityLevel, 1, 100);
+        VncJpegSubsampling = string.IsNullOrWhiteSpace(session.VncJpegSubsampling)
+            ? "ChrominanceSubsampling4X"
+            : session.VncJpegSubsampling;
         VncUseSshTunnel = session.VncUseSshTunnel;
         VncSshHost = string.IsNullOrWhiteSpace(session.VncSshHost) ? session.Host : session.VncSshHost;
         VncSshPort = Math.Clamp(session.VncSshPort <= 0 ? 22 : session.VncSshPort, 1, 65535).ToString();
@@ -1573,6 +1653,23 @@ public partial class SessionEditViewModel : ObservableObject
         session.RdpSshPassword = RdpSshUsePrivateKey ? string.Empty : PasswordEncryptionService.Encrypt(RdpSshPassword);
         session.RdpSshUsePrivateKey = RdpSshUsePrivateKey;
         session.RdpSshPrivateKeyPath = RdpSshUsePrivateKey ? RdpSshPrivateKeyPath.Trim() : string.Empty;
+        session.VncDisplayMode = string.IsNullOrWhiteSpace(VncDisplayMode) ? "Fit" : VncDisplayMode;
+        session.VncScalePercent = Math.Clamp((int)VncScalePercent, 25, 300);
+        session.VncResizeMode = string.IsNullOrWhiteSpace(VncResizeMode) ? "None" : VncResizeMode;
+        session.VncReadOnlyMode = VncReadOnlyMode;
+        session.VncEnableKeyboardInput = VncEnableKeyboardInput;
+        session.VncEnableMouseInput = VncEnableMouseInput;
+        session.VncCaptureShortcuts = VncCaptureShortcuts;
+        session.VncCursorMode = string.IsNullOrWhiteSpace(VncCursorMode) ? "Default" : VncCursorMode;
+        session.VncShowToolbarButtons = VncShowToolbarButtons;
+        session.VncClipboardMode = string.IsNullOrWhiteSpace(VncClipboardMode) ? "ManualAndRemoteToLocal" : VncClipboardMode;
+        session.VncEncodingProfile = string.IsNullOrWhiteSpace(VncEncodingProfile) ? "Compatibility" : VncEncodingProfile;
+        session.VncFramebufferUpdateDelayMilliseconds = Math.Clamp((int)VncFramebufferUpdateDelayMilliseconds, 1, 1000);
+        session.VncCompressionLevel = Math.Clamp((int)VncCompressionLevel, 0, 9);
+        session.VncJpegQualityLevel = Math.Clamp((int)VncJpegQualityLevel, 1, 100);
+        session.VncJpegSubsampling = string.IsNullOrWhiteSpace(VncJpegSubsampling)
+            ? "ChrominanceSubsampling4X"
+            : VncJpegSubsampling;
         session.VncUseSshTunnel = VncUseSshTunnel;
         session.VncSshHost = string.IsNullOrWhiteSpace(VncSshHost) ? session.Host : VncSshHost.Trim();
         session.VncSshPort = int.TryParse(VncSshPort, out var vncSshPort) ? Math.Clamp(vncSshPort, 1, 65535) : 22;
@@ -1664,10 +1761,37 @@ public partial class SessionEditViewModel : ObservableObject
         OnPropertyChanged(nameof(IsVncSshPrivateKeyAuth));
     }
 
+    partial void OnVncScalePercentChanged(decimal value)
+    {
+        ClampVncPerformanceValue(value, 25, 300, v => VncScalePercent = v);
+    }
+
+    partial void OnVncFramebufferUpdateDelayMillisecondsChanged(decimal value)
+    {
+        ClampVncPerformanceValue(value, 1, 1000, v => VncFramebufferUpdateDelayMilliseconds = v);
+    }
+
+    partial void OnVncCompressionLevelChanged(decimal value)
+    {
+        ClampVncPerformanceValue(value, 0, 9, v => VncCompressionLevel = v);
+    }
+
+    partial void OnVncJpegQualityLevelChanged(decimal value)
+    {
+        ClampVncPerformanceValue(value, 1, 100, v => VncJpegQualityLevel = v);
+    }
+
     partial void OnRdpSshUsePrivateKeyChanged(bool value)
     {
         OnPropertyChanged(nameof(IsRdpSshPasswordAuth));
         OnPropertyChanged(nameof(IsRdpSshPrivateKeyAuth));
+    }
+
+    private static void ClampVncPerformanceValue(decimal value, decimal min, decimal max, Action<decimal> setValue)
+    {
+        var clamped = Math.Clamp(value, min, max);
+        if (clamped != value)
+            setValue(clamped);
     }
 
     partial void OnSerialPortNameChanged(string value)

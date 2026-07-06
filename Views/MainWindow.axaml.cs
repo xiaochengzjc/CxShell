@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Avalonia;
 using AtomUI.Desktop.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -141,6 +142,9 @@ public partial class MainWindow : Window
         if (TryHandleQuickCommandShortcut(e))
             return;
 
+        if (TryHandleVncPasteShortcut(e))
+            return;
+
         if (e.Key != Key.Escape)
             return;
 
@@ -170,6 +174,36 @@ public partial class MainWindow : Window
 
         e.Handled = true;
         return true;
+    }
+
+    private bool TryHandleVncPasteShortcut(KeyEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel { SelectedTab.Vnc: { } vnc } ||
+            e.Key != Key.V ||
+            (e.KeyModifiers & KeyModifiers.Control) == 0 ||
+            (e.KeyModifiers & KeyModifiers.Alt) != 0)
+        {
+            return false;
+        }
+
+        e.Handled = true;
+        _ = PasteLocalClipboardToVncAsync(vnc);
+        return true;
+    }
+
+    private async Task PasteLocalClipboardToVncAsync(VncViewModel vnc)
+    {
+        try
+        {
+            var clipboard = Avalonia.Controls.TopLevel.GetTopLevel(this)?.Clipboard;
+            var text = clipboard == null ? null : await clipboard.TryGetTextAsync();
+            if (!string.IsNullOrEmpty(text))
+                await vnc.SendClipboardTextAndPasteAsync(text);
+        }
+        catch
+        {
+            // Clipboard access can fail on some desktop backends.
+        }
     }
 
     private void OnPreviewPointerPressed(object? sender, PointerPressedEventArgs e)
@@ -1147,6 +1181,25 @@ public partial class MainWindow : Window
     private void OnHelpMenuItemClick(object? sender, RoutedEventArgs e)
     {
         HelpPopup.Close();
+    }
+
+    private async void OnSendRemoteClipboardClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel { SelectedTab.Vnc: { } vnc })
+            return;
+
+        var clipboard = Avalonia.Controls.TopLevel.GetTopLevel(this)?.Clipboard;
+        var text = clipboard == null ? null : await clipboard.TryGetTextAsync();
+        if (!string.IsNullOrEmpty(text))
+            await vnc.SendClipboardTextAndPasteAsync(text);
+    }
+
+    private async void OnSendRemoteCtrlAltDelClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel { SelectedTab.Vnc: { } vnc })
+            return;
+
+        await vnc.SendCtrlAltDeleteAsync();
     }
 
     private void OnTabGroupPanePointerPressed(object? sender, PointerPressedEventArgs e)

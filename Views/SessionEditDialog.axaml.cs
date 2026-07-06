@@ -66,6 +66,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         SetSelectedRloginOptions();
         SetSelectedSerialOptions();
         SetSelectedRdpOptions();
+        SetSelectedVncOptions();
         SetSelectedSessionDefaultOptions();
         _isInitializingSelections = false;
         ProxySelect.SelectionChanged += OnProxySelectionChanged;
@@ -190,6 +191,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         SftpPage.IsVisible = key == "SshSftp";
         SerialPage.IsVisible = key == "Serial";
         RdpPage.IsVisible = key == "Rdp";
+        VncPage.IsVisible = key == "Vnc";
         TracingPage.IsVisible = key == "Tracing";
         PlaceholderPage.IsVisible = !IsImplementedCategoryPage(key);
         PlaceholderTitleText.Text = title;
@@ -207,6 +209,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             "Rlogin" or
             "Serial" or
             "Rdp" or
+            "Vnc" or
             "Ssh" or
             "SshSecurity" or
             "SshTunnel" or
@@ -244,6 +247,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             "Rlogin" => "RLOGIN",
             "Serial" => l.Text("SessionEdit.Serial"),
             "Rdp" => "RDP",
+            "Vnc" => "VNC",
             "Proxy" => l.Text("SessionEdit.Proxy"),
             "KeepAlive" => l.Text("SessionEdit.KeepAlive"),
             "Terminal" => l.Text("SessionEdit.Terminal"),
@@ -336,6 +340,12 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             vm.RdpScreenScale = GetSelectedOptionText(RdpScreenScaleSelect, vm.RdpScreenScale);
             vm.RdpColorQuality = GetSelectedOptionText(RdpColorQualitySelect, vm.RdpColorQuality);
             vm.RdpAudioMode = GetSelectedOptionText(RdpAudioModeSelect, vm.RdpAudioMode);
+            vm.VncDisplayMode = GetSelectedOptionText(VncDisplayModeSelect, vm.VncDisplayMode);
+            vm.VncResizeMode = GetSelectedOptionText(VncResizeModeSelect, vm.VncResizeMode);
+            vm.VncCursorMode = GetSelectedOptionText(VncCursorModeSelect, vm.VncCursorMode);
+            vm.VncClipboardMode = GetSelectedOptionText(VncClipboardModeSelect, vm.VncClipboardMode);
+            vm.VncEncodingProfile = GetSelectedOptionText(VncEncodingProfileSelect, vm.VncEncodingProfile);
+            vm.VncJpegSubsampling = GetSelectedOptionText(VncJpegSubsamplingSelect, vm.VncJpegSubsampling);
             vm.TerminalType = GetSelectedOptionText(SessionTerminalTypeSelect, vm.TerminalType);
             vm.TerminalEncoding = GetSelectedOptionText(SessionTerminalEncodingSelect, vm.TerminalEncoding);
             vm.TerminalSendLineEnding = GetSelectedOptionText(SessionTerminalSendLineEndingSelect, vm.TerminalSendLineEnding);
@@ -2439,6 +2449,19 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         SelectOption(RdpScreenScaleSelect, vm.RdpScreenScale);
         SelectOption(RdpColorQualitySelect, vm.RdpColorQuality);
         SelectOption(RdpAudioModeSelect, vm.RdpAudioMode);
+    }
+
+    private void SetSelectedVncOptions()
+    {
+        if (DataContext is not SessionEditViewModel vm)
+            return;
+
+        SelectOption(VncDisplayModeSelect, vm.VncDisplayMode);
+        SelectOption(VncResizeModeSelect, vm.VncResizeMode);
+        SelectOption(VncCursorModeSelect, vm.VncCursorMode);
+        SelectOption(VncClipboardModeSelect, vm.VncClipboardMode);
+        SelectOption(VncEncodingProfileSelect, vm.VncEncodingProfile);
+        SelectOption(VncJpegSubsamplingSelect, vm.VncJpegSubsampling);
     }
 
     private void SetSelectedSessionDefaultOptions()

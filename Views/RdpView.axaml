@@ -6,9 +6,8 @@
              x:DataType="vm:RdpViewModel"
              Focusable="True"
              Background="{atom:SharedTokenResource ColorBgLayout}">
-    <Grid RowDefinitions="*,Auto">
+    <Grid>
         <Border x:Name="RdpViewport"
-                Grid.Row="0"
                 Background="#111111"
                 ClipToBounds="True"
                 SizeChanged="OnViewportSizeChanged">
@@ -22,27 +21,6 @@
                    PointerPressed="OnFramebufferPointerPressed"
                    PointerReleased="OnFramebufferPointerReleased"
                    PointerWheelChanged="OnFramebufferPointerWheelChanged"/>
-        </Border>
-
-        <Border Grid.Row="1"
-                Padding="8,5"
-                Background="{atom:SharedTokenResource ColorBgContainer}"
-                BorderBrush="{atom:SharedTokenResource ColorSplit}"
-                BorderThickness="0,1,0,0">
-            <StackPanel Orientation="Horizontal" Spacing="14">
-                <atom:TextBlock Text="{Binding StatusText}"/>
-                <atom:TextBlock Opacity="0.7">
-                    <atom:TextBlock.Text>
-                        <MultiBinding StringFormat="{}{0}x{1}">
-                            <Binding Path="RemoteWidth"/>
-                            <Binding Path="RemoteHeight"/>
-                        </MultiBinding>
-                    </atom:TextBlock.Text>
-                </atom:TextBlock>
-                <atom:Button Content="{Binding ScaleModeText}"
-                             Padding="10,2"
-                             Command="{Binding ToggleScaleModeCommand}"/>
-            </StackPanel>
         </Border>
     </Grid>
 </UserControl>

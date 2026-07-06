@@ -194,6 +194,11 @@ public class ApplicationSettings
 
 public class SessionInfo
 {
+    public const int DefaultVncFramebufferUpdateDelayMilliseconds = 33;
+    public const int DefaultVncCompressionLevel = 3;
+    public const int DefaultVncJpegQualityLevel = 60;
+    public const int DefaultVncScalePercent = 100;
+
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Name { get; set; } = string.Empty;
     public Guid? GroupId { get; set; }
@@ -394,6 +399,21 @@ public class SessionInfo
     public string RdpSshPassword { get; set; } = string.Empty;
     public bool RdpSshUsePrivateKey { get; set; }
     public string RdpSshPrivateKeyPath { get; set; } = string.Empty;
+    public string VncDisplayMode { get; set; } = "Fit";
+    public int VncScalePercent { get; set; } = DefaultVncScalePercent;
+    public string VncResizeMode { get; set; } = "None";
+    public bool VncReadOnlyMode { get; set; }
+    public bool VncEnableKeyboardInput { get; set; } = true;
+    public bool VncEnableMouseInput { get; set; } = true;
+    public bool VncCaptureShortcuts { get; set; } = true;
+    public string VncCursorMode { get; set; } = "Default";
+    public bool VncShowToolbarButtons { get; set; } = true;
+    public string VncClipboardMode { get; set; } = "ManualAndRemoteToLocal";
+    public string VncEncodingProfile { get; set; } = "Compatibility";
+    public int VncFramebufferUpdateDelayMilliseconds { get; set; } = DefaultVncFramebufferUpdateDelayMilliseconds;
+    public int VncCompressionLevel { get; set; } = DefaultVncCompressionLevel;
+    public int VncJpegQualityLevel { get; set; } = DefaultVncJpegQualityLevel;
+    public string VncJpegSubsampling { get; set; } = "ChrominanceSubsampling4X";
     public bool VncUseSshTunnel { get; set; }
     public string VncSshHost { get; set; } = string.Empty;
     public int VncSshPort { get; set; } = 22;
