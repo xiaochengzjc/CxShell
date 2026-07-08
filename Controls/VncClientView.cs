@@ -219,7 +219,12 @@ public sealed class VncClientView : Control, RfbRenderTarget, IOutputHandler, ID
     public string ClipboardMode
     {
         get => _clipboardMode;
-        set => SetAndRaise(ClipboardModeProperty, ref _clipboardMode, value);
+        set
+        {
+            var normalized = string.IsNullOrWhiteSpace(value) ? "ManualAndRemoteToLocal" : value;
+            if (SetAndRaise(ClipboardModeProperty, ref _clipboardMode, normalized))
+                _ = SyncLocalClipboardToRemoteAsync();
+        }
     }
 
     public string ResizeMode

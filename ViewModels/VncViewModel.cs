@@ -120,20 +120,7 @@ public partial class VncViewModel : ObservableObject, IDisposable
 
         IsConnected = false;
         StatusText = "Connecting...";
-        DisplayMode = ResolveDisplayMode(session.VncDisplayMode);
-        ScalePercent = Math.Clamp(session.VncScalePercent <= 0
-            ? SessionInfo.DefaultVncScalePercent
-            : session.VncScalePercent, 25, 300);
-        EnableKeyboardInput = !session.VncReadOnlyMode && session.VncEnableKeyboardInput;
-        EnableMouseInput = !session.VncReadOnlyMode && session.VncEnableMouseInput;
-        CaptureShortcuts = session.VncCaptureShortcuts;
-        CursorMode = string.IsNullOrWhiteSpace(session.VncCursorMode) ? "Default" : session.VncCursorMode;
-        ClipboardMode = string.IsNullOrWhiteSpace(session.VncClipboardMode)
-            ? "ManualAndRemoteToLocal"
-            : session.VncClipboardMode;
-        ResizeMode = string.IsNullOrWhiteSpace(session.VncResizeMode)
-            ? "None"
-            : session.VncResizeMode;
+        RefreshSessionOptions(session);
 
         if (session.VncUseSshTunnel)
         {
@@ -172,6 +159,24 @@ public partial class VncViewModel : ObservableObject, IDisposable
         UpdateConnectionInfo(connection);
         IsConnected = connection.ConnectionState == ConnectionState.Connected;
         StatusText = $"Connected: {connection.DesktopName} {RemoteWidth}x{RemoteHeight}";
+    }
+
+    public void RefreshSessionOptions(SessionInfo session)
+    {
+        DisplayMode = ResolveDisplayMode(session.VncDisplayMode);
+        ScalePercent = Math.Clamp(session.VncScalePercent <= 0
+            ? SessionInfo.DefaultVncScalePercent
+            : session.VncScalePercent, 25, 300);
+        EnableKeyboardInput = !session.VncReadOnlyMode && session.VncEnableKeyboardInput;
+        EnableMouseInput = !session.VncReadOnlyMode && session.VncEnableMouseInput;
+        CaptureShortcuts = session.VncCaptureShortcuts;
+        CursorMode = string.IsNullOrWhiteSpace(session.VncCursorMode) ? "Default" : session.VncCursorMode;
+        ClipboardMode = string.IsNullOrWhiteSpace(session.VncClipboardMode)
+            ? "ManualAndRemoteToLocal"
+            : session.VncClipboardMode;
+        ResizeMode = string.IsNullOrWhiteSpace(session.VncResizeMode)
+            ? "None"
+            : session.VncResizeMode;
     }
 
     public bool SendClipboardText(string text)

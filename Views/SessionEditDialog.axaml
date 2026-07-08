@@ -1685,7 +1685,7 @@
                                 BorderThickness="1"
                                 CornerRadius="4"
                                 Padding="18">
-                            <Grid RowDefinitions="Auto,14,Auto,10,Auto,10,Auto,12,Auto"
+                            <Grid RowDefinitions="Auto,14,Auto,10,Auto,6,Auto,10,Auto,12,Auto"
                                   ColumnDefinitions="150,360,*"
                                   ColumnSpacing="8">
                                 <TextBlock Grid.ColumnSpan="3"
@@ -1714,24 +1714,25 @@
                                                     Minimum="25"
                                                     Maximum="300"
                                                     Value="{Binding VncScalePercent, Mode=TwoWay}"/>
-                                <TextBlock Grid.Row="4"
-                                           Grid.Column="2"
+                                <TextBlock Grid.Row="6"
+                                           Grid.Column="1"
+                                           Grid.ColumnSpan="2"
                                            Text="固定缩放模式下生效，范围 25-300。"
-                                           VerticalAlignment="Center"
+                                           TextWrapping="Wrap"
                                            Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
 
-                                <TextBlock Grid.Row="6"
+                                <TextBlock Grid.Row="8"
                                            Text="远端分辨率"
                                            VerticalAlignment="Center"
                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
-                                <atom:Select Grid.Row="6"
+                                <atom:Select Grid.Row="8"
                                              Grid.Column="1"
                                              x:Name="VncResizeModeSelect"
                                              Mode="Single"
                                              Width="260"
                                              HorizontalAlignment="Left"
                                              OptionsSource="{Binding VncResizeModeOptions}"/>
-                                <TextBlock Grid.Row="8"
+                                <TextBlock Grid.Row="10"
                                            Grid.Column="1"
                                            Grid.ColumnSpan="2"
                                            Text="远端分辨率调整依赖 VNC 服务器支持；不支持时会保持当前远端分辨率。"
@@ -1805,7 +1806,7 @@
                                 BorderThickness="1"
                                 CornerRadius="4"
                                 Padding="18">
-                            <Grid RowDefinitions="Auto,14,Auto,10,Auto,12,Auto,12,Auto,12,Auto"
+                            <Grid RowDefinitions="Auto,14,Auto,6,Auto,10,Auto,6,Auto,10,Auto,6,Auto,10,Auto,6,Auto,10,Auto"
                                   ColumnDefinitions="150,220,*"
                                   ColumnSpacing="8">
                                 <TextBlock Grid.ColumnSpan="3"
@@ -1814,7 +1815,7 @@
                                            Foreground="{atom:SharedTokenResource ColorText}"/>
 
                                 <TextBlock Grid.Row="2"
-                                           Text="更新间隔 ms"
+                                           Text="更新间隔"
                                            VerticalAlignment="Center"
                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
                                 <atom:NumericUpDown Grid.Row="2"
@@ -1822,68 +1823,72 @@
                                                     Minimum="1"
                                                     Maximum="1000"
                                                     Value="{Binding VncFramebufferUpdateDelayMilliseconds, Mode=TwoWay}"/>
-                                <TextBlock Grid.Row="2"
-                                           Grid.Column="2"
-                                           Text="范围 1-1000，默认 33"
-                                           VerticalAlignment="Center"
-                                           Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
-
                                 <TextBlock Grid.Row="4"
-                                           Text="压缩级别"
-                                           VerticalAlignment="Center"
-                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
-                                <atom:NumericUpDown Grid.Row="4"
-                                                    Grid.Column="1"
-                                                    Minimum="0"
-                                                    Maximum="9"
-                                                    Value="{Binding VncCompressionLevel, Mode=TwoWay}"/>
-                                <TextBlock Grid.Row="4"
-                                           Grid.Column="2"
-                                           Text="范围 0-9，默认 3"
-                                           VerticalAlignment="Center"
+                                           Grid.Column="1"
+                                           Grid.ColumnSpan="2"
+                                           Text="单位 ms，范围 1-1000，默认 33"
+                                           TextWrapping="Wrap"
                                            Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
 
                                 <TextBlock Grid.Row="6"
-                                           Text="JPEG 质量"
+                                           Text="压缩级别"
                                            VerticalAlignment="Center"
                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
                                 <atom:NumericUpDown Grid.Row="6"
                                                     Grid.Column="1"
+                                                    Minimum="0"
+                                                    Maximum="9"
+                                                    Value="{Binding VncCompressionLevel, Mode=TwoWay}"/>
+                                <TextBlock Grid.Row="8"
+                                           Grid.Column="1"
+                                           Grid.ColumnSpan="2"
+                                           Text="范围 0-9，默认 3"
+                                           TextWrapping="Wrap"
+                                           Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+
+                                <TextBlock Grid.Row="10"
+                                           Text="JPEG 质量"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:NumericUpDown Grid.Row="10"
+                                                    Grid.Column="1"
                                                     Minimum="1"
                                                     Maximum="100"
                                                     Value="{Binding VncJpegQualityLevel, Mode=TwoWay}"/>
-                                <TextBlock Grid.Row="8"
+                                <TextBlock Grid.Row="14"
                                            Text="编码策略"
                                            VerticalAlignment="Center"
                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
-                                <atom:Select Grid.Row="8"
+                                <atom:Select Grid.Row="14"
                                              Grid.Column="1"
                                              x:Name="VncEncodingProfileSelect"
                                              Mode="Single"
                                              Width="220"
                                              HorizontalAlignment="Left"
                                              OptionsSource="{Binding VncEncodingProfileOptions}"/>
-                                <TextBlock Grid.Row="8"
-                                           Grid.Column="2"
+                                <TextBlock Grid.Row="16"
+                                           Grid.Column="1"
+                                           Grid.ColumnSpan="2"
                                            Text="兼容优先最稳；性能优先会优先使用压缩编码。"
-                                           VerticalAlignment="Center"
+                                           TextWrapping="Wrap"
                                            Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
 
-                                <TextBlock Grid.Row="10"
+                                <TextBlock Grid.Row="18"
                                            Text="JPEG 子采样"
                                            VerticalAlignment="Center"
                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
-                                <atom:Select Grid.Row="10"
+                                <atom:Select Grid.Row="18"
                                              Grid.Column="1"
                                              x:Name="VncJpegSubsamplingSelect"
                                              Mode="Single"
                                              Width="220"
                                              HorizontalAlignment="Left"
                                              OptionsSource="{Binding VncJpegSubsamplingOptions}"/>
-                                <TextBlock Grid.Row="6"
-                                           Grid.Column="2"
+                                <TextBlock Grid.Row="12"
+                                           Grid.Column="1"
+                                           Grid.ColumnSpan="2"
                                            Text="范围 1-100，默认 60"
-                                           VerticalAlignment="Center"
+                                           TextWrapping="Wrap"
                                            Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
                             </Grid>
                         </Border>

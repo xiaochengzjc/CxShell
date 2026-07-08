@@ -237,9 +237,9 @@ public partial class SessionEditViewModel : ObservableObject
     [ObservableProperty] private bool _sshUseCompression;
     [ObservableProperty] private bool _sshNoTerminal;
     [ObservableProperty] private bool _sshAcceptAndSaveHostKey;
-    [ObservableProperty] private bool _sshAutoOpenSftpPanel = true;
-    [ObservableProperty] private bool _sshAutoOpenMonitorPanel = true;
-    [ObservableProperty] private bool _sshDoNotStartFileManager;
+    [ObservableProperty] private bool _sshAutoOpenSftpPanel;
+    [ObservableProperty] private bool _sshAutoOpenMonitorPanel;
+    [ObservableProperty] private bool _sshDoNotStartFileManager = true;
     [ObservableProperty] private string _sshCipherAlgorithms = string.Empty;
     [ObservableProperty] private string _sshMacAlgorithms = string.Empty;
     [ObservableProperty] private string _sshKeyExchangeAlgorithms = string.Empty;
@@ -964,10 +964,10 @@ public partial class SessionEditViewModel : ObservableObject
     ];
     public ObservableCollection<ISelectOption> VncClipboardModeOptions { get; } =
     [
-        new SelectOption { Header = "手动发送，接收远端剪贴板", Content = "ManualAndRemoteToLocal" },
-        new SelectOption { Header = "仅手动发送", Content = "ManualOnly" },
-        new SelectOption { Header = "本机到远端自动同步", Content = "LocalToRemote" },
-        new SelectOption { Header = "远端到本机自动同步", Content = "RemoteToLocal" },
+        new SelectOption { Header = "手动发送 + 自动接收远端", Content = "ManualAndRemoteToLocal" },
+        new SelectOption { Header = "仅手动发送，不接收远端", Content = "ManualOnly" },
+        new SelectOption { Header = "自动发送本机到远端", Content = "LocalToRemote" },
+        new SelectOption { Header = "自动接收远端到本机", Content = "RemoteToLocal" },
         new SelectOption { Header = "双向自动同步", Content = "Bidirectional" }
     ];
     public ObservableCollection<ISelectOption> VncCursorModeOptions { get; } =

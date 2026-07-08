@@ -1359,6 +1359,7 @@ public partial class MainWindowViewModel : ObservableObject
             tab.Title = tab.Session.Name;
             tab.NotifyThemeChanged();
             tab.Terminal.RefreshSessionOptions();
+            tab.Vnc?.RefreshSessionOptions(tab.Session);
         }
     }
 
@@ -2084,7 +2085,7 @@ public partial class MainWindowViewModel : ObservableObject
         {
             Title = string.Format(_localization.Text("PasswordDialog.Title"), session.Name),
             Width = 460,
-            Height = 250,
+            Height = 230,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             CanResize = false,
             ShowInTaskbar = false,
@@ -2100,7 +2101,14 @@ public partial class MainWindowViewModel : ObservableObject
             SizeType = CustomizableSizeType.Middle,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             MinHeight = 34,
-            Margin = new Thickness(20, 10)
+            Margin = new Thickness(20, 10, 20, 0)
+        };
+
+        var savePasswordBox = new AtomUI.Desktop.Controls.CheckBox
+        {
+            Content = _localization.Text("PasswordDialog.SavePassword"),
+            IsChecked = PasswordEncryptionService.HasSavedPassword(session.Password),
+            Margin = new Thickness(20, 0, 20, 0)
         };
 
         string? result = null;
@@ -2108,6 +2116,13 @@ public partial class MainWindowViewModel : ObservableObject
         void Confirm()
         {
             result = passwordBox.Text;
+            if (savePasswordBox.IsChecked == true && !string.IsNullOrEmpty(result))
+            {
+                session.Password = PasswordEncryptionService.Encrypt(result);
+                _sessionTreeVm.UpdateSession(session);
+                RefreshOpenTabsForSession(session);
+            }
+
             dialog.Close();
         }
 
@@ -2132,24 +2147,32 @@ public partial class MainWindowViewModel : ObservableObject
         };
         cancelButton.Click += (_, _) => dialog.Close();
 
-        var panel = new StackPanel { Spacing = 8 };
-        panel.Children.Add(new TextBlock
+        var root = new Grid
+        {
+            RowDefinitions = new RowDefinitions("*,Auto")
+        };
+
+        var contentPanel = new StackPanel { Spacing = 8 };
+        contentPanel.Children.Add(new TextBlock
         {
             Text = string.Format(_localization.Text("PasswordDialog.User"), session.Username, session.Host, session.Port),
             Margin = new Thickness(20, 20, 20, 0)
         });
-        panel.Children.Add(passwordBox);
+        contentPanel.Children.Add(passwordBox);
+        contentPanel.Children.Add(savePasswordBox);
 
         var buttonPanel = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             Spacing = 10,
             HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(20, 8, 20, 0)
+            Margin = new Thickness(20, 4, 20, 16)
         };
         buttonPanel.Children.Add(okButton);
         buttonPanel.Children.Add(cancelButton);
-        panel.Children.Add(buttonPanel);
+        Grid.SetRow(buttonPanel, 1);
+        root.Children.Add(contentPanel);
+        root.Children.Add(buttonPanel);
 
         passwordBox.KeyDown += (_, e) =>
         {
@@ -2169,7 +2192,7 @@ public partial class MainWindowViewModel : ObservableObject
             }
         };
 
-        dialog.Content = panel;
+        dialog.Content = root;
         dialog.Opened += (_, _) => passwordBox.Focus();
 
         var mainWindow = GetMainWindow();

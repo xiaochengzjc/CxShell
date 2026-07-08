@@ -342,10 +342,10 @@ public class SessionInfo
     public bool SshUseCompression { get; set; }
     public bool SshNoTerminal { get; set; }
     public bool SshAcceptAndSaveHostKey { get; set; }
-    public bool SshAutoOpenSftpPanel { get; set; } = true;
-    public bool SshAutoOpenMonitorPanel { get; set; } = true;
+    public bool SshAutoOpenSftpPanel { get; set; }
+    public bool SshAutoOpenMonitorPanel { get; set; }
     // Kept for older config files and older app versions.
-    public bool SshDoNotStartFileManager { get; set; }
+    public bool SshDoNotStartFileManager { get; set; } = true;
     public string SshCipherAlgorithms { get; set; } = string.Empty;
     public string SshMacAlgorithms { get; set; } = string.Empty;
     public string SshKeyExchangeAlgorithms { get; set; } = string.Empty;
