@@ -82,7 +82,7 @@
         <Style Selector="atom|TabStrip.session-tab-strip atom|TabStripItem">
             <Setter Property="Background" Value="{Binding TabBackgroundBrush, x:CompileBindings=False}"/>
             <Setter Property="Padding" Value="0"/>
-            <Setter Property="Margin" Value="0,6,0,0"/>
+            <Setter Property="Margin" Value="0,2,0,0"/>
             <Style Selector="^ /template/ Border#Frame">
                 <Setter Property="CornerRadius" Value="8,8,0,0"/>
                 <Setter Property="BorderBrush" Value="{atom:SharedTokenResource ColorBorderSecondary}"/>
@@ -97,7 +97,7 @@
             <Setter Property="Background" Value="{atom:SharedTokenResource ColorFillQuaternary}"/>
         </Style>
         <Style Selector="atom|TabStrip.session-tab-strip atom|TabStripItem:selected">
-            <Setter Property="Margin" Value="0,6,0,-1"/>
+            <Setter Property="Margin" Value="0,2,0,-1"/>
             <Style Selector="^ /template/ Border#Frame">
                 <Setter Property="BorderBrush" Value="{atom:SharedTokenResource ColorBorder}"/>
             </Style>
@@ -139,8 +139,9 @@
                     BorderThickness="1"
                     ClipToBounds="True"
                     PointerPressed="OnTabGroupPanePointerPressed">
-                <Grid RowDefinitions="32,*">
+                <Grid RowDefinitions="Auto,*">
                     <Border Grid.Row="0"
+                            MinHeight="36"
                             Background="{atom:SharedTokenResource ColorBgLayout}"
                             BorderBrush="{atom:SharedTokenResource ColorBorder}"
                             BorderThickness="0,0,0,1">
@@ -158,8 +159,28 @@
                                        Closing="OnTabStripClosing"/>
                     </Border>
                     <Grid Grid.Row="1" Background="#141414">
-                        <Grid IsVisible="{Binding IsSelectedTerminalSession}">
-                            <views:TerminalView DataContext="{Binding SelectedTab.Terminal, x:CompileBindings=False}"/>
+                        <Grid IsVisible="{Binding IsSelectedTerminalSession}"
+                              RowDefinitions="Auto,*">
+                            <Border Grid.Row="0"
+                                    IsVisible="{Binding SelectedTab.IsKeyboardBroadcastBarVisible}"
+                                    Background="#FFFBE6"
+                                    BorderBrush="#FFE58F"
+                                    BorderThickness="0,0,0,1"
+                                    Padding="10,4">
+                                <DockPanel LastChildFill="True">
+                                    <atom:ToggleSwitch DockPanel.Dock="Right"
+                                                       SizeType="Small"
+                                                       IsChecked="{Binding SelectedTab.IsKeyboardBroadcastEnabled, Mode=TwoWay}"
+                                                       ToolTip.Tip="{Binding SelectedTab.KeyboardBroadcastReceiveText}"
+                                                       VerticalAlignment="Center"/>
+                                    <atom:TextBlock Text="{Binding SelectedTab.KeyboardBroadcastStatusText}"
+                                                    Foreground="#874D00"
+                                                    FontSize="12"
+                                                    VerticalAlignment="Center"/>
+                                </DockPanel>
+                            </Border>
+                            <views:TerminalView Grid.Row="1"
+                                                DataContext="{Binding SelectedTab.Terminal, x:CompileBindings=False}"/>
                         </Grid>
                         <Grid IsVisible="{Binding IsSelectedVncSession}">
                             <views:VncView DataContext="{Binding SelectedTab.Vnc, x:CompileBindings=False}"/>
@@ -616,9 +637,30 @@
                         <!-- 当前 Tab 的终端内容 -->
                         <Grid Grid.Row="1"
                               IsVisible="{Binding IsSingleTabContentVisible}">
-                            <views:TerminalView x:Name="ActiveTerminalView"
-                                                DataContext="{Binding SelectedTab.Terminal, x:CompileBindings=False}"
-                                                IsVisible="{Binding $parent[Window].DataContext.IsSelectedTerminalSession, x:CompileBindings=False}"/>
+                            <Grid IsVisible="{Binding $parent[Window].DataContext.IsSelectedTerminalSession, x:CompileBindings=False}"
+                                  RowDefinitions="Auto,*">
+                                <Border Grid.Row="0"
+                                        IsVisible="{Binding SelectedTab.IsKeyboardBroadcastBarVisible}"
+                                        Background="#FFFBE6"
+                                        BorderBrush="#FFE58F"
+                                        BorderThickness="0,0,0,1"
+                                        Padding="10,4">
+                                    <DockPanel LastChildFill="True">
+                                        <atom:ToggleSwitch DockPanel.Dock="Right"
+                                                           SizeType="Small"
+                                                           IsChecked="{Binding SelectedTab.IsKeyboardBroadcastEnabled, Mode=TwoWay}"
+                                                           ToolTip.Tip="{Binding SelectedTab.KeyboardBroadcastReceiveText}"
+                                                           VerticalAlignment="Center"/>
+                                        <atom:TextBlock Text="{Binding SelectedTab.KeyboardBroadcastStatusText}"
+                                                        Foreground="#874D00"
+                                                        FontSize="12"
+                                                        VerticalAlignment="Center"/>
+                                    </DockPanel>
+                                </Border>
+                                <views:TerminalView x:Name="ActiveTerminalView"
+                                                    Grid.Row="1"
+                                                    DataContext="{Binding SelectedTab.Terminal, x:CompileBindings=False}"/>
+                            </Grid>
                             <views:VncView DataContext="{Binding SelectedTab.Vnc, x:CompileBindings=False}"
                                            IsVisible="{Binding $parent[Window].DataContext.IsSelectedVncSession, x:CompileBindings=False}"/>
                             <views:RdpView DataContext="{Binding SelectedTab.Rdp, x:CompileBindings=False}"

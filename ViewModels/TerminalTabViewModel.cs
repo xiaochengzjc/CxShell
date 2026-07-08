@@ -1,6 +1,7 @@
 using System;
 using Avalonia.Media;
 using CxShell.Models;
+using CxShell.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -11,6 +12,9 @@ public partial class TerminalTabViewModel : ObservableObject
     [ObservableProperty] private string _title;
     [ObservableProperty] private bool _isConnected;
     [ObservableProperty] private bool _isSelected;
+    [ObservableProperty] private bool _isKeyboardBroadcastBarVisible;
+    [ObservableProperty] private bool _isKeyboardBroadcastEnabled = true;
+    [ObservableProperty] private string _keyboardBroadcastStatusText = string.Empty;
 
     public SessionInfo Session { get; }
     public TerminalViewModel Terminal { get; }
@@ -23,6 +27,7 @@ public partial class TerminalTabViewModel : ObservableObject
     public bool IsRdpSession => Rdp != null;
     public bool IsFileTransferSession => FileTransfer != null;
     public bool IsTerminalSession => Vnc == null && Rdp == null && FileTransfer == null;
+    public string KeyboardBroadcastReceiveText => LocalizationService.Shared.Text("Terminal.Broadcast.Receive");
     public IBrush ConnectionIndicatorBrush => new SolidColorBrush(IsConnected
         ? Color.Parse("#18C914")
         : Color.Parse("#F5222D"));
@@ -150,6 +155,11 @@ public partial class TerminalTabViewModel : ObservableObject
         OnPropertyChanged(nameof(HasTabColor));
         OnPropertyChanged(nameof(TabColorBrush));
         OnPropertyChanged(nameof(TabBackgroundBrush));
+    }
+
+    public void NotifyKeyboardBroadcastLocalizationChanged()
+    {
+        OnPropertyChanged(nameof(KeyboardBroadcastReceiveText));
     }
 
     partial void OnIsSelectedChanged(bool value)

@@ -1,11 +1,13 @@
 using System.Globalization;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using AtomUI;
 using AtomUI.Controls;
 using AtomUI.Desktop.Controls;
 using AtomUI.Theme;
+using CxShell.ViewModels;
 using CxShell.Views;
 
 namespace CxShell;
@@ -15,6 +17,7 @@ public partial class App : Application
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
+        InstallMacOsApplicationMenu();
 
         this.UseAtomUI(builder =>
         {
@@ -35,5 +38,30 @@ public partial class App : Application
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private void InstallMacOsApplicationMenu()
+    {
+        if (!OperatingSystem.IsMacOS())
+            return;
+
+        var aboutItem = new NativeMenuItem
+        {
+            Header = "About CxShell"
+        };
+        aboutItem.Click += (_, _) => ShowAboutFromApplicationMenu();
+
+        var appMenu = new NativeMenu();
+        appMenu.Items.Add(aboutItem);
+        NativeMenu.SetMenu(this, appMenu);
+    }
+
+    private void ShowAboutFromApplicationMenu()
+    {
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime { MainWindow.DataContext: MainWindowViewModel vm } &&
+            vm.ShowAboutCommand.CanExecute(null))
+        {
+            vm.ShowAboutCommand.Execute(null);
+        }
     }
 }

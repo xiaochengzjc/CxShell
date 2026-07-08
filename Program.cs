@@ -26,7 +26,7 @@ internal class Program
             .UsePlatformDetect()
             .With(new MacOSPlatformOptions
             {
-                DisableSetProcessName = true
+                DisableSetProcessName = false
             })
             .WithAtomUIDefaultOptions()
             .LogToTrace();

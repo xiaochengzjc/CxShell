@@ -29,6 +29,14 @@ public enum TabArrangementMode
     Tile
 }
 
+public enum KeyboardBroadcastTarget
+{
+    CurrentSession,
+    AllSessions,
+    ConnectedSessions,
+    CurrentTabGroup
+}
+
 public partial class MainWindowViewModel : ObservableObject
 {
     private const double DefaultSftpPanelWidth = 318;
@@ -57,6 +65,7 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty] private bool _isCheckingForUpdates;
     [ObservableProperty] private string? _updateProgressText;
     [ObservableProperty] private TabArrangementMode _tabArrangementMode = TabArrangementMode.Single;
+    [ObservableProperty] private KeyboardBroadcastTarget _keyboardBroadcastTarget = KeyboardBroadcastTarget.CurrentSession;
 
     public ObservableCollection<TerminalTabViewModel> Tabs { get; } = new();
     public ObservableCollection<TerminalTabGroupViewModel> TabGroups { get; } = new();
@@ -79,6 +88,8 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsVerticalTabArrangement => TabArrangementMode == TabArrangementMode.Vertical;
     public bool IsHorizontalTabArrangement => TabArrangementMode == TabArrangementMode.Horizontal;
     public bool IsTileTabArrangement => TabArrangementMode == TabArrangementMode.Tile;
+    public bool IsKeyboardBroadcastBarVisible =>
+        HasTabs && !IsTerminalFullScreen && KeyboardBroadcastTarget != KeyboardBroadcastTarget.CurrentSession;
     public bool CanArrangeTabs => Tabs.Count >= 2;
     public bool CanMergeTabGroups => IsTabArrangementEnabled;
     public bool IsSelectedTerminalSession => SelectedTab?.IsTerminalSession == true;
@@ -128,6 +139,17 @@ public partial class MainWindowViewModel : ObservableObject
     public string TabAddQuickText => _localization.Text("TabMenu.AddQuick");
     public string TabQuickCommandsText => _localization.Text("TabMenu.QuickCommands");
     public string TabQuickCommandsEmptyText => _localization.Text("TabMenu.QuickCommandsEmpty");
+    public string KeyboardBroadcastMenuText => _localization.Text("Terminal.BroadcastMenu");
+    public string KeyboardBroadcastCurrentText => _localization.Text("Terminal.Broadcast.Current");
+    public string KeyboardBroadcastAllText => _localization.Text("Terminal.Broadcast.All");
+    public string KeyboardBroadcastConnectedText => _localization.Text("Terminal.Broadcast.Connected");
+    public string KeyboardBroadcastCurrentGroupText => _localization.Text("Terminal.Broadcast.CurrentGroup");
+    public string KeyboardBroadcastCloseText => _localization.Text("Terminal.Broadcast.Close");
+    public string KeyboardBroadcastReceiveText => _localization.Text("Terminal.Broadcast.Receive");
+    public string KeyboardBroadcastStatusText => string.Format(
+        _localization.Text("Terminal.Broadcast.Status"),
+        GetKeyboardBroadcastTargetText(KeyboardBroadcastTarget),
+        ResolveKeyboardBroadcastTargets(SelectedTab).Count);
     public string WelcomeSelectSessionText => _localization.Text("Welcome.SelectSession");
     public string WelcomeBuiltWithAtomUiText => _localization.Text("Welcome.BuiltWithAtomUI");
     public string FullScreenEscBackText => _localization.Text("FullScreen.EscBack");
@@ -149,6 +171,7 @@ public partial class MainWindowViewModel : ObservableObject
 
             OnPropertyChanged(nameof(HasTabs));
             OnPropertyChanged(nameof(CanArrangeTabs));
+            NotifyKeyboardBroadcastStateChanged();
             RebuildTileRows();
             OnPropertyChanged(nameof(IsSingleTabContentVisible));
             OnPropertyChanged(nameof(IsArrangedTabsVisible));
@@ -165,6 +188,7 @@ public partial class MainWindowViewModel : ObservableObject
         TabGroups.CollectionChanged += (_, _) =>
         {
             RebuildTileRows();
+            NotifyKeyboardBroadcastStateChanged();
         };
 
         // Initialize theme state
@@ -200,6 +224,133 @@ public partial class MainWindowViewModel : ObservableObject
     partial void OnUpdateProgressTextChanged(string? value)
     {
         OnPropertyChanged(nameof(UpdateText));
+    }
+
+    partial void OnKeyboardBroadcastTargetChanged(KeyboardBroadcastTarget value)
+    {
+        NotifyKeyboardBroadcastStateChanged();
+    }
+
+    private void NotifyKeyboardBroadcastStateChanged()
+    {
+        foreach (var tab in Tabs)
+            UpdateKeyboardBroadcastTabState(tab);
+
+        OnPropertyChanged(nameof(IsKeyboardBroadcastBarVisible));
+        OnPropertyChanged(nameof(KeyboardBroadcastStatusText));
+    }
+
+    private void UpdateKeyboardBroadcastTabState(TerminalTabViewModel tab)
+    {
+        var isVisible = tab.IsTerminalSession &&
+                        !IsTerminalFullScreen &&
+                        KeyboardBroadcastTarget != KeyboardBroadcastTarget.CurrentSession;
+
+        tab.IsKeyboardBroadcastBarVisible = isVisible;
+        tab.KeyboardBroadcastStatusText = isVisible
+            ? string.Format(
+                _localization.Text("Terminal.Broadcast.Status"),
+                GetKeyboardBroadcastTargetText(KeyboardBroadcastTarget),
+                ResolveKeyboardBroadcastTargets(tab).Count)
+            : string.Empty;
+        tab.NotifyKeyboardBroadcastLocalizationChanged();
+    }
+
+    private string GetKeyboardBroadcastTargetText(KeyboardBroadcastTarget target)
+    {
+        return target switch
+        {
+            KeyboardBroadcastTarget.AllSessions => KeyboardBroadcastAllText,
+            KeyboardBroadcastTarget.ConnectedSessions => KeyboardBroadcastConnectedText,
+            KeyboardBroadcastTarget.CurrentTabGroup => KeyboardBroadcastCurrentGroupText,
+            _ => KeyboardBroadcastCurrentText
+        };
+    }
+
+    [RelayCommand]
+    private void SetKeyboardBroadcastTarget(KeyboardBroadcastTarget target)
+    {
+        KeyboardBroadcastTarget = target;
+    }
+
+    public void SendTerminalInput(TerminalViewModel? sourceTerminal, string data)
+    {
+        if (sourceTerminal == null)
+            return;
+
+        var sourceTab = Tabs.FirstOrDefault(tab => ReferenceEquals(tab.Terminal, sourceTerminal));
+        if (sourceTab == null)
+        {
+            sourceTerminal.SendInput(data);
+            return;
+        }
+
+        SendTerminalInput(sourceTab, data);
+    }
+
+    public void SendTerminalInput(TerminalTabViewModel? sourceTab, string data)
+    {
+        if (sourceTab == null || string.IsNullOrEmpty(data))
+            return;
+
+        foreach (var tab in ResolveKeyboardBroadcastTargets(sourceTab))
+        {
+            try
+            {
+                tab.Terminal.SendInput(data);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Terminal input send failed for {tab.Session.Name}: {ex.Message}");
+            }
+        }
+    }
+
+    private IReadOnlyList<TerminalTabViewModel> ResolveKeyboardBroadcastTargets(TerminalTabViewModel? sourceTab)
+    {
+        if (sourceTab?.IsTerminalSession != true)
+            return [];
+
+        return KeyboardBroadcastTarget switch
+        {
+            KeyboardBroadcastTarget.AllSessions => Tabs
+                .Where(CanReceiveBroadcastInput)
+                .Distinct()
+                .ToArray(),
+            KeyboardBroadcastTarget.ConnectedSessions => Tabs
+                .Where(CanReceiveBroadcastInput)
+                .Distinct()
+                .ToArray(),
+            KeyboardBroadcastTarget.CurrentTabGroup => ResolveCurrentTabGroupTargets(sourceTab),
+            _ => CanReceiveTerminalInput(sourceTab)
+                ? [sourceTab]
+                : []
+        };
+    }
+
+    private IReadOnlyList<TerminalTabViewModel> ResolveCurrentTabGroupTargets(TerminalTabViewModel sourceTab)
+    {
+        if (!IsTabArrangementEnabled)
+            return CanReceiveTerminalInput(sourceTab) ? [sourceTab] : [];
+
+        var group = FindTabGroup(sourceTab);
+        if (group == null)
+            return CanReceiveTerminalInput(sourceTab) ? [sourceTab] : [];
+
+        return group.Tabs
+            .Where(CanReceiveBroadcastInput)
+            .Distinct()
+            .ToArray();
+    }
+
+    private static bool CanReceiveTerminalInput(TerminalTabViewModel tab)
+    {
+        return tab.IsTerminalSession && tab.Terminal.IsConnected;
+    }
+
+    private static bool CanReceiveBroadcastInput(TerminalTabViewModel tab)
+    {
+        return CanReceiveTerminalInput(tab) && tab.IsKeyboardBroadcastEnabled;
     }
 
     [RelayCommand]
@@ -556,6 +707,15 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(TabAddQuickText));
         OnPropertyChanged(nameof(TabQuickCommandsText));
         OnPropertyChanged(nameof(TabQuickCommandsEmptyText));
+        OnPropertyChanged(nameof(KeyboardBroadcastMenuText));
+        OnPropertyChanged(nameof(KeyboardBroadcastCurrentText));
+        OnPropertyChanged(nameof(KeyboardBroadcastAllText));
+        OnPropertyChanged(nameof(KeyboardBroadcastConnectedText));
+        OnPropertyChanged(nameof(KeyboardBroadcastCurrentGroupText));
+        OnPropertyChanged(nameof(KeyboardBroadcastCloseText));
+        OnPropertyChanged(nameof(KeyboardBroadcastReceiveText));
+        OnPropertyChanged(nameof(KeyboardBroadcastStatusText));
+        NotifyKeyboardBroadcastStateChanged();
         OnPropertyChanged(nameof(WelcomeSelectSessionText));
         OnPropertyChanged(nameof(WelcomeBuiltWithAtomUiText));
         OnPropertyChanged(nameof(FullScreenEscBackText));
@@ -569,6 +729,7 @@ public partial class MainWindowViewModel : ObservableObject
             tab.IsSelected = tab == value;
 
         ActivateTabGroupForSelectedTab(value);
+        NotifyKeyboardBroadcastStateChanged();
 
         NotifySelectedContentVisibilityChanged();
         OnPropertyChanged(nameof(Monitor));
@@ -614,7 +775,13 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsHorizontalTabArrangement));
         OnPropertyChanged(nameof(IsTileTabArrangement));
         RebuildTileRows();
+        NotifyKeyboardBroadcastStateChanged();
         MergeTabGroupsCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnSelectedTabGroupChanged(TerminalTabGroupViewModel? value)
+    {
+        NotifyKeyboardBroadcastStateChanged();
     }
 
     private void NotifySelectedContentVisibilityChanged()
@@ -666,6 +833,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsMainTabHeaderVisible));
         OnPropertyChanged(nameof(IsSingleTabContentVisible));
         OnPropertyChanged(nameof(IsArrangedTabsVisible));
+        NotifyKeyboardBroadcastStateChanged();
         if (value)
             CollapseSftpPanelWidth();
         else if (IsSftpVisible)
@@ -1314,7 +1482,7 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        tab.Terminal.SendInput(command.CommandText.TrimEnd() + "\r");
+        SendTerminalInput(tab, command.CommandText.TrimEnd() + "\r");
     }
 
     public bool ExecuteQuickCommandByIndex(int index)
@@ -1388,6 +1556,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         var tab = new TerminalTabViewModel(session);
         tab.CloseRequested += CloseTab;
+        tab.PropertyChanged += OnTerminalTabPropertyChanged;
         AddTabToActiveGroup(tab);
         SelectedTab = tab;
 
@@ -1424,6 +1593,7 @@ public partial class MainWindowViewModel : ObservableObject
         var rdp = new RdpViewModel(session, password);
         var tab = new TerminalTabViewModel(session, rdp);
         tab.CloseRequested += CloseTab;
+        tab.PropertyChanged += OnTerminalTabPropertyChanged;
         AddTabToActiveGroup(tab);
         SelectedTab = tab;
 
@@ -1476,6 +1646,7 @@ public partial class MainWindowViewModel : ObservableObject
         var vm = new VncViewModel();
         var tab = new TerminalTabViewModel(session, vm);
         tab.CloseRequested += CloseTab;
+        tab.PropertyChanged += OnTerminalTabPropertyChanged;
         AddTabToActiveGroup(tab);
         SelectedTab = tab;
         IsSftpVisible = false;
@@ -1520,6 +1691,7 @@ public partial class MainWindowViewModel : ObservableObject
         var fileTransfer = new SftpViewModel();
         var tab = new TerminalTabViewModel(session, fileTransfer);
         tab.CloseRequested += CloseTab;
+        tab.PropertyChanged += OnTerminalTabPropertyChanged;
         AddTabToActiveGroup(tab);
         SelectedTab = tab;
 
@@ -1539,6 +1711,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void OnActiveTerminalPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(TerminalViewModel.IsConnected))
+            NotifyKeyboardBroadcastStateChanged();
+
         // Only respond if this is the currently selected tab's terminal
         if (sender != SelectedTab?.Terminal) return;
 
@@ -1619,6 +1794,12 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
+    private void OnTerminalTabPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(TerminalTabViewModel.IsKeyboardBroadcastEnabled))
+            NotifyKeyboardBroadcastStateChanged();
+    }
+
     private static string BuildRemoteChangeDirectoryCommand(string remoteDirectory, bool supportsPosixShellFeatures)
     {
         return supportsPosixShellFeatures
@@ -1656,6 +1837,7 @@ public partial class MainWindowViewModel : ObservableObject
         var wasSelected = SelectedTab == tab;
         var group = IsTabArrangementEnabled ? FindTabGroup(tab) : null;
 
+        tab.PropertyChanged -= OnTerminalTabPropertyChanged;
         tab.Terminal.PropertyChanged -= OnActiveTerminalPropertyChanged;
 
         group?.RemoveTab(tab);

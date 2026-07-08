@@ -153,7 +153,17 @@ public partial class TerminalView : UserControl
         };
     }
 
-    private void OnInputReceived(string data) => _boundVm?.SendInput(data);
+    private void OnInputReceived(string data)
+    {
+        var mainVm = GetMainWindowViewModel();
+        if (mainVm != null && _boundVm != null)
+        {
+            mainVm.SendTerminalInput(_boundVm, data);
+            return;
+        }
+
+        _boundVm?.SendInput(data);
+    }
     private void OnSizeChanged(int cols, int rows)
     {
         if (!IsActuallyVisible())
@@ -272,8 +282,69 @@ public partial class TerminalView : UserControl
         menu.Items.Add(copyItem);
         menu.Items.Add(pasteItem);
         menu.Items.Add(new AtomMenuSeparator());
+        AddKeyboardBroadcastMenuItems(menu);
+        menu.Items.Add(new AtomMenuSeparator());
         AddQuickCommandMenuItems(menu);
         menu.Open(terminal);
+    }
+
+    private void AddKeyboardBroadcastMenuItems(AtomContextMenu menu)
+    {
+        var mainVm = GetMainWindowViewModel();
+        if (mainVm == null)
+            return;
+
+        var broadcastMenu = new AtomMenuItem
+        {
+            Header = mainVm.KeyboardBroadcastMenuText
+        };
+
+        AddKeyboardBroadcastTargetItem(
+            menu,
+            broadcastMenu,
+            mainVm,
+            KeyboardBroadcastTarget.CurrentSession,
+            mainVm.KeyboardBroadcastCurrentText);
+        AddKeyboardBroadcastTargetItem(
+            menu,
+            broadcastMenu,
+            mainVm,
+            KeyboardBroadcastTarget.AllSessions,
+            mainVm.KeyboardBroadcastAllText);
+        AddKeyboardBroadcastTargetItem(
+            menu,
+            broadcastMenu,
+            mainVm,
+            KeyboardBroadcastTarget.ConnectedSessions,
+            mainVm.KeyboardBroadcastConnectedText);
+        AddKeyboardBroadcastTargetItem(
+            menu,
+            broadcastMenu,
+            mainVm,
+            KeyboardBroadcastTarget.CurrentTabGroup,
+            mainVm.KeyboardBroadcastCurrentGroupText);
+
+        menu.Items.Add(broadcastMenu);
+    }
+
+    private void AddKeyboardBroadcastTargetItem(
+        AtomContextMenu menu,
+        AtomMenuItem parent,
+        MainWindowViewModel mainVm,
+        KeyboardBroadcastTarget target,
+        string text)
+    {
+        var item = new AtomMenuItem
+        {
+            Header = $"{(mainVm.KeyboardBroadcastTarget == target ? "[x]" : "[ ]")} {text}"
+        };
+        item.Click += (_, _) =>
+        {
+            menu.Close();
+            mainVm.SetKeyboardBroadcastTargetCommand.Execute(target);
+            _terminal?.Focus();
+        };
+        parent.Items.Add(item);
     }
 
     private void AddQuickCommandMenuItems(AtomContextMenu menu)
@@ -281,7 +352,11 @@ public partial class TerminalView : UserControl
         if (_boundVm == null)
             return;
 
-        var commands = _boundVm.GetQuickCommands();
+        var mainVm = GetMainWindowViewModel();
+        var sourceTab = mainVm?.Tabs.FirstOrDefault(tab => ReferenceEquals(tab.Terminal, _boundVm));
+        var commands = mainVm != null && sourceTab != null
+            ? mainVm.GetQuickCommands(sourceTab)
+            : _boundVm.GetQuickCommands();
         var quickMenu = new AtomMenuItem
         {
             Header = _boundVm.QuickCommandsText,
@@ -307,7 +382,10 @@ public partial class TerminalView : UserControl
                 item.Click += (_, _) =>
                 {
                     menu.Close();
-                    _boundVm.ExecuteQuickCommand(command);
+                    if (mainVm != null && sourceTab != null)
+                        mainVm.ExecuteQuickCommand(sourceTab, command);
+                    else
+                        _boundVm.ExecuteQuickCommand(command);
                     _terminal?.Focus();
                 };
                 quickMenu.Items.Add(item);
@@ -315,6 +393,13 @@ public partial class TerminalView : UserControl
         }
 
         menu.Items.Add(quickMenu);
+    }
+
+    private MainWindowViewModel? GetMainWindowViewModel()
+    {
+        return TopLevel.GetTopLevel(this) is Window { DataContext: MainWindowViewModel vm }
+            ? vm
+            : null;
     }
 
     private async Task CopyTerminalSelectionAsync()

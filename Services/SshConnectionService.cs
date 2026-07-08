@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using CxShell.Models;
 using Renci.SshNet;
+using Renci.SshNet.Common;
 
 namespace CxShell.Services;
 
@@ -30,6 +31,7 @@ public class SshConnectionService : ITerminalConnectionService
     private Encoding _terminalEncoding = Encoding.UTF8;
     private Decoder _terminalDecoder = Encoding.UTF8.GetDecoder();
     private SessionInfo? _session;
+    private bool _connectionClosedRaised;
     private DateTimeOffset _startupEchoSuppressUntil = DateTimeOffset.MinValue;
     private const string Utf8LocaleBootstrapCommand =
         "unset LC_ALL; [ \"${LANG:-C}\" = C ] && LANG=en_US.UTF-8; export LANG; export LC_CTYPE=$LANG\r";
@@ -52,6 +54,7 @@ public class SshConnectionService : ITerminalConnectionService
     {
         Disconnect();
         _x11StatusMessage = null;
+        _connectionClosedRaised = false;
         _session = session;
         SupportsPosixShellFeatures = true;
         _terminalEncoding = TerminalSessionOptions.GetEncoding(session);
@@ -688,7 +691,7 @@ public class SshConnectionService : ITerminalConnectionService
         }
         finally
         {
-            ConnectionClosed?.Invoke("Connection closed.");
+            RaiseConnectionClosedOnce("Connection closed.");
         }
     }
 
@@ -710,11 +713,15 @@ public class SshConnectionService : ITerminalConnectionService
         }
         catch (ObjectDisposedException)
         {
-            // Shell stream already disposed, connection is dead
+            RaiseConnectionClosedOnce("Connection closed.");
         }
         catch (System.IO.IOException)
         {
-            // Connection lost
+            RaiseConnectionClosedOnce("Connection lost.");
+        }
+        catch (SshConnectionException)
+        {
+            RaiseConnectionClosedOnce("Connection lost.");
         }
     }
 
@@ -731,12 +738,25 @@ public class SshConnectionService : ITerminalConnectionService
         }
         catch (ObjectDisposedException)
         {
-            // Shell stream already disposed, connection is dead
+            RaiseConnectionClosedOnce("Connection closed.");
         }
         catch (System.IO.IOException)
         {
-            // Connection lost
+            RaiseConnectionClosedOnce("Connection lost.");
         }
+        catch (SshConnectionException)
+        {
+            RaiseConnectionClosedOnce("Connection lost.");
+        }
+    }
+
+    private void RaiseConnectionClosedOnce(string reason)
+    {
+        if (_connectionClosedRaised)
+            return;
+
+        _connectionClosedRaised = true;
+        ConnectionClosed?.Invoke(reason);
     }
 
     public void SendKeepAlive()

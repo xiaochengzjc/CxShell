@@ -2,8 +2,10 @@ using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using MarcusW.VncClient.Output;
@@ -22,6 +24,8 @@ namespace MarcusW.VncClient.Protocol.Implementation.MessageTypes.Incoming
         private const int MaxExtendedClipboardBytes = 20 * 1024 * 1024;
         private const uint FormatMask = 0x0000ffff;
         private const uint ActionMask = 0xff000000;
+        private static readonly UTF8Encoding StrictUtf8Encoding = new(false, true);
+        private static readonly Encoding Latin1Encoding = Encoding.GetEncoding("ISO-8859-1");
 
         private readonly RfbConnectionContext _context;
         private readonly ILogger<ServerCutTextMessageType> _logger;
@@ -90,36 +94,22 @@ namespace MarcusW.VncClient.Protocol.Implementation.MessageTypes.Incoming
                 return;
             }
 
-            var stringBuilder = new StringBuilder(textLength);
-            var latin1Encoding = Encoding.GetEncoding("ISO-8859-1");
-
+            var text = string.Empty;
             if (textLength > 0)
             {
-                var buffer = ArrayPool<byte>.Shared.Rent(Math.Min(1024, textLength));
-                var bufferSpan = buffer.AsSpan();
+                var buffer = ArrayPool<byte>.Shared.Rent(textLength);
                 try
                 {
-                    var bytesToRead = textLength;
-                    do
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-
-                        var read = transportStream.Read(bytesToRead < bufferSpan.Length ? bufferSpan[..bytesToRead] : bufferSpan);
-                        if (read == 0)
-                            throw new UnexpectedEndOfStreamException("Stream reached its end while trying to read the server cut text.");
-
-                        stringBuilder.Append(latin1Encoding.GetString(bufferSpan[..read]));
-                        bytesToRead -= read;
-                    }
-                    while (bytesToRead > 0);
+                    transportStream.ReadAll(buffer.AsSpan(0, textLength), cancellationToken);
+                    text = DecodeLegacyClipboardText(buffer.AsSpan(0, textLength));
                 }
                 finally
                 {
-                    ArrayPool<byte>.Shared.Return(buffer);
+                    ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
                 }
             }
 
-            outputHandler?.HandleServerClipboardUpdate(stringBuilder.ToString());
+            outputHandler?.HandleServerClipboardUpdate(text);
         }
 
         private void ReadExtendedClipboardMessage(Stream transportStream, int messageLength, CancellationToken cancellationToken)
@@ -306,6 +296,180 @@ namespace MarcusW.VncClient.Protocol.Implementation.MessageTypes.Incoming
             return Encoding.UTF8.GetString(textBytes)
                 .Replace("\r\n", "\n", StringComparison.Ordinal)
                 .Replace('\r', '\n');
+        }
+
+        private static string DecodeLegacyClipboardText(ReadOnlySpan<byte> textBytes)
+        {
+            while (textBytes.Length > 0 && textBytes[^1] == 0)
+                textBytes = textBytes[..^1];
+
+            if (textBytes.IsEmpty)
+                return string.Empty;
+
+            EnsureCodePagesProvider();
+
+            var candidates = new List<DecodedTextCandidate>();
+            AddStrictUtf8Candidate(candidates, textBytes);
+            AddEncodingCandidate(candidates, textBytes, GetCurrentAnsiEncoding());
+            AddEncodingCandidate(candidates, textBytes, GetEncodingOrNull("GB18030"));
+            AddEncodingCandidate(candidates, textBytes, GetEncodingOrNull(936));
+            AddEncodingCandidate(candidates, textBytes, Latin1Encoding);
+
+            var best = candidates
+                .OrderBy(static candidate => candidate.Score)
+                .FirstOrDefault();
+
+            return NormalizeLegacyClipboardText(best.Text ?? Latin1Encoding.GetString(textBytes));
+        }
+
+        private static void AddStrictUtf8Candidate(List<DecodedTextCandidate> candidates, ReadOnlySpan<byte> textBytes)
+        {
+            try
+            {
+                candidates.Add(new DecodedTextCandidate(StrictUtf8Encoding.GetString(textBytes), "UTF-8"));
+            }
+            catch (DecoderFallbackException)
+            {
+            }
+        }
+
+        private static void AddEncodingCandidate(
+            List<DecodedTextCandidate> candidates,
+            ReadOnlySpan<byte> textBytes,
+            Encoding? encoding)
+        {
+            if (encoding == null || candidates.Any(candidate => candidate.CodePage == encoding.CodePage))
+                return;
+
+            candidates.Add(new DecodedTextCandidate(encoding.GetString(textBytes), encoding.WebName));
+        }
+
+        private static Encoding? GetCurrentAnsiEncoding()
+        {
+            try
+            {
+                var codePage = CultureInfo.CurrentCulture.TextInfo.ANSICodePage;
+                return codePage > 0 ? GetEncodingOrNull(codePage) : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static Encoding? GetEncodingOrNull(int codePage)
+        {
+            try
+            {
+                return Encoding.GetEncoding(
+                    codePage,
+                    EncoderFallback.ReplacementFallback,
+                    DecoderFallback.ReplacementFallback);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static Encoding? GetEncodingOrNull(string name)
+        {
+            try
+            {
+                return Encoding.GetEncoding(
+                    name,
+                    EncoderFallback.ReplacementFallback,
+                    DecoderFallback.ReplacementFallback);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static void EnsureCodePagesProvider()
+        {
+            try
+            {
+                Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+            }
+            catch
+            {
+            }
+        }
+
+        private static string NormalizeLegacyClipboardText(string text)
+        {
+            return text
+                .Replace("\r\n", "\n", StringComparison.Ordinal)
+                .Replace('\r', '\n');
+        }
+
+        private readonly record struct DecodedTextCandidate(string Text, string EncodingName)
+        {
+            public int CodePage { get; } = ResolveCodePage(EncodingName);
+            public int Score { get; } = ScoreText(Text);
+
+            private static int ResolveCodePage(string encodingName)
+            {
+                try
+                {
+                    return Encoding.GetEncoding(encodingName).CodePage;
+                }
+                catch
+                {
+                    return encodingName.GetHashCode(StringComparison.OrdinalIgnoreCase);
+                }
+            }
+        }
+
+        private static int ScoreText(string text)
+        {
+            var score = 0;
+            foreach (var rune in text.EnumerateRunes())
+            {
+                var value = rune.Value;
+                if (value == 0xfffd)
+                    score += 100;
+                else if (IsUnexpectedControl(value))
+                    score += 40;
+                else if (IsCjk(value))
+                    score -= 12;
+                else if (IsSuspiciousMojibake(value))
+                    score += 4;
+            }
+
+            return score;
+        }
+
+        private static bool IsUnexpectedControl(int value)
+        {
+            return value < 0x20 && value is not '\t' and not '\n' and not '\r';
+        }
+
+        private static bool IsCjk(int value)
+        {
+            return value is >= 0x3400 and <= 0x4dbf or
+                   >= 0x4e00 and <= 0x9fff or
+                   >= 0xf900 and <= 0xfaff or
+                   >= 0x20000 and <= 0x2a6df or
+                   >= 0x2a700 and <= 0x2b73f or
+                   >= 0x2b740 and <= 0x2b81f or
+                   >= 0x2b820 and <= 0x2ceaf;
+        }
+
+        private static bool IsSuspiciousMojibake(int value)
+        {
+            return value is 'Ã' or 'Â' or 'Ä' or 'Å' or 'Æ' or 'Ç' or 'È' or 'É' or 'Ê' or 'Ë' or
+                   'Ì' or 'Í' or 'Î' or 'Ï' or 'Ð' or 'Ñ' or 'Ò' or 'Ó' or 'Ô' or 'Õ' or 'Ö' or
+                   'Ø' or 'Ù' or 'Ú' or 'Û' or 'Ü' or 'Ý' or 'Þ' or 'ß' or 'à' or 'á' or 'â' or
+                   'ã' or 'ä' or 'å' or 'æ' or 'ç' or 'è' or 'é' or 'ê' or 'ë' or 'ì' or 'í' or
+                   'î' or 'ï' or 'ð' or 'ñ' or 'ò' or 'ó' or 'ô' or 'õ' or 'ö' or 'ø' or 'ù' or
+                   'ú' or 'û' or 'ü' or 'ý' or 'þ' or 'ÿ' or '€' or 'œ' or 'ž' or 'Ÿ' or '¡' or
+                   '¢' or '£' or '¤' or '¥' or '¦' or '§' or '¨' or '©' or 'ª' or '«' or '¬' or
+                   '\u00ad' or '®' or '¯' or '°' or '±' or '²' or '³' or '´' or 'µ' or '¶' or '·' or
+                   '¸' or '¹' or 'º' or '»' or '¼' or '½' or '¾' or '¿' or '–' or '—' or '‘' or
+                   '’' or '“' or '”' or '…';
         }
 
         private static IEnumerable<ExtendedClipboardFormat> EnumerateFormats(ExtendedClipboardFormat formats)
