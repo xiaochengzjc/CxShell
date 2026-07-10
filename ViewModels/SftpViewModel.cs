@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -29,12 +32,31 @@ public partial class SftpViewModel : ObservableObject
     public string DeleteText => L.Text("Common.Delete");
     public string ConnectHintText => L.Text("Sftp.ConnectHint");
     public string LoadingText => L.Text("Sftp.Loading");
+    public string TransferQueueTitleText => L.Text("Sftp.TransferQueue");
+    public string TransferStatusText => L.Text("Sftp.TransferStatus");
+    public string TransferTypeText => L.Text("Sftp.TransferType");
+    public string TransferFileText => L.Text("Sftp.TransferFile");
+    public string TransferProgressText => L.Text("Sftp.TransferProgress");
+    public string TransferSpeedText => L.Text("Sftp.TransferSpeed");
+    public string TransferRemainingText => L.Text("Sftp.TransferRemaining");
+    public string TransferTargetText => L.Text("Sftp.TransferTarget");
+    public string TransferOperationText => L.Text("Sftp.TransferOperation");
+    public string CancelTransferText => L.Text("Sftp.CancelTransfer");
+    public string RetryTransferText => L.Text("Sftp.RetryTransfer");
+    public string RemoveTransferText => L.Text("Sftp.RemoveTransfer");
+    public string ClearCompletedTransfersText => L.Text("Sftp.ClearCompletedTransfers");
+    public string TransferPanelToggleText => IsTransferPanelExpanded
+        ? L.Text("Sftp.CollapseTransfers")
+        : L.Text("Sftp.ExpandTransfers");
 
     private IFileTransferService _service;
     private SessionInfo? _currentSession;
     private string? _currentPassword;
     private string _homeDirectory = "/";
     private readonly SemaphoreSlim _serviceGate = new(1, 1);
+    private readonly SemaphoreSlim _transferGate = new(1, 1);
+    private readonly Dictionary<Guid, (SessionInfo Session, string? Password)> _transferSessions = new();
+    private static int _dragCacheCleanupStarted;
     private const long MaxEditableFileSize = 5 * 1024 * 1024;
 
     [ObservableProperty] private bool _isConnected;
@@ -51,10 +73,12 @@ public partial class SftpViewModel : ObservableObject
     [ObservableProperty] private SftpFileItem? _renamingItem;
     [ObservableProperty] private bool _isPathSuggestionOpen;
     [ObservableProperty] private int _selectedPathSuggestionIndex = -1;
+    [ObservableProperty] private bool _isTransferPanelExpanded = true;
 
     public ObservableCollection<SftpFileItem> Files { get; } = new();
     public ObservableCollection<PathSegment> PathSegments { get; } = new();
     public ObservableCollection<SftpPathSuggestionItem> PathSuggestions { get; } = new();
+    public ObservableCollection<SftpTransferTaskItem> TransferTasks { get; } = new();
     private readonly List<SftpFileItem> _selectedFiles = new();
     private bool _isPathInputActive;
     private bool _isApplyingPathSuggestion;
@@ -63,6 +87,23 @@ public partial class SftpViewModel : ObservableObject
     public int SelectedFileCount => _selectedFiles.Count;
     public bool HasMultipleSelectedFiles => _selectedFiles.Count > 1;
     public bool HasSelectedFiles => _selectedFiles.Count > 0;
+    public bool HasTransferTasks => TransferTasks.Count > 0;
+    public bool HasCompletedTransfers => TransferTasks.Any(task => task.Status == SftpTransferStatus.Completed);
+    public string TransferSummaryText
+    {
+        get
+        {
+            var active = TransferTasks.Count(task => task.Status is
+                SftpTransferStatus.Pending or
+                SftpTransferStatus.Running or
+                SftpTransferStatus.Cancelling);
+            var failed = TransferTasks.Count(task => task.Status == SftpTransferStatus.Failed);
+            var completed = TransferTasks.Count(task => task.Status == SftpTransferStatus.Completed);
+            return L.IsEnglish
+                ? $"{active} active, {failed} failed, {completed} completed"
+                : $"{active} \u4e2a\u8fdb\u884c\u4e2d\uff0c{failed} \u4e2a\u5931\u8d25\uff0c{completed} \u4e2a\u5b8c\u6210";
+        }
+    }
 
     public Func<Task<string?>>? PickUploadFileAsync { get; set; }
     public Func<string, Task<string?>>? PickDownloadPathAsync { get; set; }
@@ -82,7 +123,10 @@ public partial class SftpViewModel : ObservableObject
     {
         _service = CreateService(SessionProtocol.SFTP);
         _service.ErrorOccurred += OnServiceError;
+        TransferTasks.CollectionChanged += OnTransferTasksCollectionChanged;
         LocalizationService.Shared.LanguageChanged += (_, _) => RefreshLocalization();
+        if (Interlocked.Exchange(ref _dragCacheCleanupStarted, 1) == 0)
+            _ = Task.Run(CleanupExpiredDragCache);
     }
 
     private void RefreshLocalization()
@@ -98,6 +142,60 @@ public partial class SftpViewModel : ObservableObject
         OnPropertyChanged(nameof(DeleteText));
         OnPropertyChanged(nameof(ConnectHintText));
         OnPropertyChanged(nameof(LoadingText));
+        OnPropertyChanged(nameof(TransferQueueTitleText));
+        OnPropertyChanged(nameof(TransferStatusText));
+        OnPropertyChanged(nameof(TransferTypeText));
+        OnPropertyChanged(nameof(TransferFileText));
+        OnPropertyChanged(nameof(TransferProgressText));
+        OnPropertyChanged(nameof(TransferSpeedText));
+        OnPropertyChanged(nameof(TransferRemainingText));
+        OnPropertyChanged(nameof(TransferTargetText));
+        OnPropertyChanged(nameof(TransferOperationText));
+        OnPropertyChanged(nameof(CancelTransferText));
+        OnPropertyChanged(nameof(RetryTransferText));
+        OnPropertyChanged(nameof(RemoveTransferText));
+        OnPropertyChanged(nameof(ClearCompletedTransfersText));
+        OnPropertyChanged(nameof(TransferPanelToggleText));
+        OnPropertyChanged(nameof(TransferSummaryText));
+
+        foreach (var task in TransferTasks)
+            task.RefreshLocalization();
+    }
+
+    partial void OnIsTransferPanelExpandedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(TransferPanelToggleText));
+    }
+
+    private void OnTransferTasksCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.NewItems != null)
+        {
+            foreach (SftpTransferTaskItem task in e.NewItems)
+                task.PropertyChanged += OnTransferTaskPropertyChanged;
+        }
+
+        if (e.OldItems != null)
+        {
+            foreach (SftpTransferTaskItem task in e.OldItems)
+            {
+                task.PropertyChanged -= OnTransferTaskPropertyChanged;
+                _transferSessions.Remove(task.Id);
+            }
+        }
+
+        OnPropertyChanged(nameof(HasTransferTasks));
+        OnPropertyChanged(nameof(HasCompletedTransfers));
+        OnPropertyChanged(nameof(TransferSummaryText));
+    }
+
+    private void OnTransferTaskPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(SftpTransferTaskItem.Status) or nameof(SftpTransferTaskItem.TransferredBytes))
+        {
+            OnPropertyChanged(nameof(HasCompletedTransfers));
+            OnPropertyChanged(nameof(TransferSummaryText));
+        }
     }
 
     partial void OnSelectedFileChanged(SftpFileItem? oldValue, SftpFileItem? newValue)
@@ -839,7 +937,7 @@ public partial class SftpViewModel : ObservableObject
     [RelayCommand]
     private async Task Upload()
     {
-        if (!_service.IsConnected || PickUploadFileAsync == null)
+        if (!_service.IsConnected || PickUploadFileAsync == null || _currentSession == null)
             return;
 
         var localPath = await PickUploadFileAsync();
@@ -848,31 +946,13 @@ public partial class SftpViewModel : ObservableObject
 
         var fileName = System.IO.Path.GetFileName(localPath);
         var remotePath = CurrentPath.TrimEnd('/') + "/" + fileName;
-
-        await Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            IsLoading = true;
-            ErrorMessage = null;
-        });
-
-        try
-        {
-            await RunServiceAsync(service => service.UploadFileAsync(localPath, remotePath));
-            await LoadDirectoryAsync(CurrentPath);
-        }
-        catch (Exception ex)
-        {
-            await Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                ErrorMessage = $"Upload failed: {ex.Message}";
-                IsLoading = false;
-            });
-        }
+        ErrorMessage = null;
+        EnqueueTransferTask(CreateUploadTask(localPath, remotePath), CloneTransferSession(_currentSession), _currentPassword);
     }
 
     public async Task UploadDroppedPathsAsync(IEnumerable<string> localPaths)
     {
-        if (!_service.IsConnected)
+        if (!_service.IsConnected || _currentSession == null)
             return;
 
         var paths = localPaths
@@ -884,19 +964,11 @@ public partial class SftpViewModel : ObservableObject
 
         UpdateLocalDirectoryFromDroppedPath(paths[0]);
 
-        await Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            IsLoading = true;
-            ErrorMessage = null;
-        });
-
         try
         {
             var targetDirectory = CurrentPath;
             foreach (var path in paths)
-                await UploadLocalPathAsync(path, targetDirectory);
-
-            await LoadDirectoryAsync(CurrentPath);
+                await QueueUploadLocalPathAsync(path, targetDirectory);
         }
         catch (Exception ex)
         {
@@ -909,8 +981,51 @@ public partial class SftpViewModel : ObservableObject
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             ErrorMessage = $"Upload failed: {message}";
-            IsLoading = false;
         });
+    }
+
+    private async Task QueueUploadLocalPathAsync(string localPath, string remoteDirectory)
+    {
+        if (_currentSession == null)
+            return;
+
+        if (File.Exists(localPath))
+        {
+            var fileName = Path.GetFileName(localPath);
+            if (string.IsNullOrWhiteSpace(fileName))
+                return;
+
+            EnqueueTransferTask(
+                CreateUploadTask(localPath, CombineRemotePath(remoteDirectory, fileName)),
+                CloneTransferSession(_currentSession),
+                _currentPassword);
+            return;
+        }
+
+        if (!Directory.Exists(localPath))
+            return;
+
+        var directoryName = GetLocalDirectoryName(localPath);
+        if (string.IsNullOrWhiteSpace(directoryName))
+            return;
+
+        var remotePath = CombineRemotePath(remoteDirectory, directoryName);
+        await EnsureRemoteDirectoryAsync(remotePath);
+
+        foreach (var file in Directory.EnumerateFiles(localPath))
+        {
+            var fileName = Path.GetFileName(file);
+            if (!string.IsNullOrWhiteSpace(fileName))
+            {
+                EnqueueTransferTask(
+                    CreateUploadTask(file, CombineRemotePath(remotePath, fileName)),
+                    CloneTransferSession(_currentSession),
+                    _currentPassword);
+            }
+        }
+
+        foreach (var directory in Directory.EnumerateDirectories(localPath))
+            await QueueUploadLocalPathAsync(directory, remotePath);
     }
 
     private async Task UploadLocalPathAsync(string localPath, string remoteDirectory)
@@ -978,42 +1093,46 @@ public partial class SftpViewModel : ObservableObject
 
     public bool CanStreamDragOut(SftpFileItem item)
     {
-        return _service is SftpService && _service.IsConnected;
-    }
-
-    public Stream OpenRemoteReadStream(SftpFileItem item)
-    {
-        if (_service is not SftpService sftpService)
-            throw new NotSupportedException("Only SFTP supports streaming drag-out.");
-
-        return sftpService.OpenReadStream(item.FullPath);
+        return _service is SftpService &&
+               _service.IsConnected &&
+               PlatformServices.SupportsVirtualFileDragOut &&
+               (!PlatformServices.IsMacOS || !item.IsDirectory);
     }
 
     public async Task<List<VirtualDragFile>> CreateVirtualDragFilesAsync(SftpFileItem item)
     {
-        if (_service is not SftpService sftpService)
+        if (_service is not SftpService || _currentSession == null)
             throw new NotSupportedException("Only SFTP supports streaming drag-out.");
+
+        var dragSession = CloneTransferSession(_currentSession);
+        var dragPassword = _currentPassword;
 
         if (!item.IsDirectory)
         {
-            return
-            [
-                new VirtualDragFile(
-                    item.Name,
-                    item.Size,
-                    item.LastModified,
-                    () => sftpService.OpenReadStream(item.FullPath))
-            ];
+            var remotePath = item.FullPath;
+            return [CreateVirtualDragFile(
+                dragSession,
+                dragPassword,
+                item.Name,
+                item.Size,
+                item.LastModified,
+                remotePath)];
         }
 
         var files = new List<VirtualDragFile>();
         var rootName = SanitizeLocalName(item.Name);
-        await AddVirtualDragDirectoryFilesAsync(sftpService, item.FullPath, rootName, files);
+        await AddVirtualDragDirectoryFilesAsync(
+            dragSession,
+            dragPassword,
+            item.FullPath,
+            rootName,
+            files);
         return files;
     }
 
     private async Task AddVirtualDragDirectoryFilesAsync(
-        SftpService sftpService,
+        SessionInfo dragSession,
+        string? dragPassword,
         string remoteDirectory,
         string relativeDirectory,
         List<VirtualDragFile> files)
@@ -1024,107 +1143,306 @@ public partial class SftpViewModel : ObservableObject
             var relativePath = relativeDirectory + "\\" + SanitizeLocalName(child.Name);
             if (child.IsDirectory)
             {
-                await AddVirtualDragDirectoryFilesAsync(sftpService, child.FullPath, relativePath, files);
+                await AddVirtualDragDirectoryFilesAsync(
+                    dragSession,
+                    dragPassword,
+                    child.FullPath,
+                    relativePath,
+                    files);
                 continue;
             }
 
             var remotePath = child.FullPath;
-            files.Add(new VirtualDragFile(
+            files.Add(CreateVirtualDragFile(
+                dragSession,
+                dragPassword,
                 relativePath,
                 child.Size,
                 child.LastModified,
-                () => sftpService.OpenReadStream(remotePath)));
+                remotePath));
         }
+    }
+
+    private VirtualDragFile CreateVirtualDragFile(
+        SessionInfo session,
+        string? password,
+        string fileName,
+        long size,
+        DateTime lastModified,
+        string remotePath)
+    {
+        var task = new SftpTransferTaskItem
+        {
+            Direction = SftpTransferDirection.Download,
+            FileName = fileName,
+            LocalPath = PlatformServices.IsMacOS
+                ? (L.IsEnglish ? "Finder (drag-out)" : "Finder（拖放）")
+                : (L.IsEnglish ? "Windows Explorer (drag-out)" : "Windows 资源管理器（拖放）"),
+            RemotePath = remotePath,
+            TotalBytes = size,
+            SupportsRetry = false
+        };
+
+        task.PrepareForStart();
+        task.IsExecutionActive = true;
+        TransferTasks.Add(task);
+        IsTransferPanelExpanded = true;
+
+        var cancellation = task.CancellationTokenSource
+            ?? throw new InvalidOperationException("The drag transfer cancellation source is unavailable.");
+        _ = cancellation.Token.Register(() => QueueVirtualTransferCancelled(task));
+
+        return new VirtualDragFile(
+            fileName,
+            size,
+            lastModified,
+            () => OpenVirtualDragStream(session, password, remotePath, cancellation.Token),
+            cancellation.Token,
+            started: () => QueueVirtualTransferStarted(task),
+            progressChanged: transferred => QueueTransferProgress(task, (ulong)Math.Max(0, transferred)),
+            completed: () => QueueVirtualTransferCompleted(task),
+            failed: message => QueueVirtualTransferFailed(task, message),
+            cancelled: () => QueueVirtualTransferCancelled(task),
+            cancellationRequested: cancellation.Cancel);
+    }
+
+    private static Stream OpenVirtualDragStream(
+        SessionInfo session,
+        string? password,
+        string remotePath,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var service = CreateService(session.Protocol);
+        try
+        {
+            service.ConnectAsync(session, password).GetAwaiter().GetResult();
+            cancellationToken.ThrowIfCancellationRequested();
+            if (service is not SftpService sftpService)
+                throw new NotSupportedException("Only SFTP supports streaming drag-out.");
+
+            return new OwnedFileTransferStream(sftpService.OpenReadStream(remotePath), service);
+        }
+        catch
+        {
+            DisposeFileTransferService(service);
+            throw;
+        }
+    }
+
+    private static void QueueVirtualTransferStarted(SftpTransferTaskItem task)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (task.IsExecutionActive && task.Status == SftpTransferStatus.Pending)
+                task.MarkRunning();
+        });
+    }
+
+    private static void QueueVirtualTransferCompleted(SftpTransferTaskItem task)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!task.IsExecutionActive)
+                return;
+
+            if (task.TotalBytes > 0)
+                task.UpdateProgress(task.TotalBytes, task.TotalBytes);
+            task.MarkCompleted();
+            task.ClearRuntimeHandles();
+            task.IsExecutionActive = false;
+        });
+    }
+
+    private static void QueueVirtualTransferFailed(SftpTransferTaskItem task, string message)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!task.IsExecutionActive)
+                return;
+
+            task.MarkFailed(message);
+            task.ClearRuntimeHandles();
+            task.IsExecutionActive = false;
+        });
+    }
+
+    private static void QueueVirtualTransferCancelled(SftpTransferTaskItem task)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!task.IsExecutionActive)
+                return;
+
+            task.MarkCancelled();
+            task.ClearRuntimeHandles();
+            task.IsExecutionActive = false;
+        });
     }
 
     public async Task<string?> ExportItemForDragAsync(SftpFileItem item)
     {
-        if (!_service.IsConnected)
-            return null;
-
-        return await ExportItemForDragCoreAsync(item, true);
-    }
-
-    public string? ExportItemForDragBlocking(SftpFileItem item)
-    {
-        if (!_service.IsConnected)
+        if (!_service.IsConnected || _currentSession == null)
             return null;
 
         try
         {
-            return Task.Run(() => ExportItemForDragCoreAsync(item, false)).GetAwaiter().GetResult();
-        }
-        catch (Exception ex)
-        {
-            Dispatcher.UIThread.Post(() =>
+            ErrorMessage = null;
+            var cacheRoot = GetDragCacheRoot(_currentSession, item);
+            var payloadRoot = Path.Combine(cacheRoot, "payload");
+            var localPath = Path.Combine(payloadRoot, SanitizeLocalName(item.Name));
+            Directory.CreateDirectory(payloadRoot);
+
+            if (!item.IsDirectory)
             {
-                ErrorMessage = $"Drag export failed: {ex.Message}";
-                IsLoading = false;
-            });
-            return null;
-        }
-    }
+                if (File.Exists(localPath) && new FileInfo(localPath).Length == item.Size)
+                    return localPath;
 
-    private async Task<string?> ExportItemForDragCoreAsync(SftpFileItem item, bool useInvoke)
-    {
-        var exportRoot = Path.Combine(Path.GetTempPath(), "CxShell", "SftpDrag", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(exportRoot);
+                var task = EnqueueTransferTask(
+                    CreateDownloadTask(item, localPath),
+                    CloneTransferSession(_currentSession),
+                    _currentPassword);
+                return await WaitForTransferTaskAsync(task) && File.Exists(localPath)
+                    ? localPath
+                    : null;
+            }
 
-        await SetDragExportLoadingAsync(useInvoke, true, null);
+            var completeMarker = Path.Combine(cacheRoot, ".complete");
+            if (Directory.Exists(localPath) && File.Exists(completeMarker))
+                return localPath;
 
-        try
-        {
-            var localPath = Path.Combine(exportRoot, SanitizeLocalName(item.Name));
-            if (item.IsDirectory)
-                await DownloadRemoteDirectoryAsync(item.FullPath, localPath);
-            else
-                await RunServiceAsync(service => service.DownloadFileAsync(item.FullPath, localPath));
+            Directory.CreateDirectory(localPath);
+            var tasks = new List<SftpTransferTaskItem>();
+            await EnqueueRemoteDirectoryForCacheAsync(
+                item.FullPath,
+                localPath,
+                CloneTransferSession(_currentSession),
+                _currentPassword,
+                tasks);
 
-            await SetDragExportLoadingAsync(useInvoke, false, null);
+            var results = await Task.WhenAll(tasks.Select(WaitForTransferTaskAsync));
+            if (results.Any(result => !result))
+                return null;
+
+            File.WriteAllText(completeMarker, DateTimeOffset.UtcNow.ToString("O"), Encoding.UTF8);
             return localPath;
         }
         catch (Exception ex)
         {
-            try
-            {
-                if (Directory.Exists(exportRoot))
-                    Directory.Delete(exportRoot, true);
-            }
-            catch
-            {
-            }
-
-            await SetDragExportLoadingAsync(useInvoke, false, $"Drag export failed: {ex.Message}");
+            ErrorMessage = $"Drag export failed: {ex.Message}";
             return null;
         }
     }
 
-    private async Task SetDragExportLoadingAsync(bool useInvoke, bool isLoading, string? errorMessage)
+    public bool IsItemCachedForDrag(SftpFileItem item)
     {
-        void Update()
-        {
-            IsLoading = isLoading;
-            ErrorMessage = errorMessage;
-        }
+        if (_currentSession == null)
+            return false;
 
-        if (useInvoke)
-            await Dispatcher.UIThread.InvokeAsync(Update);
-        else
-            Dispatcher.UIThread.Post(Update);
+        try
+        {
+            var cacheRoot = GetDragCacheRoot(_currentSession, item);
+            var localPath = Path.Combine(cacheRoot, "payload", SanitizeLocalName(item.Name));
+            if (item.IsDirectory)
+                return Directory.Exists(localPath) && File.Exists(Path.Combine(cacheRoot, ".complete"));
+
+            return File.Exists(localPath) && new FileInfo(localPath).Length == item.Size;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
-    private async Task DownloadRemoteDirectoryAsync(string remotePath, string localPath)
+    private async Task EnqueueRemoteDirectoryForCacheAsync(
+        string remotePath,
+        string localPath,
+        SessionInfo transferSession,
+        string? password,
+        ICollection<SftpTransferTaskItem> tasks)
     {
         Directory.CreateDirectory(localPath);
-
         var children = await RunServiceAsync(service => service.ListDirectoryAsync(remotePath));
         foreach (var child in children)
         {
             var childLocalPath = Path.Combine(localPath, SanitizeLocalName(child.Name));
             if (child.IsDirectory)
-                await DownloadRemoteDirectoryAsync(child.FullPath, childLocalPath);
-            else
-                await RunServiceAsync(service => service.DownloadFileAsync(child.FullPath, childLocalPath));
+            {
+                await EnqueueRemoteDirectoryForCacheAsync(
+                    child.FullPath,
+                    childLocalPath,
+                    transferSession,
+                    password,
+                    tasks);
+                continue;
+            }
+
+            if (File.Exists(childLocalPath) && new FileInfo(childLocalPath).Length == child.Size)
+                continue;
+
+            tasks.Add(EnqueueTransferTask(
+                CreateDownloadTask(child, childLocalPath),
+                transferSession,
+                password));
+        }
+    }
+
+    private static async Task<bool> WaitForTransferTaskAsync(SftpTransferTaskItem task)
+    {
+        if (!task.IsExecutionActive)
+            return task.Status == SftpTransferStatus.Completed;
+
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        PropertyChangedEventHandler? handler = null;
+        handler = (_, args) =>
+        {
+            if (args.PropertyName != nameof(SftpTransferTaskItem.IsExecutionActive) || task.IsExecutionActive)
+                return;
+
+            task.PropertyChanged -= handler;
+            completion.TrySetResult(task.Status == SftpTransferStatus.Completed);
+        };
+        task.PropertyChanged += handler;
+
+        if (!task.IsExecutionActive)
+        {
+            task.PropertyChanged -= handler;
+            return task.Status == SftpTransferStatus.Completed;
+        }
+
+        return await completion.Task.ConfigureAwait(false);
+    }
+
+    private static string GetDragCacheRoot(SessionInfo session, SftpFileItem item)
+    {
+        var identity = $"{BuildConnectionKey(session)}\0{item.FullPath}\0{item.Size}\0{item.LastModified.ToUniversalTime().Ticks}";
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity)))[..24];
+        return Path.Combine(Path.GetTempPath(), "CxShell", "SftpDragCache", hash);
+    }
+
+    private static void CleanupExpiredDragCache()
+    {
+        try
+        {
+            var cacheRoot = Path.Combine(Path.GetTempPath(), "CxShell", "SftpDragCache");
+            if (!Directory.Exists(cacheRoot))
+                return;
+
+            var cutoff = DateTime.UtcNow.AddDays(-7);
+            foreach (var directory in Directory.EnumerateDirectories(cacheRoot))
+            {
+                try
+                {
+                    if (Directory.GetLastWriteTimeUtc(directory) < cutoff)
+                        Directory.Delete(directory, true);
+                }
+                catch
+                {
+                }
+            }
+        }
+        catch
+        {
         }
     }
 
@@ -1138,35 +1456,240 @@ public partial class SftpViewModel : ObservableObject
     [RelayCommand]
     private async Task Download()
     {
-        if (!_service.IsConnected || SelectedFile == null || SelectedFile.IsDirectory)
+        if (!_service.IsConnected || _currentSession == null || SelectedFile == null || SelectedFile.IsDirectory)
             return;
 
         if (PickDownloadPathAsync == null)
             return;
 
+        var selectedFile = SelectedFile;
         var localPath = await PickDownloadPathAsync(SelectedFile.Name);
         if (string.IsNullOrEmpty(localPath))
             return;
 
-        await Dispatcher.UIThread.InvokeAsync(() =>
+        ErrorMessage = null;
+        EnqueueTransferTask(CreateDownloadTask(selectedFile, localPath), CloneTransferSession(_currentSession), _currentPassword);
+    }
+
+    private static SftpTransferTaskItem CreateUploadTask(string localPath, string remotePath)
+    {
+        return new SftpTransferTaskItem
         {
-            IsLoading = true;
-            ErrorMessage = null;
-        });
+            Direction = SftpTransferDirection.Upload,
+            FileName = Path.GetFileName(localPath),
+            LocalPath = localPath,
+            RemotePath = remotePath,
+            TotalBytes = File.Exists(localPath) ? new FileInfo(localPath).Length : 0
+        };
+    }
+
+    private static SftpTransferTaskItem CreateDownloadTask(SftpFileItem item, string localPath)
+    {
+        return new SftpTransferTaskItem
+        {
+            Direction = SftpTransferDirection.Download,
+            FileName = item.Name,
+            LocalPath = localPath,
+            RemotePath = item.FullPath,
+            TotalBytes = item.Size
+        };
+    }
+
+    private SftpTransferTaskItem EnqueueTransferTask(SftpTransferTaskItem task, SessionInfo session, string? password)
+    {
+        var matchingTask = TransferTasks.FirstOrDefault(existing =>
+            existing.IsExecutionActive &&
+            existing.Direction == task.Direction &&
+            string.Equals(existing.LocalPath, task.LocalPath, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(existing.RemotePath, task.RemotePath, StringComparison.Ordinal));
+        if (matchingTask != null)
+        {
+            IsTransferPanelExpanded = true;
+            return matchingTask;
+        }
+
+        task.PrepareForStart();
+        task.IsExecutionActive = true;
+        _transferSessions[task.Id] = (session, password);
+        TransferTasks.Add(task);
+        IsTransferPanelExpanded = true;
+        _ = RunTransferTaskAsync(task);
+        return task;
+    }
+
+    private async Task RunTransferTaskAsync(SftpTransferTaskItem task)
+    {
+        var cancellation = task.CancellationTokenSource;
+        if (cancellation == null || !_transferSessions.TryGetValue(task.Id, out var connection))
+            return;
+
+        var enteredGate = false;
+        IFileTransferService? transferService = null;
 
         try
         {
-            await RunServiceAsync(service => service.DownloadFileAsync(SelectedFile.FullPath, localPath));
-            await Dispatcher.UIThread.InvokeAsync(() => IsLoading = false);
+            await _transferGate.WaitAsync(cancellation.Token).ConfigureAwait(false);
+            enteredGate = true;
+            cancellation.Token.ThrowIfCancellationRequested();
+
+            if (task.Direction == SftpTransferDirection.Upload)
+            {
+                if (!File.Exists(task.LocalPath))
+                    throw new FileNotFoundException("The local file no longer exists.", task.LocalPath);
+
+                var currentLength = new FileInfo(task.LocalPath).Length;
+                await Dispatcher.UIThread.InvokeAsync(() => task.TotalBytes = currentLength);
+            }
+
+            transferService = CreateService(connection.Session.Protocol);
+            task.ActiveService = transferService;
+            await transferService.ConnectAsync(connection.Session, connection.Password).ConfigureAwait(false);
+            cancellation.Token.ThrowIfCancellationRequested();
+
+            await Dispatcher.UIThread.InvokeAsync(task.MarkRunning);
+            Action<ulong> progress = transferred => QueueTransferProgress(task, transferred);
+            var canResume = transferService is SftpService;
+
+            if (task.Direction == SftpTransferDirection.Upload)
+            {
+                await transferService.UploadFileAsync(
+                    task.LocalPath,
+                    task.RemotePath,
+                    progress,
+                    cancellation.Token,
+                    canResume).ConfigureAwait(false);
+            }
+            else
+            {
+                await transferService.DownloadFileAsync(
+                    task.RemotePath,
+                    task.LocalPath,
+                    progress,
+                    cancellation.Token,
+                    canResume).ConfigureAwait(false);
+            }
+
+            cancellation.Token.ThrowIfCancellationRequested();
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (task.TotalBytes > 0)
+                    task.UpdateProgress(task.TotalBytes, task.TotalBytes);
+                task.MarkCompleted();
+            });
+
+            if (task.Direction == SftpTransferDirection.Upload)
+                RefreshBrowserAfterUpload(task, connection.Session);
+        }
+        catch (OperationCanceledException)
+        {
+            await Dispatcher.UIThread.InvokeAsync(task.MarkCancelled);
+        }
+        catch (Exception) when (cancellation.IsCancellationRequested)
+        {
+            await Dispatcher.UIThread.InvokeAsync(task.MarkCancelled);
         }
         catch (Exception ex)
         {
+            await Dispatcher.UIThread.InvokeAsync(() => task.MarkFailed(ex.Message));
+        }
+        finally
+        {
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                ErrorMessage = $"Download failed: {ex.Message}";
-                IsLoading = false;
+                task.ClearRuntimeHandles();
+                task.IsExecutionActive = false;
             });
+
+            if (enteredGate)
+                _transferGate.Release();
+
+            if (transferService != null)
+                _ = Task.Run(() => DisposeFileTransferService(transferService));
         }
+    }
+
+    private static void QueueTransferProgress(SftpTransferTaskItem task, ulong transferred)
+    {
+        var transferredBytes = transferred > long.MaxValue ? long.MaxValue : (long)transferred;
+        var now = DateTimeOffset.UtcNow;
+        task.LastUiProgressBytes = transferredBytes;
+
+        if (task.TotalBytes > 0 &&
+            transferredBytes < task.TotalBytes &&
+            now - task.LastUiProgressAt < TimeSpan.FromMilliseconds(120))
+        {
+            return;
+        }
+
+        task.LastUiProgressAt = now;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (task.IsExecutionActive && task.Status == SftpTransferStatus.Pending)
+                task.MarkRunning();
+            if (task.Status == SftpTransferStatus.Running)
+                task.UpdateProgress(transferredBytes, task.TotalBytes);
+        });
+    }
+
+    private void RefreshBrowserAfterUpload(SftpTransferTaskItem task, SessionInfo transferSession)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_currentSession == null ||
+                !_service.IsConnected ||
+                !string.Equals(BuildConnectionKey(_currentSession), BuildConnectionKey(transferSession), StringComparison.Ordinal) ||
+                !string.Equals(CollapseRemotePath(GetRemoteParentPath(task.RemotePath)), CollapseRemotePath(CurrentPath), StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _ = LoadDirectoryAsync(CurrentPath);
+        });
+    }
+
+    [RelayCommand]
+    private void CancelTransfer(SftpTransferTaskItem? task)
+    {
+        if (task == null || !task.CanCancel)
+            return;
+
+        task.CancellationTokenSource?.Cancel();
+        task.MarkCancelling();
+    }
+
+    [RelayCommand]
+    private void RetryTransfer(SftpTransferTaskItem? task)
+    {
+        if (task == null || !task.CanRetry || !_transferSessions.ContainsKey(task.Id))
+            return;
+
+        task.PrepareForStart();
+        task.IsExecutionActive = true;
+        _ = RunTransferTaskAsync(task);
+    }
+
+    [RelayCommand]
+    private void RemoveTransfer(SftpTransferTaskItem? task)
+    {
+        if (task == null || !task.CanRemove)
+            return;
+
+        task.CancellationTokenSource?.Dispose();
+        task.CancellationTokenSource = null;
+        TransferTasks.Remove(task);
+    }
+
+    [RelayCommand]
+    private void ClearCompletedTransfers()
+    {
+        foreach (var task in TransferTasks.Where(item => item.Status == SftpTransferStatus.Completed).ToList())
+            RemoveTransfer(task);
+    }
+
+    [RelayCommand]
+    private void ToggleTransferPanel()
+    {
+        IsTransferPanelExpanded = !IsTransferPanelExpanded;
     }
 
     [RelayCommand]
@@ -1406,6 +1929,43 @@ public partial class SftpViewModel : ObservableObject
             ErrorMessage = message;
             IsConnected = false;
         });
+    }
+
+    private sealed class OwnedFileTransferStream(Stream inner, IFileTransferService owner) : Stream
+    {
+        private Stream? _inner = inner;
+        private IFileTransferService? _owner = owner;
+
+        private Stream Inner => _inner ?? throw new ObjectDisposedException(nameof(OwnedFileTransferStream));
+
+        public override bool CanRead => _inner?.CanRead ?? false;
+        public override bool CanSeek => _inner?.CanSeek ?? false;
+        public override bool CanWrite => false;
+        public override long Length => Inner.Length;
+        public override long Position
+        {
+            get => Inner.Position;
+            set => Inner.Position = value;
+        }
+
+        public override void Flush() => Inner.Flush();
+        public override int Read(byte[] buffer, int offset, int count) => Inner.Read(buffer, offset, count);
+        public override long Seek(long offset, SeekOrigin origin) => Inner.Seek(offset, origin);
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                Interlocked.Exchange(ref _inner, null)?.Dispose();
+                var service = Interlocked.Exchange(ref _owner, null);
+                if (service != null)
+                    DisposeFileTransferService(service);
+            }
+
+            base.Dispose(disposing);
+        }
     }
 }
 

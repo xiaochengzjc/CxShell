@@ -6,6 +6,20 @@ CxShell is a cross-platform desktop remote session client built with .NET, Avalo
 
 The project is still moving quickly. Windows is currently the primary development target, macOS packaging is available through local scripts and GitHub Actions, and Linux can be built as a standard Avalonia desktop application. RDP support depends on the platform-specific native `CxRdpBridge` library.
 
+## Screenshots
+
+### SSH Workspace, SFTP, and Server Monitoring
+
+![CxShell SSH terminal with SFTP file management and server monitoring](docs/images/cxshell-ssh-sftp-monitor.png)
+
+CxShell keeps the terminal, remote file browser, transfer queue, and server metrics together in one workspace.
+
+### Integrated RDP Session
+
+![CxShell integrated RDP remote desktop session](docs/images/cxshell-rdp-session.png)
+
+RDP sessions run inside the same tabbed workspace and share CxShell's session management experience.
+
 ## Features
 
 - Session management: create, duplicate, edit, delete, search, and save frequently used sessions.
@@ -347,6 +361,14 @@ These directories are generally not committed:
 CxShell is currently closer to a fast-moving usable preview than a long-term stable release. Protocol support and UI experience are still evolving, especially around the RDP bridge, VNC compatibility, the remote file editor, and cross-platform packaging.
 
 Issues, feature requests, and pull requests are welcome. For changes related to protocols, terminal rendering, or file transfer, please include reproduction steps, target server or system information when possible, and manual verification results.
+
+## Contact
+
+For project feedback and technical discussion, you can add the author on WeChat.
+
+- WeChat ID: `ruochujiangzi`
+
+<img src="docs/images/wechat-ruochujiangzi.png" alt="CxShell author WeChat QR code" width="220">
 
 ## License
 

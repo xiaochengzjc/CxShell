@@ -155,7 +155,32 @@ public partial class RdpViewModel : ObservableObject, IDisposable
         StatusText = "RDP disconnected";
     }
 
-    public void RequestViewportResize(Size viewportSize)
+    public void ConfigureInitialDisplay(Size viewportSize, PixelSize? monitorPixelSize, double renderScaling)
+    {
+        if (_started || IsConnected)
+            return;
+
+        if (string.Equals(Session.RdpWindowSize, "FullScreen", StringComparison.OrdinalIgnoreCase) &&
+            monitorPixelSize is { Width: >= 320, Height: >= 240 } monitorSize)
+        {
+            _runtimeDesktopWidth = Math.Clamp(monitorSize.Width, 320, 7680);
+            _runtimeDesktopHeight = Math.Clamp(monitorSize.Height, 240, 4320);
+            return;
+        }
+
+        if (!string.Equals(Session.RdpWindowSize, "WorkSpace", StringComparison.OrdinalIgnoreCase) ||
+            viewportSize.Width < 320 ||
+            viewportSize.Height < 240)
+        {
+            return;
+        }
+
+        var scale = NormalizeRenderScaling(renderScaling);
+        _runtimeDesktopWidth = (int)Math.Clamp(Math.Round(viewportSize.Width * scale), 320, 7680);
+        _runtimeDesktopHeight = (int)Math.Clamp(Math.Round(viewportSize.Height * scale), 240, 4320);
+    }
+
+    public void RequestViewportResize(Size viewportSize, double renderScaling = 1)
     {
         if (!IsConnected ||
             !UsesReconnectResizeMode(Session) ||
@@ -165,8 +190,9 @@ public partial class RdpViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var width = (int)Math.Clamp(Math.Round(viewportSize.Width), 320, 7680);
-        var height = (int)Math.Clamp(Math.Round(viewportSize.Height), 240, 4320);
+        var scale = NormalizeRenderScaling(renderScaling);
+        var width = (int)Math.Clamp(Math.Round(viewportSize.Width * scale), 320, 7680);
+        var height = (int)Math.Clamp(Math.Round(viewportSize.Height * scale), 240, 4320);
         var currentWidth = _runtimeDesktopWidth ?? Math.Max(1, Session.RdpDesktopWidth);
         var currentHeight = _runtimeDesktopHeight ?? Math.Max(1, Session.RdpDesktopHeight);
         if (Math.Abs(width - currentWidth) < 32 && Math.Abs(height - currentHeight) < 32)
@@ -263,6 +289,13 @@ public partial class RdpViewModel : ObservableObject, IDisposable
         return int.TryParse(session.RdpScreenScale, out var parsed) && parsed is >= 10 and <= 500
             ? parsed
             : 100;
+    }
+
+    private static double NormalizeRenderScaling(double renderScaling)
+    {
+        return double.IsFinite(renderScaling)
+            ? Math.Clamp(renderScaling, 0.5, 8)
+            : 1;
     }
 
     private void OnFramebufferUpdated(object? sender, RdpFramebufferEventArgs e)

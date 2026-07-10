@@ -13,23 +13,43 @@ namespace CxShell.Services;
 
 public static class ProxyConnectionFactory
 {
+    private static readonly TimeSpan JumpHostLocalPortStartupTimeout = TimeSpan.FromSeconds(5);
+    private const int MaxJumpHostChainLength = 16;
+
     public static ConnectionInfo CreateSshConnectionInfo(
         SessionInfo session,
         IReadOnlyList<AuthenticationMethod> authMethods)
     {
-        if (session.Proxy?.IsEnabled != true)
-            return new ConnectionInfo(session.Host, session.Port, session.Username, authMethods.ToArray());
+        if (session.Proxy?.Protocol == ProxyProtocol.JumpHost)
+            throw new InvalidOperationException("JumpHost SSH connections require CreateSshConnectionContext.");
 
-        return new ConnectionInfo(
-            session.Host,
-            session.Port,
-            session.Username,
-            ToSshProxyType(session.Proxy),
-            session.Proxy.Host,
-            session.Proxy.Port,
-            session.Proxy.Username,
-            session.Proxy.Password,
-            authMethods.ToArray());
+        return CreateSshConnectionContext(session, authMethods).ConnectionInfo;
+    }
+
+    public static SshConnectionContext CreateSshConnectionContext(
+        SessionInfo session,
+        IReadOnlyList<AuthenticationMethod> authMethods)
+    {
+        if (session.Proxy?.IsEnabled != true)
+        {
+            return new SshConnectionContext(
+                new ConnectionInfo(session.Host, session.Port, session.Username, authMethods.ToArray()));
+        }
+
+        if (session.Proxy.Protocol == ProxyProtocol.JumpHost)
+            return CreateJumpHostConnectionContext(session, authMethods);
+
+        return new SshConnectionContext(
+            new ConnectionInfo(
+                session.Host,
+                session.Port,
+                session.Username,
+                ToSshProxyType(session.Proxy),
+                session.Proxy.Host,
+                session.Proxy.Port,
+                session.Proxy.Username,
+                session.Proxy.Password,
+                authMethods.ToArray()));
     }
 
     public static async Task<TcpClient> ConnectTcpAsync(
@@ -108,10 +128,255 @@ public static class ProxyConnectionFactory
             ProxyProtocol.Socks4 => ProxyTypes.Socks4,
             ProxyProtocol.Socks4A => ProxyTypes.Socks4,
             ProxyProtocol.Socks5 => ProxyTypes.Socks5,
-            ProxyProtocol.SshPassthrough or ProxyProtocol.JumpHost =>
+            ProxyProtocol.SshPassthrough =>
                 throw new NotSupportedException($"{proxy.TypeDisplay} proxy connection is not implemented yet."),
             _ => ProxyTypes.None
         };
+    }
+
+    private static SshConnectionContext CreateJumpHostConnectionContext(
+        SessionInfo session,
+        IReadOnlyList<AuthenticationMethod> authMethods)
+    {
+        var jumpHosts = BuildJumpHostChain(session);
+        if (jumpHosts.Count == 0)
+        {
+            return new SshConnectionContext(
+                new ConnectionInfo(session.Host, session.Port, session.Username, authMethods.ToArray()));
+        }
+
+        var lifetimes = new List<IDisposable>();
+        SshClient? previousJumpClient = null;
+        try
+        {
+            foreach (var jumpHost in jumpHosts)
+            {
+                var connectHost = jumpHost.Host;
+                var connectPort = jumpHost.Port;
+                if (previousJumpClient != null)
+                {
+                    var nextJumpForward = StartLocalForward(previousJumpClient, jumpHost.Host, jumpHost.Port);
+                    lifetimes.Add(new LocalForwardLifetime(previousJumpClient, nextJumpForward.ForwardedPort));
+                    connectHost = "127.0.0.1";
+                    connectPort = nextJumpForward.LocalPort;
+                }
+
+                var jumpClient = CreateJumpHostClient(session, jumpHost, connectHost, connectPort);
+                try
+                {
+                    jumpClient.Connect();
+                }
+                catch
+                {
+                    jumpClient.Dispose();
+                    throw;
+                }
+
+                lifetimes.Add(new SshClientLifetime(jumpClient));
+                previousJumpClient = jumpClient;
+            }
+
+            if (previousJumpClient == null)
+            {
+                return new SshConnectionContext(
+                    new ConnectionInfo(session.Host, session.Port, session.Username, authMethods.ToArray()));
+            }
+
+            var targetForward = StartLocalForward(previousJumpClient, session.Host, session.Port);
+            lifetimes.Add(new LocalForwardLifetime(previousJumpClient, targetForward.ForwardedPort));
+
+            return new SshConnectionContext(
+                new ConnectionInfo("127.0.0.1", targetForward.LocalPort, session.Username, authMethods.ToArray()),
+                new CompositeLifetime(lifetimes));
+        }
+        catch
+        {
+            DisposeAllReverse(lifetimes);
+            throw;
+        }
+    }
+
+    private static IReadOnlyList<ProxySettings> BuildJumpHostChain(SessionInfo session)
+    {
+        var proxy = session.Proxy;
+        if (proxy == null || !proxy.IsEnabled || proxy.Protocol != ProxyProtocol.JumpHost)
+            return [];
+
+        var proxiesById = session.ProxyServers
+            .Where(item => item.IsEnabled)
+            .GroupBy(item => item.Id)
+            .ToDictionary(group => group.Key, group => group.First());
+        var chain = new List<ProxySettings>();
+        var visited = new HashSet<Guid>();
+        while (proxy is { IsEnabled: true })
+        {
+            if (proxy.Protocol != ProxyProtocol.JumpHost)
+                throw new NotSupportedException("JumpHost proxy chain only supports JUMPHOST proxies.");
+
+            if (!visited.Add(proxy.Id))
+                throw new InvalidOperationException("JumpHost proxy chain contains a cycle.");
+
+            chain.Add(proxy);
+            if (chain.Count > MaxJumpHostChainLength)
+                throw new InvalidOperationException("JumpHost proxy chain is too long.");
+
+            if (!proxy.NextProxyId.HasValue)
+                break;
+
+            if (!proxiesById.TryGetValue(proxy.NextProxyId.Value, out var nextProxy))
+                throw new InvalidOperationException("The next JumpHost proxy was not found.");
+
+            proxy = nextProxy;
+        }
+
+        return chain;
+    }
+
+    private static SshClient CreateJumpHostClient(
+        SessionInfo session,
+        ProxySettings proxy,
+        string connectHost,
+        int connectPort)
+    {
+        var jumpUser = string.IsNullOrWhiteSpace(proxy.Username)
+            ? session.Username
+            : proxy.Username.Trim();
+        if (string.IsNullOrWhiteSpace(jumpUser))
+            throw new InvalidOperationException("Jump host username is required.");
+
+        var jumpAuthMethods = SshAgentAuthService.CreateAuthenticationMethods(
+            jumpUser,
+            proxy.Password,
+            proxy.AuthMethod,
+            proxy.PrivateKeyPath,
+            SshAgentAuthService.ResolvePrivateKeyPassphrase(
+                proxy.RuntimePrivateKeyPassphrase,
+                proxy.PrivateKeyPassphrase),
+            proxy.UseAgent);
+        var jumpConnectionInfo = new ConnectionInfo(connectHost, connectPort, jumpUser, jumpAuthMethods.ToArray());
+        SshAlgorithmPreferenceService.Apply(jumpConnectionInfo, session);
+        var jumpClient = new SshClient(jumpConnectionInfo)
+        {
+            KeepAliveInterval = TimeSpan.FromSeconds(30)
+        };
+        if (session.SshAcceptAndSaveHostKey)
+            jumpClient.HostKeyReceived += (_, e) => e.CanTrust = true;
+
+        return jumpClient;
+    }
+
+    private static JumpHostForward StartLocalForward(SshClient jumpClient, string destinationHost, int destinationPort)
+    {
+        var localPort = FindFreeLocalPort();
+        var forwardedPort = new ForwardedPortLocal(
+            "127.0.0.1",
+            (uint)localPort,
+            destinationHost,
+            (uint)destinationPort);
+
+        try
+        {
+            jumpClient.AddForwardedPort(forwardedPort);
+            forwardedPort.Start();
+            WaitForForwardedPort(forwardedPort);
+            return new JumpHostForward(forwardedPort, localPort);
+        }
+        catch
+        {
+            try
+            {
+                if (forwardedPort.IsStarted)
+                    forwardedPort.Stop();
+                jumpClient.RemoveForwardedPort(forwardedPort);
+                forwardedPort.Dispose();
+            }
+            catch
+            {
+                // Ignore cleanup failures after a failed jump-host setup.
+            }
+
+            throw;
+        }
+    }
+
+    private static void WaitForForwardedPort(ForwardedPortLocal forwardedPort)
+    {
+        var deadline = DateTimeOffset.UtcNow + JumpHostLocalPortStartupTimeout;
+        while (!forwardedPort.IsStarted && DateTimeOffset.UtcNow < deadline)
+            Thread.Sleep(20);
+
+        if (!forwardedPort.IsStarted)
+            throw new TimeoutException("Timed out starting jump host tunnel.");
+    }
+
+    private static int FindFreeLocalPort()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        try
+        {
+            return ((IPEndPoint)listener.LocalEndpoint).Port;
+        }
+        finally
+        {
+            listener.Stop();
+        }
+    }
+
+    private static void DisposeAllReverse(IReadOnlyList<IDisposable> lifetimes)
+    {
+        for (var index = lifetimes.Count - 1; index >= 0; index--)
+            lifetimes[index].Dispose();
+    }
+
+    private sealed record JumpHostForward(ForwardedPortLocal ForwardedPort, int LocalPort);
+
+    private sealed class CompositeLifetime(IReadOnlyList<IDisposable> lifetimes) : IDisposable
+    {
+        public void Dispose()
+        {
+            DisposeAllReverse(lifetimes);
+        }
+    }
+
+    private sealed class LocalForwardLifetime(SshClient jumpClient, ForwardedPortLocal forwardedPort) : IDisposable
+    {
+        public void Dispose()
+        {
+            try
+            {
+                if (forwardedPort.IsStarted)
+                    forwardedPort.Stop();
+            }
+            catch
+            {
+                // Ignore shutdown failures.
+            }
+
+            try
+            {
+                jumpClient.RemoveForwardedPort(forwardedPort);
+            }
+            catch
+            {
+                // Ignore shutdown failures.
+            }
+
+            forwardedPort.Dispose();
+        }
+    }
+
+    private sealed class SshClientLifetime(SshClient jumpClient) : IDisposable
+    {
+        public void Dispose()
+        {
+            if (jumpClient.IsConnected)
+            {
+                try { jumpClient.Disconnect(); } catch { }
+            }
+
+            jumpClient.Dispose();
+        }
     }
 
     private static async Task ConnectHttpAsync(

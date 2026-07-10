@@ -288,10 +288,11 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             PortBox.Text = SessionEditViewModel.GetDefaultPort(protocol).ToString();
     }
 
-    private void OnSaveClick(object? sender, RoutedEventArgs e)
+    private async void OnSaveClick(object? sender, RoutedEventArgs e)
     {
         _saveAndConnectRequested = false;
-        SaveCurrentSession();
+        if (SaveCurrentSession())
+            await ShowSaveSuccessAsync();
     }
 
     private void OnConnectClick(object? sender, RoutedEventArgs e)
@@ -300,7 +301,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         SaveCurrentSession();
     }
 
-    private void SaveCurrentSession()
+    private bool SaveCurrentSession()
     {
         if (DataContext is SessionEditViewModel vm)
         {
@@ -370,7 +371,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
                 _saveAndConnectRequested = false;
                 if (ShouldConnect)
                     Close();
-                return;
+                return true;
             }
 
             ShouldConnect = false;
@@ -382,6 +383,17 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
                 FocusFirstInvalidField(vm);
             }
         }
+
+        return false;
+    }
+
+    private async Task ShowSaveSuccessAsync()
+    {
+        await AtomUiDialogService.ShowMessageAsync(
+            this,
+            T("SessionEdit.SaveSuccessTitle"),
+            T("SessionEdit.SaveSuccessMessage"),
+            MessageBoxStyle.Success);
     }
 
     private void OnCancelClick(object? sender, RoutedEventArgs e)
@@ -1607,9 +1619,9 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         {
             Title = T("Dialog.Proxy.SettingsTitle"),
             Width = 636,
-            Height = 646,
+            Height = 760,
             MinWidth = 560,
-            MinHeight = 560,
+            MinHeight = 660,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             CanResize = false,
             ShowInTaskbar = false
@@ -1632,6 +1644,37 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         portBox.HorizontalAlignment = HorizontalAlignment.Left;
         var usernameBox = CreateLineEdit(editing.Username);
         var passwordBox = CreateLineEdit(editing.Password);
+        var useAgentCheck = new AtomUI.Desktop.Controls.CheckBox
+        {
+            Content = T("UiText.036"),
+            IsChecked = editing.UseAgent
+        };
+        var privateKeyCheck = new AtomUI.Desktop.Controls.CheckBox
+        {
+            Content = T("SessionEdit.PrivateKey"),
+            IsChecked = editing.AuthMethod == AuthMethod.PrivateKey
+        };
+        var privateKeyBox = CreateLineEdit(editing.PrivateKeyPath);
+        var privateKeyPassphraseBox = CreateLineEdit(PasswordEncryptionService.Decrypt(editing.PrivateKeyPassphrase));
+        privateKeyPassphraseBox.PasswordChar = '*';
+        privateKeyPassphraseBox.IsEnableRevealButton = true;
+        privateKeyPassphraseBox.IsAllowClear = true;
+        var privateKeyButton = CreateDialogButton("...", 32);
+        privateKeyButton.Click += async (_, _) =>
+        {
+            var topLevel = TopLevel.GetTopLevel(dialog);
+            if (topLevel == null)
+                return;
+
+            var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = T("Dialog.FilePicker.PrivateKey"),
+                AllowMultiple = false
+            });
+            var file = files.FirstOrDefault();
+            if (file != null)
+                privateKeyBox.Text = file.Path.LocalPath;
+        };
         var sessionFileCheck = new AtomUI.Desktop.Controls.CheckBox
         {
             Content = T("Dialog.Proxy.SessionFile"),
@@ -1683,20 +1726,28 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
                 passwordBox.Text = string.Empty;
             }
 
-            sessionFileCheck.IsEnabled = isJumpHost;
-            sessionFileBox.IsEnabled = isJumpHost && sessionFileCheck.IsChecked == true;
-            sessionFileButton.IsEnabled = isJumpHost && sessionFileCheck.IsChecked == true;
+            sessionFileCheck.IsEnabled = false;
+            sessionFileBox.IsEnabled = false;
+            sessionFileButton.IsEnabled = false;
+            useAgentCheck.IsEnabled = isJumpHost;
+            privateKeyCheck.IsEnabled = isJumpHost;
+            privateKeyBox.IsEnabled = isJumpHost && privateKeyCheck.IsChecked == true;
+            privateKeyPassphraseBox.IsEnabled = isJumpHost && privateKeyCheck.IsChecked == true;
+            privateKeyButton.IsEnabled = isJumpHost && privateKeyCheck.IsChecked == true;
             nextProxySelect.IsEnabled = isJumpHost;
             browseNextButton.IsEnabled = isJumpHost;
+            sessionFileCheck.IsChecked = false;
             if (!isJumpHost)
             {
-                sessionFileCheck.IsChecked = false;
+                useAgentCheck.IsChecked = false;
+                privateKeyCheck.IsChecked = false;
                 SelectOption(nextProxySelect, "None");
             }
         }
 
         protocolSelect.SelectionChanged += (_, _) => UpdateProxyProtocolState();
         sessionFileCheck.IsCheckedChanged += (_, _) => UpdateProxyProtocolState();
+        privateKeyCheck.IsCheckedChanged += (_, _) => UpdateProxyProtocolState();
 
         var errorText = new Avalonia.Controls.TextBlock
         {
@@ -1709,7 +1760,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         var form = new Grid
         {
             Margin = new Thickness(20, 16, 20, 10),
-            RowDefinitions = new RowDefinitions("Auto,18,1,18,Auto,10,Auto,10,Auto,10,Auto,10,Auto,14,Auto,10,Auto,10,Auto,10,Auto"),
+            RowDefinitions = new RowDefinitions("Auto,18,1,18,Auto,10,Auto,10,Auto,10,Auto,10,Auto,10,Auto,10,Auto,10,Auto,10,Auto,14,Auto,10,Auto,10,Auto,10,Auto"),
             ColumnDefinitions = new ColumnDefinitions("160,*,150")
         };
         AddFormLabel(form, $"{T("Dialog.Proxy.Name")}(N):", 0);
@@ -1752,25 +1803,47 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         Grid.SetColumn(passwordBox, 1);
         Grid.SetColumnSpan(passwordBox, 2);
 
+        form.Children.Add(useAgentCheck);
+        Grid.SetRow(useAgentCheck, 14);
+        Grid.SetColumnSpan(useAgentCheck, 3);
+
+        form.Children.Add(privateKeyCheck);
+        Grid.SetRow(privateKeyCheck, 16);
+        Grid.SetColumnSpan(privateKeyCheck, 3);
+
+        form.Children.Add(privateKeyBox);
+        Grid.SetRow(privateKeyBox, 18);
+        Grid.SetColumn(privateKeyBox, 0);
+        Grid.SetColumnSpan(privateKeyBox, 2);
+        form.Children.Add(privateKeyButton);
+        Grid.SetRow(privateKeyButton, 18);
+        Grid.SetColumn(privateKeyButton, 2);
+
+        AddFormLabel(form, $"{T("SessionEdit.PrivateKeyPassphrase")}:", 20);
+        form.Children.Add(privateKeyPassphraseBox);
+        Grid.SetRow(privateKeyPassphraseBox, 20);
+        Grid.SetColumn(privateKeyPassphraseBox, 1);
+        Grid.SetColumnSpan(privateKeyPassphraseBox, 2);
+
         form.Children.Add(sessionFileCheck);
-        Grid.SetRow(sessionFileCheck, 14);
+        Grid.SetRow(sessionFileCheck, 22);
         Grid.SetColumnSpan(sessionFileCheck, 3);
 
         form.Children.Add(sessionFileBox);
-        Grid.SetRow(sessionFileBox, 16);
+        Grid.SetRow(sessionFileBox, 24);
         Grid.SetColumn(sessionFileBox, 0);
         Grid.SetColumnSpan(sessionFileBox, 2);
         form.Children.Add(sessionFileButton);
-        Grid.SetRow(sessionFileButton, 16);
+        Grid.SetRow(sessionFileButton, 24);
         Grid.SetColumn(sessionFileButton, 2);
 
-        AddFormLabel(form, $"{T("Dialog.Proxy.NextProxy")}(X):", 18);
+        AddFormLabel(form, $"{T("Dialog.Proxy.NextProxy")}(X):", 26);
         form.Children.Add(nextProxySelect);
-        Grid.SetRow(nextProxySelect, 20);
+        Grid.SetRow(nextProxySelect, 28);
         Grid.SetColumn(nextProxySelect, 0);
         Grid.SetColumnSpan(nextProxySelect, 2);
         form.Children.Add(browseNextButton);
-        Grid.SetRow(browseNextButton, 20);
+        Grid.SetRow(browseNextButton, 28);
         Grid.SetColumn(browseNextButton, 2);
 
         var okButton = CreateDialogButton(T("Common.Ok"), 138);
@@ -1817,6 +1890,12 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             Guid? nextProxyId = null;
             if (isJumpHost && Guid.TryParse(GetSelectedOptionContent(nextProxySelect), out var parsedNextProxyId))
                 nextProxyId = parsedNextProxyId;
+            if (isJumpHost && WouldCreateProxyCycle(existingProxies, editing.Id, nextProxyId))
+            {
+                errorText.Text = "JumpHost proxy chain cannot contain a cycle.";
+                errorText.IsVisible = true;
+                return;
+            }
 
             result = new ProxySettings
             {
@@ -1827,6 +1906,12 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
                 Port = port,
                 Username = isSocks4 ? string.Empty : usernameBox.Text?.Trim() ?? string.Empty,
                 Password = isSocks4 ? string.Empty : passwordBox.Text ?? string.Empty,
+                AuthMethod = isJumpHost && privateKeyCheck.IsChecked == true ? AuthMethod.PrivateKey : AuthMethod.Password,
+                PrivateKeyPath = isJumpHost && privateKeyCheck.IsChecked == true ? privateKeyBox.Text?.Trim() ?? string.Empty : string.Empty,
+                PrivateKeyPassphrase = isJumpHost && privateKeyCheck.IsChecked == true
+                    ? PasswordEncryptionService.Encrypt(privateKeyPassphraseBox.Text)
+                    : string.Empty,
+                UseAgent = isJumpHost && useAgentCheck.IsChecked == true,
                 UseSessionFile = isJumpHost && sessionFileCheck.IsChecked == true,
                 SessionFilePath = isJumpHost ? sessionFileBox.Text?.Trim() ?? string.Empty : string.Empty,
                 NextProxyId = nextProxyId
@@ -2739,13 +2824,14 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             new SelectOption { Header = "SOCKS4", Content = ProxyProtocol.Socks4.ToString() },
             new SelectOption { Header = "SOCKS4A", Content = ProxyProtocol.Socks4A.ToString() },
             new SelectOption { Header = "SOCKS5", Content = ProxyProtocol.Socks5.ToString() },
-            new SelectOption { Header = "HTTP 1.1", Content = ProxyProtocol.Http.ToString() }
+            new SelectOption { Header = "HTTP 1.1", Content = ProxyProtocol.Http.ToString() },
+            new SelectOption { Header = "JUMPHOST", Content = ProxyProtocol.JumpHost.ToString() }
         ];
     }
 
     private static bool IsSupportedProxyProtocol(ProxyProtocol protocol)
     {
-        return protocol is ProxyProtocol.Socks4 or ProxyProtocol.Socks4A or ProxyProtocol.Socks5 or ProxyProtocol.Http;
+        return protocol is ProxyProtocol.Socks4 or ProxyProtocol.Socks4A or ProxyProtocol.Socks5 or ProxyProtocol.Http or ProxyProtocol.JumpHost;
     }
 
     private static ProxyProtocol GetSelectedProxyProtocol(Select select)
@@ -2770,9 +2856,40 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         {
             new SelectOption { Header = "<无>", Content = "None" }
         };
-        foreach (var proxy in proxies.Where(proxy => proxy.Id != editingProxyId && proxy.IsEnabled))
+        foreach (var proxy in proxies.Where(proxy =>
+                     proxy.Id != editingProxyId &&
+                     proxy.IsEnabled &&
+                     proxy.Protocol == ProxyProtocol.JumpHost))
             options.Add(new SelectOption { Header = proxy.DisplayName, Content = proxy.Id.ToString() });
         return options;
+    }
+
+    private static bool WouldCreateProxyCycle(
+        IEnumerable<ProxySettings> proxies,
+        Guid editingProxyId,
+        Guid? nextProxyId)
+    {
+        if (!nextProxyId.HasValue)
+            return false;
+
+        var proxiesById = proxies
+            .Where(proxy => proxy.IsEnabled)
+            .GroupBy(proxy => proxy.Id)
+            .ToDictionary(group => group.Key, group => group.First());
+        var visited = new HashSet<Guid> { editingProxyId };
+        var currentId = nextProxyId;
+        while (currentId.HasValue)
+        {
+            if (!visited.Add(currentId.Value))
+                return true;
+
+            if (!proxiesById.TryGetValue(currentId.Value, out var current))
+                return false;
+
+            currentId = current.NextProxyId;
+        }
+
+        return false;
     }
 
     private static void RefreshProxyNextProxyDisplay(IEnumerable<ProxySettings> proxies)

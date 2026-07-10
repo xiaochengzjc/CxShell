@@ -85,6 +85,10 @@ public partial class TerminalTabViewModel : ObservableObject
             {
                 UpdateTitle();
             }
+            if (e.PropertyName == nameof(TerminalViewModel.RemoteTitle))
+            {
+                UpdateTitle();
+            }
         };
 
         if (Vnc != null)
@@ -142,6 +146,12 @@ public partial class TerminalTabViewModel : ObservableObject
         {
             // Was connected, now disconnected
             Title = $"[断开] {Session.Name}";
+        }
+        else if (Terminal.IsConnected &&
+                 !Session.TerminalAdvancedDisableTitleChange &&
+                 !string.IsNullOrWhiteSpace(Terminal.RemoteTitle))
+        {
+            Title = Terminal.RemoteTitle;
         }
         else
         {

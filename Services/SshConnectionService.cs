@@ -15,6 +15,7 @@ namespace CxShell.Services;
 public class SshConnectionService : ITerminalConnectionService
 {
     private SshClient? _sshClient;
+    private SshConnectionContext? _sshConnectionContext;
     private ShellStream? _shellStream;
     private SshAgentForwardingService? _agentForwarding;
     private readonly List<ForwardedPort> _forwardedPorts = new();
@@ -65,22 +66,25 @@ public class SshConnectionService : ITerminalConnectionService
             throw new NotSupportedException("SSH1 is not supported. Please select SSH2 or a mixed SSH policy.");
 
         var authMethods = SshAgentAuthService.CreateAuthenticationMethods(session, password);
-        var connectionInfo = ProxyConnectionFactory.CreateSshConnectionInfo(session, authMethods);
-        SshAlgorithmPreferenceService.Apply(connectionInfo, session);
-        if (session.SshUseCompression)
-            PreferCompression(connectionInfo);
-
-        _sshClient = new SshClient(connectionInfo)
-        {
-            KeepAliveInterval = session.SendSessionKeepAlive
-                ? TimeSpan.FromSeconds(Math.Max(1, session.SessionKeepAliveIntervalSeconds))
-                : Timeout.InfiniteTimeSpan
-        };
-        if (session.SshAcceptAndSaveHostKey)
-            _sshClient.HostKeyReceived += (_, e) => e.CanTrust = true;
-
+        _sshConnectionContext = await Task.Run(
+            () => ProxyConnectionFactory.CreateSshConnectionContext(session, authMethods),
+            cancellationToken);
         try
         {
+            var connectionInfo = _sshConnectionContext.ConnectionInfo;
+            SshAlgorithmPreferenceService.Apply(connectionInfo, session);
+            if (session.SshUseCompression)
+                PreferCompression(connectionInfo);
+
+            _sshClient = new SshClient(connectionInfo)
+            {
+                KeepAliveInterval = session.SendSessionKeepAlive
+                    ? TimeSpan.FromSeconds(Math.Max(1, session.SessionKeepAliveIntervalSeconds))
+                    : Timeout.InfiniteTimeSpan
+            };
+            if (session.SshAcceptAndSaveHostKey)
+                _sshClient.HostKeyReceived += (_, e) => e.CanTrust = true;
+
             TraceSshProtocol($"connecting to {session.Username}@{session.Host}:{session.Port}");
             await Task.Run(() => _sshClient.Connect(), cancellationToken);
             SupportsPosixShellFeatures = !SshServerInfo.IsWindowsOpenSshServer(connectionInfo.ServerVersion);
@@ -876,6 +880,8 @@ public class SshConnectionService : ITerminalConnectionService
         }
         _sshClient?.Dispose();
         _sshClient = null;
+        _sshConnectionContext?.Dispose();
+        _sshConnectionContext = null;
 
         _readCts?.Dispose();
         _readCts = null;

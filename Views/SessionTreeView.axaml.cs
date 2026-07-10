@@ -3,6 +3,7 @@ using AtomUI.Desktop.Controls;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 using CxShell.Services;
@@ -232,22 +233,57 @@ public partial class SessionTreeView : UserControl
             PlacementTarget = anchor
         };
 
-        void AddItem(string text, Action action)
+        void AddItem(string text, Func<System.Threading.Tasks.Task> action)
         {
             var item = new AtomMenuItem { Header = text };
-            item.Click += (_, _) =>
+            item.Click += async (_, _) =>
             {
                 menu.Close();
-                action();
+                await action();
             };
             menu.Items.Add(item);
         }
 
-        AddItem(vm.PropertiesText, () => OnEditClick(anchor, new RoutedEventArgs()));
-        AddItem(vm.ConnectText, () => OnConnectClick(anchor, new RoutedEventArgs()));
+        AddItem(vm.PropertiesText, () =>
+        {
+            OnEditClick(anchor, new RoutedEventArgs());
+            return System.Threading.Tasks.Task.CompletedTask;
+        });
+        AddItem(vm.ConnectText, () =>
+        {
+            OnConnectClick(anchor, new RoutedEventArgs());
+            return System.Threading.Tasks.Task.CompletedTask;
+        });
+        if (vm.SelectedSession is { } session)
+        {
+            menu.Items.Add(new AtomMenuSeparator());
+            AddItem(T("SessionManager.CopyFullPath"), () => CopyTextAsync(anchor, vm.GetSessionPath(session)));
+            AddItem(T("SessionManager.CopySessionId"), () => CopyTextAsync(anchor, session.Id.ToString()));
+            AddItem(T("SessionManager.CopyLaunchCommand"), () => CopyTextAsync(anchor, vm.BuildSessionLaunchCommand(session)));
+        }
         menu.Items.Add(new AtomMenuSeparator());
-        AddItem(vm.DeleteText, () => OnDeleteClick(anchor, new RoutedEventArgs()));
+        AddItem(vm.DeleteText, () =>
+        {
+            OnDeleteClick(anchor, new RoutedEventArgs());
+            return System.Threading.Tasks.Task.CompletedTask;
+        });
         menu.Open(anchor);
+    }
+
+    private static async System.Threading.Tasks.Task CopyTextAsync(Control anchor, string text)
+    {
+        var clipboard = TopLevel.GetTopLevel(anchor)?.Clipboard;
+        if (clipboard == null)
+            return;
+
+        try
+        {
+            await clipboard.SetTextAsync(text);
+        }
+        catch
+        {
+            // Clipboard access can fail on some platforms; copying is a convenience action.
+        }
     }
 
     private static async System.Threading.Tasks.Task<bool> ShowLocalizedDeleteConfirmWindow(

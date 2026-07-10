@@ -11,7 +11,9 @@ namespace CxShell.Services;
 public sealed class SerialConnectionService : ITerminalConnectionService
 {
     private readonly object _writeLock = new();
-    private readonly Decoder _utf8Decoder = Encoding.UTF8.GetDecoder();
+    private Encoding _terminalEncoding = Encoding.UTF8;
+    private Decoder _terminalDecoder = Encoding.UTF8.GetDecoder();
+    private SessionInfo? _session;
     private SerialPort? _serialPort;
     private CancellationTokenSource? _readCts;
     private Task? _readTask;
@@ -31,6 +33,9 @@ public sealed class SerialConnectionService : ITerminalConnectionService
         CancellationToken cancellationToken = default)
     {
         Disconnect();
+        _session = session;
+        _terminalEncoding = TerminalSessionOptions.GetEncoding(session);
+        _terminalDecoder = _terminalEncoding.GetDecoder();
 
         var portName = string.IsNullOrWhiteSpace(session.SerialPortName)
             ? session.Host
@@ -45,7 +50,7 @@ public sealed class SerialConnectionService : ITerminalConnectionService
             Math.Clamp(session.SerialDataBits, 5, 8),
             ParseStopBits(session.SerialStopBits))
         {
-            Encoding = Encoding.UTF8,
+            Encoding = _terminalEncoding,
             ReadTimeout = 500,
             WriteTimeout = 500,
             Handshake = ParseHandshake(session.SerialFlowControl),
@@ -56,7 +61,7 @@ public sealed class SerialConnectionService : ITerminalConnectionService
         try
         {
             _serialPort.Open();
-            _utf8Decoder.Reset();
+            _terminalDecoder.Reset();
             _readCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _readTask = Task.Run(() => ReadLoop(_readCts.Token), _readCts.Token);
             return Task.CompletedTask;
@@ -71,7 +76,8 @@ public sealed class SerialConnectionService : ITerminalConnectionService
 
     public void SendData(string data)
     {
-        SendBytes(Encoding.UTF8.GetBytes(data));
+        var normalized = TerminalSessionOptions.NormalizeSendLineEndings(data, _session);
+        SendBytes(_terminalEncoding.GetBytes(normalized));
     }
 
     public void SendBytes(byte[] data)
@@ -94,7 +100,7 @@ public sealed class SerialConnectionService : ITerminalConnectionService
 
     public void SendKeepAlive()
     {
-        SendBytes(new byte[] { 0 });
+        // Serial links do not define a protocol-level keepalive message.
     }
 
     public void ResizeTerminal(int columns, int rows)
@@ -157,12 +163,12 @@ public sealed class SerialConnectionService : ITerminalConnectionService
                 if (BinaryDataReceived?.Invoke(chunk) == true)
                     continue;
 
-                var charCount = _utf8Decoder.GetCharCount(chunk, 0, chunk.Length);
+                var charCount = _terminalDecoder.GetCharCount(chunk, 0, chunk.Length);
                 if (charCount == 0)
                     continue;
 
                 var chars = new char[charCount];
-                var charsRead = _utf8Decoder.GetChars(chunk, 0, chunk.Length, chars, 0);
+                var charsRead = _terminalDecoder.GetChars(chunk, 0, chunk.Length, chars, 0);
                 DataReceived?.Invoke(new string(chars, 0, charsRead));
             }
         }

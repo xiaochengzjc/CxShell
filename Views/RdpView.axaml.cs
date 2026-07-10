@@ -6,6 +6,7 @@ using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Threading;
 using CxShell.ViewModels;
 
 namespace CxShell.Views;
@@ -32,7 +33,7 @@ public partial class RdpView : UserControl
             _isAttached = true;
             Focus();
             if (DataContext is RdpViewModel vm)
-                vm.Start();
+                ScheduleStart(vm);
         };
         DetachedFromVisualTree += (_, _) =>
         {
@@ -56,7 +57,7 @@ public partial class RdpView : UserControl
         ApplyScaleMode(vm);
         if (_isAttached)
         {
-            vm.Start();
+            ScheduleStart(vm);
             _ = SyncLocalClipboardToRemoteAsync();
         }
     }
@@ -112,7 +113,43 @@ public partial class RdpView : UserControl
     private void OnViewportSizeChanged(object? sender, SizeChangedEventArgs e)
     {
         if (DataContext is RdpViewModel vm)
-            vm.RequestViewportResize(e.NewSize);
+        {
+            ConfigureInitialDisplay(vm, e.NewSize);
+            if (_isAttached)
+                vm.Start();
+            vm.RequestViewportResize(e.NewSize, GetRenderScaling());
+        }
+    }
+
+    private void ScheduleStart(RdpViewModel vm)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!_isAttached || !ReferenceEquals(DataContext, vm))
+                return;
+
+            ConfigureInitialDisplay(vm, RdpViewport.Bounds.Size);
+            vm.Start();
+        }, DispatcherPriority.Loaded);
+    }
+
+    private void ConfigureInitialDisplay(RdpViewModel vm, Size viewportSize)
+    {
+        vm.ConfigureInitialDisplay(viewportSize, GetCurrentMonitorPixelSize(), GetRenderScaling());
+    }
+
+    private double GetRenderScaling()
+    {
+        return TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
+    }
+
+    private PixelSize? GetCurrentMonitorPixelSize()
+    {
+        if (TopLevel.GetTopLevel(this) is not Window window)
+            return null;
+
+        var screen = window.Screens.ScreenFromWindow(window) ?? window.Screens.Primary;
+        return screen?.Bounds.Size;
     }
 
     private void OnFramebufferPointerMoved(object? sender, PointerEventArgs e)

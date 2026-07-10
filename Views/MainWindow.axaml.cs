@@ -22,6 +22,8 @@ public partial class MainWindow : Window
     protected override Type StyleKeyOverride { get; } = typeof(Window);
     private readonly DispatcherTimer _fullScreenHintTimer;
     private readonly string[] _startupArgs;
+    private readonly CommandLineLaunchOptions _startupLaunchOptions;
+    private IDisposable? _commandLineHandoffServer;
     private bool _isPointerOverFullScreenHintArea;
     private SessionInfo? _quickSessionContext;
     private SessionInfo? _quickSessionDragSession;
@@ -78,6 +80,7 @@ public partial class MainWindow : Window
     public MainWindow(string[] startupArgs)
     {
         _startupArgs = startupArgs;
+        _startupLaunchOptions = CommandLineLaunchOptions.Parse(startupArgs);
         InitializeComponent();
         _fullScreenHintTimer = new DispatcherTimer
         {
@@ -126,7 +129,9 @@ public partial class MainWindow : Window
     protected override void OnLoaded(RoutedEventArgs e)
     {
         base.OnLoaded(e);
+        StartCommandLineHandoffServer();
         StartRdpSmokeIfRequested();
+        HandleCommandLineLaunchIfRequested();
         ShowSessionManagerOnStartupIfNeeded();
         if (DataContext is MainWindowViewModel vm)
             vm.StartAutomaticUpdateCheck(_startupArgs);
@@ -134,6 +139,8 @@ public partial class MainWindow : Window
 
     protected override void OnUnloaded(RoutedEventArgs e)
     {
+        _commandLineHandoffServer?.Dispose();
+        _commandLineHandoffServer = null;
         base.OnUnloaded(e);
     }
 
@@ -1455,12 +1462,59 @@ public partial class MainWindow : Window
     private void ShowSessionManagerOnStartupIfNeeded()
     {
         if (Array.IndexOf(_startupArgs, "--rdp-smoke") >= 0 ||
+            _startupLaunchOptions.HasCommand ||
             DataContext is not MainWindowViewModel vm)
         {
             return;
         }
 
         Dispatcher.UIThread.Post(vm.ShowSessionManagerOnStartupIfEnabled, DispatcherPriority.Background);
+    }
+
+    private void HandleCommandLineLaunchIfRequested()
+    {
+        if (!_startupLaunchOptions.HasCommand ||
+            Array.IndexOf(_startupArgs, "--rdp-smoke") >= 0 ||
+            DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        Dispatcher.UIThread.Post(async () =>
+        {
+            await vm.ExecuteCommandLineLaunchAsync(_startupLaunchOptions);
+        }, DispatcherPriority.Background);
+    }
+
+    private void StartCommandLineHandoffServer()
+    {
+        if (_commandLineHandoffServer != null)
+            return;
+
+        _commandLineHandoffServer = CommandLineHandoffService.StartServer(HandleCommandLineHandoffAsync);
+    }
+
+    private Task HandleCommandLineHandoffAsync(string[] args)
+    {
+        Dispatcher.UIThread.Post(async () =>
+        {
+            try
+            {
+                if (WindowState == Avalonia.Controls.WindowState.Minimized)
+                    WindowState = Avalonia.Controls.WindowState.Normal;
+
+                Activate();
+
+                if (DataContext is MainWindowViewModel vm)
+                    await vm.ExecuteCommandLineLaunchAsync(CommandLineLaunchOptions.Parse(args));
+            }
+            catch
+            {
+                // Keep the command receiver alive even if a malformed handoff arrives.
+            }
+        }, DispatcherPriority.Background);
+
+        return Task.CompletedTask;
     }
 
     private string? GetStartupArg(string name)

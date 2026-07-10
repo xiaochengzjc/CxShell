@@ -4,18 +4,105 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Runtime.Versioning;
+using System.Threading;
 
 namespace CxShell.Services;
 
-public sealed record VirtualDragFile(
-    string FileName,
-    long Size,
-    DateTime LastModified,
-    Func<Stream> OpenReadStream);
+public sealed class VirtualDragFile(
+    string fileName,
+    long size,
+    DateTime lastModified,
+    Func<Stream> openReadStream,
+    CancellationToken cancellationToken = default,
+    Action? started = null,
+    Action<long>? progressChanged = null,
+    Action? completed = null,
+    Action<string>? failed = null,
+    Action? cancelled = null,
+    Action? cancellationRequested = null)
+{
+    private int _started;
+    private int _terminalState;
+    private long _maximumPosition;
+
+    public string FileName { get; } = fileName;
+    public long Size { get; } = size;
+    public DateTime LastModified { get; } = lastModified;
+    public Func<Stream> OpenReadStream { get; } = openReadStream;
+    public CancellationToken CancellationToken { get; } = cancellationToken;
+
+    internal bool IsTerminal => Volatile.Read(ref _terminalState) != 0;
+
+    internal void NotifyStarted()
+    {
+        if (Interlocked.Exchange(ref _started, 1) == 0)
+            started?.Invoke();
+    }
+
+    internal void NotifyProgress(long position)
+    {
+        if (IsTerminal)
+            return;
+
+        position = Math.Clamp(position, 0, Math.Max(0, Size));
+        var current = Volatile.Read(ref _maximumPosition);
+        while (position > current)
+        {
+            var observed = Interlocked.CompareExchange(ref _maximumPosition, position, current);
+            if (observed == current)
+            {
+                progressChanged?.Invoke(position);
+                break;
+            }
+
+            current = observed;
+        }
+    }
+
+    internal void NotifyCompleted()
+    {
+        if (Interlocked.CompareExchange(ref _terminalState, 1, 0) != 0)
+            return;
+
+        if (Size > 0)
+            progressChanged?.Invoke(Size);
+        completed?.Invoke();
+    }
+
+    internal void NotifyFailed(Exception exception)
+    {
+        if (CancellationToken.IsCancellationRequested)
+        {
+            NotifyCancelled();
+            return;
+        }
+
+        if (Interlocked.CompareExchange(ref _terminalState, 2, 0) == 0)
+            failed?.Invoke(exception.Message);
+    }
+
+    internal void NotifyCancelled()
+    {
+        if (Interlocked.CompareExchange(ref _terminalState, 3, 0) == 0)
+            cancelled?.Invoke();
+    }
+
+    internal void RequestCancellation()
+    {
+        cancellationRequested?.Invoke();
+    }
+}
 
 public static class WindowsVirtualFileDragDropService
 {
+    private static readonly object DebugLogSync = new();
+
     public static bool IsSupported => OperatingSystem.IsWindows();
+    public static string DebugLogPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "CxShell",
+        "Logs",
+        "sftp-drag.log");
 
     [SupportedOSPlatform("windows")]
     public static int DoDragDrop(VirtualDragFile file)
@@ -33,12 +120,25 @@ public static class WindowsVirtualFileDragDropService
             return DropEffectNone;
 
         var dataObject = new VirtualFileDataObject(files);
+        dataObject.SetAsyncMode(true);
         var dropSource = new DropSource();
-        var hr = OleDoDragDrop(dataObject, dropSource, DropEffectCopy, out var effect);
-        if (hr != 0 && hr != DragDropSCancel && hr != DragDropSDrop)
-            Marshal.ThrowExceptionForHR(hr);
+        DebugLog($"drag start files={files.Count}");
+        try
+        {
+            var hr = OleDoDragDrop(dataObject, dropSource, DropEffectCopy, out var effect);
+            DebugLog($"drag loop ended result=0x{hr:X8} effect={effect}");
+            dataObject.NotifyDragLoopCompleted(hr, effect);
+            if (hr != 0 && hr != DragDropSCancel && hr != DragDropSDrop)
+                Marshal.ThrowExceptionForHR(hr);
 
-        return effect;
+            return effect;
+        }
+        catch (Exception ex)
+        {
+            DebugLog($"drag failed type={ex.GetType().Name} message={ex.Message}");
+            dataObject.NotifyDragFailed(ex);
+            throw;
+        }
     }
 
     private const int DropEffectNone = 0;
@@ -76,6 +176,27 @@ public static class WindowsVirtualFileDragDropService
         int GiveFeedback(int effect);
     }
 
+    [ComImport]
+    [Guid("3D8B0590-F691-11D2-8EA9-006097DF5BD4")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IAsyncOperation
+    {
+        [PreserveSig]
+        int SetAsyncMode([MarshalAs(UnmanagedType.Bool)] bool doOperationAsync);
+
+        [PreserveSig]
+        int GetAsyncMode([MarshalAs(UnmanagedType.Bool)] out bool isOperationAsync);
+
+        [PreserveSig]
+        int StartOperation(IntPtr reservedBindContext);
+
+        [PreserveSig]
+        int InOperation([MarshalAs(UnmanagedType.Bool)] out bool isInAsyncOperation);
+
+        [PreserveSig]
+        int EndOperation(int result, IntPtr reservedBindContext, int effects);
+    }
+
     private sealed class DropSource : IDropSource
     {
         public int QueryContinueDrag(bool escapePressed, int keyState)
@@ -93,12 +214,16 @@ public static class WindowsVirtualFileDragDropService
     }
 
     [SupportedOSPlatform("windows")]
-    private sealed class VirtualFileDataObject : IDataObject
+    private sealed class VirtualFileDataObject : IDataObject, IAsyncOperation
     {
         private static readonly short FileGroupDescriptorW = unchecked((short)RegisterClipboardFormat("FileGroupDescriptorW"));
         private static readonly short FileContents = unchecked((short)RegisterClipboardFormat("FileContents"));
         private readonly IReadOnlyList<VirtualDragFile> _files;
         private readonly FORMATETC[] _formats;
+        private readonly object _streamSync = new();
+        private readonly List<RemoteComReadStream> _openStreams = [];
+        private bool _asyncMode;
+        private bool _inAsyncOperation;
 
         public VirtualFileDataObject(IReadOnlyList<VirtualDragFile> files)
         {
@@ -141,7 +266,30 @@ public static class WindowsVirtualFileDragDropService
                     ThrowHResult(DvEFormatEtc);
 
                 var file = _files[index];
-                var stream = new RemoteComReadStream(file.OpenReadStream(), file.Size);
+                RemoteComReadStream stream;
+                try
+                {
+                    file.CancellationToken.ThrowIfCancellationRequested();
+                    DebugLog($"stream requested index={index} file={file.FileName} size={file.Size}");
+                    var source = file.OpenReadStream();
+                    file.NotifyStarted();
+                    stream = new RemoteComReadStream(source, file);
+                    lock (_streamSync)
+                        _openStreams.Add(stream);
+                }
+                catch (OperationCanceledException)
+                {
+                    DebugLog($"stream request cancelled index={index} file={file.FileName}");
+                    file.NotifyCancelled();
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    DebugLog($"stream request failed index={index} file={file.FileName} type={ex.GetType().Name} message={ex.Message}");
+                    file.NotifyFailed(ex);
+                    throw;
+                }
+
                 medium.tymed = TYMED.TYMED_ISTREAM;
                 medium.unionmember = Marshal.GetComInterfaceForObject(stream, typeof(IStream));
                 medium.pUnkForRelease = null;
@@ -205,6 +353,111 @@ public static class WindowsVirtualFileDragDropService
             return OleEAdviseNotSupported;
         }
 
+        public int SetAsyncMode(bool doOperationAsync)
+        {
+            _asyncMode = doOperationAsync;
+            DebugLog($"async mode set enabled={doOperationAsync}");
+            return SOk;
+        }
+
+        public int GetAsyncMode(out bool isOperationAsync)
+        {
+            isOperationAsync = _asyncMode;
+            DebugLog($"async mode queried enabled={isOperationAsync}");
+            return SOk;
+        }
+
+        public int StartOperation(IntPtr reservedBindContext)
+        {
+            _inAsyncOperation = true;
+            DebugLog("async operation started");
+            return SOk;
+        }
+
+        public int InOperation(out bool isInAsyncOperation)
+        {
+            isInAsyncOperation = _inAsyncOperation;
+            return SOk;
+        }
+
+        public int EndOperation(int result, IntPtr reservedBindContext, int effects)
+        {
+            _inAsyncOperation = false;
+            DebugLog($"async operation ended result=0x{result:X8} effects={effects}");
+            if (result >= 0 && (effects & DropEffectCopy) != 0)
+            {
+                NotifyFilesCompleted();
+            }
+            else if (result == DragDropSCancel || effects == DropEffectNone)
+            {
+                NotifyFilesCancelled();
+            }
+            else
+            {
+                NotifyFilesFailed(Marshal.GetExceptionForHR(result) ?? new IOException("Windows file drop failed."));
+            }
+
+            DisposeStreamsInBackground();
+            return SOk;
+        }
+
+        public void NotifyDragLoopCompleted(int result, int effect)
+        {
+            if (result == DragDropSCancel || effect == DropEffectNone)
+            {
+                NotifyFilesCancelled();
+                DisposeStreamsInBackground();
+                return;
+            }
+
+            if (_asyncMode && _inAsyncOperation)
+                return;
+
+            if (result >= 0 || result == DragDropSDrop)
+                NotifyFilesCompleted();
+            else
+                NotifyFilesFailed(Marshal.GetExceptionForHR(result) ?? new IOException("Windows file drop failed."));
+
+            DisposeStreamsInBackground();
+        }
+
+        public void NotifyDragFailed(Exception exception)
+        {
+            NotifyFilesFailed(exception);
+            DisposeStreamsInBackground();
+        }
+
+        private void NotifyFilesCompleted()
+        {
+            foreach (var file in _files)
+                file.NotifyCompleted();
+        }
+
+        private void NotifyFilesCancelled()
+        {
+            foreach (var file in _files)
+                file.NotifyCancelled();
+        }
+
+        private void NotifyFilesFailed(Exception exception)
+        {
+            foreach (var file in _files)
+                file.NotifyFailed(exception);
+        }
+
+        private void DisposeStreamsInBackground()
+        {
+            List<RemoteComReadStream> streams;
+            lock (_streamSync)
+            {
+                streams = [.. _openStreams];
+                _openStreams.Clear();
+            }
+
+            foreach (var stream in streams)
+                stream.DisposeInBackground();
+        }
+
         private static bool Allows(TYMED actual, TYMED expected)
         {
             return (actual & expected) == expected;
@@ -254,20 +507,64 @@ public static class WindowsVirtualFileDragDropService
 
     private sealed class RemoteComReadStream : IStream
     {
-        private readonly Stream _stream;
-        private readonly long _size;
+        private Stream? _stream;
+        private readonly VirtualDragFile _file;
+        private long _bytesRead;
+        private int _completionLogged;
 
-        public RemoteComReadStream(Stream stream, long size)
+        public RemoteComReadStream(Stream stream, VirtualDragFile file)
         {
             _stream = stream;
-            _size = size;
+            _file = file;
+        }
+
+        ~RemoteComReadStream()
+        {
+            DisposeInBackground();
         }
 
         public void Read(byte[] buffer, int count, IntPtr bytesRead)
         {
-            var read = _stream.Read(buffer, 0, count);
-            if (bytesRead != IntPtr.Zero)
-                Marshal.WriteInt32(bytesRead, read);
+            var stream = _stream;
+            if (stream == null)
+            {
+                if (bytesRead != IntPtr.Zero)
+                    Marshal.WriteInt32(bytesRead, 0);
+                return;
+            }
+
+            try
+            {
+                _file.CancellationToken.ThrowIfCancellationRequested();
+                var read = stream.Read(buffer, 0, count);
+                if (bytesRead != IntPtr.Zero)
+                    Marshal.WriteInt32(bytesRead, read);
+
+                if (read <= 0)
+                {
+                    LogCompletion();
+                    return;
+                }
+
+                var position = stream.CanSeek
+                    ? stream.Position
+                    : Interlocked.Add(ref _bytesRead, read);
+                _file.NotifyProgress(position);
+                if (_file.Size >= 0 && position >= _file.Size)
+                {
+                    LogCompletion();
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                _file.NotifyCancelled();
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _file.NotifyFailed(ex);
+                throw;
+            }
         }
 
         public void Write(byte[] buffer, int count, IntPtr bytesWritten)
@@ -277,9 +574,24 @@ public static class WindowsVirtualFileDragDropService
 
         public void Seek(long offset, int origin, IntPtr newPosition)
         {
-            var position = _stream.Seek(offset, (SeekOrigin)origin);
-            if (newPosition != IntPtr.Zero)
-                Marshal.WriteInt64(newPosition, position);
+            try
+            {
+                _file.CancellationToken.ThrowIfCancellationRequested();
+                var stream = _stream ?? throw new ObjectDisposedException(nameof(RemoteComReadStream));
+                var position = stream.Seek(offset, (SeekOrigin)origin);
+                if (newPosition != IntPtr.Zero)
+                    Marshal.WriteInt64(newPosition, position);
+            }
+            catch (OperationCanceledException)
+            {
+                _file.NotifyCancelled();
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _file.NotifyFailed(ex);
+                throw;
+            }
         }
 
         public void SetSize(long value)
@@ -293,22 +605,45 @@ public static class WindowsVirtualFileDragDropService
             long totalRead = 0;
             long totalWritten = 0;
 
-            while (totalRead < count)
+            try
             {
-                var toRead = (int)Math.Min(buffer.Length, count - totalRead);
-                var read = _stream.Read(buffer, 0, toRead);
-                if (read <= 0)
-                    break;
+                while (totalRead < count)
+                {
+                    _file.CancellationToken.ThrowIfCancellationRequested();
+                    var toRead = (int)Math.Min(buffer.Length, count - totalRead);
+                    var stream = _stream;
+                    if (stream == null)
+                        break;
 
-                totalRead += read;
-                destination.Write(buffer, read, IntPtr.Zero);
-                totalWritten += read;
+                    var read = stream.Read(buffer, 0, toRead);
+                    if (read <= 0)
+                        break;
+
+                    totalRead += read;
+                    destination.Write(buffer, read, IntPtr.Zero);
+                    totalWritten += read;
+                    var position = stream.CanSeek ? stream.Position : totalRead;
+                    _file.NotifyProgress(position);
+                }
+
+                LogCompletion();
+            }
+            catch (OperationCanceledException)
+            {
+                _file.NotifyCancelled();
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _file.NotifyFailed(ex);
+                throw;
             }
 
             if (bytesRead != IntPtr.Zero)
                 Marshal.WriteInt64(bytesRead, totalRead);
             if (bytesWritten != IntPtr.Zero)
                 Marshal.WriteInt64(bytesWritten, totalWritten);
+
         }
 
         public void Commit(int flags)
@@ -335,7 +670,7 @@ public static class WindowsVirtualFileDragDropService
             stat = new STATSTG
             {
                 type = StgTypeStream,
-                cbSize = _size
+                cbSize = _file.Size
             };
         }
 
@@ -343,6 +678,31 @@ public static class WindowsVirtualFileDragDropService
         {
             clone = null!;
             ThrowHResult(StgENotImplemented);
+        }
+
+        public void DisposeInBackground()
+        {
+            var stream = Interlocked.Exchange(ref _stream, null);
+            if (stream == null)
+                return;
+
+            GC.SuppressFinalize(this);
+            ThreadPool.QueueUserWorkItem(static state =>
+            {
+                try
+                {
+                    ((Stream)state!).Dispose();
+                }
+                catch
+                {
+                }
+            }, stream);
+        }
+
+        private void LogCompletion()
+        {
+            if (Interlocked.Exchange(ref _completionLogged, 1) == 0)
+                DebugLog($"stream completed file={_file.FileName} size={_file.Size}");
         }
     }
 
@@ -443,5 +803,22 @@ public static class WindowsVirtualFileDragDropService
     private static void ThrowHResult(int hresult)
     {
         Marshal.ThrowExceptionForHR(hresult);
+    }
+
+    private static void DebugLog(string message)
+    {
+        try
+        {
+            var directory = Path.GetDirectoryName(DebugLogPath);
+            if (!string.IsNullOrWhiteSpace(directory))
+                Directory.CreateDirectory(directory);
+
+            var line = $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff zzz}] {message}{Environment.NewLine}";
+            lock (DebugLogSync)
+                File.AppendAllText(DebugLogPath, line);
+        }
+        catch
+        {
+        }
     }
 }

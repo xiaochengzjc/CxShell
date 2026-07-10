@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using CxShell.Models;
 using CxShell.Services;
@@ -8,6 +9,30 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
 namespace CxShell.ViewModels;
+
+public enum SessionLookupStatus
+{
+    Found,
+    NotFound,
+    Ambiguous
+}
+
+public sealed record SessionLookupCandidate(SessionInfo Session, string Path);
+
+public sealed record SessionLookupResult(
+    SessionLookupStatus Status,
+    SessionInfo? Session,
+    IReadOnlyList<SessionLookupCandidate> Candidates)
+{
+    public static SessionLookupResult Found(SessionInfo session, string path)
+        => new(SessionLookupStatus.Found, session, [new SessionLookupCandidate(session, path)]);
+
+    public static SessionLookupResult NotFound()
+        => new(SessionLookupStatus.NotFound, null, []);
+
+    public static SessionLookupResult Ambiguous(IReadOnlyList<SessionLookupCandidate> candidates)
+        => new(SessionLookupStatus.Ambiguous, null, candidates);
+}
 
 public partial class SessionNodeViewModel : ObservableObject
 {
@@ -165,6 +190,8 @@ public partial class SessionTreeViewModel : ObservableObject
         target.AuthMethod = source.AuthMethod;
         target.Password = source.Password;
         target.PrivateKeyPath = source.PrivateKeyPath;
+        target.PrivateKeyPassphrase = source.PrivateKeyPassphrase;
+        target.RuntimePrivateKeyPassphrase = source.RuntimePrivateKeyPassphrase;
         target.AutoReconnect = source.AutoReconnect;
         target.ReconnectIntervalSeconds = source.ReconnectIntervalSeconds;
         target.ReconnectLimitMinutes = source.ReconnectLimitMinutes;
@@ -459,6 +486,120 @@ public partial class SessionTreeViewModel : ObservableObject
             yield return session;
     }
 
+    public SessionInfo? FindSessionById(Guid sessionId)
+    {
+        return _data.Sessions.FirstOrDefault(session => session.Id == sessionId);
+    }
+
+    public SessionLookupResult FindSessionByPath(string? sessionPath)
+    {
+        sessionPath = NormalizeSessionPath(sessionPath);
+        if (string.IsNullOrWhiteSpace(sessionPath))
+            return SessionLookupResult.NotFound();
+
+        if (Guid.TryParse(sessionPath, out var sessionId))
+        {
+            var session = FindSessionById(sessionId);
+            return session == null
+                ? SessionLookupResult.NotFound()
+                : SessionLookupResult.Found(session, BuildSessionPath(session));
+        }
+
+        var containsGroupPath = sessionPath.Contains('/', StringComparison.Ordinal);
+        if (!containsGroupPath)
+        {
+            var exactNameMatches = _data.Sessions
+                .Where(session => string.Equals(NormalizeSessionPath(session.Name), sessionPath, StringComparison.OrdinalIgnoreCase))
+                .Select(ToLookupCandidate)
+                .ToArray();
+            if (exactNameMatches.Length == 1)
+                return SessionLookupResult.Found(exactNameMatches[0].Session, exactNameMatches[0].Path);
+            if (exactNameMatches.Length > 1)
+                return SessionLookupResult.Ambiguous(exactNameMatches);
+        }
+
+        var pathMatches = _data.Sessions
+            .Where(session => string.Equals(BuildSessionPath(session), sessionPath, StringComparison.OrdinalIgnoreCase))
+            .Select(ToLookupCandidate)
+            .ToArray();
+        if (pathMatches.Length == 1)
+            return SessionLookupResult.Found(pathMatches[0].Session, pathMatches[0].Path);
+        if (pathMatches.Length > 1)
+            return SessionLookupResult.Ambiguous(pathMatches);
+
+        return SessionLookupResult.NotFound();
+    }
+
+    public string GetSessionPath(SessionInfo session) => BuildSessionPath(session);
+
+    public string BuildSessionLaunchCommand(SessionInfo session)
+    {
+        var executablePath = Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(executablePath))
+            executablePath = Path.Combine(AppContext.BaseDirectory, "CxShell.exe");
+
+        return $"{QuoteCommandArgument(executablePath)} {QuoteCommandArgument(session.Id.ToString())}";
+    }
+
+    public bool UpdateSessionSecret(Guid sessionId, Action<SessionInfo> update)
+    {
+        var existing = _data.Sessions.FirstOrDefault(session => session.Id == sessionId);
+        if (existing == null)
+            return false;
+
+        update(existing);
+        _storage.Save(_data);
+        LoadSessions();
+        return true;
+    }
+
+    private SessionLookupCandidate ToLookupCandidate(SessionInfo session)
+    {
+        return new SessionLookupCandidate(session, BuildSessionPath(session));
+    }
+
+    private string BuildSessionPath(SessionInfo session)
+    {
+        var names = new List<string>();
+        if (session.GroupId.HasValue)
+            AddGroupPath(session.GroupId.Value, names, new HashSet<Guid>());
+
+        names.Add(session.Name);
+        return NormalizeSessionPath(string.Join("/", names));
+    }
+
+    private void AddGroupPath(Guid groupId, List<string> names, HashSet<Guid> visited)
+    {
+        if (!visited.Add(groupId))
+            return;
+
+        var group = _data.Groups.FirstOrDefault(item => item.Id == groupId);
+        if (group == null)
+            return;
+
+        if (group.ParentId.HasValue)
+            AddGroupPath(group.ParentId.Value, names, visited);
+
+        names.Add(group.Name);
+    }
+
+    private static string NormalizeSessionPath(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        value = value.Trim().Trim('"', '\'').Replace('\\', '/');
+        while (value.Contains("//", StringComparison.Ordinal))
+            value = value.Replace("//", "/", StringComparison.Ordinal);
+
+        return value.Trim('/');
+    }
+
+    private static string QuoteCommandArgument(string value)
+    {
+        return "\"" + value.Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
+    }
+
     private static bool MatchesSessionSearch(SessionInfo session, string query)
     {
         return Contains(session.Name, query) ||
@@ -678,6 +819,8 @@ public partial class SessionTreeViewModel : ObservableObject
             AuthMethod = source.AuthMethod,
             Password = source.Password,
             PrivateKeyPath = source.PrivateKeyPath,
+            PrivateKeyPassphrase = source.PrivateKeyPassphrase,
+            RuntimePrivateKeyPassphrase = source.RuntimePrivateKeyPassphrase,
             AutoReconnect = source.AutoReconnect,
             ReconnectIntervalSeconds = source.ReconnectIntervalSeconds,
             ReconnectLimitMinutes = source.ReconnectLimitMinutes,
@@ -882,6 +1025,11 @@ public partial class SessionTreeViewModel : ObservableObject
             Port = source.Port,
             Username = source.Username,
             Password = source.Password,
+            AuthMethod = source.AuthMethod,
+            PrivateKeyPath = source.PrivateKeyPath,
+            PrivateKeyPassphrase = source.PrivateKeyPassphrase,
+            RuntimePrivateKeyPassphrase = source.RuntimePrivateKeyPassphrase,
+            UseAgent = source.UseAgent,
             UseSessionFile = source.UseSessionFile,
             SessionFilePath = source.SessionFilePath,
             NextProxyId = source.NextProxyId

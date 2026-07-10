@@ -69,14 +69,9 @@ public partial class SftpPanelView : UserControl
     {
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
-        DragDrop.SetAllowDrop(this, true);
-        AddHandler(DragDrop.DragOverEvent, OnFileListDragOver, RoutingStrategies.Bubble, handledEventsToo: true);
-        AddHandler(DragDrop.DropEvent, OnFileListDrop, RoutingStrategies.Bubble, handledEventsToo: true);
         AddHandler(PointerPressedEvent, OnSftpPanelPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
-        DragDrop.SetAllowDrop(FileGrid, true);
-        FileGrid.AddHandler(DragDrop.DragOverEvent, OnFileListDragOver, RoutingStrategies.Bubble, handledEventsToo: true);
-        FileGrid.AddHandler(DragDrop.DropEvent, OnFileListDrop, RoutingStrategies.Bubble, handledEventsToo: true);
         FileGrid.AddHandler(PointerPressedEvent, OnFileGridPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
+        TransferGrid.AddHandler(PointerPressedEvent, OnTransferGridPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
         FileGrid.GetObservable(BoundsProperty).Subscribe(_ => QueueFileGridColumnWidthUpdate());
     }
 
@@ -496,6 +491,26 @@ public partial class SftpPanelView : UserControl
         }
     }
 
+    private void OnTransferGridPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (_attachedViewModel == null || sender is not AtomDataGrid grid)
+            return;
+
+        var point = e.GetCurrentPoint(grid);
+        if (!point.Properties.IsRightButtonPressed)
+            return;
+
+        var task = TryGetTransferTaskFromVisual(e.Source as Avalonia.Visual);
+        if (task == null)
+            return;
+
+        grid.SelectedItem = task;
+        e.Handled = true;
+        Dispatcher.UIThread.Post(
+            () => ShowTransferContextMenu(grid, task, _attachedViewModel),
+            DispatcherPriority.Input);
+    }
+
     private void OnFileGridPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
         if (!_isDraggingFileItem)
@@ -581,43 +596,57 @@ public partial class SftpPanelView : UserControl
 
         try
         {
+            var topLevel = TopLevel.GetTopLevel(this);
             if (_attachedViewModel.CanStreamDragOut(item))
             {
                 var dragFiles = await _attachedViewModel.CreateVirtualDragFilesAsync(item);
                 if (dragFiles.Count > 0)
                 {
-                    System.Console.WriteLine($"[SFTP] Starting virtual stream drag-out: {item.FullPath}, files={dragFiles.Count}");
-                    if (PlatformServices.TryStartVirtualFileDragOut(dragFiles, out var virtualEffect, out var virtualError))
+                    System.Console.WriteLine($"[SFTP] Starting virtual drag-out: {item.FullPath}, files={dragFiles.Count}");
+                    var nativeHandle = topLevel?.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+                    if (PlatformServices.TryStartVirtualFileDragOut(
+                            nativeHandle,
+                            dragFiles,
+                            out var virtualEffect,
+                            out var virtualError))
                     {
-                        System.Console.WriteLine($"[SFTP] Virtual stream drag-out finished: {virtualEffect}");
+                        System.Console.WriteLine($"[SFTP] Virtual drag-out finished: {virtualEffect}");
                         return;
                     }
 
                     if (!string.IsNullOrWhiteSpace(virtualError))
-                        System.Console.WriteLine($"[SFTP] Virtual stream drag-out unavailable: {virtualError}");
+                        System.Console.WriteLine($"[SFTP] Virtual drag-out unavailable: {virtualError}");
                 }
             }
 
-            var topLevel = TopLevel.GetTopLevel(this);
+            var wasCached = _attachedViewModel.IsItemCachedForDrag(item);
+            var localPath = await _attachedViewModel.ExportItemForDragAsync(item);
+            if (string.IsNullOrWhiteSpace(localPath))
+                return;
+
+            if (!wasCached)
+                return;
+
+            var storageItem = await GetStorageItemForDragAsync(topLevel, localPath);
+            if (storageItem == null)
+                return;
+
             var data = new DataTransfer();
             if (data.Items is IList<DataTransferItem> items)
             {
                 var dataItem = new DataTransferItem();
-                dataItem.Set(DataFormat.File, () =>
-                {
-                    System.Console.WriteLine($"[SFTP] Exporting remote item for drag: {item.FullPath}");
-                    var localPath = _attachedViewModel.ExportItemForDragBlocking(item);
-                    if (string.IsNullOrWhiteSpace(localPath))
-                        return null;
-
-                    return GetStorageItemForDrag(topLevel, localPath);
-                });
+                dataItem.Set(DataFormat.File, () => storageItem);
                 items.Add(dataItem);
             }
 
             System.Console.WriteLine($"[SFTP] Starting drag-out: {item.FullPath}");
             var effect = await DragDrop.DoDragDropAsync(dragEventArgs, data, DragDropEffects.Copy);
             System.Console.WriteLine($"[SFTP] Drag-out finished: {effect}");
+        }
+        catch (Exception ex)
+        {
+            if (_attachedViewModel != null)
+                _attachedViewModel.ErrorMessage = $"Drag export failed: {ex.Message}";
         }
         finally
         {
@@ -647,6 +676,19 @@ public partial class SftpPanelView : UserControl
         {
             if (visual.DataContext is Models.SftpFileItem item)
                 return item;
+
+            visual = visual.GetVisualParent() as Avalonia.Visual;
+        }
+
+        return null;
+    }
+
+    private static SftpTransferTaskItem? TryGetTransferTaskFromVisual(Avalonia.Visual? visual)
+    {
+        while (visual != null)
+        {
+            if (visual.DataContext is SftpTransferTaskItem task)
+                return task;
 
             visual = visual.GetVisualParent() as Avalonia.Visual;
         }
@@ -705,14 +747,16 @@ public partial class SftpPanelView : UserControl
         }
     }
 
-    private static Avalonia.Platform.Storage.IStorageItem? GetStorageItemForDrag(TopLevel? topLevel, string localPath)
+    private static async Task<Avalonia.Platform.Storage.IStorageItem?> GetStorageItemForDragAsync(
+        TopLevel? topLevel,
+        string localPath)
     {
         if (topLevel == null)
             return null;
 
         return System.IO.Directory.Exists(localPath)
-            ? topLevel.StorageProvider.TryGetFolderFromPathAsync(localPath).GetAwaiter().GetResult()
-            : topLevel.StorageProvider.TryGetFileFromPathAsync(localPath).GetAwaiter().GetResult();
+            ? await topLevel.StorageProvider.TryGetFolderFromPathAsync(localPath)
+            : await topLevel.StorageProvider.TryGetFileFromPathAsync(localPath);
     }
 
     private void ClearFileDragState()
@@ -755,6 +799,39 @@ public partial class SftpPanelView : UserControl
             AddItem(vm.RenameText, () => vm.RenameCommand.Execute(null));
 
         AddItem(vm.DeleteText, () => _ = vm.DeleteCommand.ExecuteAsync(null));
+        menu.Open(anchor);
+    }
+
+    private static void ShowTransferContextMenu(
+        Control anchor,
+        SftpTransferTaskItem task,
+        SftpViewModel vm)
+    {
+        var menu = new AtomContextMenu
+        {
+            PlacementTarget = anchor,
+            Placement = PlacementMode.Pointer
+        };
+
+        void AddItem(string text, Action action, bool isEnabled)
+        {
+            var itemControl = new AtomMenuItem
+            {
+                Header = text,
+                IsEnabled = isEnabled
+            };
+            itemControl.Click += (_, _) =>
+            {
+                menu.Close();
+                action();
+            };
+            menu.Items.Add(itemControl);
+        }
+
+        AddItem(vm.RetryTransferText, () => vm.RetryTransferCommand.Execute(task), task.CanRetry);
+        AddItem(vm.CancelTransferText, () => vm.CancelTransferCommand.Execute(task), task.CanCancel);
+        menu.Items.Add(new AtomMenuSeparator());
+        AddItem(vm.RemoveTransferText, () => vm.RemoveTransferCommand.Execute(task), task.CanRemove);
         menu.Open(anchor);
     }
 

@@ -112,6 +112,14 @@ mkdir -p "$ARTIFACT_DIR"
 cat > "$ARTIFACT_DIR/README-macos.txt" <<README
 $APP_NAME macOS package${ARCH:+ ($ARCH)}
 
+Recommended no-admin install:
+
+mkdir -p "\$HOME/Applications"
+mv $APP_NAME.app "\$HOME/Applications/"
+
+Starting and updating $APP_NAME from "\$HOME/Applications" avoids the administrator password prompt that macOS may show when replacing apps in the system /Applications folder.
+Touch ID availability for system installation prompts is controlled by macOS, not by $APP_NAME.
+
 This package is not notarized. If macOS blocks the app after download, run:
 
 chmod +x $APP_NAME.app/Contents/MacOS/$APP_NAME
@@ -120,6 +128,8 @@ xattr -dr com.apple.quarantine $APP_NAME.app
 The RDP native bridge is included when libCxRdpBridge.dylib is present in:
 
 $APP_NAME.app/Contents/MacOS/
+
+Finder file-promise drag-out is included when libCxMacDragBridge.dylib is present in the same directory.
 README
 
 echo "Created macOS app bundle: $APP_ROOT"

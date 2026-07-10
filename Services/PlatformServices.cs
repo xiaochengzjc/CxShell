@@ -10,6 +10,8 @@ public static class PlatformServices
     public static bool IsWindows => OperatingSystem.IsWindows();
     public static bool IsMacOS => OperatingSystem.IsMacOS();
     public static bool IsLinux => OperatingSystem.IsLinux();
+    public static bool SupportsVirtualFileDragOut =>
+        IsWindows || (IsMacOS && MacOSFilePromiseDragDropService.IsAvailable);
 
     public static string[] GetSerialPortNames()
     {
@@ -35,6 +37,7 @@ public static class PlatformServices
     }
 
     public static bool TryStartVirtualFileDragOut(
+        nint nativeWindowOrView,
         IReadOnlyList<VirtualDragFile> files,
         out int effect,
         out string? error)
@@ -42,13 +45,22 @@ public static class PlatformServices
         effect = 0;
         error = null;
 
-        if (!OperatingSystem.IsWindows())
-            return false;
-
         try
         {
-            effect = WindowsVirtualFileDragDropService.DoDragDrop(files);
-            return true;
+            if (OperatingSystem.IsWindows())
+            {
+                effect = WindowsVirtualFileDragDropService.DoDragDrop(files);
+                return true;
+            }
+
+            if (OperatingSystem.IsMacOS() &&
+                MacOSFilePromiseDragDropService.TryStart(nativeWindowOrView, files, out error))
+            {
+                effect = 1;
+                return true;
+            }
+
+            return false;
         }
         catch (Exception ex)
         {

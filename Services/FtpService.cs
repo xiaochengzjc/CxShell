@@ -89,7 +89,12 @@ public sealed class FtpService : IFileTransferService, IDisposable
             .ToList();
     }
 
-    public async Task UploadFileAsync(string localPath, string remotePath, Action<ulong>? progress = null)
+    public async Task UploadFileAsync(
+        string localPath,
+        string remotePath,
+        Action<ulong>? progress = null,
+        CancellationToken cancellationToken = default,
+        bool resume = false)
     {
         EnsureConnected();
         IProgress<FtpProgress>? ftpProgress = progress == null
@@ -103,10 +108,15 @@ public sealed class FtpService : IFileTransferService, IDisposable
             true,
             FtpVerify.None,
             ftpProgress,
-            CancellationToken.None);
+            cancellationToken);
     }
 
-    public async Task DownloadFileAsync(string remotePath, string localPath, Action<ulong>? progress = null)
+    public async Task DownloadFileAsync(
+        string remotePath,
+        string localPath,
+        Action<ulong>? progress = null,
+        CancellationToken cancellationToken = default,
+        bool resume = false)
     {
         EnsureConnected();
         IProgress<FtpProgress>? ftpProgress = progress == null
@@ -119,7 +129,7 @@ public sealed class FtpService : IFileTransferService, IDisposable
             FtpLocalExists.Overwrite,
             FtpVerify.None,
             ftpProgress,
-            CancellationToken.None);
+            cancellationToken);
     }
 
     public async Task DeleteAsync(string remotePath, bool isDirectory)

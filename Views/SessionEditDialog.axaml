@@ -114,7 +114,9 @@
                         <atom:NavMenuNode Header="{Binding LoginPromptText}" ItemKey="LoginPrompt"/>
                         <atom:NavMenuNode Header="{Binding LoginScriptText}" ItemKey="LoginScript"/>
                         <atom:NavMenuNode Header="{Binding ProxyText}" ItemKey="Proxy"/>
-                        <atom:NavMenuNode Header="{Binding KeepAliveText}" ItemKey="KeepAlive"/>
+                        <atom:NavMenuNode Header="{Binding KeepAliveText}"
+                                          ItemKey="KeepAlive"
+                                          IsEnabled="{Binding SupportsTerminalKeepAlive}"/>
                         <atom:NavMenuNode Header="TELNET" ItemKey="Telnet"/>
                         <atom:NavMenuNode Header="RLOGIN" ItemKey="Rlogin"/>
                         <atom:NavMenuNode Header="{Binding SerialText}" ItemKey="Serial"/>
@@ -242,27 +244,31 @@
                                 BorderThickness="1"
                                 CornerRadius="4"
                                 Padding="18">
-                            <Grid RowDefinitions="Auto,14,Auto,12,Auto,12,Auto,12,Auto"
+                            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
                                   ColumnDefinitions="110,*">
                                 <TextBlock Grid.ColumnSpan="2"
                                            Text="{Binding UserAuthText}"
                                            FontWeight="SemiBold"
                                            Foreground="{atom:SharedTokenResource ColorText}"/>
 
-                                <TextBlock Grid.Row="2" Text="{Binding UsernameText}"
+                                <TextBlock Grid.Row="1" Text="{Binding UsernameText}"
                                            VerticalAlignment="Center"
+                                           Margin="0,14,0,0"
                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
-                                <atom:LineEdit Grid.Row="2" Grid.Column="1"
+                                <atom:LineEdit Grid.Row="1" Grid.Column="1"
                                               x:Name="ConnectionUsernameBox"
+                                              Margin="0,14,0,0"
                                               Text="{Binding Username, Mode=TwoWay}"
                                               PlaceholderText="root"/>
 
-                                <TextBlock Grid.Row="4" Text="{Binding AuthMethodText}"
+                                <TextBlock Grid.Row="2" Text="{Binding AuthMethodText}"
                                            VerticalAlignment="Center"
+                                           Margin="0,12,0,0"
                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
-                                <StackPanel Grid.Row="4" Grid.Column="1"
+                                <StackPanel Grid.Row="2" Grid.Column="1"
                                             Orientation="Horizontal"
-                                            Spacing="20">
+                                            Spacing="20"
+                                            Margin="0,12,0,0">
                                     <atom:RadioButton Content="{Binding PasswordText}"
                                                       IsChecked="{Binding IsPasswordAuth}"
                                                       GroupName="ConnectionAuthMethod"/>
@@ -271,17 +277,24 @@
                                                       GroupName="ConnectionAuthMethod"/>
                                 </StackPanel>
 
-                                <TextBlock Grid.Row="6" Text="{Binding PasswordText}"
+                                <TextBlock Grid.Row="3" Text="{Binding PasswordText}"
                                            VerticalAlignment="Center"
+                                           Margin="0,12,0,0"
                                            IsVisible="{Binding IsPasswordAuth}"
                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
-                                <StackPanel Grid.Row="6" Grid.Column="1"
-                                            Spacing="6"
+                                <atom:LineEdit Grid.Row="3"
+                                               Grid.Column="1"
+                                               Margin="0,12,0,0"
+                                               Text="{Binding Password, Mode=TwoWay}"
+                                               PasswordChar="*"
+                                               IsEnableRevealButton="True"
+                                               IsAllowClear="True"
+                                               IsVisible="{Binding IsPasswordAuth}"/>
+                                <StackPanel Grid.Row="4"
+                                            Grid.Column="1"
+                                            Spacing="4"
+                                            Margin="0,6,0,0"
                                             IsVisible="{Binding IsPasswordAuth}">
-                                    <atom:LineEdit Text="{Binding Password, Mode=TwoWay}"
-                                                   PasswordChar="*"
-                                                   IsEnableRevealButton="True"
-                                                   IsAllowClear="True"/>
                                     <TextBlock Text="{Binding PasswordNotSavedText}"
                                                FontSize="12"
                                                Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
@@ -290,13 +303,15 @@
                                                Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
                                 </StackPanel>
 
-                                <TextBlock Grid.Row="8" Text="{Binding PrivateKeyPathText}"
+                                <TextBlock Grid.Row="5" Text="{Binding PrivateKeyPathText}"
                                            VerticalAlignment="Center"
+                                           Margin="0,12,0,0"
                                            IsVisible="{Binding IsPrivateKeyAuth}"
                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
-                                <Grid Grid.Row="8" Grid.Column="1"
+                                <Grid Grid.Row="5" Grid.Column="1"
                                       ColumnDefinitions="*,Auto"
                                       ColumnSpacing="8"
+                                      Margin="0,12,0,0"
                                       IsVisible="{Binding IsPrivateKeyAuth}">
                                     <atom:LineEdit Text="{Binding PrivateKeyPath, Mode=TwoWay}"
                                                   PlaceholderText="~/.ssh/id_rsa"/>
@@ -305,6 +320,28 @@
                                                  Content="{Binding BrowseText}"
                                                  Command="{Binding BrowseKeyCommand}"/>
                                 </Grid>
+
+                                <TextBlock Grid.Row="6" Text="{Binding PrivateKeyPassphraseText}"
+                                           VerticalAlignment="Center"
+                                           Margin="0,12,0,0"
+                                           IsVisible="{Binding IsPrivateKeyAuth}"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="6"
+                                               Grid.Column="1"
+                                               Margin="0,12,0,0"
+                                               Text="{Binding PrivateKeyPassphrase, Mode=TwoWay}"
+                                               PasswordChar="*"
+                                               IsEnableRevealButton="True"
+                                               IsAllowClear="True"
+                                               IsVisible="{Binding IsPrivateKeyAuth}"/>
+                                <TextBlock Grid.Row="7"
+                                           Grid.Column="1"
+                                           Text="{Binding PrivateKeyPassphraseHintText}"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"
+                                           Margin="0,6,0,0"
+                                           IsVisible="{Binding IsPrivateKeyAuth}"
+                                           Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
                             </Grid>
                         </Border>
 
@@ -442,6 +479,7 @@
                                 BorderBrush="{atom:SharedTokenResource ColorBorder}"
                                 BorderThickness="1"
                                 CornerRadius="4"
+                                IsVisible="{Binding SupportsTerminalAutoReconnect}"
                                 Padding="18">
                             <Grid RowDefinitions="Auto,14,Auto,12,Auto"
                                   ColumnDefinitions="Auto,8,112,6,Auto,24,Auto,8,112,6,Auto,*">
@@ -493,6 +531,7 @@
                                 BorderBrush="{atom:SharedTokenResource ColorBorder}"
                                 BorderThickness="1"
                                 CornerRadius="4"
+                                IsVisible="{Binding SupportsTerminalKeepAlive}"
                                 Padding="18">
                             <Grid RowDefinitions="Auto,14,Auto,18,Auto,12,Auto,18,Auto,10,Auto"
                                   ColumnDefinitions="Auto,14,110,18,56,56,120,*">
@@ -571,6 +610,7 @@
                                 BorderBrush="{atom:SharedTokenResource ColorBorder}"
                                 BorderThickness="1"
                                 CornerRadius="4"
+                                IsVisible="{Binding SupportsTcpTransportOptions}"
                                 Padding="18">
                             <atom:CheckBox Content="{Binding [UiText.016], Source={x:Static services:LocalizationService.Shared}}"
                                            IsChecked="{Binding TcpKeepAlive, Mode=TwoWay}"/>
@@ -1189,6 +1229,7 @@
                                 BorderBrush="{atom:SharedTokenResource ColorBorder}"
                                 BorderThickness="1"
                                 CornerRadius="4"
+                                IsVisible="False"
                                 Padding="18">
                             <Grid RowDefinitions="Auto,14,Auto,12,Auto,8,Auto"
                                   ColumnDefinitions="140,*">
@@ -1492,6 +1533,7 @@
                                 BorderBrush="{atom:SharedTokenResource ColorBorder}"
                                 BorderThickness="1"
                                 CornerRadius="4"
+                                IsVisible="False"
                                 Padding="18">
                             <StackPanel Spacing="14">
                                 <TextBlock Text="{Binding [UiText.090], Source={x:Static services:LocalizationService.Shared}}"
@@ -1515,6 +1557,7 @@
                                 BorderBrush="{atom:SharedTokenResource ColorBorder}"
                                 BorderThickness="1"
                                 CornerRadius="4"
+                                IsVisible="False"
                                 Padding="18">
                             <Grid RowDefinitions="Auto,14,Auto,10,Auto,10,Auto,12,Auto"
                                   ColumnDefinitions="Auto,12,220,*">
@@ -2628,10 +2671,12 @@
                                 <atom:CheckBox Content="{Binding [UiText.183], Source={x:Static services:LocalizationService.Shared}}"
                                                IsChecked="{Binding TerminalAdvancedDisableTitleChange, Mode=TwoWay}"/>
                                 <atom:CheckBox Content="{Binding [UiText.184], Source={x:Static services:LocalizationService.Shared}}"
+                                               IsVisible="False"
                                                IsChecked="{Binding TerminalAdvancedDisableTerminalPrint, Mode=TwoWay}"/>
                                 <atom:CheckBox Content="{Binding [UiText.185], Source={x:Static services:LocalizationService.Shared}}"
                                                IsChecked="{Binding TerminalAdvancedDisableAlternateScreen, Mode=TwoWay}"/>
                                 <atom:CheckBox Content="{Binding [UiText.186], Source={x:Static services:LocalizationService.Shared}}"
+                                               IsVisible="False"
                                                IsChecked="{Binding TerminalAdvancedIgnoreResizeRequest, Mode=TwoWay}"/>
                                 <Grid ColumnDefinitions="180,*"
                                       ColumnSpacing="12">
@@ -2654,6 +2699,7 @@
                                 <atom:CheckBox Content="{Binding [UiText.189], Source={x:Static services:LocalizationService.Shared}}"
                                                IsChecked="{Binding TerminalAdvancedUseBuiltinLineDrawing, Mode=TwoWay}"/>
                                 <atom:CheckBox Content="{Binding [UiText.190], Source={x:Static services:LocalizationService.Shared}}"
+                                               IsVisible="False"
                                                IsChecked="{Binding TerminalAdvancedUseBuiltinPowerline, Mode=TwoWay}"/>
                             </StackPanel>
                         </Border>
@@ -2773,12 +2819,9 @@
                                     <atom:RadioButton Content="Ymodem"
                                                       GroupName="SessionFileTransferUpload"
                                                       IsChecked="{Binding IsFileTransferUploadProtocolYmodem, Mode=TwoWay}"/>
-                                    <atom:RadioButton Content="{Binding [UiText.205], Source={x:Static services:LocalizationService.Shared}}"
+                                    <atom:RadioButton Content="{Binding [SessionEdit.Transfer.AutoDetect], Source={x:Static services:LocalizationService.Shared}}"
                                                       GroupName="SessionFileTransferUpload"
-                                                      IsChecked="{Binding IsFileTransferUploadProtocolZmodem, Mode=TwoWay}"/>
-                                    <atom:RadioButton Content="ftp"
-                                                      GroupName="SessionFileTransferUpload"
-                                                      IsChecked="{Binding IsFileTransferUploadProtocolFtp, Mode=TwoWay}"/>
+                                                      IsChecked="{Binding IsFileTransferUploadProtocolAuto, Mode=TwoWay}"/>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -3222,6 +3265,7 @@
                                 BorderThickness="1"
                                 CornerRadius="4"
                                 Margin="0,0,18,0"
+                                IsVisible="{Binding SupportsTcpTransportOptions}"
                                 Padding="18">
                             <StackPanel Spacing="12">
                                 <TextBlock Text="{Binding [UiText.249], Source={x:Static services:LocalizationService.Shared}}" FontWeight="SemiBold"/>
@@ -3235,6 +3279,7 @@
                                 BorderThickness="1"
                                 CornerRadius="4"
                                 Margin="0,0,18,0"
+                                IsVisible="{Binding SupportsTcpTransportOptions}"
                                 Padding="18">
                             <StackPanel Spacing="12">
                                 <TextBlock Text="{Binding [UiText.251], Source={x:Static services:LocalizationService.Shared}}" FontWeight="SemiBold"/>

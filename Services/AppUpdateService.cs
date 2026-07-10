@@ -46,6 +46,20 @@ public sealed record AppUpdateCheckResult(
     AppUpdateHandle? Update,
     string? ErrorMessage = null);
 
+public sealed record MacInstallPermissionInfo(
+    bool IsMacOs,
+    string? AppBundlePath,
+    string RecommendedUserApplicationsPath,
+    bool IsSystemApplicationsInstall,
+    bool CanWriteInstallDirectory)
+{
+    public bool MayRequireAdminPassword =>
+        IsMacOs &&
+        IsSystemApplicationsInstall &&
+        !CanWriteInstallDirectory &&
+        !string.IsNullOrWhiteSpace(AppBundlePath);
+}
+
 public sealed class AppUpdateService
 {
     private const string ReleaseDownloadBaseUrl = "https://github.com/xiaochengzjc/CxShell/releases/latest/download";
@@ -96,6 +110,41 @@ public sealed class AppUpdateService
         update.Manager.ApplyUpdatesAndRestart(update.TargetAsset, restartArgs ?? Array.Empty<string>());
     }
 
+    public MacInstallPermissionInfo GetMacInstallPermissionInfo()
+    {
+        var userApplicationsPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            "Applications",
+            "CxShell.app");
+
+        if (!OperatingSystem.IsMacOS())
+        {
+            return new MacInstallPermissionInfo(
+                false,
+                null,
+                userApplicationsPath,
+                false,
+                true);
+        }
+
+        var appBundlePath = FindCurrentMacAppBundlePath();
+        var installDirectory = string.IsNullOrWhiteSpace(appBundlePath)
+            ? null
+            : Path.GetDirectoryName(appBundlePath);
+        var isSystemApplicationsInstall =
+            IsUnderDirectory(appBundlePath, "/Applications") ||
+            IsUnderDirectory(appBundlePath, "/System/Applications");
+        var canWriteInstallDirectory = string.IsNullOrWhiteSpace(installDirectory) ||
+                                       CanWriteDirectory(installDirectory);
+
+        return new MacInstallPermissionInfo(
+            true,
+            appBundlePath,
+            userApplicationsPath,
+            isSystemApplicationsInstall,
+            canWriteInstallDirectory);
+    }
+
     private static UpdateManager CreateManager(bool includePrerelease)
     {
         _ = includePrerelease;
@@ -109,6 +158,68 @@ public sealed class AppUpdateService
             MaximumDeltasBeforeFallback = 5
         };
         return new UpdateManager(source, options);
+    }
+
+    private static string? FindCurrentMacAppBundlePath()
+    {
+        try
+        {
+            var directory = new DirectoryInfo(AppContext.BaseDirectory);
+            while (directory != null)
+            {
+                if (directory.Name.EndsWith(".app", StringComparison.OrdinalIgnoreCase))
+                    return directory.FullName;
+
+                directory = directory.Parent;
+            }
+        }
+        catch
+        {
+            return null;
+        }
+
+        return null;
+    }
+
+    private static bool IsUnderDirectory(string? path, string root)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return false;
+
+        try
+        {
+            var fullPath = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar);
+            var fullRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
+            return string.Equals(fullPath, fullRoot, StringComparison.Ordinal) ||
+                   fullPath.StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool CanWriteDirectory(string directory)
+    {
+        try
+        {
+            if (!Directory.Exists(directory))
+                return false;
+
+            var testFile = Path.Combine(directory, $".cxshell-write-test-{Guid.NewGuid():N}.tmp");
+            using (File.Create(testFile, 1, FileOptions.DeleteOnClose))
+            {
+            }
+
+            if (File.Exists(testFile))
+                File.Delete(testFile);
+
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private sealed class RetryingFileDownloader : HttpClientFileDownloader

@@ -56,9 +56,19 @@ public class ProxySettings : INotifyPropertyChanged
     public int Port { get; set; }
     public string Username { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public AuthMethod AuthMethod { get; set; } = AuthMethod.Password;
+
+    public string PrivateKeyPath { get; set; } = string.Empty;
+    public string PrivateKeyPassphrase { get; set; } = string.Empty;
+    public bool UseAgent { get; set; }
     public bool UseSessionFile { get; set; }
     public string SessionFilePath { get; set; } = string.Empty;
     public Guid? NextProxyId { get; set; }
+
+    [JsonIgnore]
+    public string RuntimePrivateKeyPassphrase { get; set; } = string.Empty;
 
     [JsonIgnore]
     public bool IsEnabled => Protocol != ProxyProtocol.None && !string.IsNullOrWhiteSpace(Host) && Port is >= 1 and <= 65535;
@@ -190,6 +200,7 @@ public class ApplicationSettings
     public bool ShowSessionManagerOnStartup { get; set; } = true;
     public bool AutoCheckForUpdates { get; set; } = true;
     public bool IncludePrereleaseUpdates { get; set; }
+    public string BastionTokenEndpoint { get; set; } = string.Empty;
 }
 
 public class SessionInfo
@@ -217,6 +228,11 @@ public class SessionInfo
 
     public string Password { get; set; } = string.Empty;
     public string? PrivateKeyPath { get; set; }
+    public string PrivateKeyPassphrase { get; set; } = string.Empty;
+
+    [JsonIgnore]
+    public string RuntimePrivateKeyPassphrase { get; set; } = string.Empty;
+
     public bool AutoReconnect { get; set; } = true;
     public int ReconnectIntervalSeconds { get; set; } = 30;
     public int ReconnectLimitMinutes { get; set; }
@@ -370,7 +386,7 @@ public class SessionInfo
     public string FileTransferDownloadDirectory { get; set; } = string.Empty;
     public string FileTransferUploadDirectory { get; set; } = string.Empty;
     public string FileTransferDuplicateAction { get; set; } = "AutoRename";
-    public string FileTransferUploadProtocol { get; set; } = "Zmodem";
+    public string FileTransferUploadProtocol { get; set; } = "Auto";
     public int FileTransferXymodemBlockSize { get; set; } = 128;
     public string FileTransferXmodemUploadCommand { get; set; } = "rx";
     public string FileTransferYmodemUploadCommand { get; set; } = "rb -E";

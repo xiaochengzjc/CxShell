@@ -20,6 +20,12 @@ namespace CxShell.ViewModels;
 
 public partial class SessionEditViewModel : ObservableObject
 {
+    private const string DefaultSshVersionPolicy = "Ssh2Only";
+    private static readonly HashSet<string> SupportedSshVersionPolicies = new(StringComparer.OrdinalIgnoreCase)
+    {
+        DefaultSshVersionPolicy
+    };
+
     private LocalizationService L => LocalizationService.Shared;
     public string NavTitleText => L.Text("SessionEdit.NavTitle");
     public string NavSubtitleText => L.Text("SessionEdit.NavSubtitle");
@@ -61,6 +67,8 @@ public partial class SessionEditViewModel : ObservableObject
     public string PasswordNotSavedText => L.Text("SessionEdit.PasswordNotSaved");
     public string PasswordSavedEncryptedText => L.Text("SessionEdit.PasswordSavedEncrypted");
     public string PrivateKeyPathText => L.Text("SessionEdit.PrivateKeyPath");
+    public string PrivateKeyPassphraseText => L.Text("SessionEdit.PrivateKeyPassphrase");
+    public string PrivateKeyPassphraseHintText => L.Text("SessionEdit.PrivateKeyPassphraseHint");
     public string SshTunnelTitleText => L.Text("SessionEdit.SshTunnelTitle");
     public string VncSshTunnelTitleText => L.Text("SessionEdit.VncSshTunnelTitle");
     public string UseVncSshTunnelText => L.Text("SessionEdit.UseVncSshTunnel");
@@ -108,6 +116,7 @@ public partial class SessionEditViewModel : ObservableObject
     [ObservableProperty] private bool _isPrivateKeyAuth;
     [ObservableProperty] private string _password = string.Empty;
     [ObservableProperty] private string _privateKeyPath = string.Empty;
+    [ObservableProperty] private string _privateKeyPassphrase = string.Empty;
     [ObservableProperty] private bool _autoReconnect = true;
     [ObservableProperty] private decimal _reconnectIntervalSeconds = 30;
     [ObservableProperty] private decimal _reconnectLimitMinutes;
@@ -268,7 +277,7 @@ public partial class SessionEditViewModel : ObservableObject
     [ObservableProperty] private string _fileTransferDownloadDirectory = string.Empty;
     [ObservableProperty] private string _fileTransferUploadDirectory = string.Empty;
     [ObservableProperty] private string _fileTransferDuplicateAction = "AutoRename";
-    [ObservableProperty] private string _fileTransferUploadProtocol = "Zmodem";
+    [ObservableProperty] private string _fileTransferUploadProtocol = "Auto";
     [ObservableProperty] private int _fileTransferXymodemBlockSize = 128;
     [ObservableProperty] private string _fileTransferXmodemUploadCommand = "rx";
     [ObservableProperty] private string _fileTransferYmodemUploadCommand = "rb -E";
@@ -347,8 +356,17 @@ public partial class SessionEditViewModel : ObservableObject
     public bool IsAdvancedPage => SelectedPage == "Advanced";
     public bool IsTracingPage => SelectedPage == "Tracing";
     public bool IsSessionScope => true;
+    private SessionProtocol CurrentProtocol => Enum.TryParse<SessionProtocol>(Protocol, true, out var protocol)
+        ? protocol
+        : SessionProtocol.SSH;
     public bool IsVncProtocol => string.Equals(Protocol, SessionProtocol.VNC.ToString(), StringComparison.OrdinalIgnoreCase);
     public bool IsRdpProtocol => string.Equals(Protocol, SessionProtocol.RDP.ToString(), StringComparison.OrdinalIgnoreCase);
+    public bool SupportsTerminalAutoReconnect => CurrentProtocol is
+        SessionProtocol.SSH or SessionProtocol.TELNET or SessionProtocol.RLOGIN or SessionProtocol.SERIAL;
+    public bool SupportsTerminalKeepAlive => CurrentProtocol is
+        SessionProtocol.SSH or SessionProtocol.TELNET or SessionProtocol.RLOGIN;
+    public bool SupportsTcpTransportOptions => CurrentProtocol is
+        SessionProtocol.TELNET or SessionProtocol.RLOGIN;
     public bool IsRdpSshPasswordAuth
     {
         get => !RdpSshUsePrivateKey;
@@ -401,15 +419,10 @@ public partial class SessionEditViewModel : ObservableObject
         get => string.Equals(FileTransferUploadProtocol, "Ymodem", StringComparison.OrdinalIgnoreCase);
         set { if (value) FileTransferUploadProtocol = "Ymodem"; }
     }
-    public bool IsFileTransferUploadProtocolZmodem
+    public bool IsFileTransferUploadProtocolAuto
     {
-        get => string.Equals(FileTransferUploadProtocol, "Zmodem", StringComparison.OrdinalIgnoreCase);
-        set { if (value) FileTransferUploadProtocol = "Zmodem"; }
-    }
-    public bool IsFileTransferUploadProtocolFtp
-    {
-        get => string.Equals(FileTransferUploadProtocol, "Ftp", StringComparison.OrdinalIgnoreCase);
-        set { if (value) FileTransferUploadProtocol = "Ftp"; }
+        get => string.Equals(FileTransferUploadProtocol, "Auto", StringComparison.OrdinalIgnoreCase);
+        set { if (value) FileTransferUploadProtocol = "Auto"; }
     }
     public bool IsFileTransferXymodemBlockSize128
     {
@@ -636,7 +649,8 @@ public partial class SessionEditViewModel : ObservableObject
         new SelectOption { Header = "SOCKS4", Content = ProxyProtocol.Socks4.ToString() },
         new SelectOption { Header = "SOCKS4A", Content = ProxyProtocol.Socks4A.ToString() },
         new SelectOption { Header = "SOCKS5", Content = ProxyProtocol.Socks5.ToString() },
-        new SelectOption { Header = "HTTP 1.1", Content = ProxyProtocol.Http.ToString() }
+        new SelectOption { Header = "HTTP 1.1", Content = ProxyProtocol.Http.ToString() },
+        new SelectOption { Header = "JUMPHOST", Content = ProxyProtocol.JumpHost.ToString() }
     ];
     public ObservableCollection<ProxySettings> ProxyServers { get; } = new();
 
@@ -848,10 +862,10 @@ public partial class SessionEditViewModel : ObservableObject
     ];
     public ObservableCollection<ISelectOption> SshVersionOptions { get; } =
     [
-        new SelectOption { Header = "SSH2, SSH1 (如果服务器同时支持，则选择SSH2)", Content = "Ssh2ThenSsh1" },
-        new SelectOption { Header = "SSH1, SSH2 (如果服务器同时支持，则选择SSH1)", Content = "Ssh1ThenSsh2" },
+        new SelectOption { Header = "SSH2, SSH1 (如果服务器同时支持，则选择SSH2)", Content = "Ssh2ThenSsh1", IsEnabled = false },
+        new SelectOption { Header = "SSH1, SSH2 (如果服务器同时支持，则选择SSH1)", Content = "Ssh1ThenSsh2", IsEnabled = false },
         new SelectOption { Header = "仅SSH2(不使用SSH1)", Content = "Ssh2Only" },
-        new SelectOption { Header = "仅SSH1(不使用SSH2)", Content = "Ssh1Only" }
+        new SelectOption { Header = "仅SSH1(不使用SSH2)", Content = "Ssh1Only", IsEnabled = false }
     ];
 
     public ObservableCollection<ISelectOption> SerialBaudRateOptions { get; } =
@@ -1053,6 +1067,8 @@ public partial class SessionEditViewModel : ObservableObject
         OnPropertyChanged(nameof(PasswordNotSavedText));
         OnPropertyChanged(nameof(PasswordSavedEncryptedText));
         OnPropertyChanged(nameof(PrivateKeyPathText));
+        OnPropertyChanged(nameof(PrivateKeyPassphraseText));
+        OnPropertyChanged(nameof(PrivateKeyPassphraseHintText));
         OnPropertyChanged(nameof(SshTunnelTitleText));
         OnPropertyChanged(nameof(VncSshTunnelTitleText));
         OnPropertyChanged(nameof(UseVncSshTunnelText));
@@ -1107,10 +1123,10 @@ public partial class SessionEditViewModel : ObservableObject
         SetOptionHeader(AppearanceBackgroundImagePositionOptions, "TopRight", "Option.TopRight");
         SetOptionHeader(AppearanceBackgroundImagePositionOptions, "BottomLeft", "Option.BottomLeft");
         SetOptionHeader(AppearanceBackgroundImagePositionOptions, "BottomRight", "Option.BottomRight");
-        SetOptionHeader(SshVersionOptions, "Ssh2ThenSsh1", "Option.Ssh2ThenSsh1");
-        SetOptionHeader(SshVersionOptions, "Ssh1ThenSsh2", "Option.Ssh1ThenSsh2");
-        SetOptionHeader(SshVersionOptions, "Ssh2Only", "Option.Ssh2Only");
-        SetOptionHeader(SshVersionOptions, "Ssh1Only", "Option.Ssh1Only");
+        SetOptionHeader(SshVersionOptions, "Ssh2ThenSsh1", "Option.Ssh2ThenSsh1", isEnabled: false);
+        SetOptionHeader(SshVersionOptions, "Ssh1ThenSsh2", "Option.Ssh1ThenSsh2", isEnabled: false);
+        SetOptionHeader(SshVersionOptions, "Ssh2Only", "Option.Ssh2Only", isEnabled: true);
+        SetOptionHeader(SshVersionOptions, "Ssh1Only", "Option.Ssh1Only", isEnabled: false);
         SetOptionHeader(SerialParityOptions, "None", "Option.None");
         SetOptionHeader(SerialParityOptions, "Odd", "Option.Odd");
         SetOptionHeader(SerialParityOptions, "Even", "Option.Even");
@@ -1139,7 +1155,7 @@ public partial class SessionEditViewModel : ObservableObject
         OnPropertyChanged(nameof(AdvancedIpVersionOptions));
     }
 
-    private void SetOptionHeader(ObservableCollection<ISelectOption> options, string content, string key)
+    private void SetOptionHeader(ObservableCollection<ISelectOption> options, string content, string key, bool? isEnabled = null)
     {
         for (var i = 0; i < options.Count; i++)
         {
@@ -1149,10 +1165,20 @@ public partial class SessionEditViewModel : ObservableObject
             options[i] = new SelectOption
             {
                 Header = L.Text(key),
-                Content = content
+                Content = content,
+                IsEnabled = isEnabled ?? options[i].IsEnabled,
+                IsSelected = options[i].IsSelected
             };
             return;
         }
+    }
+
+    private static string NormalizeSshVersionPolicy(string? value)
+    {
+        return !string.IsNullOrWhiteSpace(value) &&
+               SupportedSshVersionPolicies.TryGetValue(value, out var supportedValue)
+            ? supportedValue
+            : DefaultSshVersionPolicy;
     }
 
     public SessionInfo? SavedSession { get; private set; }
@@ -1190,6 +1216,7 @@ public partial class SessionEditViewModel : ObservableObject
         IsPrivateKeyAuth = session.AuthMethod == AuthMethod.PrivateKey;
         Password = PasswordEncryptionService.Decrypt(session.Password);
         PrivateKeyPath = session.PrivateKeyPath ?? string.Empty;
+        PrivateKeyPassphrase = PasswordEncryptionService.Decrypt(session.PrivateKeyPassphrase);
         AutoReconnect = session.AutoReconnect;
         ReconnectIntervalSeconds = Math.Max(1, session.ReconnectIntervalSeconds);
         ReconnectLimitMinutes = Math.Max(0, session.ReconnectLimitMinutes);
@@ -1312,7 +1339,7 @@ public partial class SessionEditViewModel : ObservableObject
         LoginScriptFilePath = session.LoginScriptFilePath ?? string.Empty;
         LoginScriptParameters = session.LoginScriptParameters ?? string.Empty;
         SshRemoteCommand = session.SshRemoteCommand ?? string.Empty;
-        SshVersionPolicy = string.IsNullOrWhiteSpace(session.SshVersionPolicy) ? "Ssh2Only" : session.SshVersionPolicy;
+        SshVersionPolicy = NormalizeSshVersionPolicy(session.SshVersionPolicy);
         SshUseXagent = session.SshUseXagent;
         SshForwardAgent = session.SshForwardAgent;
         SshUseCompression = session.SshUseCompression;
@@ -1340,13 +1367,13 @@ public partial class SessionEditViewModel : ObservableObject
         SftpLocalStartDirectory = session.SftpLocalStartDirectory ?? string.Empty;
         SftpRemoteStartDirectory = session.SftpRemoteStartDirectory ?? string.Empty;
         SftpFollowTerminalDirectory = session.SftpFollowTerminalDirectory;
-        SftpUseCustomServer = session.SftpUseCustomServer;
+        SftpUseCustomServer = false;
         SftpCustomServerCommand = session.SftpCustomServerCommand ?? string.Empty;
         FileTransferAlwaysAskDownloadFolder = session.FileTransferAlwaysAskDownloadFolder;
         FileTransferDownloadDirectory = session.FileTransferDownloadDirectory ?? string.Empty;
         FileTransferUploadDirectory = session.FileTransferUploadDirectory ?? string.Empty;
         FileTransferDuplicateAction = string.IsNullOrWhiteSpace(session.FileTransferDuplicateAction) ? "AutoRename" : session.FileTransferDuplicateAction;
-        FileTransferUploadProtocol = string.IsNullOrWhiteSpace(session.FileTransferUploadProtocol) ? "Zmodem" : session.FileTransferUploadProtocol;
+        FileTransferUploadProtocol = NormalizeFileTransferUploadProtocol(session.FileTransferUploadProtocol);
         FileTransferXymodemBlockSize = session.FileTransferXymodemBlockSize == 1024 ? 1024 : 128;
         FileTransferXmodemUploadCommand = string.IsNullOrWhiteSpace(session.FileTransferXmodemUploadCommand) ? "rx" : session.FileTransferXmodemUploadCommand;
         FileTransferYmodemUploadCommand = string.IsNullOrWhiteSpace(session.FileTransferYmodemUploadCommand) ? "rb -E" : session.FileTransferYmodemUploadCommand;
@@ -1489,6 +1516,7 @@ public partial class SessionEditViewModel : ObservableObject
         session.AuthMethod = IsPrivateKeyAuth ? AuthMethod.PrivateKey : AuthMethod.Password;
         session.Password = IsPasswordAuth ? PasswordEncryptionService.Encrypt(Password) : string.Empty;
         session.PrivateKeyPath = IsPrivateKeyAuth ? PrivateKeyPath : null;
+        session.PrivateKeyPassphrase = IsPrivateKeyAuth ? PasswordEncryptionService.Encrypt(PrivateKeyPassphrase) : string.Empty;
         session.AutoReconnect = AutoReconnect;
         session.ReconnectIntervalSeconds = Math.Max(1, (int)ReconnectIntervalSeconds);
         session.ReconnectLimitMinutes = Math.Max(0, (int)ReconnectLimitMinutes);
@@ -1515,7 +1543,7 @@ public partial class SessionEditViewModel : ObservableObject
         session.LoginScriptFilePath = LoginScriptFilePath.Trim();
         session.LoginScriptParameters = LoginScriptParameters.Trim();
         session.SshRemoteCommand = SshRemoteCommand.Trim();
-        session.SshVersionPolicy = string.IsNullOrWhiteSpace(SshVersionPolicy) ? "Ssh2Only" : SshVersionPolicy;
+        session.SshVersionPolicy = NormalizeSshVersionPolicy(SshVersionPolicy);
         session.SshUseXagent = SshUseXagent;
         session.SshForwardAgent = SshForwardAgent;
         session.SshUseCompression = SshUseCompression;
@@ -1544,7 +1572,7 @@ public partial class SessionEditViewModel : ObservableObject
         session.SftpLocalStartDirectory = SftpLocalStartDirectory.Trim();
         session.SftpRemoteStartDirectory = SftpRemoteStartDirectory.Trim();
         session.SftpFollowTerminalDirectory = SftpFollowTerminalDirectory;
-        session.SftpUseCustomServer = SftpUseCustomServer;
+        session.SftpUseCustomServer = false;
         session.SftpCustomServerCommand = SftpCustomServerCommand.Trim();
         session.SerialPortName = SerialPortName.Trim();
         session.SerialBaudRate = int.TryParse(SerialBaudRate, out var serialBaudRate) ? serialBaudRate : 115200;
@@ -1689,9 +1717,7 @@ public partial class SessionEditViewModel : ObservableObject
         session.FileTransferDuplicateAction = string.IsNullOrWhiteSpace(FileTransferDuplicateAction)
             ? "AutoRename"
             : FileTransferDuplicateAction;
-        session.FileTransferUploadProtocol = string.IsNullOrWhiteSpace(FileTransferUploadProtocol)
-            ? "Zmodem"
-            : FileTransferUploadProtocol;
+        session.FileTransferUploadProtocol = NormalizeFileTransferUploadProtocol(FileTransferUploadProtocol);
         session.FileTransferXymodemBlockSize = FileTransferXymodemBlockSize == 1024 ? 1024 : 128;
         session.FileTransferXmodemUploadCommand = string.IsNullOrWhiteSpace(FileTransferXmodemUploadCommand) ? "rx" : FileTransferXmodemUploadCommand.Trim();
         session.FileTransferYmodemUploadCommand = string.IsNullOrWhiteSpace(FileTransferYmodemUploadCommand) ? "rb -E" : FileTransferYmodemUploadCommand.Trim();
@@ -1753,6 +1779,9 @@ public partial class SessionEditViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsVncProtocol));
         OnPropertyChanged(nameof(IsRdpProtocol));
+        OnPropertyChanged(nameof(SupportsTerminalAutoReconnect));
+        OnPropertyChanged(nameof(SupportsTerminalKeepAlive));
+        OnPropertyChanged(nameof(SupportsTcpTransportOptions));
     }
 
     partial void OnVncSshUsePrivateKeyChanged(bool value)
@@ -1963,8 +1992,7 @@ public partial class SessionEditViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsFileTransferUploadProtocolXmodem));
         OnPropertyChanged(nameof(IsFileTransferUploadProtocolYmodem));
-        OnPropertyChanged(nameof(IsFileTransferUploadProtocolZmodem));
-        OnPropertyChanged(nameof(IsFileTransferUploadProtocolFtp));
+        OnPropertyChanged(nameof(IsFileTransferUploadProtocolAuto));
     }
 
     partial void OnFileTransferXymodemBlockSizeChanged(int value)
@@ -2182,6 +2210,16 @@ public partial class SessionEditViewModel : ObservableObject
         return protocol is SessionProtocol.SSH or SessionProtocol.SFTP or SessionProtocol.TELNET or SessionProtocol.RLOGIN;
     }
 
+    private static string NormalizeFileTransferUploadProtocol(string? value)
+    {
+        return value?.Trim().ToLowerInvariant() switch
+        {
+            "xmodem" => "Xmodem",
+            "ymodem" => "Ymodem",
+            _ => "Auto"
+        };
+    }
+
     public static int GetDefaultPort(SessionProtocol protocol)
     {
         return protocol switch
@@ -2367,6 +2405,11 @@ public partial class SessionEditViewModel : ObservableObject
             Port = port,
             Username = ProxyUsername.Trim(),
             Password = ProxyPassword,
+            AuthMethod = existing?.AuthMethod ?? AuthMethod.Password,
+            PrivateKeyPath = existing?.PrivateKeyPath ?? string.Empty,
+            PrivateKeyPassphrase = existing?.PrivateKeyPassphrase ?? string.Empty,
+            RuntimePrivateKeyPassphrase = existing?.RuntimePrivateKeyPassphrase ?? string.Empty,
+            UseAgent = existing?.UseAgent ?? false,
             UseSessionFile = existing?.UseSessionFile ?? false,
             SessionFilePath = existing?.SessionFilePath ?? string.Empty,
             NextProxyId = existing?.NextProxyId
@@ -2433,6 +2476,11 @@ public partial class SessionEditViewModel : ObservableObject
             Port = source.Port,
             Username = source.Username,
             Password = source.Password,
+            AuthMethod = source.AuthMethod,
+            PrivateKeyPath = source.PrivateKeyPath,
+            PrivateKeyPassphrase = source.PrivateKeyPassphrase,
+            RuntimePrivateKeyPassphrase = source.RuntimePrivateKeyPassphrase,
+            UseAgent = source.UseAgent,
             UseSessionFile = source.UseSessionFile,
             SessionFilePath = source.SessionFilePath,
             NextProxyId = source.NextProxyId
@@ -2447,6 +2495,11 @@ public partial class SessionEditViewModel : ObservableObject
         target.Port = source.Port;
         target.Username = source.Username;
         target.Password = source.Password;
+        target.AuthMethod = source.AuthMethod;
+        target.PrivateKeyPath = source.PrivateKeyPath;
+        target.PrivateKeyPassphrase = source.PrivateKeyPassphrase;
+        target.RuntimePrivateKeyPassphrase = source.RuntimePrivateKeyPassphrase;
+        target.UseAgent = source.UseAgent;
         target.UseSessionFile = source.UseSessionFile;
         target.SessionFilePath = source.SessionFilePath;
         target.NextProxyId = source.NextProxyId;

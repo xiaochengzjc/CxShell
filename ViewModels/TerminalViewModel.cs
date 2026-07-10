@@ -30,6 +30,7 @@ public partial class TerminalViewModel : ObservableObject
     [ObservableProperty] private bool _isConnected;
     [ObservableProperty] private bool _supportsPosixShellFeatures = true;
     [ObservableProperty] private string _hostInfo = string.Empty;
+    [ObservableProperty] private string _remoteTitle = string.Empty;
     [ObservableProperty] private int _columns = 80;
     [ObservableProperty] private int _rows = 24;
 
@@ -178,6 +179,9 @@ public partial class TerminalViewModel : ObservableObject
                 ParseColorOrDefault(_session.AppearanceBackgroundColor, "#000000"),
                 ParseColorOrDefault(_session.AppearanceBoldForegroundColor, "#33FF33"),
                 ParseAnsiColors(_session.AppearanceAnsiColors));
+
+            if (_session.TerminalAdvancedDisableTitleChange)
+                RemoteTitle = string.Empty;
         }
 
         NotifyKeyboardOptionsChanged();
@@ -222,6 +226,7 @@ public partial class TerminalViewModel : ObservableObject
     {
         Disconnect();
         _session = session;
+        RemoteTitle = string.Empty;
         OnPropertyChanged(nameof(IsTerminalSizeFixed));
         NotifyKeyboardOptionsChanged();
         _password = password;
@@ -367,10 +372,17 @@ public partial class TerminalViewModel : ObservableObject
 
     private void OnOperatingSystemCommandReceived(string command)
     {
-        if (!TryParseOsc7CurrentDirectory(command, out var path))
+        if (TryParseOsc7CurrentDirectory(command, out var path))
+        {
+            SetRemoteCurrentDirectory(path);
             return;
+        }
 
-        SetRemoteCurrentDirectory(path);
+        if (_session?.TerminalAdvancedDisableTitleChange != true &&
+            TryParseOscTitle(command, out var title))
+        {
+            RemoteTitle = title;
+        }
     }
 
     private void TryUpdateWindowsCurrentDirectoryFromOutput(string data, ITerminalConnectionService connection)
@@ -438,6 +450,34 @@ public partial class TerminalViewModel : ObservableObject
         }
 
         path = pathPart;
+        return true;
+    }
+
+    private static bool TryParseOscTitle(string command, out string title)
+    {
+        title = string.Empty;
+        var separator = command.IndexOf(';');
+        if (separator <= 0)
+            return false;
+
+        var operation = command[..separator];
+        if (!string.Equals(operation, "0", StringComparison.Ordinal) &&
+            !string.Equals(operation, "2", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var builder = new StringBuilder(Math.Min(command.Length - separator - 1, 160));
+        foreach (var ch in command.AsSpan(separator + 1))
+        {
+            if (!char.IsControl(ch))
+                builder.Append(ch);
+
+            if (builder.Length == 160)
+                break;
+        }
+
+        title = builder.ToString().Trim();
         return true;
     }
 
@@ -564,6 +604,7 @@ public partial class TerminalViewModel : ObservableObject
 
         IsConnected = false;
         HostInfo = string.Empty;
+        RemoteTitle = string.Empty;
         StopKeepAliveLoop();
         AppendStatusMessage($"[Connection closed: {reason}]", "31");
 
@@ -2468,6 +2509,7 @@ public partial class TerminalViewModel : ObservableObject
         IsConnected = false;
         SupportsPosixShellFeatures = true;
         HostInfo = string.Empty;
+        RemoteTitle = string.Empty;
 
         if (!string.IsNullOrWhiteSpace(statusMessage))
             AppendStatusMessage(statusMessage, "33");
@@ -2493,6 +2535,7 @@ public partial class TerminalViewModel : ObservableObject
         IsConnected = false;
         SupportsPosixShellFeatures = true;
         HostInfo = string.Empty;
+        RemoteTitle = string.Empty;
         StopSessionLog();
 
         if (connection == null)

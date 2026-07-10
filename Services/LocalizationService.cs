@@ -61,6 +61,9 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ["SessionManager.ColumnPort"] = "Port",
         ["SessionManager.Close"] = "Close",
         ["SessionManager.ShowOnStartup"] = "Show this dialog at startup",
+        ["SessionManager.CopyFullPath"] = "Copy full path",
+        ["SessionManager.CopySessionId"] = "Copy session ID",
+        ["SessionManager.CopyLaunchCommand"] = "Copy launch command",
         ["SessionEdit.TitleNew"] = "New Session",
         ["SessionEdit.TitleProperties"] = "Session Properties",
         ["SessionEdit.NavTitle"] = "Session Configuration",
@@ -103,6 +106,8 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ["SessionEdit.PasswordNotSaved"] = "Leave empty to prompt for password when connecting.",
         ["SessionEdit.PasswordSavedEncrypted"] = "Saved passwords are encrypted in the session file.",
         ["SessionEdit.PrivateKeyPath"] = "Private key path",
+        ["SessionEdit.PrivateKeyPassphrase"] = "Private key passphrase",
+        ["SessionEdit.PrivateKeyPassphraseHint"] = "Leave empty for unencrypted keys. Saved passphrases are encrypted in the session file.",
         ["SessionEdit.SshTunnelTitle"] = "SSH Tunneling",
         ["SessionEdit.VncSshTunnelTitle"] = "VNC SSH Tunneling",
         ["SessionEdit.UseVncSshTunnel"] = "Connect VNC through SSH tunnel",
@@ -122,6 +127,8 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ["SessionEdit.Seconds"] = "sec",
         ["SessionEdit.Minutes"] = "min",
         ["SessionEdit.Save"] = "Save",
+        ["SessionEdit.SaveSuccessTitle"] = "Saved",
+        ["SessionEdit.SaveSuccessMessage"] = "Session settings have been saved.",
         ["SessionEdit.Cancel"] = "Cancel",
         ["SessionEdit.Placeholder"] = "This configuration page will be implemented in later steps.",
         ["Terminal.Connecting"] = "Connecting...",
@@ -136,6 +143,21 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ["Sftp.Modified"] = "Modified",
         ["Sftp.ConnectHint"] = "Open automatically after connecting an SSH session",
         ["Sftp.Loading"] = "Loading...",
+        ["Sftp.TransferQueue"] = "Transfer Queue",
+        ["Sftp.TransferStatus"] = "Status",
+        ["Sftp.TransferType"] = "Type",
+        ["Sftp.TransferFile"] = "File",
+        ["Sftp.TransferProgress"] = "Progress",
+        ["Sftp.TransferSpeed"] = "Speed",
+        ["Sftp.TransferRemaining"] = "Remaining",
+        ["Sftp.TransferTarget"] = "Target",
+        ["Sftp.TransferOperation"] = "Operation",
+        ["Sftp.CancelTransfer"] = "Cancel",
+        ["Sftp.RetryTransfer"] = "Retry",
+        ["Sftp.RemoveTransfer"] = "Remove",
+        ["Sftp.ClearCompletedTransfers"] = "Clear completed",
+        ["Sftp.CollapseTransfers"] = "Collapse",
+        ["Sftp.ExpandTransfers"] = "Expand",
         ["Common.Rename"] = "Rename",
         ["SessionEdit.LoginPrompt.TelnetDescription"] = "Specify username and password prompts so the TELNET login process can run automatically.",
         ["PasswordDialog.Title"] = "Enter Password - {0}",
@@ -144,6 +166,11 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ["PasswordDialog.Cancel"] = "Cancel",
         ["PasswordDialog.User"] = "User: {0}@{1}:{2}",
         ["PasswordDialog.SavePassword"] = "Save password",
+        ["PrivateKeyPassphraseDialog.Title"] = "Enter Private Key Passphrase - {0}",
+        ["PrivateKeyPassphraseDialog.Placeholder"] = "Enter private key passphrase",
+        ["PrivateKeyPassphraseDialog.SavePassphrase"] = "Save passphrase",
+        ["PrivateKeyPassphraseDialog.Key"] = "Private key: {0}",
+        ["PrivateKeyPassphraseDialog.JumpHost"] = "JumpHost: {0}\nPrivate key: {1}",
         ["Monitor.StatusRunning"] = "Monitoring",
         ["Monitor.StatusStopped"] = "Stopped",
         ["Monitor.MemoryUsed"] = "Used",
@@ -326,6 +353,21 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ["Sftp.Modified"] = "修改时间",
         ["Sftp.ConnectHint"] = "连接 SSH 会话后自动打开",
         ["Sftp.Loading"] = "正在加载...",
+        ["Sftp.TransferQueue"] = "传输队列",
+        ["Sftp.TransferStatus"] = "状态",
+        ["Sftp.TransferType"] = "类型",
+        ["Sftp.TransferFile"] = "文件",
+        ["Sftp.TransferProgress"] = "进度",
+        ["Sftp.TransferSpeed"] = "速度",
+        ["Sftp.TransferRemaining"] = "剩余时间",
+        ["Sftp.TransferTarget"] = "目标路径",
+        ["Sftp.TransferOperation"] = "操作",
+        ["Sftp.CancelTransfer"] = "取消",
+        ["Sftp.RetryTransfer"] = "继续",
+        ["Sftp.RemoveTransfer"] = "移除",
+        ["Sftp.ClearCompletedTransfers"] = "清理已完成",
+        ["Sftp.CollapseTransfers"] = "收起",
+        ["Sftp.ExpandTransfers"] = "展开",
         ["Common.Rename"] = "重命名",
         ["SessionEdit.LoginPrompt.TelnetDescription"] = "请指定用户名和密码提示，以便 TELNET 登录过程可自动运行。",
         ["PasswordDialog.Title"] = "输入密码 - {0}",
@@ -431,6 +473,9 @@ public sealed class LocalizationService : INotifyPropertyChanged
         EnglishTexts["SessionEdit.Unsupported.RdpDevicesAudio"] = "RDP drive redirection, audio, and full system key-combination handling require native channel support and are not supported yet.";
         EnglishTexts["SessionEdit.Unsupported.QuickCommands"] = "Quick commands are available from the terminal tab right-click menu. Use the default set, or enter custom commands as name=command separated by semicolons.";
         EnglishTexts["SessionEdit.Unsupported.DuplicateSessionCd"] = "When duplicating an SSH terminal tab, CxShell sends cd to the current remote directory after the new tab connects.";
+        EnglishTexts["SessionEdit.AutoReconnect"] = "Automatically reconnect terminal sessions when the connection closes unexpectedly";
+        EnglishTexts["SessionEdit.Transfer.AutoDetect"] = "Auto detect (recommended)";
+        EnglishTexts["SessionEdit.Unsupported.RdpDisplayPartial"] = "Work Space uses the current RDP viewport; Full Screen uses the current monitor resolution. Smart sizing scales locally, while smart/legacy reconnect follows later viewport changes.";
         EnglishTexts["SessionManager.AutoCheckUpdates"] = "Automatically check for updates";
         EnglishTexts["SessionManager.IncludePrereleaseUpdates"] = "Receive preview updates";
         EnglishTexts["Update.Title"] = "CxShell Update";
@@ -448,6 +493,19 @@ public sealed class LocalizationService : INotifyPropertyChanged
         EnglishTexts["Update.Cancel"] = "Cancel";
         EnglishTexts["Update.DownloadCancelled"] = "Update download was cancelled.";
         EnglishTexts["Update.ReleaseNotes"] = "Release notes:";
+        EnglishTexts["Update.MacApplicationsWarning"] = "CxShell is currently running from {0}. macOS may require an administrator password when replacing apps in /Applications. To avoid this, quit CxShell and move CxShell.app to {1}, then run updates from there.";
+        EnglishTexts["SessionManager.CopyFullPath"] = "Copy full path";
+        EnglishTexts["SessionManager.CopySessionId"] = "Copy session ID";
+        EnglishTexts["SessionManager.CopyLaunchCommand"] = "Copy launch command";
+        EnglishTexts["SessionEdit.PrivateKeyPassphrase"] = "Private key passphrase";
+        EnglishTexts["SessionEdit.PrivateKeyPassphraseHint"] = "Leave empty for unencrypted keys. Saved passphrases are encrypted in the session file.";
+        EnglishTexts["SessionEdit.SaveSuccessTitle"] = "Saved";
+        EnglishTexts["SessionEdit.SaveSuccessMessage"] = "Session settings have been saved.";
+        EnglishTexts["PrivateKeyPassphraseDialog.Title"] = "Enter Private Key Passphrase - {0}";
+        EnglishTexts["PrivateKeyPassphraseDialog.Placeholder"] = "Enter private key passphrase";
+        EnglishTexts["PrivateKeyPassphraseDialog.SavePassphrase"] = "Save passphrase";
+        EnglishTexts["PrivateKeyPassphraseDialog.Key"] = "Private key: {0}";
+        EnglishTexts["PrivateKeyPassphraseDialog.JumpHost"] = "JumpHost: {0}\nPrivate key: {1}";
         ChineseTexts["TabMenu.Duplicate"] = "\u590d\u5236";
         ChineseTexts["TabMenu.Close"] = "\u5173\u95ed";
         ChineseTexts["TabMenu.Properties"] = "\u5c5e\u6027";
@@ -481,6 +539,9 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ChineseTexts["SessionEdit.Unsupported.RdpDevicesAudio"] = "RDP \u78c1\u76d8\u91cd\u5b9a\u5411\u3001\u97f3\u9891\u548c\u5b8c\u6574\u7cfb\u7edf\u6309\u952e\u7ec4\u5408\u9700\u8981 native channel \u652f\u6301\uff0c\u5f53\u524d\u6682\u672a\u652f\u6301\u3002";
         ChineseTexts["SessionEdit.Unsupported.QuickCommands"] = "\u5feb\u901f\u547d\u4ee4\u53ef\u5728\u7ec8\u7aef Tab \u53f3\u952e\u83dc\u5355\u4e2d\u4f7f\u7528\u3002\u53ef\u4f7f\u7528\u9ed8\u8ba4\u96c6\uff0c\u4e5f\u53ef\u7528\u5206\u53f7\u8f93\u5165 name=command \u5f62\u5f0f\u7684\u81ea\u5b9a\u4e49\u547d\u4ee4\u3002";
         ChineseTexts["SessionEdit.Unsupported.DuplicateSessionCd"] = "\u590d\u5236 SSH \u7ec8\u7aef tab \u65f6\uff0cCxShell \u4f1a\u5728\u65b0 tab \u8fde\u63a5\u540e cd \u5230\u5f53\u524d\u8fdc\u7a0b\u76ee\u5f55\u3002";
+        ChineseTexts["SessionEdit.AutoReconnect"] = "\u7ec8\u7aef\u8fde\u63a5\u5f02\u5e38\u5173\u95ed\u65f6\u81ea\u52a8\u91cd\u65b0\u8fde\u63a5";
+        ChineseTexts["SessionEdit.Transfer.AutoDetect"] = "\u81ea\u52a8\u8bc6\u522b\uff08\u63a8\u8350\uff09";
+        ChineseTexts["SessionEdit.Unsupported.RdpDisplayPartial"] = "Work Space \u4f7f\u7528\u5f53\u524d RDP \u53ef\u89c6\u533a\u57df\uff1bFull Screen \u4f7f\u7528\u5f53\u524d\u663e\u793a\u5668\u5206\u8fa8\u7387\u3002Smart sizing \u5728\u672c\u5730\u7f29\u653e\uff0csmart/legacy reconnect \u4f1a\u7ee7\u7eed\u8ddf\u968f\u540e\u7eed\u89c6\u56fe\u5c3a\u5bf8\u53d8\u5316\u3002";
         ChineseTexts["SessionManager.AutoCheckUpdates"] = "\u81ea\u52a8\u68c0\u67e5\u66f4\u65b0";
         ChineseTexts["SessionManager.IncludePrereleaseUpdates"] = "\u63a5\u6536\u9884\u89c8\u7248\u66f4\u65b0";
         ChineseTexts["Update.Title"] = "CxShell \u66f4\u65b0";
@@ -498,6 +559,19 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ChineseTexts["Update.Cancel"] = "\u53d6\u6d88";
         ChineseTexts["Update.DownloadCancelled"] = "\u66f4\u65b0\u4e0b\u8f7d\u5df2\u53d6\u6d88\u3002";
         ChineseTexts["Update.ReleaseNotes"] = "\u66f4\u65b0\u8bf4\u660e\uff1a";
+        ChineseTexts["Update.MacApplicationsWarning"] = "CxShell \u5f53\u524d\u4f4d\u4e8e {0}\u3002macOS \u66ff\u6362 /Applications \u4e2d\u7684\u5e94\u7528\u65f6\u53ef\u80fd\u8981\u6c42\u7ba1\u7406\u5458\u5bc6\u7801\u3002\u82e5\u60f3\u514d\u7ba1\u7406\u5458\u5bc6\u7801\u66f4\u65b0\uff0c\u8bf7\u9000\u51fa CxShell \u540e\u5c06 CxShell.app \u79fb\u52a8\u5230 {1}\uff0c\u518d\u4ece\u8be5\u4f4d\u7f6e\u542f\u52a8\u5e76\u66f4\u65b0\u3002";
+        ChineseTexts["SessionManager.CopyFullPath"] = "\u590d\u5236\u5b8c\u6574\u8def\u5f84";
+        ChineseTexts["SessionManager.CopySessionId"] = "\u590d\u5236\u4f1a\u8bdd ID";
+        ChineseTexts["SessionManager.CopyLaunchCommand"] = "\u590d\u5236\u542f\u52a8\u547d\u4ee4";
+        ChineseTexts["SessionEdit.PrivateKeyPassphrase"] = "\u79c1\u94a5\u53e3\u4ee4";
+        ChineseTexts["SessionEdit.PrivateKeyPassphraseHint"] = "\u672a\u52a0\u5bc6\u79c1\u94a5\u53ef\u7559\u7a7a\uff1b\u4fdd\u5b58\u7684\u53e3\u4ee4\u4f1a\u5728\u4f1a\u8bdd\u6587\u4ef6\u4e2d\u52a0\u5bc6\u5b58\u50a8\u3002";
+        ChineseTexts["SessionEdit.SaveSuccessTitle"] = "\u4fdd\u5b58\u6210\u529f";
+        ChineseTexts["SessionEdit.SaveSuccessMessage"] = "\u4f1a\u8bdd\u914d\u7f6e\u5df2\u4fdd\u5b58\u3002";
+        ChineseTexts["PrivateKeyPassphraseDialog.Title"] = "\u8f93\u5165\u79c1\u94a5\u53e3\u4ee4 - {0}";
+        ChineseTexts["PrivateKeyPassphraseDialog.Placeholder"] = "\u8bf7\u8f93\u5165\u79c1\u94a5\u53e3\u4ee4";
+        ChineseTexts["PrivateKeyPassphraseDialog.SavePassphrase"] = "\u4fdd\u5b58\u53e3\u4ee4";
+        ChineseTexts["PrivateKeyPassphraseDialog.Key"] = "\u79c1\u94a5\uff1a{0}";
+        ChineseTexts["PrivateKeyPassphraseDialog.JumpHost"] = "JumpHost\uff1a{0}\n\u79c1\u94a5\uff1a{1}";
     }
 
     private static void AddDialogTexts(Dictionary<string, string> english, Dictionary<string, string> chinese)
@@ -523,6 +597,7 @@ public sealed class LocalizationService : INotifyPropertyChanged
         english["Dialog.FilePicker.SoundFile"] = "Select sound file";
         english["Dialog.FilePicker.SoundFiles"] = "Sound files";
         english["Dialog.FilePicker.SessionFile"] = "Select session file";
+        english["Dialog.FilePicker.PrivateKey"] = "Select private key";
         english["Dialog.QuickCommandSet.Title"] = "Select Quick Command Set";
         english["Dialog.QuickCommandSet.AllCommands"] = "All Commands";
         english["Dialog.Highlight.Title"] = "Highlight Sets";
@@ -611,6 +686,7 @@ public sealed class LocalizationService : INotifyPropertyChanged
         chinese["Dialog.FilePicker.SoundFile"] = "\u9009\u62e9\u58f0\u97f3\u6587\u4ef6";
         chinese["Dialog.FilePicker.SoundFiles"] = "\u58f0\u97f3\u6587\u4ef6";
         chinese["Dialog.FilePicker.SessionFile"] = "\u9009\u62e9\u4f1a\u8bdd\u6587\u4ef6";
+        chinese["Dialog.FilePicker.PrivateKey"] = "\u9009\u62e9\u79c1\u94a5\u6587\u4ef6";
         chinese["Dialog.QuickCommandSet.Title"] = "\u9009\u62e9\u5feb\u901f\u547d\u4ee4\u96c6";
         chinese["Dialog.QuickCommandSet.AllCommands"] = "\u6240\u6709\u547d\u4ee4";
         chinese["Dialog.Highlight.Title"] = "\u7a81\u51fa\u663e\u793a\u96c6";

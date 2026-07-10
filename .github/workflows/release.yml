@@ -572,6 +572,15 @@ jobs:
           export TRIPLET="${{ matrix.triplet }}"
           bash tools/build-rdp-bridge.sh
 
+      - name: Build Finder drag bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_name="CxShell-$RELEASE_TAG-${{ matrix.package_suffix }}"
+          export OUTPUT_DIR="$GITHUB_WORKSPACE/artifacts/package/$package_name/CxShell.app/Contents/MacOS"
+          export ARCH="${{ matrix.arch }}"
+          bash tools/build-macos-drag-bridge.sh
+
       - name: Ad-hoc sign app
         shell: bash
         run: |
@@ -592,6 +601,7 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$app_path/Contents/Info.plist")" = "CxShell"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$app_path/Contents/Info.plist")" = "CxShell.icns"
           test -f "$app_path/Contents/MacOS/libCxRdpBridge.dylib"
+          test -f "$app_path/Contents/MacOS/libCxMacDragBridge.dylib"
 
           if [ -d "$app_path/Contents/MacOS/runtimes/win-x64" ]; then
             echo "Windows native runtime files were copied into the macOS package." >&2
@@ -599,6 +609,7 @@ jobs:
           fi
 
           otool -L "$app_path/Contents/MacOS/libCxRdpBridge.dylib"
+          otool -L "$app_path/Contents/MacOS/libCxMacDragBridge.dylib"
 
       - name: Create archive
         shell: bash
@@ -606,6 +617,17 @@ jobs:
           set -euo pipefail
           package_name="CxShell-$RELEASE_TAG-${{ matrix.package_suffix }}"
           tar -czf "artifacts/$package_name.tar.gz" -C artifacts/package "$package_name"
+
+      - name: Create DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_name="CxShell-$RELEASE_TAG-${{ matrix.package_suffix }}"
+          export APP_PATH="$GITHUB_WORKSPACE/artifacts/package/$package_name/CxShell.app"
+          export OUTPUT_DMG="$GITHUB_WORKSPACE/artifacts/$package_name.dmg"
+          export VOLUME_NAME="CxShell $RELEASE_TAG ${{ matrix.package_suffix }}"
+          export README_SOURCE="$GITHUB_WORKSPACE/artifacts/package/$package_name/README-macos.txt"
+          bash tools/create-macos-dmg.sh
 
       - name: Create Velopack package
         shell: bash
@@ -635,6 +657,7 @@ jobs:
           name: CxShell-${{ env.RELEASE_TAG }}-${{ matrix.package_suffix }}
           path: |
             artifacts/CxShell-${{ env.RELEASE_TAG }}-${{ matrix.package_suffix }}.tar.gz
+            artifacts/CxShell-${{ env.RELEASE_TAG }}-${{ matrix.package_suffix }}.dmg
             artifacts/velopack/${{ matrix.rid }}/**
           if-no-files-found: error
 

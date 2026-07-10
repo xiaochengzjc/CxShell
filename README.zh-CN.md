@@ -6,6 +6,20 @@ CxShell 是一个使用 .NET、Avalonia 和 AtomUI 构建的跨平台远程会�
 
 当前项目仍在快速迭代中。Windows 是主要开发目标，macOS 已提供本地脚本和 GitHub Actions 打包流程，Linux 也可以按普通 Avalonia 桌面应用方式编译运行。RDP 功能依赖对应平台的原生 `CxRdpBridge` 桥接库。
 
+## 界面展示
+
+### SSH 工作区、SFTP 与服务器监控
+
+![CxShell SSH 终端、SFTP 文件管理和服务器监控](docs/images/cxshell-ssh-sftp-monitor.png)
+
+终端、远程文件浏览、传输队列和服务器指标可以在同一个工作区内协同使用。
+
+### 内嵌 RDP 会话
+
+![CxShell 内嵌 RDP 远程桌面会话](docs/images/cxshell-rdp-session.png)
+
+RDP 会话直接运行在统一的标签工作区中，并复用 CxShell 的会话管理体验。
+
 ## 功能特性
 
 - 会话管理：支持创建、复制、编辑、删除、搜索会话，并保存常用快速会话。
@@ -347,6 +361,14 @@ workflow 完成后，打开 GitHub 仓库的 `Releases` 页面，下载和你的
 CxShell 目前更接近“可用中的快速迭代版本”，不是一个完全稳定的长期发布版。协议支持和 UI 体验会继续完善，尤其是 RDP bridge、VNC 兼容性、文件编辑器能力和跨平台打包。
 
 欢迎提交 issue、功能建议和 pull request。涉及协议、终端渲染或文件传输的改动，请尽量附带复现步骤、目标服务器/系统信息和手动验证结果。
+
+## 联系方式
+
+如需反馈项目问题或进行技术交流，可以添加作者微信。
+
+- 微信号：`ruochujiangzi`
+
+<img src="docs/images/wechat-ruochujiangzi.png" alt="CxShell 作者微信二维码" width="220">
 
 ## 开源协议
 

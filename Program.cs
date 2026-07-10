@@ -1,6 +1,7 @@
 using System;
 using Avalonia;
 using AtomUI;
+using CxShell.Services;
 using ReactiveUI.Avalonia;
 using Velopack;
 
@@ -14,6 +15,9 @@ internal class Program
         VelopackApp.Build()
             .SetArgs(args)
             .Run();
+
+        if (CommandLineHandoffService.TrySendToExistingInstance(args))
+            return;
 
         BuildAvaloniaApp()
             .StartWithClassicDesktopLifetime(args);

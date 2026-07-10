@@ -101,6 +101,7 @@ exit 0
 """;
 
     private SshClient? _sshClient;
+    private SshConnectionContext? _sshConnectionContext;
     private CancellationTokenSource? _cts;
     private Task? _monitorTask;
     private DateTime _lastSampleTime;
@@ -140,15 +141,17 @@ exit 0
         }
 
         var authMethods = SshAgentAuthService.CreateAuthenticationMethods(session, password);
-        var connectionInfo = ProxyConnectionFactory.CreateSshConnectionInfo(session, authMethods);
-        SshAlgorithmPreferenceService.Apply(connectionInfo, session);
-        _sshClient = new SshClient(connectionInfo)
-        {
-            KeepAliveInterval = TimeSpan.FromSeconds(30)
-        };
-
+        _sshConnectionContext = await Task.Run(
+            () => ProxyConnectionFactory.CreateSshConnectionContext(session, authMethods));
         try
         {
+            var connectionInfo = _sshConnectionContext.ConnectionInfo;
+            SshAlgorithmPreferenceService.Apply(connectionInfo, session);
+            _sshClient = new SshClient(connectionInfo)
+            {
+                KeepAliveInterval = TimeSpan.FromSeconds(30)
+            };
+
             await ConnectWithRetryAsync(_sshClient, CancellationToken.None).ConfigureAwait(false);
             _targetKind = isWindowsOpenSsh || SshServerInfo.IsWindowsOpenSshServer(connectionInfo.ServerVersion)
                 ? MonitorTargetKind.Windows
@@ -162,6 +165,8 @@ exit 0
             ErrorOccurred?.Invoke(string.Format(LocalizationService.Shared.Text("Monitor.ConnectionFailed"), displayMessage));
             _sshClient?.Dispose();
             _sshClient = null;
+            _sshConnectionContext?.Dispose();
+            _sshConnectionContext = null;
             return;
         }
 
@@ -177,9 +182,11 @@ exit 0
         {
             _sshClient?.Disconnect();
             _sshClient?.Dispose();
+            _sshConnectionContext?.Dispose();
         }
 
         _sshClient = null;
+        _sshConnectionContext = null;
         _cts?.Dispose();
         _cts = null;
         _monitorTask = null;

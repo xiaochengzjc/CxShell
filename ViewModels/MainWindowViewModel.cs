@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
@@ -370,6 +371,129 @@ public partial class MainWindowViewModel : ObservableObject
         _ = StartAutomaticUpdateCheckAsync(startupArgs);
     }
 
+    public async Task ExecuteCommandLineLaunchAsync(CommandLineLaunchOptions options)
+    {
+        if (!string.IsNullOrWhiteSpace(options.ErrorMessage))
+        {
+            ConnectionStatusText = options.ErrorMessage;
+            ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FF4D4F"));
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.Token))
+        {
+            await ExecuteBastionTokenLaunchAsync(options);
+            return;
+        }
+
+        if (options.ShowAbout)
+            await ShowAbout();
+
+        if (!string.IsNullOrWhiteSpace(options.SavedSessionPath))
+        {
+            var lookup = _sessionTreeVm.FindSessionByPath(options.SavedSessionPath);
+            if (lookup.Status == SessionLookupStatus.NotFound || lookup.Session == null && lookup.Status != SessionLookupStatus.Ambiguous)
+            {
+                SetCommandLineLaunchError($"Session not found: {options.SavedSessionPath}");
+                return;
+            }
+
+            if (lookup.Status == SessionLookupStatus.Ambiguous)
+            {
+                SetCommandLineLaunchError(BuildAmbiguousSessionLaunchMessage(options.SavedSessionPath, lookup.Candidates));
+                return;
+            }
+
+            var savedSession = lookup.Session!;
+            if (options.ShowSessionProperties)
+            {
+                await EditSessionAsync(savedSession);
+                return;
+            }
+
+            await ConnectSession(CloneSessionForLaunch(savedSession, options.NewTabName), null, null);
+            return;
+        }
+
+        if (options.SessionRequest != null)
+        {
+            var request = options.SessionRequest;
+            await ConnectSession(
+                request.Session,
+                request.ForceAuthPrompt ? null : request.Password,
+                request.InitialRemoteDirectory);
+            return;
+        }
+
+        if (options.OpenSessionManager)
+            ShowSessionManager();
+    }
+
+    private static string BuildAmbiguousSessionLaunchMessage(
+        string sessionPath,
+        IReadOnlyList<SessionLookupCandidate> candidates)
+    {
+        var candidateText = string.Join(
+            "; ",
+            candidates.Take(6).Select(candidate => $"{candidate.Path} [{candidate.Session.Id}]"));
+        var moreText = candidates.Count > 6 ? $" (+{candidates.Count - 6} more)" : string.Empty;
+        return $"Session name is ambiguous: {sessionPath}. Use group/session path or session ID. Matches: {candidateText}{moreText}";
+    }
+
+    private async Task ExecuteBastionTokenLaunchAsync(CommandLineLaunchOptions options)
+    {
+        var endpoint = ResolveBastionTokenEndpoint(options.TokenServer);
+        if (string.IsNullOrWhiteSpace(endpoint))
+        {
+            SetCommandLineLaunchError("Missing bastion token endpoint. Use -token-server <url> or set Settings.BastionTokenEndpoint.");
+            return;
+        }
+
+        try
+        {
+            ConnectionStatusText = "Resolving bastion token...";
+            ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FAAD14"));
+            var payload = await BastionTokenExchangeService.ExchangeAsync(options.Token!, endpoint);
+            var resolvedOptions = CommandLineLaunchOptions.ParseTokenPayload(payload, options);
+            await ExecuteCommandLineLaunchAsync(resolvedOptions);
+        }
+        catch (Exception ex)
+        {
+            SetCommandLineLaunchError(ex.Message);
+        }
+    }
+
+    private string ResolveBastionTokenEndpoint(string? commandLineEndpoint)
+    {
+        if (!string.IsNullOrWhiteSpace(commandLineEndpoint))
+            return commandLineEndpoint.Trim();
+
+        if (!string.IsNullOrWhiteSpace(_sessionTreeVm.Settings.BastionTokenEndpoint))
+            return _sessionTreeVm.Settings.BastionTokenEndpoint.Trim();
+
+        return Environment.GetEnvironmentVariable("CXSHELL_TOKEN_ENDPOINT")?.Trim() ?? string.Empty;
+    }
+
+    private void SetCommandLineLaunchError(string message)
+    {
+        ConnectionStatusText = message;
+        ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FF4D4F"));
+    }
+
+    private static SessionInfo CloneSessionForLaunch(SessionInfo source, string? tabName)
+    {
+        var clone = new SessionInfo
+        {
+            Id = source.Id,
+            Name = string.IsNullOrWhiteSpace(tabName) ? source.Name : tabName.Trim(),
+            GroupId = source.GroupId,
+            SortOrder = source.SortOrder,
+            CreatedAt = source.CreatedAt
+        };
+        SessionTreeViewModel.CopySessionValues(clone, source);
+        return clone;
+    }
+
     private async Task StartAutomaticUpdateCheckAsync(string[] startupArgs)
     {
         try
@@ -629,7 +753,8 @@ public partial class MainWindowViewModel : ObservableObject
         var restart = await AtomUiDialogService.ShowConfirmAsync(
             owner,
             _localization.Text("Update.Title"),
-            string.Format(_localization.Text("Update.DownloadedMessage"), update.TargetVersion));
+            AppendMacInstallPermissionWarning(
+                string.Format(_localization.Text("Update.DownloadedMessage"), update.TargetVersion)));
         if (!restart)
             return;
 
@@ -648,7 +773,22 @@ public partial class MainWindowViewModel : ObservableObject
         if (!string.IsNullOrWhiteSpace(notes))
             message += Environment.NewLine + Environment.NewLine + _localization.Text("Update.ReleaseNotes") + Environment.NewLine + notes;
 
-        return message;
+        return AppendMacInstallPermissionWarning(message);
+    }
+
+    private string AppendMacInstallPermissionWarning(string message)
+    {
+        var permissionInfo = _appUpdateService.GetMacInstallPermissionInfo();
+        if (!permissionInfo.MayRequireAdminPassword)
+            return message;
+
+        return message +
+               Environment.NewLine +
+               Environment.NewLine +
+               string.Format(
+                   _localization.Text("Update.MacApplicationsWarning"),
+                   permissionInfo.AppBundlePath,
+                   permissionInfo.RecommendedUserApplicationsPath);
     }
 
     private static string BuildReleaseNotesPreview(string? releaseNotes)
@@ -1515,23 +1655,23 @@ public partial class MainWindowViewModel : ObservableObject
         return ConnectSession(session, null, null);
     }
 
-    private async Task ConnectSession(SessionInfo session, string? passwordOverride, string? initialRemoteDirectory)
+    public async Task ConnectSession(SessionInfo session, string? passwordOverride, string? initialRemoteDirectory)
     {
         if (session.Protocol is SessionProtocol.SFTP or SessionProtocol.FTP)
         {
-            await ConnectFileTransferSession(session);
+            await ConnectFileTransferSession(session, passwordOverride);
             return;
         }
 
         if (session.Protocol == SessionProtocol.RDP)
         {
-            await ConnectRdpSession(session);
+            await ConnectRdpSession(session, passwordOverride);
             return;
         }
 
         if (session.Protocol == SessionProtocol.VNC)
         {
-            await ConnectVncSession(session);
+            await ConnectVncSession(session, passwordOverride);
             return;
         }
 
@@ -1553,6 +1693,12 @@ public partial class MainWindowViewModel : ObservableObject
             password = await ShowPasswordDialog(session);
             if (password == null)
                 return;
+        }
+
+        if (session.Protocol == SessionProtocol.SSH &&
+            !await EnsureSshPrivateKeyPassphrasesAsync(session))
+        {
+            return;
         }
 
         var tab = new TerminalTabViewModel(session);
@@ -1582,9 +1728,11 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    private async Task ConnectRdpSession(SessionInfo session)
+    private async Task ConnectRdpSession(SessionInfo session, string? passwordOverride)
     {
-        var password = GetSavedPassword(session);
+        var password = string.IsNullOrEmpty(passwordOverride)
+            ? GetSavedPassword(session)
+            : passwordOverride;
         if (string.IsNullOrEmpty(password))
             password = await ShowPasswordDialog(session);
 
@@ -1636,9 +1784,11 @@ public partial class MainWindowViewModel : ObservableObject
         return $"{remoteHost}:{remotePort} via SSH {sshHost}:{sshPort}";
     }
 
-    private async Task ConnectVncSession(SessionInfo session)
+    private async Task ConnectVncSession(SessionInfo session, string? passwordOverride)
     {
-        var password = GetSavedPassword(session);
+        var password = string.IsNullOrEmpty(passwordOverride)
+            ? GetSavedPassword(session)
+            : passwordOverride;
         if (string.IsNullOrEmpty(password))
             password = await ShowPasswordDialog(session);
         if (password == null)
@@ -1671,15 +1821,23 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    private async Task ConnectFileTransferSession(SessionInfo session)
+    private async Task ConnectFileTransferSession(SessionInfo session, string? passwordOverride)
     {
-        string? password = GetSavedPassword(session);
+        string? password = string.IsNullOrEmpty(passwordOverride)
+            ? GetSavedPassword(session)
+            : passwordOverride;
 
         if (string.IsNullOrEmpty(password) && SshAgentAuthService.ShouldPromptForPassword(session))
         {
             password = await ShowPasswordDialog(session);
             if (password == null)
                 return;
+        }
+
+        if (session.Protocol == SessionProtocol.SFTP &&
+            !await EnsureSshPrivateKeyPassphrasesAsync(session))
+        {
+            return;
         }
 
         IsTerminalFullScreen = false;
@@ -2003,6 +2161,12 @@ public partial class MainWindowViewModel : ObservableObject
             if (filePassword == null)
                 return;
 
+            if (tab.Session.Protocol == SessionProtocol.SFTP &&
+                !await EnsureSshPrivateKeyPassphrasesAsync(tab.Session))
+            {
+                return;
+            }
+
             ConnectionStatusText = $"{tab.Session.Protocol} connecting...";
             ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FAAD14"));
             await tab.FileTransfer.SwitchConnectionAsync(tab.Session, filePassword);
@@ -2022,6 +2186,12 @@ public partial class MainWindowViewModel : ObservableObject
             password = await ShowPasswordDialog(tab.Session);
             if (password == null)
                 return;
+        }
+
+        if (tab.Session.Protocol == SessionProtocol.SSH &&
+            !await EnsureSshPrivateKeyPassphrasesAsync(tab.Session))
+        {
+            return;
         }
 
         try
@@ -2073,10 +2243,268 @@ public partial class MainWindowViewModel : ObservableObject
         return string.IsNullOrEmpty(password) ? null : password;
     }
 
+    private async Task<bool> EnsureSshPrivateKeyPassphrasesAsync(SessionInfo session)
+    {
+        if (session.Protocol is not (SessionProtocol.SSH or SessionProtocol.SFTP))
+            return true;
+
+        if (!await EnsureSessionPrivateKeyPassphraseAsync(session))
+            return false;
+
+        foreach (var proxy in EnumerateJumpHostChain(session))
+        {
+            if (!await EnsureProxyPrivateKeyPassphraseAsync(session, proxy))
+                return false;
+        }
+
+        return true;
+    }
+
+    private async Task<bool> EnsureSessionPrivateKeyPassphraseAsync(SessionInfo session)
+    {
+        if (session.AuthMethod != AuthMethod.PrivateKey ||
+            string.IsNullOrWhiteSpace(session.PrivateKeyPath) ||
+            SshAgentAuthService.HasPrivateKeyPassphrase(session) ||
+            !SshAgentAuthService.RequiresPrivateKeyPassphrase(session.PrivateKeyPath))
+        {
+            return true;
+        }
+
+        var detail = string.Format(
+            _localization.Text("PrivateKeyPassphraseDialog.Key"),
+            session.PrivateKeyPath);
+        var prompt = await ShowPrivateKeyPassphraseDialog(
+            string.Format(_localization.Text("PrivateKeyPassphraseDialog.Title"), session.Name),
+            detail,
+            PasswordEncryptionService.HasSavedPassword(session.PrivateKeyPassphrase));
+        if (prompt == null)
+            return false;
+
+        session.RuntimePrivateKeyPassphrase = prompt.Passphrase;
+        if (prompt.Save && !string.IsNullOrEmpty(prompt.Passphrase))
+            SaveSessionPrivateKeyPassphrase(session, prompt.Passphrase);
+
+        return true;
+    }
+
+    private async Task<bool> EnsureProxyPrivateKeyPassphraseAsync(SessionInfo session, ProxySettings proxy)
+    {
+        if (proxy.AuthMethod != AuthMethod.PrivateKey ||
+            string.IsNullOrWhiteSpace(proxy.PrivateKeyPath) ||
+            SshAgentAuthService.HasPrivateKeyPassphrase(proxy) ||
+            !SshAgentAuthService.RequiresPrivateKeyPassphrase(proxy.PrivateKeyPath))
+        {
+            return true;
+        }
+
+        var displayName = string.IsNullOrWhiteSpace(proxy.DisplayName)
+            ? $"{proxy.Username}@{proxy.Host}:{proxy.Port}"
+            : proxy.DisplayName;
+        var detail = string.Format(
+            _localization.Text("PrivateKeyPassphraseDialog.JumpHost"),
+            displayName,
+            proxy.PrivateKeyPath);
+        var prompt = await ShowPrivateKeyPassphraseDialog(
+            string.Format(_localization.Text("PrivateKeyPassphraseDialog.Title"), displayName),
+            detail,
+            PasswordEncryptionService.HasSavedPassword(proxy.PrivateKeyPassphrase));
+        if (prompt == null)
+            return false;
+
+        proxy.RuntimePrivateKeyPassphrase = prompt.Passphrase;
+        if (prompt.Save && !string.IsNullOrEmpty(prompt.Passphrase))
+            SaveProxyPrivateKeyPassphrase(session, proxy, prompt.Passphrase);
+
+        return true;
+    }
+
+    private void SaveSessionPrivateKeyPassphrase(SessionInfo session, string passphrase)
+    {
+        var encrypted = PasswordEncryptionService.Encrypt(passphrase);
+        session.PrivateKeyPassphrase = encrypted;
+        _sessionTreeVm.UpdateSessionSecret(session.Id, saved => saved.PrivateKeyPassphrase = encrypted);
+
+        foreach (var tab in Tabs.Where(tab => tab.Session.Id == session.Id))
+            tab.Session.PrivateKeyPassphrase = encrypted;
+    }
+
+    private void SaveProxyPrivateKeyPassphrase(SessionInfo session, ProxySettings proxy, string passphrase)
+    {
+        var encrypted = PasswordEncryptionService.Encrypt(passphrase);
+        proxy.PrivateKeyPassphrase = encrypted;
+        _sessionTreeVm.UpdateSessionSecret(session.Id, saved =>
+        {
+            UpdateProxyPrivateKeyPassphrase(saved.Proxy, proxy.Id, encrypted);
+            foreach (var savedProxy in saved.ProxyServers)
+                UpdateProxyPrivateKeyPassphrase(savedProxy, proxy.Id, encrypted);
+        });
+
+        foreach (var tab in Tabs.Where(tab => tab.Session.Id == session.Id))
+        {
+            UpdateProxyPrivateKeyPassphrase(tab.Session.Proxy, proxy.Id, encrypted);
+            foreach (var tabProxy in tab.Session.ProxyServers)
+                UpdateProxyPrivateKeyPassphrase(tabProxy, proxy.Id, encrypted);
+        }
+    }
+
+    private static void UpdateProxyPrivateKeyPassphrase(ProxySettings? proxy, Guid proxyId, string encryptedPassphrase)
+    {
+        if (proxy?.Id == proxyId)
+            proxy.PrivateKeyPassphrase = encryptedPassphrase;
+    }
+
+    private static IEnumerable<ProxySettings> EnumerateJumpHostChain(SessionInfo session)
+    {
+        var proxy = session.Proxy;
+        if (proxy == null || !proxy.IsEnabled || proxy.Protocol != ProxyProtocol.JumpHost)
+            yield break;
+
+        var proxiesById = session.ProxyServers
+            .Where(item => item.IsEnabled)
+            .GroupBy(item => item.Id)
+            .ToDictionary(group => group.Key, group => group.First());
+        var visited = new HashSet<Guid>();
+        while (proxy is { IsEnabled: true, Protocol: ProxyProtocol.JumpHost })
+        {
+            if (!visited.Add(proxy.Id))
+                yield break;
+
+            yield return proxy;
+            if (!proxy.NextProxyId.HasValue ||
+                !proxiesById.TryGetValue(proxy.NextProxyId.Value, out var nextProxy))
+            {
+                yield break;
+            }
+
+            proxy = nextProxy;
+        }
+    }
+
     private static Window? GetMainWindow()
     {
         var lifetime = Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
         return lifetime?.MainWindow;
+    }
+
+    private sealed record PrivateKeyPassphrasePromptResult(string Passphrase, bool Save);
+
+    private async Task<PrivateKeyPassphrasePromptResult?> ShowPrivateKeyPassphraseDialog(
+        string title,
+        string detail,
+        bool hasSavedPassphrase)
+    {
+        var dialog = new AtomUI.Desktop.Controls.Window
+        {
+            Title = title,
+            Width = 480,
+            Height = 238,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            CanResize = false,
+            ShowInTaskbar = false,
+            Background = Brushes.White
+        };
+
+        var passphraseBox = new AtomUI.Desktop.Controls.LineEdit
+        {
+            PasswordChar = '*',
+            PlaceholderText = _localization.Text("PrivateKeyPassphraseDialog.Placeholder"),
+            IsEnableRevealButton = true,
+            IsAllowClear = true,
+            SizeType = CustomizableSizeType.Middle,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            MinHeight = 34,
+            Margin = new Thickness(20, 10, 20, 0)
+        };
+
+        var savePassphraseBox = new AtomUI.Desktop.Controls.CheckBox
+        {
+            Content = _localization.Text("PrivateKeyPassphraseDialog.SavePassphrase"),
+            IsChecked = hasSavedPassphrase,
+            Margin = new Thickness(20, 0, 20, 0)
+        };
+
+        PrivateKeyPassphrasePromptResult? result = null;
+
+        void Confirm()
+        {
+            result = new PrivateKeyPassphrasePromptResult(
+                passphraseBox.Text ?? string.Empty,
+                savePassphraseBox.IsChecked == true);
+            dialog.Close();
+        }
+
+        var okButton = new AtomUI.Desktop.Controls.Button
+        {
+            Content = _localization.Text("PasswordDialog.Ok"),
+            Width = 86,
+            ButtonType = AtomUI.Desktop.Controls.ButtonType.Primary,
+            SizeType = CustomizableSizeType.Middle
+        };
+        okButton.Click += (_, _) => Confirm();
+
+        var cancelButton = new AtomUI.Desktop.Controls.Button
+        {
+            Content = _localization.Text("PasswordDialog.Cancel"),
+            Width = 86,
+            ButtonType = AtomUI.Desktop.Controls.ButtonType.Default,
+            SizeType = CustomizableSizeType.Middle
+        };
+        cancelButton.Click += (_, _) => dialog.Close();
+
+        var root = new Grid
+        {
+            RowDefinitions = new RowDefinitions("*,Auto")
+        };
+
+        var contentPanel = new StackPanel { Spacing = 8 };
+        contentPanel.Children.Add(new TextBlock
+        {
+            Text = detail,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(20, 20, 20, 0)
+        });
+        contentPanel.Children.Add(passphraseBox);
+        contentPanel.Children.Add(savePassphraseBox);
+
+        var buttonPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 10,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(20, 4, 20, 16)
+        };
+        buttonPanel.Children.Add(okButton);
+        buttonPanel.Children.Add(cancelButton);
+        Grid.SetRow(buttonPanel, 1);
+        root.Children.Add(contentPanel);
+        root.Children.Add(buttonPanel);
+
+        passphraseBox.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter)
+            {
+                Confirm();
+                e.Handled = true;
+            }
+        };
+
+        dialog.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Escape)
+            {
+                dialog.Close();
+                e.Handled = true;
+            }
+        };
+
+        dialog.Content = root;
+        dialog.Opened += (_, _) => passphraseBox.Focus();
+
+        var mainWindow = GetMainWindow();
+        if (mainWindow != null)
+            await dialog.ShowDialog(mainWindow);
+
+        return result;
     }
 
     private async Task<string?> ShowPasswordDialog(SessionInfo session)

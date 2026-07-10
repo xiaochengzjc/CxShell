@@ -18,9 +18,20 @@
         <Style Selector="atom|DataGrid.sftp-file-grid atom|DataGridColumnHeader">
             <Setter Property="FontSize" Value="12"/>
         </Style>
+        <Style Selector="atom|DataGrid.sftp-transfer-grid atom|DataGridCell">
+            <Setter Property="Padding" Value="6,0"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="atom|DataGrid.sftp-transfer-grid atom|DataGridColumnHeader /template/ Border#PART_ContentFrame">
+            <Setter Property="Padding" Value="6,4"/>
+        </Style>
+        <Style Selector="atom|DataGrid.sftp-transfer-grid atom|DataGridColumnHeader">
+            <Setter Property="FontSize" Value="11"/>
+        </Style>
     </UserControl.Styles>
 
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" Background="{atom:SharedTokenResource ColorBgLayout}">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto" Background="{atom:SharedTokenResource ColorBgLayout}">
 
         <Border Grid.Row="0"
                 Background="{atom:SharedTokenResource ColorBgContainer}"
@@ -356,6 +367,170 @@
                 </atom:DataGrid>
             </atom:Spin>
         </Grid>
+
+        <Border Grid.Row="5"
+                Background="{atom:SharedTokenResource ColorBgContainer}"
+                BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                BorderThickness="0,1,0,0">
+            <Grid RowDefinitions="Auto,Auto">
+                <Grid Grid.Row="0"
+                      ColumnDefinitions="Auto,*,Auto,Auto"
+                      ColumnSpacing="8"
+                      MinHeight="34"
+                      Margin="8,4">
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding TransferQueueTitleText}"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center"
+                               Foreground="{atom:SharedTokenResource ColorText}"/>
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding TransferSummaryText}"
+                               FontSize="10"
+                               VerticalAlignment="Center"
+                               Foreground="{atom:SharedTokenResource ColorTextTertiary}"
+                               TextTrimming="CharacterEllipsis"/>
+                    <atom:Button Grid.Column="2"
+                                 Height="24"
+                                 Padding="7,2"
+                                 ButtonType="Text"
+                                 IsEnabled="{Binding HasCompletedTransfers}"
+                                 Command="{Binding ClearCompletedTransfersCommand}">
+                        <TextBlock Text="{Binding ClearCompletedTransfersText}"
+                                   FontSize="10"/>
+                    </atom:Button>
+                    <atom:Button Grid.Column="3"
+                                 Height="24"
+                                 Padding="7,2"
+                                 ButtonType="Text"
+                                 Command="{Binding ToggleTransferPanelCommand}">
+                        <TextBlock Text="{Binding TransferPanelToggleText}"
+                                   FontSize="10"/>
+                    </atom:Button>
+                </Grid>
+
+                <atom:DataGrid x:Name="TransferGrid"
+                               Grid.Row="1"
+                               Classes="sftp-transfer-grid"
+                               Height="176"
+                               ItemsSource="{Binding TransferTasks}"
+                               AutoGenerateColumns="False"
+                               IsReadOnly="True"
+                               SelectionMode="Single"
+                               SizeType="Small"
+                               RowHeight="32"
+                               GridLinesVisibility="All"
+                               CanUserResizeColumns="True"
+                               CanUserSortColumns="False"
+                               RightFrozenColumnCount="2"
+                               IsHideOnSinglePage="True"
+                               HeadersVisibility="Column"
+                               IsVisible="{Binding IsTransferPanelExpanded}">
+                    <atom:DataGrid.Columns>
+                        <atom:DataGridTextColumn Header="{Binding TransferTypeText}"
+                                                 Binding="{Binding DirectionText}"
+                                                 Width="64"
+                                                 MinWidth="58"/>
+                        <atom:DataGridTextColumn Header="{Binding TransferFileText}"
+                                                 Binding="{Binding FileName}"
+                                                 Width="140"
+                                                 MinWidth="100"/>
+                        <atom:DataGridTextColumn Header="{Binding SizeText}"
+                                                 Binding="{Binding SizeText}"
+                                                 Width="150"
+                                                 MinWidth="120"/>
+                        <atom:DataGridTemplateColumn Header="{Binding TransferProgressText}"
+                                                     Width="180"
+                                                     MinWidth="150">
+                            <atom:DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate DataType="vm:SftpTransferTaskItem">
+                                    <Grid ColumnDefinitions="*,46"
+                                          ColumnSpacing="6"
+                                          VerticalAlignment="Center">
+                                        <atom:ProgressBar Grid.Column="0"
+                                                          Value="{Binding ProgressPercent}"
+                                                          Minimum="0"
+                                                          Maximum="100"
+                                                          IsProgressInfoVisible="False"
+                                                          Height="6"
+                                                          VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding ProgressText}"
+                                                   FontSize="10"
+                                                   TextAlignment="Right"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </atom:DataGridTemplateColumn.CellTemplate>
+                        </atom:DataGridTemplateColumn>
+                        <atom:DataGridTextColumn Header="{Binding TransferSpeedText}"
+                                                 Binding="{Binding SpeedText}"
+                                                 Width="90"
+                                                 MinWidth="78"/>
+                        <atom:DataGridTextColumn Header="{Binding TransferRemainingText}"
+                                                 Binding="{Binding RemainingText}"
+                                                 Width="88"
+                                                 MinWidth="78"/>
+                        <atom:DataGridTextColumn Header="{Binding TransferTargetText}"
+                                                 Binding="{Binding TargetPath}"
+                                                 Width="210"
+                                                 MinWidth="140"/>
+                        <atom:DataGridTemplateColumn Header="{Binding TransferStatusText}"
+                                                     Width="80"
+                                                     MinWidth="72">
+                            <atom:DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate DataType="vm:SftpTransferTaskItem">
+                                    <TextBlock Text="{Binding StatusText}"
+                                               FontSize="11"
+                                               VerticalAlignment="Center"
+                                               ToolTip.Tip="{Binding ErrorMessage}"/>
+                                </DataTemplate>
+                            </atom:DataGridTemplateColumn.CellTemplate>
+                        </atom:DataGridTemplateColumn>
+                        <atom:DataGridTemplateColumn Header="{Binding TransferOperationText}"
+                                                     Width="76"
+                                                     MinWidth="70">
+                            <atom:DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate DataType="vm:SftpTransferTaskItem">
+                                    <StackPanel Orientation="Horizontal"
+                                                Spacing="2"
+                                                VerticalAlignment="Center">
+                                        <atom:Button Height="23"
+                                                     Padding="6,1"
+                                                     ButtonType="Text"
+                                                     IsVisible="{Binding CanCancel}"
+                                                     Command="{Binding $parent[UserControl].DataContext.CancelTransferCommand, x:CompileBindings=False}"
+                                                     CommandParameter="{Binding}">
+                                            <TextBlock Text="{Binding $parent[UserControl].DataContext.CancelTransferText, x:CompileBindings=False}"
+                                                       FontSize="10"/>
+                                        </atom:Button>
+                                        <atom:Button Height="23"
+                                                     Padding="6,1"
+                                                     ButtonType="Text"
+                                                     IsVisible="{Binding CanRetry}"
+                                                     Command="{Binding $parent[UserControl].DataContext.RetryTransferCommand, x:CompileBindings=False}"
+                                                     CommandParameter="{Binding}">
+                                            <TextBlock Text="{Binding $parent[UserControl].DataContext.RetryTransferText, x:CompileBindings=False}"
+                                                       FontSize="10"/>
+                                        </atom:Button>
+                                        <atom:Button Height="23"
+                                                     Padding="6,1"
+                                                     ButtonType="Text"
+                                                     IsVisible="{Binding CanRemove}"
+                                                     Command="{Binding $parent[UserControl].DataContext.RemoveTransferCommand, x:CompileBindings=False}"
+                                                     CommandParameter="{Binding}">
+                                            <TextBlock Text="{Binding $parent[UserControl].DataContext.RemoveTransferText, x:CompileBindings=False}"
+                                                       FontSize="10"/>
+                                        </atom:Button>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </atom:DataGridTemplateColumn.CellTemplate>
+                        </atom:DataGridTemplateColumn>
+                    </atom:DataGrid.Columns>
+                </atom:DataGrid>
+            </Grid>
+        </Border>
 
     </Grid>
 </UserControl>

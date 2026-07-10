@@ -1,0 +1,282 @@
+using System;
+using System.Threading;
+using CxShell.Services;
+using CommunityToolkit.Mvvm.ComponentModel;
+
+namespace CxShell.ViewModels;
+
+public enum SftpTransferDirection
+{
+    Upload,
+    Download
+}
+
+public enum SftpTransferStatus
+{
+    Pending,
+    Running,
+    Cancelling,
+    Completed,
+    Failed,
+    Cancelled
+}
+
+public partial class SftpTransferTaskItem : ObservableObject
+{
+    private LocalizationService L => LocalizationService.Shared;
+    private DateTimeOffset _lastSpeedSampleAt = DateTimeOffset.Now;
+    private long _lastSpeedSampleBytes;
+
+    [ObservableProperty] private Guid _id = Guid.NewGuid();
+    [ObservableProperty] private SftpTransferDirection _direction;
+    [ObservableProperty] private SftpTransferStatus _status = SftpTransferStatus.Pending;
+    [ObservableProperty] private string _fileName = string.Empty;
+    [ObservableProperty] private string _localPath = string.Empty;
+    [ObservableProperty] private string _remotePath = string.Empty;
+    [ObservableProperty] private long _totalBytes;
+    [ObservableProperty] private long _transferredBytes;
+    [ObservableProperty] private double _speedBytesPerSecond;
+    [ObservableProperty] private string? _errorMessage;
+    [ObservableProperty] private DateTimeOffset? _startedAt;
+    [ObservableProperty] private DateTimeOffset? _completedAt;
+    [ObservableProperty] private bool _isExecutionActive;
+    [ObservableProperty] private bool _supportsRetry = true;
+
+    internal CancellationTokenSource? CancellationTokenSource { get; set; }
+    internal IFileTransferService? ActiveService { get; set; }
+    internal DateTimeOffset LastUiProgressAt { get; set; } = DateTimeOffset.MinValue;
+    internal long LastUiProgressBytes { get; set; }
+
+    public string DirectionText => Direction == SftpTransferDirection.Upload
+        ? L.IsEnglish ? "Upload" : "\u4e0a\u4f20"
+        : L.IsEnglish ? "Download" : "\u4e0b\u8f7d";
+
+    public string StatusText => Status switch
+    {
+        SftpTransferStatus.Pending => L.IsEnglish ? "Pending" : "\u7b49\u5f85\u4e2d",
+        SftpTransferStatus.Running => L.IsEnglish
+            ? Direction == SftpTransferDirection.Upload ? "Uploading" : "Downloading"
+            : Direction == SftpTransferDirection.Upload ? "\u4e0a\u4f20\u4e2d" : "\u4e0b\u8f7d\u4e2d",
+        SftpTransferStatus.Cancelling => L.IsEnglish ? "Cancelling" : "\u6b63\u5728\u53d6\u6d88",
+        SftpTransferStatus.Completed => L.IsEnglish ? "Completed" : "\u5df2\u5b8c\u6210",
+        SftpTransferStatus.Failed => L.IsEnglish ? "Failed" : "\u5931\u8d25",
+        SftpTransferStatus.Cancelled => L.IsEnglish ? "Cancelled" : "\u5df2\u53d6\u6d88",
+        _ => string.Empty
+    };
+
+    public string TargetPath => Direction == SftpTransferDirection.Upload ? RemotePath : LocalPath;
+
+    public double ProgressPercent => TotalBytes <= 0
+        ? 0
+        : Math.Clamp(TransferredBytes * 100.0 / TotalBytes, 0, 100);
+
+    public string ProgressText => TotalBytes <= 0
+        ? "-"
+        : $"{ProgressPercent:F1}%";
+
+    public string SizeText => TotalBytes <= 0
+        ? FormatByteSize(TransferredBytes)
+        : $"{FormatByteSize(TransferredBytes)} / {FormatByteSize(TotalBytes)}";
+
+    public string SpeedText => Status == SftpTransferStatus.Running && SpeedBytesPerSecond > 1
+        ? $"{FormatByteSize((long)SpeedBytesPerSecond)}/s"
+        : "-";
+
+    public string RemainingText
+    {
+        get
+        {
+            if (Status != SftpTransferStatus.Running || SpeedBytesPerSecond <= 1 || TotalBytes <= 0)
+                return "-";
+
+            var remainingBytes = Math.Max(0, TotalBytes - TransferredBytes);
+            var remaining = TimeSpan.FromSeconds(remainingBytes / SpeedBytesPerSecond);
+            if (remaining.TotalHours >= 1)
+                return $"{(int)remaining.TotalHours:D2}:{remaining.Minutes:D2}:{remaining.Seconds:D2}";
+
+            return $"{remaining.Minutes:D2}:{remaining.Seconds:D2}";
+        }
+    }
+
+    public bool CanCancel => IsExecutionActive &&
+                             (Status is SftpTransferStatus.Pending or SftpTransferStatus.Running);
+    public bool CanRetry => SupportsRetry && !IsExecutionActive &&
+                            (Status is SftpTransferStatus.Failed or SftpTransferStatus.Cancelled);
+    public bool CanRemove => !IsExecutionActive &&
+                             (Status is not SftpTransferStatus.Pending and
+                              not SftpTransferStatus.Running and
+                              not SftpTransferStatus.Cancelling);
+    public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
+
+    public void PrepareForStart()
+    {
+        Status = SftpTransferStatus.Pending;
+        ErrorMessage = null;
+        CompletedAt = null;
+        SpeedBytesPerSecond = 0;
+        LastUiProgressAt = DateTimeOffset.MinValue;
+        LastUiProgressBytes = 0;
+        ResetCancellation();
+    }
+
+    public void RefreshLocalization()
+    {
+        OnPropertyChanged(nameof(DirectionText));
+        OnPropertyChanged(nameof(StatusText));
+    }
+
+    public void MarkRunning()
+    {
+        StartedAt = DateTimeOffset.Now;
+        Status = SftpTransferStatus.Running;
+        _lastSpeedSampleAt = StartedAt.Value;
+        _lastSpeedSampleBytes = TransferredBytes;
+        NotifyComputedProperties();
+    }
+
+    public void UpdateProgress(long transferredBytes, long totalBytes)
+    {
+        var now = DateTimeOffset.Now;
+        if (totalBytes >= 0)
+            TotalBytes = totalBytes;
+
+        var nextTransferred = TotalBytes > 0
+            ? Math.Clamp(transferredBytes, 0, TotalBytes)
+            : Math.Max(0, transferredBytes);
+
+        var elapsed = now - _lastSpeedSampleAt;
+        if (elapsed.TotalMilliseconds >= 250)
+        {
+            var deltaBytes = Math.Max(0, nextTransferred - _lastSpeedSampleBytes);
+            SpeedBytesPerSecond = deltaBytes / Math.Max(0.001, elapsed.TotalSeconds);
+            _lastSpeedSampleAt = now;
+            _lastSpeedSampleBytes = nextTransferred;
+        }
+
+        TransferredBytes = nextTransferred;
+        NotifyComputedProperties();
+    }
+
+    public void MarkCompleted()
+    {
+        if (TotalBytes > 0)
+            TransferredBytes = TotalBytes;
+        SpeedBytesPerSecond = 0;
+        CompletedAt = DateTimeOffset.Now;
+        Status = SftpTransferStatus.Completed;
+        NotifyComputedProperties();
+    }
+
+    public void MarkFailed(string message)
+    {
+        ErrorMessage = message;
+        SpeedBytesPerSecond = 0;
+        CompletedAt = DateTimeOffset.Now;
+        Status = SftpTransferStatus.Failed;
+        NotifyComputedProperties();
+    }
+
+    public void MarkCancelled()
+    {
+        SpeedBytesPerSecond = 0;
+        CompletedAt = DateTimeOffset.Now;
+        Status = SftpTransferStatus.Cancelled;
+        NotifyComputedProperties();
+    }
+
+    public void MarkCancelling()
+    {
+        SpeedBytesPerSecond = 0;
+        Status = SftpTransferStatus.Cancelling;
+        NotifyComputedProperties();
+    }
+
+    internal void ResetCancellation()
+    {
+        CancellationTokenSource?.Dispose();
+        CancellationTokenSource = new CancellationTokenSource();
+        ActiveService = null;
+    }
+
+    internal void ClearRuntimeHandles()
+    {
+        ActiveService = null;
+    }
+
+    partial void OnDirectionChanged(SftpTransferDirection value)
+    {
+        OnPropertyChanged(nameof(DirectionText));
+        OnPropertyChanged(nameof(TargetPath));
+        OnPropertyChanged(nameof(StatusText));
+    }
+
+    partial void OnStatusChanged(SftpTransferStatus value)
+    {
+        OnPropertyChanged(nameof(StatusText));
+        OnPropertyChanged(nameof(CanCancel));
+        OnPropertyChanged(nameof(CanRetry));
+        OnPropertyChanged(nameof(CanRemove));
+        OnPropertyChanged(nameof(SpeedText));
+        OnPropertyChanged(nameof(RemainingText));
+    }
+
+    partial void OnLocalPathChanged(string value)
+    {
+        OnPropertyChanged(nameof(TargetPath));
+    }
+
+    partial void OnRemotePathChanged(string value)
+    {
+        OnPropertyChanged(nameof(TargetPath));
+    }
+
+    partial void OnTotalBytesChanged(long value)
+    {
+        NotifyComputedProperties();
+    }
+
+    partial void OnTransferredBytesChanged(long value)
+    {
+        NotifyComputedProperties();
+    }
+
+    partial void OnSpeedBytesPerSecondChanged(double value)
+    {
+        OnPropertyChanged(nameof(SpeedText));
+        OnPropertyChanged(nameof(RemainingText));
+    }
+
+    partial void OnErrorMessageChanged(string? value)
+    {
+        OnPropertyChanged(nameof(HasError));
+    }
+
+    partial void OnIsExecutionActiveChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanCancel));
+        OnPropertyChanged(nameof(CanRetry));
+        OnPropertyChanged(nameof(CanRemove));
+    }
+
+    partial void OnSupportsRetryChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanRetry));
+    }
+
+    private void NotifyComputedProperties()
+    {
+        OnPropertyChanged(nameof(ProgressPercent));
+        OnPropertyChanged(nameof(ProgressText));
+        OnPropertyChanged(nameof(SizeText));
+        OnPropertyChanged(nameof(SpeedText));
+        OnPropertyChanged(nameof(RemainingText));
+    }
+
+    private static string FormatByteSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        if (bytes < 1024L * 1024 * 1024) return $"{bytes / (1024.0 * 1024):F1} MB";
+        return $"{bytes / (1024.0 * 1024 * 1024):F1} GB";
+    }
+}
