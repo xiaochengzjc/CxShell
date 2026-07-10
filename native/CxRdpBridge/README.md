@@ -40,12 +40,19 @@ runtimes/
 
 FreeRDP runtime libraries must live in the same native directory as the bridge. Linux and macOS builds set rpath to the bridge directory (`$ORIGIN` or `@loader_path`) so those adjacent dependencies can be resolved by the OS loader.
 
-## First bridge scope
+## Bridge API
+
+The bridge exposes a versioned C ABI. Managed callers should inspect `cxrdp_get_api_version` and `cxrdp_get_capabilities` before using optional features. API version 4 supports:
 
 - Connect with username/password using FreeRDP.
 - Publish BGRA framebuffer updates to C#.
 - Accept pointer events from Avalonia.
 - Accept basic keyboard events from Avalonia.
 - Report status and disconnect callbacks.
+- Synchronize Unicode text through the RDP clipboard channel.
+- Redirect one explicitly selected local folder through the RDPDR drive channel.
+- Play remote audio locally through `rdpsnd` when the build contains an audio backend.
+- Redirect the local microphone through `audin` and `drdynvc` when supported.
+- Apply RDP keyboard-hook policy for local or remote system key combinations.
 
-Clipboard, audio, drive redirection, and full keyboard layout translation should be added after the first framebuffer connection is stable.
+On Windows, CxShell supplements FreeRDP's keyboard policy with a focus-scoped low-level hook for system-reserved shortcuts. The default vcpkg Linux build disables ALSA and PulseAudio, so Linux packages report audio capabilities as unavailable instead of silently enabling a nonfunctional channel.

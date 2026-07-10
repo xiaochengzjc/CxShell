@@ -250,8 +250,11 @@ public partial class SessionTreeViewModel : ObservableObject
         target.RdpColorQuality = source.RdpColorQuality;
         target.RdpApplyKeyCombinations = source.RdpApplyKeyCombinations;
         target.RdpRedirectDrives = source.RdpRedirectDrives;
+        target.RdpDriveName = source.RdpDriveName;
+        target.RdpDrivePath = source.RdpDrivePath;
         target.RdpAudioMode = source.RdpAudioMode;
         target.RdpAudioCapture = source.RdpAudioCapture;
+        target.RdpMicrophoneEnabled = source.RdpMicrophoneEnabled;
         target.RdpUseSshTunnel = source.RdpUseSshTunnel;
         target.RdpSshHost = source.RdpSshHost;
         target.RdpSshPort = source.RdpSshPort;
@@ -321,6 +324,7 @@ public partial class SessionTreeViewModel : ObservableObject
         target.TerminalAdvancedUseRxvtHomeEnd = source.TerminalAdvancedUseRxvtHomeEnd;
         target.TerminalAdvancedDisableBlinkingText = source.TerminalAdvancedDisableBlinkingText;
         target.TerminalAdvancedDisableTitleChange = source.TerminalAdvancedDisableTitleChange;
+        target.TerminalAdvancedAllowTitleChange = source.TerminalAdvancedAllowTitleChange;
         target.TerminalAdvancedDisableTerminalPrint = source.TerminalAdvancedDisableTerminalPrint;
         target.TerminalAdvancedDisableAlternateScreen = source.TerminalAdvancedDisableAlternateScreen;
         target.TerminalAdvancedIgnoreResizeRequest = source.TerminalAdvancedIgnoreResizeRequest;
@@ -879,8 +883,11 @@ public partial class SessionTreeViewModel : ObservableObject
             RdpColorQuality = source.RdpColorQuality,
             RdpApplyKeyCombinations = source.RdpApplyKeyCombinations,
             RdpRedirectDrives = source.RdpRedirectDrives,
+            RdpDriveName = source.RdpDriveName,
+            RdpDrivePath = source.RdpDrivePath,
             RdpAudioMode = source.RdpAudioMode,
             RdpAudioCapture = source.RdpAudioCapture,
+            RdpMicrophoneEnabled = source.RdpMicrophoneEnabled,
             RdpUseSshTunnel = source.RdpUseSshTunnel,
             RdpSshHost = source.RdpSshHost,
             RdpSshPort = source.RdpSshPort,
@@ -946,6 +953,7 @@ public partial class SessionTreeViewModel : ObservableObject
             TerminalAdvancedUseRxvtHomeEnd = source.TerminalAdvancedUseRxvtHomeEnd,
             TerminalAdvancedDisableBlinkingText = source.TerminalAdvancedDisableBlinkingText,
             TerminalAdvancedDisableTitleChange = source.TerminalAdvancedDisableTitleChange,
+            TerminalAdvancedAllowTitleChange = source.TerminalAdvancedAllowTitleChange,
             TerminalAdvancedDisableTerminalPrint = source.TerminalAdvancedDisableTerminalPrint,
             TerminalAdvancedDisableAlternateScreen = source.TerminalAdvancedDisableAlternateScreen,
             TerminalAdvancedIgnoreResizeRequest = source.TerminalAdvancedIgnoreResizeRequest,

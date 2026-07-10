@@ -19,9 +19,29 @@ env:
   RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag_name }}
 
 jobs:
+  test:
+    name: Test .NET application
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore CxShell.Tests/CxShell.Tests.csproj
+
+      - name: Test
+        run: dotnet test CxShell.Tests/CxShell.Tests.csproj --no-restore --configuration Release
+
   windows:
     name: Build Windows ${{ matrix.rid }}
     runs-on: windows-2022
+    needs: test
     env:
       VCPKG_ROOT: ${{ github.workspace }}\.vcpkg
     strategy:
@@ -283,6 +303,12 @@ jobs:
             throw
           }
 
+          $env:PATH = "$publishDir;$env:PATH"
+          dotnet run --project tools\RdpSmokeTest\RdpSmokeTest.csproj --configuration Release -- --probe --require-audio
+          if ($LASTEXITCODE -ne 0) {
+            throw "RDP native bridge capability probe failed with exit code $LASTEXITCODE."
+          }
+
       - name: Create archive
         shell: pwsh
         run: |
@@ -336,6 +362,7 @@ jobs:
   linux:
     name: Build Linux ${{ matrix.rid }}
     runs-on: ${{ matrix.runs_on }}
+    needs: test
     env:
       VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
     strategy:
@@ -431,6 +458,9 @@ jobs:
             exit 1
           fi
 
+          LD_LIBRARY_PATH="$publish_dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+            dotnet run --project tools/RdpSmokeTest/RdpSmokeTest.csproj --configuration Release -- --probe
+
       - name: Create archive
         shell: bash
         run: |
@@ -480,6 +510,7 @@ jobs:
   macos:
     name: Build macOS ${{ matrix.arch }}
     runs-on: ${{ matrix.runs_on }}
+    needs: test
     env:
       VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
     strategy:
@@ -610,6 +641,9 @@ jobs:
 
           otool -L "$app_path/Contents/MacOS/libCxRdpBridge.dylib"
           otool -L "$app_path/Contents/MacOS/libCxMacDragBridge.dylib"
+
+          DYLD_LIBRARY_PATH="$app_path/Contents/MacOS${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" \
+            dotnet run --project tools/RdpSmokeTest/RdpSmokeTest.csproj --configuration Release -- --probe
 
       - name: Create archive
         shell: bash

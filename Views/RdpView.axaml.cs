@@ -7,6 +7,7 @@ using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
+using CxShell.Services;
 using CxShell.ViewModels;
 
 namespace CxShell.Views;
@@ -19,9 +20,12 @@ public partial class RdpView : UserControl
     private bool _controlDown;
     private bool _shiftDown;
     private bool _altDown;
+    private bool _ctrlAltEndActive;
     private bool _suppressNextPasteKeyUp;
     private bool _applyingRemoteClipboardText;
+    private bool _hasKeyboardFocus;
     private string? _lastSyncedClipboardText;
+    private WindowsRdpShortcutHook? _systemShortcutHook;
 
     public RdpView()
     {
@@ -34,15 +38,28 @@ public partial class RdpView : UserControl
             Focus();
             if (DataContext is RdpViewModel vm)
                 ScheduleStart(vm);
+            UpdateSystemShortcutHook();
         };
         DetachedFromVisualTree += (_, _) =>
         {
             _isAttached = false;
+            _hasKeyboardFocus = false;
+            DisposeSystemShortcutHook();
             ReleaseTrackedModifiers();
             UnbindViewModel();
         };
-        GotFocus += (_, _) => _ = SyncLocalClipboardToRemoteAsync();
-        LostFocus += (_, _) => ReleaseTrackedModifiers();
+        GotFocus += (_, _) =>
+        {
+            _hasKeyboardFocus = true;
+            UpdateSystemShortcutHook();
+            _ = SyncLocalClipboardToRemoteAsync();
+        };
+        LostFocus += (_, _) =>
+        {
+            _hasKeyboardFocus = false;
+            DisposeSystemShortcutHook();
+            ReleaseTrackedModifiers();
+        };
         DataContextChanged += OnDataContextChanged;
     }
 
@@ -55,6 +72,7 @@ public partial class RdpView : UserControl
         _boundVm = vm;
         vm.PropertyChanged += OnViewModelPropertyChanged;
         ApplyScaleMode(vm);
+        UpdateSystemShortcutHook();
         if (_isAttached)
         {
             ScheduleStart(vm);
@@ -86,6 +104,34 @@ public partial class RdpView : UserControl
 
         _boundVm.PropertyChanged -= OnViewModelPropertyChanged;
         _boundVm = null;
+        DisposeSystemShortcutHook();
+    }
+
+    private void UpdateSystemShortcutHook()
+    {
+        var shouldEnable = OperatingSystem.IsWindows() &&
+                           _isAttached &&
+                           _hasKeyboardFocus &&
+                           DataContext is RdpViewModel { Session.RdpApplyKeyCombinations: true };
+        if (!shouldEnable)
+        {
+            DisposeSystemShortcutHook();
+            return;
+        }
+
+        _systemShortcutHook ??= WindowsRdpShortcutHook.TryCreate(OnSystemShortcutKey);
+    }
+
+    private void DisposeSystemShortcutHook()
+    {
+        _systemShortcutHook?.Dispose();
+        _systemShortcutHook = null;
+    }
+
+    private void OnSystemShortcutKey(uint scancode, bool down)
+    {
+        if (DataContext is RdpViewModel vm)
+            vm.SendKey(scancode, down);
     }
 
     private void ApplyScaleMode(RdpViewModel vm)
@@ -266,6 +312,12 @@ public partial class RdpView : UserControl
 
         SyncModifierState(vm, e.KeyModifiers);
 
+        if (TrySendCtrlAltEnd(vm, e, down))
+        {
+            e.Handled = true;
+            return;
+        }
+
         if (TryGetPrintableScancode(e, out var printableScancode, out _))
         {
             vm.SendKey(printableScancode, down);
@@ -279,6 +331,34 @@ public partial class RdpView : UserControl
 
         vm.SendKey(key, down);
         e.Handled = true;
+    }
+
+    private bool TrySendCtrlAltEnd(RdpViewModel vm, KeyEventArgs e, bool down)
+    {
+        if (e.Key != Key.End)
+            return false;
+
+        if (down)
+        {
+            var scancode = RdpKeyboardShortcutSequences.TranslateCtrlAltEnd(
+                RdpKeyboardShortcutSequences.ExtendedEndScancode,
+                e.KeyModifiers.HasFlag(KeyModifiers.Control),
+                e.KeyModifiers.HasFlag(KeyModifiers.Alt));
+            if (scancode == RdpKeyboardShortcutSequences.ExtendedEndScancode)
+                return false;
+
+            if (!_ctrlAltEndActive)
+                vm.SendKey(scancode, true);
+            _ctrlAltEndActive = true;
+            return true;
+        }
+
+        if (!_ctrlAltEndActive)
+            return false;
+
+        vm.SendKey(RdpKeyboardShortcutSequences.ExtendedDeleteScancode, false);
+        _ctrlAltEndActive = false;
+        return true;
     }
 
     private bool TryStartLocalClipboardPaste(KeyEventArgs e)
@@ -428,6 +508,12 @@ public partial class RdpView : UserControl
 
     private void ReleaseTrackedModifiers(RdpViewModel vm)
     {
+        if (_ctrlAltEndActive)
+        {
+            vm.SendKey(RdpKeyboardShortcutSequences.ExtendedDeleteScancode, false);
+            _ctrlAltEndActive = false;
+        }
+
         SetModifierState(vm, ref _controlDown, false, 0x1D);
         SetModifierState(vm, ref _shiftDown, false, 0x2A);
         SetModifierState(vm, ref _altDown, false, 0x38);
@@ -435,6 +521,7 @@ public partial class RdpView : UserControl
 
     private void ClearTrackedModifiers()
     {
+        _ctrlAltEndActive = false;
         _controlDown = false;
         _shiftDown = false;
         _altDown = false;
@@ -590,6 +677,13 @@ public partial class RdpView : UserControl
             Key.PageDown => 0x0100 | 0x51,
             Key.Insert => 0x0100 | 0x52,
             Key.Delete => 0x0100 | 0x53,
+            Key.CapsLock => 0x3A,
+            Key.NumLock => 0x45,
+            Key.Scroll => 0x46,
+            Key.PrintScreen => 0x0100 | 0x37,
+            Key.LWin => 0x0100 | 0x5B,
+            Key.RWin => 0x0100 | 0x5C,
+            Key.Apps => 0x0100 | 0x5D,
             _ => 0
         };
     }

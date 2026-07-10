@@ -280,6 +280,7 @@ public class SessionInfo
     public bool TerminalAdvancedUseRxvtHomeEnd { get; set; }
     public bool TerminalAdvancedDisableBlinkingText { get; set; }
     public bool TerminalAdvancedDisableTitleChange { get; set; }
+    public bool TerminalAdvancedAllowTitleChange { get; set; }
     public bool TerminalAdvancedDisableTerminalPrint { get; set; }
     public bool TerminalAdvancedDisableAlternateScreen { get; set; }
     public bool TerminalAdvancedIgnoreResizeRequest { get; set; } = true;
@@ -406,8 +407,11 @@ public class SessionInfo
     public string RdpColorQuality { get; set; } = "32";
     public bool RdpApplyKeyCombinations { get; set; } = true;
     public bool RdpRedirectDrives { get; set; }
+    public string RdpDriveName { get; set; } = "CxShell";
+    public string RdpDrivePath { get; set; } = string.Empty;
     public string RdpAudioMode { get; set; } = "DoNotPlay";
     public bool RdpAudioCapture { get; set; } = true;
+    public bool RdpMicrophoneEnabled { get; set; }
     public bool RdpUseSshTunnel { get; set; }
     public string RdpSshHost { get; set; } = string.Empty;
     public int RdpSshPort { get; set; } = 22;

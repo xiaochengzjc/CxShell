@@ -180,7 +180,7 @@ public partial class TerminalViewModel : ObservableObject
                 ParseColorOrDefault(_session.AppearanceBoldForegroundColor, "#33FF33"),
                 ParseAnsiColors(_session.AppearanceAnsiColors));
 
-            if (_session.TerminalAdvancedDisableTitleChange)
+            if (!_session.TerminalAdvancedAllowTitleChange)
                 RemoteTitle = string.Empty;
         }
 
@@ -256,7 +256,7 @@ public partial class TerminalViewModel : ObservableObject
             session.TerminalAdvancedClearScreenBackground,
             session.TerminalAdvancedDisableAlternateScreen,
             session.TerminalAdvancedDisableBlinkingText,
-            session.TerminalAdvancedDisableTitleChange,
+            !session.TerminalAdvancedAllowTitleChange,
             session.TerminalAdvancedDisableTerminalPrint,
             session.TerminalAdvancedIgnoreResizeRequest,
             session.TerminalAdvancedUseBuiltinLineDrawing,
@@ -378,8 +378,8 @@ public partial class TerminalViewModel : ObservableObject
             return;
         }
 
-        if (_session?.TerminalAdvancedDisableTitleChange != true &&
-            TryParseOscTitle(command, out var title))
+        if (_session?.TerminalAdvancedAllowTitleChange == true &&
+            TerminalOscCommand.TryParseTitle(command, out var title))
         {
             RemoteTitle = title;
         }
@@ -450,34 +450,6 @@ public partial class TerminalViewModel : ObservableObject
         }
 
         path = pathPart;
-        return true;
-    }
-
-    private static bool TryParseOscTitle(string command, out string title)
-    {
-        title = string.Empty;
-        var separator = command.IndexOf(';');
-        if (separator <= 0)
-            return false;
-
-        var operation = command[..separator];
-        if (!string.Equals(operation, "0", StringComparison.Ordinal) &&
-            !string.Equals(operation, "2", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var builder = new StringBuilder(Math.Min(command.Length - separator - 1, 160));
-        foreach (var ch in command.AsSpan(separator + 1))
-        {
-            if (!char.IsControl(ch))
-                builder.Append(ch);
-
-            if (builder.Length == 160)
-                break;
-        }
-
-        title = builder.ToString().Trim();
         return true;
     }
 

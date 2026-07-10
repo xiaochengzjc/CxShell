@@ -614,6 +614,16 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             vm.FileTransferUploadDirectory = directory;
     }
 
+    private async void OnBrowseRdpDriveDirectoryClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SessionEditViewModel vm)
+            return;
+
+        var directory = await PickFolderAsync(T("Dialog.FilePicker.RdpDriveDirectory"), vm.RdpDrivePath);
+        if (!string.IsNullOrWhiteSpace(directory))
+            vm.RdpDrivePath = directory;
+    }
+
     private void OnOpenFileTransferUploadDirectoryClick(object? sender, RoutedEventArgs e)
     {
         if (DataContext is SessionEditViewModel vm)

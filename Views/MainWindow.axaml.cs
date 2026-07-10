@@ -1209,6 +1209,37 @@ public partial class MainWindow : Window
         await vnc.SendCtrlAltDeleteAsync();
     }
 
+    private async void OnSendRdpCtrlAltDelClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel { SelectedTab.Rdp: { } rdp })
+            await rdp.SendCtrlAltDeleteAsync();
+    }
+
+    private void OnRdpKeyCombinationsClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Avalonia.Controls.Control anchor ||
+            DataContext is not MainWindowViewModel { SelectedTab.Rdp: { } rdp })
+        {
+            return;
+        }
+
+        var menu = CreatePointerContextMenu(anchor);
+        var enabled = rdp.IsConnected;
+        AddMenuItem(menu, T("Rdp.Keyboard.AltTab"), () => _ = rdp.SendAltTabAsync(), enabled);
+        AddMenuItem(menu, T("Rdp.Keyboard.Windows"), () => _ = rdp.SendWindowsKeyAsync(), enabled);
+        AddMenuItem(menu, T("Rdp.Keyboard.CtrlEsc"), () => _ = rdp.SendCtrlEscapeAsync(), enabled);
+        AddMenuItem(menu, T("Rdp.Keyboard.AltF4"), () => _ = rdp.SendAltF4Async(), enabled);
+        menu.Items.Add(new AtomMenuSeparator());
+        AddMenuItem(menu, T("Rdp.Keyboard.TaskManager"), () => _ = rdp.SendTaskManagerAsync(), enabled);
+        AddMenuItem(menu, T("Rdp.Keyboard.PrintScreen"), () => _ = rdp.SendPrintScreenAsync(), enabled);
+        menu.Open(anchor);
+    }
+
+    private static string T(string key)
+    {
+        return LocalizationService.Shared.Text(key);
+    }
+
     private void OnTabGroupPanePointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (sender is Avalonia.Controls.Control { DataContext: TerminalTabGroupViewModel group } &&

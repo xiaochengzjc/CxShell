@@ -1229,7 +1229,6 @@
                                 BorderBrush="{atom:SharedTokenResource ColorBorder}"
                                 BorderThickness="1"
                                 CornerRadius="4"
-                                IsVisible="False"
                                 Padding="18">
                             <Grid RowDefinitions="Auto,14,Auto,12,Auto,8,Auto"
                                   ColumnDefinitions="140,*">
@@ -1533,31 +1532,68 @@
                                 BorderBrush="{atom:SharedTokenResource ColorBorder}"
                                 BorderThickness="1"
                                 CornerRadius="4"
-                                IsVisible="False"
                                 Padding="18">
-                            <StackPanel Spacing="14">
-                                <TextBlock Text="{Binding [UiText.090], Source={x:Static services:LocalizationService.Shared}}"
+                            <Grid RowDefinitions="Auto,14,Auto,10,Auto,12,Auto,10,Auto,10,Auto"
+                                  ColumnDefinitions="150,420,*"
+                                  ColumnSpacing="8">
+                                <TextBlock Grid.ColumnSpan="3"
+                                           Text="{Binding [UiText.090], Source={x:Static services:LocalizationService.Shared}}"
                                            FontWeight="SemiBold"
                                            Foreground="{atom:SharedTokenResource ColorText}"/>
-                                <TextBlock Text="{Binding [SessionEdit.Unsupported.RdpDevicesAudio], Source={x:Static services:LocalizationService.Shared}}"
+
+                                <atom:CheckBox Grid.Row="2"
+                                               Grid.ColumnSpan="3"
+                                               Content="{Binding [UiText.091], Source={x:Static services:LocalizationService.Shared}}"
+                                               atom:ToolTip.Tip="{Binding [SessionEdit.RdpKeyboardHint], Source={x:Static services:LocalizationService.Shared}}"
+                                               IsChecked="{Binding RdpApplyKeyCombinations, Mode=TwoWay}"/>
+
+                                <atom:CheckBox Grid.Row="4"
+                                               Grid.ColumnSpan="3"
+                                               Content="{Binding [UiText.092], Source={x:Static services:LocalizationService.Shared}}"
+                                               IsChecked="{Binding RdpRedirectDrives, Mode=TwoWay}"/>
+
+                                <TextBlock Grid.Row="6"
+                                           Text="{Binding [SessionEdit.RdpDriveFolder], Source={x:Static services:LocalizationService.Shared}}"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <Grid Grid.Row="6"
+                                      Grid.Column="1"
+                                      ColumnDefinitions="*,Auto"
+                                      ColumnSpacing="8"
+                                      IsEnabled="{Binding IsRdpDriveSettingsEnabled}">
+                                    <atom:LineEdit Text="{Binding RdpDrivePath, Mode=TwoWay}"
+                                                   PlaceholderText="C:\Users\user\Documents"/>
+                                    <atom:Button Grid.Column="1"
+                                                 Icon="{antdicons:AntDesignIconProvider Kind=FolderOpenOutlined}"
+                                                 Content="{Binding BrowseText}"
+                                                 Click="OnBrowseRdpDriveDirectoryClick"/>
+                                </Grid>
+
+                                <TextBlock Grid.Row="8"
+                                           Text="{Binding [SessionEdit.RdpDriveName], Source={x:Static services:LocalizationService.Shared}}"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Row="8"
+                                               Grid.Column="1"
+                                               Width="220"
+                                               MaxLength="32"
+                                               HorizontalAlignment="Left"
+                                               IsEnabled="{Binding IsRdpDriveSettingsEnabled}"
+                                               Text="{Binding RdpDriveName, Mode=TwoWay}"/>
+
+                                <TextBlock Grid.Row="10"
+                                           Grid.Column="1"
+                                           Grid.ColumnSpan="2"
+                                           Text="{Binding [SessionEdit.RdpDriveHint], Source={x:Static services:LocalizationService.Shared}}"
                                            TextWrapping="Wrap"
                                            Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
-                                <atom:CheckBox Content="{Binding [UiText.091], Source={x:Static services:LocalizationService.Shared}}"
-                                               IsEnabled="False"
-                                               atom:ToolTip.Tip="{Binding [SessionEdit.Unsupported.RdpDevicesAudio], Source={x:Static services:LocalizationService.Shared}}"
-                                               IsChecked="{Binding RdpApplyKeyCombinations, Mode=TwoWay}"/>
-                                <atom:CheckBox Content="{Binding [UiText.092], Source={x:Static services:LocalizationService.Shared}}"
-                                               IsEnabled="False"
-                                               atom:ToolTip.Tip="{Binding [SessionEdit.Unsupported.RdpDevicesAudio], Source={x:Static services:LocalizationService.Shared}}"
-                                               IsChecked="{Binding RdpRedirectDrives, Mode=TwoWay}"/>
-                            </StackPanel>
+                            </Grid>
                         </Border>
 
                         <Border Background="{atom:SharedTokenResource ColorBgContainer}"
                                 BorderBrush="{atom:SharedTokenResource ColorBorder}"
                                 BorderThickness="1"
                                 CornerRadius="4"
-                                IsVisible="False"
                                 Padding="18">
                             <Grid RowDefinitions="Auto,14,Auto,10,Auto,10,Auto,12,Auto"
                                   ColumnDefinitions="Auto,12,220,*">
@@ -1572,18 +1608,14 @@
                                              x:Name="RdpAudioModeSelect"
                                              Mode="Single"
                                              Width="220"
-                                             IsEnabled="False"
-                                             atom:ToolTip.Tip="{Binding [SessionEdit.Unsupported.RdpDevicesAudio], Source={x:Static services:LocalizationService.Shared}}"
                                              OptionsSource="{Binding RdpAudioModeOptions}"/>
                                 <atom:CheckBox Grid.Row="4" Grid.Column="2"
                                                Content="{Binding [UiText.095], Source={x:Static services:LocalizationService.Shared}}"
-                                               IsEnabled="False"
-                                               atom:ToolTip.Tip="{Binding [SessionEdit.Unsupported.RdpDevicesAudio], Source={x:Static services:LocalizationService.Shared}}"
-                                               IsChecked="{Binding RdpAudioCapture, Mode=TwoWay}"/>
+                                               IsChecked="{Binding RdpMicrophoneEnabled, Mode=TwoWay}"/>
                                 <TextBlock Grid.Row="6"
                                            Grid.Column="2"
                                            Grid.ColumnSpan="2"
-                                           Text="{Binding [SessionEdit.Unsupported.RdpDevicesAudio], Source={x:Static services:LocalizationService.Shared}}"
+                                           Text="{Binding [SessionEdit.RdpAudioHint], Source={x:Static services:LocalizationService.Shared}}"
                                            TextWrapping="Wrap"
                                            Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
                             </Grid>
@@ -2668,8 +2700,8 @@
                                 <TextBlock Text="{Binding [UiText.181], Source={x:Static services:LocalizationService.Shared}}" FontWeight="SemiBold"/>
                                 <atom:CheckBox Content="{Binding [UiText.182], Source={x:Static services:LocalizationService.Shared}}"
                                                IsChecked="{Binding TerminalAdvancedDisableBlinkingText, Mode=TwoWay}"/>
-                                <atom:CheckBox Content="{Binding [UiText.183], Source={x:Static services:LocalizationService.Shared}}"
-                                               IsChecked="{Binding TerminalAdvancedDisableTitleChange, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="{Binding [SessionEdit.Terminal.AllowRemoteTitle], Source={x:Static services:LocalizationService.Shared}}"
+                                               IsChecked="{Binding TerminalAdvancedAllowTitleChange, Mode=TwoWay}"/>
                                 <atom:CheckBox Content="{Binding [UiText.184], Source={x:Static services:LocalizationService.Shared}}"
                                                IsVisible="False"
                                                IsChecked="{Binding TerminalAdvancedDisableTerminalPrint, Mode=TwoWay}"/>

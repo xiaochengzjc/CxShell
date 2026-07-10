@@ -160,24 +160,16 @@ public partial class RdpViewModel : ObservableObject, IDisposable
         if (_started || IsConnected)
             return;
 
-        if (string.Equals(Session.RdpWindowSize, "FullScreen", StringComparison.OrdinalIgnoreCase) &&
-            monitorPixelSize is { Width: >= 320, Height: >= 240 } monitorSize)
-        {
-            _runtimeDesktopWidth = Math.Clamp(monitorSize.Width, 320, 7680);
-            _runtimeDesktopHeight = Math.Clamp(monitorSize.Height, 240, 4320);
+        var size = RdpDisplaySizeResolver.ResolveInitial(
+            Session.RdpWindowSize,
+            viewportSize,
+            monitorPixelSize,
+            renderScaling);
+        if (size == null)
             return;
-        }
 
-        if (!string.Equals(Session.RdpWindowSize, "WorkSpace", StringComparison.OrdinalIgnoreCase) ||
-            viewportSize.Width < 320 ||
-            viewportSize.Height < 240)
-        {
-            return;
-        }
-
-        var scale = NormalizeRenderScaling(renderScaling);
-        _runtimeDesktopWidth = (int)Math.Clamp(Math.Round(viewportSize.Width * scale), 320, 7680);
-        _runtimeDesktopHeight = (int)Math.Clamp(Math.Round(viewportSize.Height * scale), 240, 4320);
+        _runtimeDesktopWidth = size.Value.Width;
+        _runtimeDesktopHeight = size.Value.Height;
     }
 
     public void RequestViewportResize(Size viewportSize, double renderScaling = 1)
@@ -190,9 +182,12 @@ public partial class RdpViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var scale = NormalizeRenderScaling(renderScaling);
-        var width = (int)Math.Clamp(Math.Round(viewportSize.Width * scale), 320, 7680);
-        var height = (int)Math.Clamp(Math.Round(viewportSize.Height * scale), 240, 4320);
+        var size = RdpDisplaySizeResolver.ResolveViewport(viewportSize, renderScaling);
+        if (size == null)
+            return;
+
+        var width = size.Value.Width;
+        var height = size.Value.Height;
         var currentWidth = _runtimeDesktopWidth ?? Math.Max(1, Session.RdpDesktopWidth);
         var currentHeight = _runtimeDesktopHeight ?? Math.Max(1, Session.RdpDesktopHeight);
         if (Math.Abs(width - currentWidth) < 32 && Math.Abs(height - currentHeight) < 32)
@@ -243,6 +238,71 @@ public partial class RdpViewModel : ObservableObject, IDisposable
             _client.SendUnicodeKey(key, down);
     }
 
+    public Task SendCtrlAltDeleteAsync()
+    {
+        return SendKeyCombinationAsync(RdpKeyboardShortcutSequences.CtrlAltDelete);
+    }
+
+    public Task SendAltTabAsync()
+    {
+        return SendKeyCombinationAsync(0x38, 0x0F);
+    }
+
+    public Task SendWindowsKeyAsync()
+    {
+        return SendKeyCombinationAsync(0x0100 | 0x5B);
+    }
+
+    public Task SendCtrlEscapeAsync()
+    {
+        return SendKeyCombinationAsync(0x1D, 0x01);
+    }
+
+    public Task SendAltF4Async()
+    {
+        return SendKeyCombinationAsync(0x38, 0x3E);
+    }
+
+    public Task SendTaskManagerAsync()
+    {
+        return SendKeyCombinationAsync(0x1D, 0x2A, 0x01);
+    }
+
+    public Task SendPrintScreenAsync()
+    {
+        return SendKeyCombinationAsync(RdpKeyboardShortcutSequences.SaveRemoteScreenshot);
+    }
+
+    private async Task SendKeyCombinationAsync(params uint[] scancodes)
+    {
+        await SendKeyCombinationAsync((IReadOnlyList<uint>)scancodes);
+    }
+
+    private async Task SendKeyCombinationAsync(IReadOnlyList<uint> scancodes)
+    {
+        if (!IsConnected || scancodes.Count == 0)
+            return;
+
+        try
+        {
+            foreach (var scancode in scancodes)
+            {
+                _client.SendKey(scancode, true);
+                await Task.Delay(20);
+            }
+
+            await Task.Delay(40);
+        }
+        finally
+        {
+            for (var i = scancodes.Count - 1; i >= 0; i--)
+            {
+                _client.SendKey(scancodes[i], false);
+                await Task.Delay(10);
+            }
+        }
+    }
+
     public void SetClipboardText(string text)
     {
         if (IsConnected)
@@ -289,13 +349,6 @@ public partial class RdpViewModel : ObservableObject, IDisposable
         return int.TryParse(session.RdpScreenScale, out var parsed) && parsed is >= 10 and <= 500
             ? parsed
             : 100;
-    }
-
-    private static double NormalizeRenderScaling(double renderScaling)
-    {
-        return double.IsFinite(renderScaling)
-            ? Math.Clamp(renderScaling, 0.5, 8)
-            : 1;
     }
 
     private void OnFramebufferUpdated(object? sender, RdpFramebufferEventArgs e)

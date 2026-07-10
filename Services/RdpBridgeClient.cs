@@ -29,6 +29,12 @@ public sealed class RdpFramebufferEventArgs : EventArgs
 public sealed class RdpBridgeClient : IDisposable
 {
     private const string LibraryName = "CxRdpBridge";
+    private const uint DriveRedirectionCapability = 0x00000002;
+    private const uint AudioPlaybackCapability = 0x00000004;
+    private const uint MicrophoneCapability = 0x00000008;
+    private const uint KeyboardHookCapability = 0x00000010;
+    private const uint AudioRedirectionApiVersion = 3;
+    private const uint KeyboardOptionsApiVersion = 4;
     private static readonly object DebugLogLock = new();
     private static readonly object NativeLoadFailureLock = new();
     private static readonly bool DetailedDebugLogEnabled = IsEnvironmentFlagEnabled("CXSHELL_RDP_DEBUG_LOG");
@@ -78,6 +84,19 @@ public sealed class RdpBridgeClient : IDisposable
         var port = session.Port > 0 ? session.Port : 3389;
         var width = Math.Max(1, desktopWidth ?? session.RdpDesktopWidth);
         var height = Math.Max(1, desktopHeight ?? session.RdpDesktopHeight);
+        var driveName = NormalizeDriveName(session.RdpDriveName);
+        var drivePath = string.Empty;
+        var audioPlaybackMode = RdpAudioOptions.ResolvePlaybackMode(session.RdpAudioMode);
+        if (session.RdpRedirectDrives)
+        {
+            if (string.IsNullOrWhiteSpace(session.RdpDrivePath))
+                throw new InvalidOperationException("Select a local folder to redirect to the RDP session.");
+
+            drivePath = Path.GetFullPath(session.RdpDrivePath.Trim());
+            if (!Directory.Exists(drivePath))
+                throw new DirectoryNotFoundException($"The RDP redirected folder does not exist: {drivePath}");
+        }
+
         var targetDescription = $"{host}:{port}";
         if (session.RdpUseSshTunnel)
         {
@@ -98,6 +117,91 @@ public sealed class RdpBridgeClient : IDisposable
 
         NativeMethods.cxrdp_set_callbacks(_handle, _frameCallback, _statusCallback, _disconnectCallback, IntPtr.Zero);
         NativeMethods.cxrdp_set_clipboard_callback(_handle, _clipboardTextCallback);
+
+        var nativeApiVersion = GetNativeApiVersion();
+        var nativeCapabilities = GetNativeCapabilities();
+        DebugLog($"native bridge apiVersion={nativeApiVersion} capabilities=0x{nativeCapabilities:X8}");
+        if (session.RdpRedirectDrives)
+        {
+            if ((nativeCapabilities & DriveRedirectionCapability) == 0)
+            {
+                Disconnect();
+                throw new InvalidOperationException(
+                    "The installed CxRdpBridge does not support RDP drive redirection. Reinstall or update CxShell so the native bridge matches the application version.");
+            }
+
+            var driveResult = NativeMethods.cxrdp_set_drive_redirection(
+                _handle,
+                1,
+                driveName,
+                drivePath);
+            if (driveResult != 0)
+            {
+                var error = GetLastError();
+                Disconnect();
+                throw new InvalidOperationException(
+                    string.IsNullOrWhiteSpace(error)
+                        ? $"RDP drive redirection configuration failed: {driveResult}"
+                        : error);
+            }
+        }
+
+        if (RdpAudioOptions.RequiresNativeConfiguration(audioPlaybackMode, session.RdpMicrophoneEnabled))
+        {
+            if (nativeApiVersion < AudioRedirectionApiVersion)
+            {
+                Disconnect();
+                throw new InvalidOperationException(
+                    "The installed CxRdpBridge does not support RDP audio settings. Reinstall or update CxShell so the native bridge matches the application version.");
+            }
+
+            if (audioPlaybackMode == RdpAudioPlaybackMode.PlayLocal &&
+                (nativeCapabilities & AudioPlaybackCapability) == 0)
+            {
+                Disconnect();
+                throw new PlatformNotSupportedException(
+                    "This CxRdpBridge build does not include a local RDP audio playback backend.");
+            }
+
+            if (session.RdpMicrophoneEnabled &&
+                (nativeCapabilities & MicrophoneCapability) == 0)
+            {
+                Disconnect();
+                throw new PlatformNotSupportedException(
+                    "This CxRdpBridge build does not include an RDP microphone backend.");
+            }
+
+            var audioResult = NativeMethods.cxrdp_set_audio_redirection(
+                _handle,
+                (int)audioPlaybackMode,
+                session.RdpMicrophoneEnabled ? 1 : 0);
+            if (audioResult != 0)
+            {
+                var error = GetLastError();
+                Disconnect();
+                throw new InvalidOperationException(
+                    string.IsNullOrWhiteSpace(error)
+                        ? $"RDP audio redirection configuration failed: {audioResult}"
+                        : error);
+            }
+        }
+
+        if (nativeApiVersion >= KeyboardOptionsApiVersion &&
+            (nativeCapabilities & KeyboardHookCapability) != 0)
+        {
+            var keyboardResult = NativeMethods.cxrdp_set_keyboard_options(
+                _handle,
+                session.RdpApplyKeyCombinations ? 1 : 0);
+            if (keyboardResult != 0)
+            {
+                var error = GetLastError();
+                Disconnect();
+                throw new InvalidOperationException(
+                    string.IsNullOrWhiteSpace(error)
+                        ? $"RDP keyboard configuration failed: {keyboardResult}"
+                        : error);
+            }
+        }
 
         var result = NativeMethods.cxrdp_connect(
             _handle,
@@ -516,6 +620,36 @@ public sealed class RdpBridgeClient : IDisposable
             : 32;
     }
 
+    private static string NormalizeDriveName(string? value)
+    {
+        var name = string.IsNullOrWhiteSpace(value) ? "CxShell" : value.Trim();
+        return name.Length <= 32 ? name : name[..32];
+    }
+
+    private static uint GetNativeApiVersion()
+    {
+        try
+        {
+            return NativeMethods.cxrdp_get_api_version();
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return 1;
+        }
+    }
+
+    private static uint GetNativeCapabilities()
+    {
+        try
+        {
+            return NativeMethods.cxrdp_get_capabilities();
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return 0x00000001;
+        }
+    }
+
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void FrameCallback(IntPtr userData, int width, int height, int stride, IntPtr bgraPixels);
 
@@ -530,6 +664,12 @@ public sealed class RdpBridgeClient : IDisposable
 
     private static class NativeMethods
     {
+        [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern uint cxrdp_get_api_version();
+
+        [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern uint cxrdp_get_capabilities();
+
         [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
         public static extern IntPtr cxrdp_create();
 
@@ -576,6 +716,24 @@ public sealed class RdpBridgeClient : IDisposable
         public static extern void cxrdp_set_clipboard_text(
             IntPtr handle,
             [MarshalAs(UnmanagedType.LPUTF8Str)] string text);
+
+        [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int cxrdp_set_drive_redirection(
+            IntPtr handle,
+            int enabled,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string driveName,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string localPath);
+
+        [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int cxrdp_set_audio_redirection(
+            IntPtr handle,
+            int playbackMode,
+            int microphoneEnabled);
+
+        [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern int cxrdp_set_keyboard_options(
+            IntPtr handle,
+            int applyKeyCombinationsRemotely);
 
         [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
         public static extern IntPtr cxrdp_get_last_error(IntPtr handle);

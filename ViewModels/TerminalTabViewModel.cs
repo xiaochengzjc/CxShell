@@ -148,7 +148,7 @@ public partial class TerminalTabViewModel : ObservableObject
             Title = $"[断开] {Session.Name}";
         }
         else if (Terminal.IsConnected &&
-                 !Session.TerminalAdvancedDisableTitleChange &&
+                 Session.TerminalAdvancedAllowTitleChange &&
                  !string.IsNullOrWhiteSpace(Terminal.RemoteTitle))
         {
             Title = Terminal.RemoteTitle;

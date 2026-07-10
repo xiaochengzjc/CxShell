@@ -164,6 +164,7 @@ public partial class SessionEditViewModel : ObservableObject
     [ObservableProperty] private bool _terminalAdvancedUseRxvtHomeEnd;
     [ObservableProperty] private bool _terminalAdvancedDisableBlinkingText;
     [ObservableProperty] private bool _terminalAdvancedDisableTitleChange;
+    [ObservableProperty] private bool _terminalAdvancedAllowTitleChange;
     [ObservableProperty] private bool _terminalAdvancedDisableTerminalPrint;
     [ObservableProperty] private bool _terminalAdvancedDisableAlternateScreen;
     [ObservableProperty] private bool _terminalAdvancedIgnoreResizeRequest = true;
@@ -298,8 +299,10 @@ public partial class SessionEditViewModel : ObservableObject
     [ObservableProperty] private string _rdpColorQuality = "32";
     [ObservableProperty] private bool _rdpApplyKeyCombinations = true;
     [ObservableProperty] private bool _rdpRedirectDrives;
+    [ObservableProperty] private string _rdpDriveName = "CxShell";
+    [ObservableProperty] private string _rdpDrivePath = string.Empty;
     [ObservableProperty] private string _rdpAudioMode = "DoNotPlay";
-    [ObservableProperty] private bool _rdpAudioCapture = true;
+    [ObservableProperty] private bool _rdpMicrophoneEnabled;
     [ObservableProperty] private bool _rdpUseSshTunnel;
     [ObservableProperty] private string _rdpSshHost = string.Empty;
     [ObservableProperty] private string _rdpSshPort = "22";
@@ -377,6 +380,7 @@ public partial class SessionEditViewModel : ObservableObject
         get => RdpSshUsePrivateKey;
         set { if (value) RdpSshUsePrivateKey = true; }
     }
+    public bool IsRdpDriveSettingsEnabled => RdpRedirectDrives;
     public bool IsVncSshPasswordAuth
     {
         get => !VncSshUsePrivateKey;
@@ -1137,6 +1141,9 @@ public partial class SessionEditViewModel : ObservableObject
         SetOptionHeader(RdpResizeModeOptions, "SmartSizing", "Option.SmartSizing");
         SetOptionHeader(RdpResizeModeOptions, "SmartReconnect", "Option.SmartReconnect");
         SetOptionHeader(RdpResizeModeOptions, "LegacyReconnect", "Option.LegacyReconnect");
+        SetOptionHeader(RdpAudioModeOptions, "PlayLocal", "Option.RdpAudioPlayLocal");
+        SetOptionHeader(RdpAudioModeOptions, "DoNotPlay", "Option.RdpAudioDoNotPlay");
+        SetOptionHeader(RdpAudioModeOptions, "PlayRemote", "Option.RdpAudioPlayRemote");
         SetOptionHeader(AdvancedIpVersionOptions, "Auto", "Option.Auto");
 
         OnPropertyChanged(nameof(ProxyOptions));
@@ -1152,6 +1159,7 @@ public partial class SessionEditViewModel : ObservableObject
         OnPropertyChanged(nameof(SerialParityOptions));
         OnPropertyChanged(nameof(SerialFlowControlOptions));
         OnPropertyChanged(nameof(RdpResizeModeOptions));
+        OnPropertyChanged(nameof(RdpAudioModeOptions));
         OnPropertyChanged(nameof(AdvancedIpVersionOptions));
     }
 
@@ -1264,6 +1272,7 @@ public partial class SessionEditViewModel : ObservableObject
         TerminalAdvancedUseRxvtHomeEnd = session.TerminalAdvancedUseRxvtHomeEnd;
         TerminalAdvancedDisableBlinkingText = session.TerminalAdvancedDisableBlinkingText;
         TerminalAdvancedDisableTitleChange = session.TerminalAdvancedDisableTitleChange;
+        TerminalAdvancedAllowTitleChange = session.TerminalAdvancedAllowTitleChange;
         TerminalAdvancedDisableTerminalPrint = session.TerminalAdvancedDisableTerminalPrint;
         TerminalAdvancedDisableAlternateScreen = session.TerminalAdvancedDisableAlternateScreen;
         TerminalAdvancedIgnoreResizeRequest = session.TerminalAdvancedIgnoreResizeRequest;
@@ -1373,7 +1382,7 @@ public partial class SessionEditViewModel : ObservableObject
         FileTransferDownloadDirectory = session.FileTransferDownloadDirectory ?? string.Empty;
         FileTransferUploadDirectory = session.FileTransferUploadDirectory ?? string.Empty;
         FileTransferDuplicateAction = string.IsNullOrWhiteSpace(session.FileTransferDuplicateAction) ? "AutoRename" : session.FileTransferDuplicateAction;
-        FileTransferUploadProtocol = NormalizeFileTransferUploadProtocol(session.FileTransferUploadProtocol);
+        FileTransferUploadProtocol = FileTransferProtocolOptions.NormalizeUploadProtocol(session.FileTransferUploadProtocol);
         FileTransferXymodemBlockSize = session.FileTransferXymodemBlockSize == 1024 ? 1024 : 128;
         FileTransferXmodemUploadCommand = string.IsNullOrWhiteSpace(session.FileTransferXmodemUploadCommand) ? "rx" : session.FileTransferXmodemUploadCommand;
         FileTransferYmodemUploadCommand = string.IsNullOrWhiteSpace(session.FileTransferYmodemUploadCommand) ? "rb -E" : session.FileTransferYmodemUploadCommand;
@@ -1393,8 +1402,10 @@ public partial class SessionEditViewModel : ObservableObject
         RdpColorQuality = string.IsNullOrWhiteSpace(session.RdpColorQuality) ? "32" : session.RdpColorQuality;
         RdpApplyKeyCombinations = session.RdpApplyKeyCombinations;
         RdpRedirectDrives = session.RdpRedirectDrives;
+        RdpDriveName = string.IsNullOrWhiteSpace(session.RdpDriveName) ? "CxShell" : session.RdpDriveName;
+        RdpDrivePath = session.RdpDrivePath ?? string.Empty;
         RdpAudioMode = string.IsNullOrWhiteSpace(session.RdpAudioMode) ? "DoNotPlay" : session.RdpAudioMode;
-        RdpAudioCapture = session.RdpAudioCapture;
+        RdpMicrophoneEnabled = session.RdpMicrophoneEnabled;
         RdpUseSshTunnel = session.RdpUseSshTunnel;
         RdpSshHost = string.IsNullOrWhiteSpace(session.RdpSshHost) ? session.Host : session.RdpSshHost;
         RdpSshPort = Math.Clamp(session.RdpSshPort <= 0 ? 22 : session.RdpSshPort, 1, 65535).ToString();
@@ -1618,6 +1629,7 @@ public partial class SessionEditViewModel : ObservableObject
         session.TerminalAdvancedUseRxvtHomeEnd = TerminalAdvancedUseRxvtHomeEnd;
         session.TerminalAdvancedDisableBlinkingText = TerminalAdvancedDisableBlinkingText;
         session.TerminalAdvancedDisableTitleChange = TerminalAdvancedDisableTitleChange;
+        session.TerminalAdvancedAllowTitleChange = TerminalAdvancedAllowTitleChange;
         session.TerminalAdvancedDisableTerminalPrint = TerminalAdvancedDisableTerminalPrint;
         session.TerminalAdvancedDisableAlternateScreen = TerminalAdvancedDisableAlternateScreen;
         session.TerminalAdvancedIgnoreResizeRequest = TerminalAdvancedIgnoreResizeRequest;
@@ -1672,8 +1684,10 @@ public partial class SessionEditViewModel : ObservableObject
         session.RdpColorQuality = RdpColorQuality;
         session.RdpApplyKeyCombinations = RdpApplyKeyCombinations;
         session.RdpRedirectDrives = RdpRedirectDrives;
+        session.RdpDriveName = string.IsNullOrWhiteSpace(RdpDriveName) ? "CxShell" : RdpDriveName.Trim();
+        session.RdpDrivePath = RdpRedirectDrives ? RdpDrivePath.Trim() : string.Empty;
         session.RdpAudioMode = RdpAudioMode;
-        session.RdpAudioCapture = RdpAudioCapture;
+        session.RdpMicrophoneEnabled = RdpMicrophoneEnabled;
         session.RdpUseSshTunnel = RdpUseSshTunnel;
         session.RdpSshHost = string.IsNullOrWhiteSpace(RdpSshHost) ? session.Host : RdpSshHost.Trim();
         session.RdpSshPort = int.TryParse(RdpSshPort, out var rdpSshPort) ? Math.Clamp(rdpSshPort, 1, 65535) : 22;
@@ -1717,7 +1731,7 @@ public partial class SessionEditViewModel : ObservableObject
         session.FileTransferDuplicateAction = string.IsNullOrWhiteSpace(FileTransferDuplicateAction)
             ? "AutoRename"
             : FileTransferDuplicateAction;
-        session.FileTransferUploadProtocol = NormalizeFileTransferUploadProtocol(FileTransferUploadProtocol);
+        session.FileTransferUploadProtocol = FileTransferProtocolOptions.NormalizeUploadProtocol(FileTransferUploadProtocol);
         session.FileTransferXymodemBlockSize = FileTransferXymodemBlockSize == 1024 ? 1024 : 128;
         session.FileTransferXmodemUploadCommand = string.IsNullOrWhiteSpace(FileTransferXmodemUploadCommand) ? "rx" : FileTransferXmodemUploadCommand.Trim();
         session.FileTransferYmodemUploadCommand = string.IsNullOrWhiteSpace(FileTransferYmodemUploadCommand) ? "rb -E" : FileTransferYmodemUploadCommand.Trim();
@@ -1814,6 +1828,11 @@ public partial class SessionEditViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsRdpSshPasswordAuth));
         OnPropertyChanged(nameof(IsRdpSshPrivateKeyAuth));
+    }
+
+    partial void OnRdpRedirectDrivesChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsRdpDriveSettingsEnabled));
     }
 
     private static void ClampVncPerformanceValue(decimal value, decimal min, decimal max, Action<decimal> setValue)
@@ -2210,16 +2229,6 @@ public partial class SessionEditViewModel : ObservableObject
         return protocol is SessionProtocol.SSH or SessionProtocol.SFTP or SessionProtocol.TELNET or SessionProtocol.RLOGIN;
     }
 
-    private static string NormalizeFileTransferUploadProtocol(string? value)
-    {
-        return value?.Trim().ToLowerInvariant() switch
-        {
-            "xmodem" => "Xmodem",
-            "ymodem" => "Ymodem",
-            _ => "Auto"
-        };
-    }
-
     public static int GetDefaultPort(SessionProtocol protocol)
     {
         return protocol switch
@@ -2294,6 +2303,24 @@ public partial class SessionEditViewModel : ObservableObject
             if (string.IsNullOrWhiteSpace(RdpSshUsername))
             {
                 ValidationMessage = "SSH username is required for RDP tunnel.";
+                return false;
+            }
+        }
+
+        if (protocol == SessionProtocol.RDP && RdpRedirectDrives)
+        {
+            if (string.IsNullOrWhiteSpace(RdpDrivePath) || !Directory.Exists(RdpDrivePath.Trim()))
+            {
+                ValidationMessage = L.Text("Validation.RdpDriveFolderRequired");
+                return false;
+            }
+
+            var driveName = RdpDriveName.Trim();
+            if (string.IsNullOrWhiteSpace(driveName) ||
+                driveName.Length > 32 ||
+                driveName.IndexOfAny(['\\', '/', ':', '*', '?', '"', '<', '>', '|']) >= 0)
+            {
+                ValidationMessage = L.Text("Validation.RdpDriveNameInvalid");
                 return false;
             }
         }

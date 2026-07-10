@@ -534,6 +534,20 @@
                             Orientation="Horizontal"
                             Spacing="8"
                             VerticalAlignment="Center"
+                            IsVisible="{Binding IsSelectedRdpToolbarVisible}">
+                    <atom:Button Content="{Binding [Rdp.Keyboard.Combinations], Source={x:Static services:LocalizationService.Shared}}"
+                                 Padding="12,5"
+                                 IsEnabled="{Binding SelectedTab.Rdp.IsConnected}"
+                                 Click="OnRdpKeyCombinationsClick"/>
+                    <atom:Button Content="Ctrl+Alt+Del"
+                                 Padding="12,5"
+                                 IsEnabled="{Binding SelectedTab.Rdp.IsConnected}"
+                                 Click="OnSendRdpCtrlAltDelClick"/>
+                </StackPanel>
+                <StackPanel DockPanel.Dock="Right"
+                            Orientation="Horizontal"
+                            Spacing="8"
+                            VerticalAlignment="Center"
                             IsVisible="{Binding IsSelectedVncToolbarVisible}">
                     <atom:Button Content="{Binding [UiText.259], Source={x:Static services:LocalizationService.Shared}}"
                                  Padding="12,5"

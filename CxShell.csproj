@@ -25,14 +25,18 @@
         <Compile Remove=".tmp/**" />
         <Compile Remove=".buildcheck*/**" />
         <Compile Remove="tools/**" />
+        <Compile Remove="CxShell.Tests/**" />
         <AvaloniaXaml Remove="AtomUI/**" />
         <AvaloniaXaml Remove=".tmp/**" />
         <AvaloniaXaml Remove=".buildcheck*/**" />
         <AvaloniaXaml Remove="tools/**" />
+        <AvaloniaXaml Remove="CxShell.Tests/**" />
         <None Remove=".buildcheck*/**" />
         <None Remove="tools/**" />
+        <None Remove="CxShell.Tests/**" />
         <Content Remove=".buildcheck*/**" />
         <Content Remove="tools/**" />
+        <Content Remove="CxShell.Tests/**" />
         <AvaloniaResource Include="Assets/**" />
     </ItemGroup>
 

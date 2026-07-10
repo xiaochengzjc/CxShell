@@ -27,12 +27,17 @@
 extern "C" {
 #include <freerdp/freerdp.h>
 #include <freerdp/addin.h>
+#include <freerdp/config.h>
 #include <freerdp/version.h>
 #include <freerdp/client/channels.h>
 #include <freerdp/client/cliprdr.h>
 #include <freerdp/client/cmdline.h>
 #include <freerdp/channels/channels.h>
+#include <freerdp/channels/audin.h>
 #include <freerdp/channels/cliprdr.h>
+#include <freerdp/channels/drdynvc.h>
+#include <freerdp/channels/rdpdr.h>
+#include <freerdp/channels/rdpsnd.h>
 #include <freerdp/gdi/gdi.h>
 #include <freerdp/input.h>
 #include <freerdp/event.h>
@@ -65,6 +70,12 @@ struct CxRdpSession
     bool wsa_started = false;
     bool openssl_providers_loaded = false;
     bool clipboard_channel_enabled = false;
+    bool drive_redirection_enabled = false;
+    std::string drive_name;
+    std::string drive_path;
+    int audio_playback_mode = CX_RDP_AUDIO_DO_NOT_PLAY;
+    bool microphone_enabled = false;
+    bool apply_key_combinations_remotely = true;
     CliprdrClientContext* cliprdr = nullptr;
     bool cliprdr_wire_active = false;
     bool cliprdr_ready = false;
@@ -151,6 +162,7 @@ void log_cliprdr_diagnostics(CxRdpSession* session, const char* reason);
 void mark_cliprdr_confirmed(CxRdpSession* session, const char* reason);
 UINT activate_pending_cliprdr(CxRdpSession* session);
 UINT flush_local_clipboard_format_list(CxRdpSession* session);
+void set_error(CxRdpSession* session, const std::string& message);
 
 CxRdpSession* get_session(rdpContext* context)
 {
@@ -220,6 +232,73 @@ bool initialize_instance(CxRdpSession* session)
     }
 
     reinterpret_cast<CxRdpContext*>(session->instance->context)->session = session;
+    return true;
+}
+
+bool configure_drive_redirection(CxRdpSession* session, rdpSettings* settings)
+{
+    if (!session || !settings || !session->drive_redirection_enabled)
+        return true;
+
+    const char* arguments[] = { session->drive_name.c_str(), session->drive_path.c_str() };
+    auto* device = freerdp_device_new(RDPDR_DTYP_FILESYSTEM, 2, arguments);
+    if (!device)
+    {
+        set_error(session, "Failed to create the RDP redirected drive.");
+        return false;
+    }
+
+    if (!freerdp_device_collection_add(settings, device))
+    {
+        freerdp_device_free(device);
+        set_error(session, "Failed to add the RDP redirected drive to FreeRDP settings.");
+        return false;
+    }
+
+    freerdp_settings_set_bool(settings, FreeRDP_DeviceRedirection, TRUE);
+    return true;
+}
+
+constexpr bool has_native_audio_backend()
+{
+#if defined(WITH_WINMM) || defined(WITH_MACAUDIO) || defined(WITH_ALSA) || defined(WITH_PULSE) || defined(WITH_OSS)
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool configure_audio_redirection(CxRdpSession* session, rdpSettings* settings)
+{
+    if (!session || !settings)
+        return false;
+
+    const bool playLocal = session->audio_playback_mode == CX_RDP_AUDIO_PLAY_LOCAL;
+    const bool playRemote = session->audio_playback_mode == CX_RDP_AUDIO_PLAY_REMOTE;
+    freerdp_settings_set_bool(settings, FreeRDP_AudioPlayback, playLocal ? TRUE : FALSE);
+    freerdp_settings_set_bool(settings, FreeRDP_RemoteConsoleAudio, playRemote ? TRUE : FALSE);
+    freerdp_settings_set_bool(settings, FreeRDP_AudioCapture, session->microphone_enabled ? TRUE : FALSE);
+
+    if (playLocal)
+    {
+        const char* soundChannel[] = { RDPSND_CHANNEL_NAME };
+        if (!freerdp_client_add_static_channel(settings, 1, soundChannel))
+        {
+            set_error(session, "Failed to configure the RDP sound channel.");
+            return false;
+        }
+    }
+
+    if (session->microphone_enabled)
+    {
+        const char* microphoneChannel[] = { AUDIN_CHANNEL_NAME };
+        if (!freerdp_client_add_dynamic_channel(settings, 1, microphoneChannel))
+        {
+            set_error(session, "Failed to configure the RDP microphone channel.");
+            return false;
+        }
+    }
+
     return true;
 }
 
@@ -563,6 +642,13 @@ bool is_clipboard_channel_allowed()
            !equals_ignore_case(value, "false") &&
            !equals_ignore_case(value, "off") &&
            !equals_ignore_case(value, "no");
+}
+
+bool is_channel_load_success(int result)
+{
+    return result == CHANNEL_RC_OK ||
+           result == CHANNEL_RC_ALREADY_INITIALIZED ||
+           result == CHANNEL_RC_ALREADY_CONNECTED;
 }
 
 bool process_rdp_events(CxRdpSession* session)
@@ -1523,33 +1609,90 @@ BOOL cx_load_channels(freerdp* instance)
         return FALSE;
 
     auto* session = get_session(instance->context);
-    if (!session || !session->clipboard_channel_enabled)
+    const bool localAudioEnabled = session && session->audio_playback_mode == CX_RDP_AUDIO_PLAY_LOCAL;
+    if (!session || (!session->clipboard_channel_enabled &&
+                     !session->drive_redirection_enabled &&
+                     !localAudioEnabled &&
+                     !session->microphone_enabled))
         return TRUE;
 
     register_static_channel_provider();
 
-    if (!freerdp_settings_get_bool(instance->context->settings, FreeRDP_RedirectClipboard))
-        return TRUE;
-
     if (freerdp_client_load_addins(instance->context->channels, instance->context->settings))
         return TRUE;
 
-    const int pluginResult = freerdp_channels_load_plugin(
-        instance->context->channels,
-        instance->context->settings,
-        CLIPRDR_CHANNEL_NAME,
-        nullptr);
-
-    if (pluginResult != CHANNEL_RC_OK)
+    if (session->drive_redirection_enabled)
     {
-        if (auto* session = get_session(instance->context))
+        const int drivePluginResult = freerdp_channels_load_plugin(
+            instance->context->channels,
+            instance->context->settings,
+            RDPDR_CHANNEL_NAME,
+            nullptr);
+
+        if (!is_channel_load_success(drivePluginResult))
         {
             std::ostringstream message;
-            message << "RDP clipboard channel load failed. code=" << pluginResult << " continuing without clipboard.";
+            message << "RDP drive channel load failed. code=" << drivePluginResult << ".";
+            set_error(session, message.str());
             notify_status(session, message.str().c_str());
+            return FALSE;
         }
+    }
 
-        freerdp_settings_set_bool(instance->context->settings, FreeRDP_RedirectClipboard, FALSE);
+    if (session->clipboard_channel_enabled &&
+        freerdp_settings_get_bool(instance->context->settings, FreeRDP_RedirectClipboard))
+    {
+        const int clipboardPluginResult = freerdp_channels_load_plugin(
+            instance->context->channels,
+            instance->context->settings,
+            CLIPRDR_CHANNEL_NAME,
+            nullptr);
+
+        if (!is_channel_load_success(clipboardPluginResult))
+        {
+            std::ostringstream message;
+            message << "RDP clipboard channel load failed. code=" << clipboardPluginResult
+                    << " continuing without clipboard.";
+            notify_status(session, message.str().c_str());
+
+            freerdp_settings_set_bool(instance->context->settings, FreeRDP_RedirectClipboard, FALSE);
+        }
+    }
+
+    if (localAudioEnabled)
+    {
+        const int soundPluginResult = freerdp_channels_load_plugin(
+            instance->context->channels,
+            instance->context->settings,
+            RDPSND_CHANNEL_NAME,
+            nullptr);
+
+        if (!is_channel_load_success(soundPluginResult))
+        {
+            std::ostringstream message;
+            message << "RDP sound channel load failed. code=" << soundPluginResult << ".";
+            set_error(session, message.str());
+            notify_status(session, message.str().c_str());
+            return FALSE;
+        }
+    }
+
+    if (session->microphone_enabled)
+    {
+        const int dynamicChannelResult = freerdp_channels_load_plugin(
+            instance->context->channels,
+            instance->context->settings,
+            DRDYNVC_CHANNEL_NAME,
+            nullptr);
+
+        if (!is_channel_load_success(dynamicChannelResult))
+        {
+            std::ostringstream message;
+            message << "RDP microphone channel load failed. code=" << dynamicChannelResult << ".";
+            set_error(session, message.str());
+            notify_status(session, message.str().c_str());
+            return FALSE;
+        }
     }
 
     return TRUE;
@@ -1698,6 +1841,45 @@ void connection_thread(CxRdpSession* session)
             freerdp_settings_set_bool(settings, FreeRDP_TlsSecurity, profile.tls ? TRUE : FALSE);
             freerdp_settings_set_bool(settings, FreeRDP_RdpSecurity, profile.rdp ? TRUE : FALSE);
             freerdp_settings_set_bool(settings, FreeRDP_UseRdpSecurityLayer, profile.useRdpSecurityLayer ? TRUE : FALSE);
+            freerdp_settings_set_uint32(
+                settings,
+                FreeRDP_KeyboardHook,
+                session->apply_key_combinations_remotely ? 1u : 0u);
+
+            if (!configure_drive_redirection(session, settings))
+            {
+                lastError = session->last_error;
+                notify_status(session, lastError.c_str());
+                free_instance(session);
+                break;
+            }
+
+            if (!configure_audio_redirection(session, settings))
+            {
+                lastError = session->last_error;
+                notify_status(session, lastError.c_str());
+                free_instance(session);
+                break;
+            }
+
+            if (session->drive_redirection_enabled)
+            {
+                std::ostringstream driveStatus;
+                driveStatus << "RDP redirected drive name=" << session->drive_name
+                            << " path=" << session->drive_path;
+                notify_status(session, driveStatus.str().c_str());
+            }
+
+            std::ostringstream audioStatus;
+            audioStatus << "RDP audio playbackMode=" << session->audio_playback_mode
+                        << " microphone=" << (session->microphone_enabled ? "enabled" : "disabled");
+            notify_status(session, audioStatus.str().c_str());
+
+            notify_status(
+                session,
+                session->apply_key_combinations_remotely
+                    ? "RDP key combinations are applied to the remote computer."
+                    : "RDP key combinations are applied to the local computer.");
 
             const char* parsedServerName = freerdp_settings_get_server_name(settings);
             const char* parsedHostName = freerdp_settings_get_string(settings, FreeRDP_ServerHostname);
@@ -1799,6 +1981,21 @@ void connection_thread(CxRdpSession* session)
 
 extern "C"
 {
+CX_RDP_API uint32_t cxrdp_get_api_version(void)
+{
+    return CX_RDP_BRIDGE_API_VERSION;
+}
+
+CX_RDP_API uint32_t cxrdp_get_capabilities(void)
+{
+    uint32_t capabilities = CX_RDP_CAPABILITY_CLIPBOARD |
+                            CX_RDP_CAPABILITY_DRIVE_REDIRECTION |
+                            CX_RDP_CAPABILITY_KEYBOARD_HOOK;
+    if (has_native_audio_backend())
+        capabilities |= CX_RDP_CAPABILITY_AUDIO_PLAYBACK | CX_RDP_CAPABILITY_MICROPHONE;
+    return capabilities;
+}
+
 CX_RDP_API void* cxrdp_create(void)
 {
     auto* session = new CxRdpSession();
@@ -1962,6 +2159,93 @@ CX_RDP_API void cxrdp_set_clipboard_text(void* handle, const char* text)
         session->local_clipboard_text = text ? text : "";
         ++session->local_clipboard_revision;
     }
+}
+
+CX_RDP_API int cxrdp_set_drive_redirection(
+    void* handle,
+    int enabled,
+    const char* drive_name,
+    const char* local_path)
+{
+    auto* session = static_cast<CxRdpSession*>(handle);
+    if (!session)
+        return -1;
+
+    if (session->running)
+    {
+        set_error(session, "RDP drive redirection must be configured before connecting.");
+        return -2;
+    }
+
+    session->drive_redirection_enabled = enabled != 0;
+    session->drive_name = trim_copy(drive_name ? drive_name : "");
+    session->drive_path = trim_copy(local_path ? local_path : "");
+
+    if (session->drive_redirection_enabled &&
+        (session->drive_name.empty() || session->drive_path.empty()))
+    {
+        set_error(session, "RDP drive name and local path are required.");
+        session->drive_redirection_enabled = false;
+        return -3;
+    }
+
+    return 0;
+}
+
+CX_RDP_API int cxrdp_set_audio_redirection(
+    void* handle,
+    int playback_mode,
+    int microphone_enabled)
+{
+    auto* session = static_cast<CxRdpSession*>(handle);
+    if (!session)
+        return -1;
+
+    if (session->running)
+    {
+        set_error(session, "RDP audio redirection must be configured before connecting.");
+        return -2;
+    }
+
+    if (playback_mode < CX_RDP_AUDIO_PLAY_LOCAL || playback_mode > CX_RDP_AUDIO_DO_NOT_PLAY)
+    {
+        set_error(session, "Invalid RDP audio playback mode.");
+        return -3;
+    }
+
+    if (playback_mode == CX_RDP_AUDIO_PLAY_LOCAL && !has_native_audio_backend())
+    {
+        set_error(session, "This CxRdpBridge build does not include a local audio playback backend.");
+        return -4;
+    }
+
+    if (microphone_enabled != 0 && !has_native_audio_backend())
+    {
+        set_error(session, "This CxRdpBridge build does not include a microphone backend.");
+        return -5;
+    }
+
+    session->audio_playback_mode = playback_mode;
+    session->microphone_enabled = microphone_enabled != 0;
+    return 0;
+}
+
+CX_RDP_API int cxrdp_set_keyboard_options(
+    void* handle,
+    int apply_key_combinations_remotely)
+{
+    auto* session = static_cast<CxRdpSession*>(handle);
+    if (!session)
+        return -1;
+
+    if (session->running)
+    {
+        set_error(session, "RDP keyboard options must be configured before connecting.");
+        return -2;
+    }
+
+    session->apply_key_combinations_remotely = apply_key_combinations_remotely != 0;
+    return 0;
 }
 
 CX_RDP_API const char* cxrdp_get_last_error(void* handle)
