@@ -362,6 +362,25 @@ CxShell is currently closer to a fast-moving usable preview than a long-term sta
 
 Issues, feature requests, and pull requests are welcome. For changes related to protocols, terminal rendering, or file transfer, please include reproduction steps, target server or system information when possible, and manual verification results.
 
+## Support
+
+CxShell is open source and free to use. If it helps your work, you can support ongoing development through WeChat Pay or Alipay.
+
+- WeChat ID: `ruochujiangzi`
+
+<table>
+  <tr>
+    <td align="center">
+      <strong>WeChat Pay</strong><br>
+      <img src="docs/images/wechat-pay-donation.jpg" alt="WeChat Pay donation QR code" width="220">
+    </td>
+    <td align="center">
+      <strong>Alipay</strong><br>
+      <img src="docs/images/alipay-donation.jpg" alt="Alipay donation QR code" width="220">
+    </td>
+  </tr>
+</table>
+
 ## Contact
 
 For project feedback and technical discussion, you can add the author on WeChat.

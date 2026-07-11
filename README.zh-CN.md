@@ -362,6 +362,25 @@ CxShell 目前更接近“可用中的快速迭代版本”，不是一个完全
 
 欢迎提交 issue、功能建议和 pull request。涉及协议、终端渲染或文件传输的改动，请尽量附带复现步骤、目标服务器/系统信息和手动验证结果。
 
+## 支持项目
+
+CxShell 是一个开源免费项目。如果它对你的工作有帮助，可以通过微信支付或支付宝支持项目继续开发。
+
+- 微信号：`ruochujiangzi`
+
+<table>
+  <tr>
+    <td align="center">
+      <strong>微信支付</strong><br>
+      <img src="docs/images/wechat-pay-donation.jpg" alt="微信支付收款码" width="220">
+    </td>
+    <td align="center">
+      <strong>支付宝</strong><br>
+      <img src="docs/images/alipay-donation.jpg" alt="支付宝收款码" width="220">
+    </td>
+  </tr>
+</table>
+
 ## 联系方式
 
 如需反馈项目问题或进行技术交流，可以添加作者微信。
