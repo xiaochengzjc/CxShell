@@ -368,7 +368,7 @@ CxShell 是一个开源免费项目。如果它对你的工作有帮助，可以
 
 海外用户：
 
-- Ko-fi：[https://ko-fi.com/xiaochengzjc](https://ko-fi.com/xiaochengzjc)
+[![在 Ko-fi 支持 CxShell](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/xiaochengzjc)
 
 国内用户：
 

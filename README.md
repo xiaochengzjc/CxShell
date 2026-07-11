@@ -368,7 +368,7 @@ CxShell is open source and free to use. If it helps your work, you can support o
 
 For overseas users:
 
-- Ko-fi: [https://ko-fi.com/xiaochengzjc](https://ko-fi.com/xiaochengzjc)
+[![Support CxShell on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/xiaochengzjc)
 
 For users in China:
 
