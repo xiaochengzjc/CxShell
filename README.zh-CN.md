@@ -364,7 +364,13 @@ CxShell 目前更接近“可用中的快速迭代版本”，不是一个完全
 
 ## 支持项目
 
-CxShell 是一个开源免费项目。如果它对你的工作有帮助，可以通过微信支付或支付宝支持项目继续开发。
+CxShell 是一个开源免费项目。如果它对你的工作有帮助，可以通过 Ko-fi、微信支付或支付宝支持项目继续开发。
+
+海外用户：
+
+- Ko-fi：[https://ko-fi.com/xiaochengzjc](https://ko-fi.com/xiaochengzjc)
+
+国内用户：
 
 - 微信号：`ruochujiangzi`
 

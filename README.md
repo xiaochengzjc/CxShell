@@ -364,7 +364,13 @@ Issues, feature requests, and pull requests are welcome. For changes related to 
 
 ## Support
 
-CxShell is open source and free to use. If it helps your work, you can support ongoing development through WeChat Pay or Alipay.
+CxShell is open source and free to use. If it helps your work, you can support ongoing development through Ko-fi, WeChat Pay, or Alipay.
+
+For overseas users:
+
+- Ko-fi: [https://ko-fi.com/xiaochengzjc](https://ko-fi.com/xiaochengzjc)
+
+For users in China:
 
 - WeChat ID: `ruochujiangzi`
 
