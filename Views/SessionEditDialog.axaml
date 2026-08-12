@@ -44,15 +44,15 @@
             <Setter Property="Background" Value="{atom:SharedTokenResource ColorFillTertiary}"/>
         </Style>
         <Style Selector="atom|Button.file-picker-button">
-            <Setter Property="Width" Value="48"/>
-            <Setter Property="MinWidth" Value="48"/>
-            <Setter Property="Height" Value="48"/>
-            <Setter Property="MinHeight" Value="48"/>
+            <Setter Property="Width" Value="36"/>
+            <Setter Property="MinWidth" Value="36"/>
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="MinHeight" Value="32"/>
             <Setter Property="Padding" Value="0"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Setter Property="FontSize" Value="18"/>
+            <Setter Property="FontSize" Value="16"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="IsWaveSpiritEnabled" Value="False"/>
             <Setter Property="ClipToBounds" Value="True"/>
@@ -85,7 +85,7 @@
         </Style>
     </atom:Window.Styles>
 
-    <Grid Margin="20" ColumnDefinitions="220,14,*,14,140">
+    <Grid Margin="20" ColumnDefinitions="220,14,*,14,104">
         <Border Grid.Column="0"
                 Background="{atom:SharedTokenResource ColorBgContainer}"
                 BorderBrush="{atom:SharedTokenResource ColorBorder}"
@@ -681,14 +681,19 @@
                     </StackPanel>
                 </ScrollViewer>
 
-                <ScrollViewer x:Name="LoginScriptPage" IsVisible="False">
+                <ScrollViewer x:Name="LoginScriptPage"
+                              IsVisible="False"
+                              HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Auto">
                     <StackPanel Spacing="16">
                         <TextBlock Text="{Binding [UiText.020], Source={x:Static services:LocalizationService.Shared}}"
                                    TextWrapping="Wrap"
                                    Foreground="{atom:SharedTokenResource ColorText}"/>
 
-                        <Grid RowDefinitions="Auto,12,380,22,Auto,12,Auto,12,Auto"
-                              ColumnDefinitions="*,18,164">
+                        <Grid RowDefinitions="Auto,12,380,22,Auto,12,Auto,8,Auto,10,Auto,8,Auto,8,Auto,10,Auto"
+                              ColumnDefinitions="*,12,104"
+                              HorizontalAlignment="Stretch"
+                              Margin="0,0,18,0">
                             <atom:CheckBox Grid.ColumnSpan="3"
                                            Content="{Binding [UiText.021], Source={x:Static services:LocalizationService.Shared}}"
                                            IsChecked="{Binding EnableLoginScriptRules, Mode=TwoWay}"/>
@@ -701,6 +706,8 @@
                                            IsReadOnly="True"
                                            SelectionMode="Single"
                                            SizeType="Middle"
+                                           MinWidth="0"
+                                           HorizontalAlignment="Stretch"
                                            GridLinesVisibility="Vertical"
                                            CanUserResizeColumns="True"
                                            IsHideOnSinglePage="True">
@@ -712,7 +719,8 @@
 
                             <StackPanel Grid.Row="2"
                                         Grid.Column="2"
-                                        Spacing="10">
+                                        Spacing="8"
+                                        HorizontalAlignment="Stretch">
                                 <atom:Button x:Name="AddLoginScriptRuleBtn"
                                              Content="{Binding [UiText.022], Source={x:Static services:LocalizationService.Shared}}"
                                              Click="OnAddLoginScriptRuleClick"/>
@@ -741,16 +749,21 @@
 
                             <Grid Grid.Row="6"
                                   Grid.ColumnSpan="3"
-                                  ColumnDefinitions="*,8,64,4">
+                                  ColumnDefinitions="*,8,48"
+                                  HorizontalAlignment="Stretch">
                                 <atom:LineEdit x:Name="LoginScriptFilePathBox"
                                                Text="{Binding LoginScriptFilePath, Mode=TwoWay}"
                                                VerticalAlignment="Center"
+                                               MinWidth="0"
+                                               HorizontalAlignment="Stretch"
                                                IsEnabled="{Binding IsLoginScriptFileEnabled}"/>
                                 <atom:Button Grid.Column="2"
                                               Classes="file-picker-button"
                                                Content="..."
-                                               Width="48"
-                                               MinWidth="48"
+                                               Width="36"
+                                               MinWidth="36"
+                                               Height="32"
+                                               MinHeight="32"
                                                HorizontalContentAlignment="Center"
                                                IsEnabled="{Binding IsLoginScriptFileEnabled}"
                                                Click="OnBrowseLoginScriptFileClick"/>
@@ -758,12 +771,58 @@
 
                             <Grid Grid.Row="8"
                                   Grid.ColumnSpan="3"
-                                  ColumnDefinitions="Auto,12,*">
+                                  ColumnDefinitions="Auto,12,220"
+                                  HorizontalAlignment="Stretch">
+                                <TextBlock Text="{Binding LoginScriptExecutionModeText}"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:Select Grid.Column="2"
+                                             x:Name="LoginScriptExecutionModeSelect"
+                                             Mode="Single"
+                                             HorizontalAlignment="Stretch"
+                                             OptionsSource="{Binding LoginScriptExecutionModeOptions}"
+                                             SelectionChanged="OnLoginScriptExecutionModeSelectionChanged"
+                                             IsEnabled="{Binding IsLoginScriptFileEnabled}"/>
+                            </Grid>
+
+                            <TextBlock Grid.Row="10"
+                                       Grid.ColumnSpan="3"
+                                       Text="{Binding LoginScriptExecutionModeHintText}"
+                                       TextWrapping="Wrap"
+                                       Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+
+                            <Grid Grid.Row="12"
+                                  Grid.ColumnSpan="3"
+                                  ColumnDefinitions="Auto,12,*"
+                                  HorizontalAlignment="Stretch">
+                                <TextBlock Text="{Binding LoginScriptInterpreterText}"
+                                           VerticalAlignment="Center"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                <atom:LineEdit Grid.Column="2"
+                                               Text="{Binding LoginScriptInterpreter, Mode=TwoWay}"
+                                               PlaceholderText="python3"
+                                               MinWidth="0"
+                                               HorizontalAlignment="Stretch"
+                                               IsEnabled="{Binding IsLoginScriptInterpreterEnabled}"/>
+                            </Grid>
+
+                            <TextBlock Grid.Row="14"
+                                       Grid.ColumnSpan="3"
+                                       Text="{Binding LoginScriptInterpreterHintText}"
+                                       TextWrapping="Wrap"
+                                       Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+
+                            <Grid Grid.Row="16"
+                                  Grid.ColumnSpan="3"
+                                  ColumnDefinitions="Auto,12,*"
+                                  HorizontalAlignment="Stretch">
                                 <TextBlock Text="{Binding [UiText.028], Source={x:Static services:LocalizationService.Shared}}"
                                            VerticalAlignment="Center"
                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
                                 <atom:LineEdit Grid.Column="2"
                                                Text="{Binding LoginScriptParameters, Mode=TwoWay}"
+                                               MinWidth="0"
+                                               HorizontalAlignment="Stretch"
                                                IsEnabled="{Binding IsLoginScriptFileEnabled}"/>
                             </Grid>
                         </Grid>
@@ -3389,19 +3448,19 @@
                          ButtonType="Primary"
                          Icon="{antdicons:AntDesignIconProvider Kind=CheckOutlined}"
                          Content="{Binding SaveText}"
-                         MinWidth="132"
+                         MinWidth="0"
                          HorizontalAlignment="Stretch"/>
             <atom:Button x:Name="ConnectBtn"
                          ButtonType="Default"
                          Icon="{antdicons:AntDesignIconProvider Kind=LinkOutlined}"
                          Content="{Binding ConnectText}"
-                         MinWidth="132"
+                         MinWidth="0"
                          IsVisible="{Binding IsSessionScope}"
                          HorizontalAlignment="Stretch"/>
             <atom:Button x:Name="CancelBtn"
                          Icon="{antdicons:AntDesignIconProvider Kind=CloseOutlined}"
                          Content="{Binding CancelText}"
-                         MinWidth="132"
+                         MinWidth="0"
                          HorizontalAlignment="Stretch"/>
         </StackPanel>
     </Grid>

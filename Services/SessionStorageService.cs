@@ -1,16 +1,21 @@
 using System.Collections.Generic;
 using System.Text;
+using System.Text.Json.Serialization;
 using CxShell.Models;
 
 namespace CxShell.Services;
 
 public class SessionData
 {
+    public string Format { get; set; } = "CxShell.Session";
     public string Version { get; set; } = "1.0";
     public ApplicationSettings Settings { get; set; } = new();
     public List<SessionGroup> Groups { get; set; } = new();
     public List<SessionInfo> Sessions { get; set; } = new();
     public List<Guid> QuickSessionIds { get; set; } = new();
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTime? ExportedAt { get; set; }
 }
 
 public class SessionStorageService

@@ -67,6 +67,7 @@ public partial class SessionTreeViewModel : ObservableObject
     [ObservableProperty] private ObservableCollection<SessionNodeViewModel> _sessionNodes = new();
     [ObservableProperty] private ObservableCollection<SessionNodeViewModel> _sessionRows = new();
     [ObservableProperty] private ObservableCollection<SessionInfo> _quickSessions = new();
+    [ObservableProperty] private ObservableCollection<SessionNodeViewModel> _selectedNodes = new();
     [ObservableProperty] private SessionNodeViewModel? _selectedNode;
     [ObservableProperty] private string _sessionSearchText = string.Empty;
 
@@ -76,7 +77,13 @@ public partial class SessionTreeViewModel : ObservableObject
     private SessionInfo? _copiedSession;
 
     public SessionInfo? SelectedSession => SelectedNode?.Session;
-    public bool CanUseSelectedSession => SelectedSession != null;
+    public bool CanUseSelectedSession => SelectedNodes.Count == 1 && SelectedSession != null;
+    public bool HasSelectedSessions => SelectedNodes.Any(node => node.Session != null);
+    public int SelectedSessionCount => SelectedNodes.Count(node => node.Session != null);
+    public bool CanExportSelectedSessions => HasSelectedSessions;
+    public bool HasOpenSelectedSession => GetSelectedSessions().Any(session =>
+        _mainWindow.Tabs.Any(tab => tab.Session.Id == session.Id));
+    public bool CanDeleteSelectedSessions => HasSelectedSessions && !HasOpenSelectedSession;
     public bool CanPaste => _copiedSession != null;
     public bool CanMoveSelectedSessionUp => GetSelectedVisibleSessionIndex() > 0;
     public bool CanMoveSelectedSessionDown
@@ -97,6 +104,8 @@ public partial class SessionTreeViewModel : ObservableObject
     public string PasteText => L.Text("SessionManager.Paste");
     public string PropertiesText => L.Text("SessionManager.Properties");
     public string DeleteText => L.Text("SessionManager.Delete");
+    public string ImportText => L.Text("SessionManager.Import");
+    public string ExportText => L.Text("SessionManager.Export");
     public string MoveUpText => L.Text("SessionManager.MoveUp");
     public string MoveDownText => L.Text("SessionManager.MoveDown");
     public string SearchPlaceholderText => L.Text("SessionManager.SearchPlaceholder");
@@ -141,6 +150,8 @@ public partial class SessionTreeViewModel : ObservableObject
         OnPropertyChanged(nameof(PasteText));
         OnPropertyChanged(nameof(PropertiesText));
         OnPropertyChanged(nameof(DeleteText));
+        OnPropertyChanged(nameof(ImportText));
+        OnPropertyChanged(nameof(ExportText));
         OnPropertyChanged(nameof(MoveUpText));
         OnPropertyChanged(nameof(MoveDownText));
         OnPropertyChanged(nameof(SearchPlaceholderText));
@@ -407,9 +418,26 @@ public partial class SessionTreeViewModel : ObservableObject
     partial void OnSelectedNodeChanged(SessionNodeViewModel? value)
     {
         OnPropertyChanged(nameof(SelectedSession));
-        OnPropertyChanged(nameof(CanUseSelectedSession));
+        NotifySelectionStateChanged();
         OnPropertyChanged(nameof(CanMoveSelectedSessionUp));
         OnPropertyChanged(nameof(CanMoveSelectedSessionDown));
+    }
+
+    partial void OnSelectedNodesChanged(ObservableCollection<SessionNodeViewModel> value)
+    {
+        NotifySelectionStateChanged();
+        OnPropertyChanged(nameof(CanMoveSelectedSessionUp));
+        OnPropertyChanged(nameof(CanMoveSelectedSessionDown));
+    }
+
+    private void NotifySelectionStateChanged()
+    {
+        OnPropertyChanged(nameof(CanUseSelectedSession));
+        OnPropertyChanged(nameof(HasSelectedSessions));
+        OnPropertyChanged(nameof(SelectedSessionCount));
+        OnPropertyChanged(nameof(CanExportSelectedSessions));
+        OnPropertyChanged(nameof(HasOpenSelectedSession));
+        OnPropertyChanged(nameof(CanDeleteSelectedSessions));
     }
 
     partial void OnSessionSearchTextChanged(string value)
@@ -458,6 +486,10 @@ public partial class SessionTreeViewModel : ObservableObject
             SelectedNode = SessionRows.FirstOrDefault(node => node.Session?.Id == selectedSessionId.Value);
         else
             SelectedNode = null;
+
+        SelectedNodes.Clear();
+        if (SelectedNode != null)
+            SelectedNodes.Add(SelectedNode);
 
         OnPropertyChanged(nameof(CanMoveSelectedSessionUp));
         OnPropertyChanged(nameof(CanMoveSelectedSessionDown));
@@ -645,6 +677,149 @@ public partial class SessionTreeViewModel : ObservableObject
         _storage.Save(_data);
         LoadSessions();
         SelectedNode = null;
+    }
+
+    public IReadOnlyList<SessionInfo> GetSelectedSessions()
+    {
+        return SelectedNodes
+            .Select(node => node.Session)
+            .Where(session => session != null)
+            .Cast<SessionInfo>()
+            .DistinctBy(session => session.Id)
+            .ToList();
+    }
+
+    public void SetSelectedNodes(IEnumerable<SessionNodeViewModel> nodes)
+    {
+        var selected = nodes
+            .Where(node => node.Session != null)
+            .Distinct()
+            .ToList();
+
+        SelectedNodes.Clear();
+        foreach (var node in selected)
+            SelectedNodes.Add(node);
+
+        if (selected.Count == 1)
+            SelectedNode = selected[0];
+        else if (selected.Count == 0)
+            SelectedNode = null;
+
+        NotifySelectionStateChanged();
+    }
+
+    public void ExportSelectedSessions(string path)
+    {
+        var sessions = GetSelectedSessions();
+        if (sessions.Count == 0)
+            throw new InvalidOperationException("No sessions are selected.");
+
+        SessionTransferService.Export(path, _data.Groups, sessions);
+    }
+
+    public int ImportSessions(string path)
+    {
+        var package = SessionTransferService.Load(path);
+        var groupMap = new Dictionary<Guid, Guid>();
+        var importedGroups = new List<SessionGroup>();
+
+        foreach (var group in package.Groups.OrderBy(item => GetGroupDepth(item, package.Groups)))
+        {
+            Guid? parentId = group.ParentId.HasValue && groupMap.TryGetValue(group.ParentId.Value, out var mappedParent)
+                ? mappedParent
+                : null;
+            var name = CreateUniqueGroupName(group.Name, parentId, importedGroups);
+            var imported = SessionTransferService.CloneImportedGroup(
+                group,
+                Guid.NewGuid(),
+                parentId,
+                name,
+                _data.Groups.Count + importedGroups.Count);
+            imported.ParentId = parentId;
+            groupMap[group.Id] = imported.Id;
+            importedGroups.Add(imported);
+        }
+
+        var importedSessions = new List<SessionInfo>();
+        var nextSortOrder = _data.Sessions.Count == 0 ? 0 : _data.Sessions.Max(session => session.SortOrder) + 1;
+        foreach (var source in package.Sessions)
+        {
+            Guid? groupId = source.GroupId.HasValue && groupMap.TryGetValue(source.GroupId.Value, out var mappedGroup)
+                ? mappedGroup
+                : null;
+            var name = CreateUniqueSessionName(source.Name, importedSessions);
+            importedSessions.Add(SessionTransferService.CloneImportedSession(source, groupId, name, nextSortOrder++));
+        }
+
+        _data.Groups.AddRange(importedGroups);
+        _data.Sessions.AddRange(importedSessions);
+        _storage.Save(_data);
+        LoadSessions();
+
+        if (importedSessions.Count > 0)
+            SelectedNode = SessionRows.FirstOrDefault(node => node.Session?.Id == importedSessions[0].Id);
+
+        return importedSessions.Count;
+    }
+
+    public void DeleteSelectedSessions()
+    {
+        var sessions = GetSelectedSessions();
+        if (sessions.Count == 0 || sessions.Any(session => _mainWindow.Tabs.Any(tab => tab.Session.Id == session.Id)))
+            return;
+
+        var ids = sessions.Select(session => session.Id).ToHashSet();
+        _data.Sessions.RemoveAll(session => ids.Contains(session.Id));
+        _data.QuickSessionIds.RemoveAll(ids.Contains);
+        _storage.Save(_data);
+        LoadSessions();
+        SelectedNode = null;
+    }
+
+    private string CreateUniqueSessionName(string sourceName, IEnumerable<SessionInfo> pending)
+    {
+        var baseName = string.IsNullOrWhiteSpace(sourceName) ? "Imported session" : sourceName.Trim();
+        var name = baseName;
+        var suffix = 2;
+        while (_data.Sessions.Any(session => string.Equals(session.Name, name, StringComparison.OrdinalIgnoreCase)) ||
+               pending.Any(session => string.Equals(session.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            name = $"{baseName} ({suffix++})";
+        }
+
+        return name;
+    }
+
+    private string CreateUniqueGroupName(string sourceName, Guid? parentId, IEnumerable<SessionGroup> pending)
+    {
+        var baseName = string.IsNullOrWhiteSpace(sourceName) ? "Imported group" : sourceName.Trim();
+        var name = baseName;
+        var suffix = 2;
+        while (_data.Groups.Any(group => group.ParentId == parentId && string.Equals(group.Name, name, StringComparison.OrdinalIgnoreCase)) ||
+               pending.Any(group => group.ParentId == parentId && string.Equals(group.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            name = $"{baseName} ({suffix++})";
+        }
+
+        return name;
+    }
+
+    private static int GetGroupDepth(SessionGroup group, IReadOnlyCollection<SessionGroup> groups)
+    {
+        var depth = 0;
+        var parentId = group.ParentId;
+        var visited = new HashSet<Guid>();
+        while (parentId.HasValue && visited.Add(parentId.Value))
+        {
+            var parent = groups.FirstOrDefault(item => item.Id == parentId.Value);
+            if (parent == null)
+                break;
+
+            depth++;
+            parentId = parent.ParentId;
+        }
+
+        return depth;
     }
 
     public void MoveSelectedSessionUp()

@@ -222,9 +222,6 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (TryBeginTabHeaderDragFromPreview(source, e, vm))
-            return;
-
         foreach (var current in EnumerateControlLineage(source))
         {
             if (current.DataContext is TerminalTabViewModel tab)
@@ -687,14 +684,6 @@ public partial class MainWindow : Window
         }
 
         var properties = e.GetCurrentPoint(this).Properties;
-        if (properties.IsLeftButtonPressed || properties.PointerUpdateKind == PointerUpdateKind.LeftButtonPressed)
-        {
-            BeginTabDrag(tab, anchor, e);
-            vm.SelectTabCommand.Execute(tab);
-            e.Handled = true;
-            return;
-        }
-
         if (properties.IsRightButtonPressed || properties.PointerUpdateKind == PointerUpdateKind.RightButtonPressed)
         {
             ResetTabDrag();

@@ -772,7 +772,9 @@ public partial class TerminalViewModel : ObservableObject
                 if (string.IsNullOrEmpty(scriptText))
                     return;
 
-                connection.SendData(NormalizeScriptSendText(ApplyLoginScriptParameters(scriptText, session.LoginScriptParameters)));
+                var expandedScript = ApplyLoginScriptParameters(scriptText, session.LoginScriptParameters);
+                var payload = BuildLoginScriptPayload(session, connection, expandedScript);
+                connection.SendData(payload);
             }
             catch (OperationCanceledException)
             {
@@ -1217,6 +1219,90 @@ public partial class TerminalViewModel : ObservableObject
         for (var i = 0; i < args.Length; i++)
             scriptText = scriptText.Replace($"{{{i}}}", args[i], StringComparison.Ordinal);
         return scriptText;
+    }
+
+    private static string BuildLoginScriptPayload(
+        SessionInfo session,
+        ITerminalConnectionService connection,
+        string scriptText)
+    {
+        var isPosix = ConnectionSupportsPosixShellFeatures(connection);
+        var mode = SessionEditViewModel.NormalizeLoginScriptExecutionMode(
+            session.LoginScriptExecutionMode,
+            session.LoginScriptFilePath);
+        var interpreter = ResolveLoginScriptInterpreter(mode, session.LoginScriptInterpreter, isPosix);
+        var base64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(scriptText));
+        var extension = mode switch
+        {
+            LoginScriptExecutionMode.Python => "py",
+            LoginScriptExecutionMode.Bash => "sh",
+            LoginScriptExecutionMode.PowerShell => "ps1",
+            _ => "txt"
+        };
+        var temporaryName = $"cxshell-login-{Guid.NewGuid():N}.{extension}";
+        var parameters = session.LoginScriptParameters?.Trim() ?? string.Empty;
+
+        return isPosix
+            ? BuildPosixLoginScriptCommand(interpreter, temporaryName, base64, parameters)
+            : BuildPowerShellLoginScriptCommand(mode, interpreter, temporaryName, base64, parameters);
+    }
+
+    private static string ResolveLoginScriptInterpreter(
+        LoginScriptExecutionMode mode,
+        string? configuredInterpreter,
+        bool isPosix)
+    {
+        if (!string.IsNullOrWhiteSpace(configuredInterpreter))
+            return configuredInterpreter.Trim();
+
+        return mode switch
+        {
+            LoginScriptExecutionMode.Python => isPosix ? "python3" : "python",
+            LoginScriptExecutionMode.Bash => "bash",
+            LoginScriptExecutionMode.PowerShell => isPosix ? "pwsh" : "powershell",
+            _ => string.Empty
+        };
+    }
+
+    private static string BuildPosixLoginScriptCommand(
+        string interpreter,
+        string temporaryName,
+        string base64,
+        string parameters)
+    {
+        var path = $"/tmp/{temporaryName}";
+        var command = new StringBuilder();
+        command.Append("__cxshell_script=").Append(QuotePosixShellArgument(path)).Append("; ");
+        command.Append("printf '%s' ").Append(QuotePosixShellArgument(base64));
+        command.Append(" | base64 -d > \"$__cxshell_script\"; ");
+        command.Append(interpreter).Append(" \"$__cxshell_script\"");
+        if (!string.IsNullOrWhiteSpace(parameters))
+            command.Append(' ').Append(parameters);
+        command.Append("; __cxshell_status=$?; rm -f \"$__cxshell_script\"; unset __cxshell_script; ");
+        command.Append("printf '[CxShell script exit: %s]' \"$__cxshell_status\"");
+        return NormalizeScriptSendText(command.ToString()) + "\r";
+    }
+
+    private static string BuildPowerShellLoginScriptCommand(
+        LoginScriptExecutionMode mode,
+        string interpreter,
+        string temporaryName,
+        string base64,
+        string parameters)
+    {
+        var command = new StringBuilder();
+        command.Append("$__cxshell_script=Join-Path $env:TEMP '").Append(temporaryName).Append("'; ");
+        command.Append("[IO.File]::WriteAllBytes($__cxshell_script,[Convert]::FromBase64String('");
+        command.Append(base64).Append("')); ");
+        command.Append("& ").Append(interpreter);
+        if (mode == LoginScriptExecutionMode.PowerShell)
+            command.Append(" -NoProfile -NonInteractive -File");
+        command.Append(" $__cxshell_script");
+        if (!string.IsNullOrWhiteSpace(parameters))
+            command.Append(' ').Append(parameters);
+        command.Append("; $__cxshell_status=$LASTEXITCODE; Remove-Item -LiteralPath $__cxshell_script -Force -ErrorAction SilentlyContinue; ");
+        command.Append("Write-Output ('[CxShell script exit: ' + $__cxshell_status + ']')");
+        return NormalizeScriptSendText(command.ToString()) + "\r";
     }
 
     private bool HandleBinaryData(int generation, byte[] bytes)

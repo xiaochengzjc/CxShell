@@ -1,4 +1,3 @@
-using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -21,8 +20,7 @@ public partial class App : Application
 
         this.UseAtomUI(builder =>
         {
-            builder.WithDefaultCultureInfo(CultureInfo.CurrentUICulture);
-            builder.WithDefaultTheme(IThemeManager.DEFAULT_THEME_ID);
+            builder.WithInitialTheme(IThemeManager.DEFAULT_THEME_ID);
             builder.UseAlibabaSansFont();
             builder.UseDesktopControls();
             builder.UseDesktopColorPicker();

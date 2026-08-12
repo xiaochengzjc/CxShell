@@ -48,7 +48,7 @@ public static class ProxyConnectionFactory
                 session.Proxy.Host,
                 session.Proxy.Port,
                 session.Proxy.Username,
-                session.Proxy.Password,
+                PasswordEncryptionService.DecryptEncrypted(session.Proxy.Password),
                 authMethods.ToArray()));
     }
 
@@ -246,7 +246,7 @@ public static class ProxyConnectionFactory
 
         var jumpAuthMethods = SshAgentAuthService.CreateAuthenticationMethods(
             jumpUser,
-            proxy.Password,
+            PasswordEncryptionService.DecryptEncrypted(proxy.Password),
             proxy.AuthMethod,
             proxy.PrivateKeyPath,
             SshAgentAuthService.ResolvePrivateKeyPassphrase(
@@ -391,7 +391,8 @@ public static class ProxyConnectionFactory
         builder.Append(CultureInvariant($"Host: {host}:{port}\r\n"));
         if (!string.IsNullOrWhiteSpace(proxy.Username))
         {
-            var token = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{proxy.Username}:{proxy.Password}"));
+            var token = Convert.ToBase64String(Encoding.ASCII.GetBytes(
+                $"{proxy.Username}:{PasswordEncryptionService.DecryptEncrypted(proxy.Password)}"));
             builder.Append(CultureInvariant($"Proxy-Authorization: Basic {token}\r\n"));
         }
 
@@ -480,7 +481,7 @@ public static class ProxyConnectionFactory
     private static async Task AuthenticateSocks5Async(NetworkStream stream, ProxySettings proxy, CancellationToken cancellationToken)
     {
         var username = Encoding.ASCII.GetBytes(proxy.Username);
-        var password = Encoding.ASCII.GetBytes(proxy.Password ?? string.Empty);
+        var password = Encoding.ASCII.GetBytes(PasswordEncryptionService.DecryptEncrypted(proxy.Password));
         if (username.Length > byte.MaxValue || password.Length > byte.MaxValue)
             throw new IOException("SOCKS5 username or password is too long.");
 

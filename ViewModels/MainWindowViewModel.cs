@@ -7,6 +7,9 @@ using System.Reflection;
 using System.Threading.Tasks;
 using AtomUI;
 using AtomUI.Controls;
+using AtomUI.Theme;
+using AtomUI.Theme.Algorithms;
+using AtomUI.Theme.Configuration;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -194,17 +197,34 @@ public partial class MainWindowViewModel : ObservableObject
         };
 
         // Initialize theme state
-        _isDarkMode = Application.Current?.IsDarkThemeMode() ?? false;
+        _isDarkMode = Application.Current?.GetThemeManager()?.CurrentTheme?.Appearance == ThemeAppearance.Dark;
     }
 
     [RelayCommand]
-    private void ToggleTheme()
+    private async Task ToggleTheme()
     {
         var app = Application.Current;
-        if (app == null) return;
-        var newMode = !IsDarkMode;
-        app.SetDarkThemeMode(newMode);
-        IsDarkMode = newMode;
+        var themeManager = app?.GetThemeManager();
+        if (themeManager == null)
+            return;
+
+        var currentTheme = themeManager.CurrentTheme;
+        var algorithms = currentTheme?.Algorithms?.ToList() ?? [ThemeAlgorithm.Default];
+        var newMode = currentTheme?.Appearance != ThemeAppearance.Dark;
+        algorithms.RemoveAll(static algorithm => algorithm == ThemeAlgorithm.Dark);
+        if (newMode)
+            algorithms.Add(ThemeAlgorithm.Dark);
+
+        var result = await themeManager.ApplyThemeAsync(
+            new ThemeRequest(
+                currentTheme?.ThemeId ?? IThemeManager.DEFAULT_THEME_ID,
+                new ThemeConfigBuilder().WithAlgorithms(algorithms.ToArray()).Build(),
+                ThemeTransitionReason.UserRequest));
+
+        if (result.Status == ThemeTransitionStatus.Failed)
+            return;
+
+        IsDarkMode = result.State?.Appearance == ThemeAppearance.Dark;
 
         foreach (var tab in Tabs)
         {

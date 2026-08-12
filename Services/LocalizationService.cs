@@ -64,6 +64,16 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ["SessionManager.CopyFullPath"] = "Copy full path",
         ["SessionManager.CopySessionId"] = "Copy session ID",
         ["SessionManager.CopyLaunchCommand"] = "Copy launch command",
+        ["SessionManager.Import"] = "Import",
+        ["SessionManager.Export"] = "Export",
+        ["SessionManager.ImportSuccessTitle"] = "Import completed",
+        ["SessionManager.ImportSuccessMessage"] = "Imported {0} session(s).",
+        ["SessionManager.ImportFailedTitle"] = "Import failed",
+        ["SessionManager.ImportFailedMessage"] = "Could not import the session file: {0}",
+        ["SessionManager.ExportSuccessTitle"] = "Export completed",
+        ["SessionManager.ExportSuccessMessage"] = "Exported {0} session(s).",
+        ["SessionManager.ExportFailedTitle"] = "Export failed",
+        ["SessionManager.ExportFailedMessage"] = "Could not export the session file: {0}",
         ["SessionEdit.TitleNew"] = "New Session",
         ["SessionEdit.TitleProperties"] = "Session Properties",
         ["SessionEdit.NavTitle"] = "Session Configuration",
@@ -71,6 +81,10 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ["SessionEdit.Connection"] = "Connection",
         ["SessionEdit.LoginPrompt"] = "Login Prompts",
         ["SessionEdit.LoginScript"] = "Login Script",
+        ["SessionEdit.LoginScriptExecutionMode"] = "Execution mode",
+        ["SessionEdit.LoginScriptInterpreter"] = "Interpreter command",
+        ["SessionEdit.LoginScriptExecutionModeHint"] = "The execution mode is matched from the selected file extension and can be changed manually.",
+        ["SessionEdit.LoginScriptInterpreterHint"] = "Command used on the remote server, such as python3, py -3, bash, or pwsh.",
         ["SessionEdit.Proxy"] = "Proxy",
         ["SessionEdit.KeepAlive"] = "Keep Alive",
         ["SessionEdit.Serial"] = "Serial",
@@ -278,6 +292,16 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ["SessionManager.ColumnPort"] = "端口",
         ["SessionManager.Close"] = "关闭",
         ["SessionManager.ShowOnStartup"] = "启动时显示此对话框",
+        ["SessionManager.Import"] = "导入",
+        ["SessionManager.Export"] = "导出",
+        ["SessionManager.ImportSuccessTitle"] = "导入完成",
+        ["SessionManager.ImportSuccessMessage"] = "已导入 {0} 个会话。",
+        ["SessionManager.ImportFailedTitle"] = "导入失败",
+        ["SessionManager.ImportFailedMessage"] = "无法导入会话文件：{0}",
+        ["SessionManager.ExportSuccessTitle"] = "导出完成",
+        ["SessionManager.ExportSuccessMessage"] = "已导出 {0} 个会话。",
+        ["SessionManager.ExportFailedTitle"] = "导出失败",
+        ["SessionManager.ExportFailedMessage"] = "无法导出会话文件：{0}",
         ["SessionEdit.TitleNew"] = "新建会话",
         ["SessionEdit.TitleProperties"] = "会话属性",
         ["SessionEdit.NavTitle"] = "会话配置",
@@ -482,6 +506,10 @@ public sealed class LocalizationService : INotifyPropertyChanged
         EnglishTexts["Option.RdpAudioPlayLocal"] = "Play on this computer";
         EnglishTexts["Option.RdpAudioDoNotPlay"] = "Do not play";
         EnglishTexts["Option.RdpAudioPlayRemote"] = "Play on remote computer";
+        EnglishTexts["Option.LoginScriptSendText"] = "Send text (legacy)";
+        EnglishTexts["Option.LoginScriptPython"] = "Python";
+        EnglishTexts["Option.LoginScriptBash"] = "Bash / Shell";
+        EnglishTexts["Option.LoginScriptPowerShell"] = "PowerShell";
         EnglishTexts["SessionEdit.RdpDriveFolder"] = "Local folder:";
         EnglishTexts["SessionEdit.RdpDriveName"] = "Remote drive name:";
         EnglishTexts["SessionEdit.RdpDriveHint"] = "The selected folder appears as a redirected drive in the remote Windows session. Reconnect the RDP session after changing this setting.";
@@ -563,9 +591,17 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ChineseTexts["Rdp.Keyboard.TaskManager"] = "Ctrl+Shift+Esc";
         ChineseTexts["Rdp.Keyboard.PrintScreen"] = "\u4fdd\u5b58\u8fdc\u7a0b\u622a\u56fe\uff08Win+PrintScreen\uff09";
         ChineseTexts["SessionEdit.RdpAudioHint"] = "\u8fdc\u7a0b\u97f3\u9891\u548c\u9ea6\u514b\u98ce\u8bbe\u7f6e\u4f1a\u5728\u91cd\u65b0\u8fde\u63a5\u540e\u751f\u6548\u3002\u672c\u5730\u64ad\u653e\u548c\u9ea6\u514b\u98ce\u91cd\u5b9a\u5411\u9700\u8981\u539f\u751f\u97f3\u9891\u540e\u7aef\u53ca\u670d\u52a1\u5668\u7b56\u7565\u652f\u6301\u3002";
+        ChineseTexts["SessionEdit.LoginScriptExecutionMode"] = "\u6267\u884c\u65b9\u5f0f";
+        ChineseTexts["SessionEdit.LoginScriptInterpreter"] = "\u89e3\u91ca\u5668\u547d\u4ee4";
+        ChineseTexts["SessionEdit.LoginScriptExecutionModeHint"] = "\u6267\u884c\u65b9\u5f0f\u4f1a\u6839\u636e\u9009\u62e9\u7684\u6587\u4ef6\u6269\u5c55\u540d\u81ea\u52a8\u5339\u914d\uff0c\u4e5f\u53ef\u624b\u52a8\u5207\u6362\u3002";
+        ChineseTexts["SessionEdit.LoginScriptInterpreterHint"] = "\u8fdc\u7a0b\u670d\u52a1\u5668\u4e0a\u4f7f\u7528\u7684\u547d\u4ee4\uff0c\u4f8b\u5982 python3\u3001py -3\u3001bash \u6216 pwsh\u3002";
         ChineseTexts["Option.RdpAudioPlayLocal"] = "\u5728\u8fd9\u53f0\u7535\u8111\u4e0a\u64ad\u653e";
         ChineseTexts["Option.RdpAudioDoNotPlay"] = "\u4e0d\u64ad\u653e";
         ChineseTexts["Option.RdpAudioPlayRemote"] = "\u5728\u8fdc\u7a0b\u8ba1\u7b97\u673a\u4e0a\u64ad\u653e";
+        ChineseTexts["Option.LoginScriptSendText"] = "\u53d1\u9001\u6587\u672c\uff08\u517c\u5bb9\u6a21\u5f0f\uff09";
+        ChineseTexts["Option.LoginScriptPython"] = "Python";
+        ChineseTexts["Option.LoginScriptBash"] = "Bash / Shell";
+        ChineseTexts["Option.LoginScriptPowerShell"] = "PowerShell";
         ChineseTexts["SessionEdit.RdpDriveFolder"] = "\u672c\u5730\u6587\u4ef6\u5939\uff1a";
         ChineseTexts["SessionEdit.RdpDriveName"] = "\u8fdc\u7a0b\u9a71\u52a8\u5668\u540d\u79f0\uff1a";
         ChineseTexts["SessionEdit.RdpDriveHint"] = "\u9009\u4e2d\u7684\u6587\u4ef6\u5939\u4f1a\u5728\u8fdc\u7a0b Windows \u4f1a\u8bdd\u4e2d\u663e\u793a\u4e3a\u91cd\u5b9a\u5411\u9a71\u52a8\u5668\u3002\u4fee\u6539\u6b64\u8bbe\u7f6e\u540e\u9700\u91cd\u65b0\u8fde\u63a5 RDP\u3002";
@@ -700,6 +736,7 @@ public sealed class LocalizationService : INotifyPropertyChanged
         english["Dialog.ServicePort.Placeholder"] = "Search service or port";
         english["Dialog.SessionDelete.Title"] = "Confirm Delete";
         english["Dialog.SessionDelete.Message"] = "Delete session \"{0}\"?";
+        english["Dialog.SessionDelete.BatchMessage"] = "Delete {0} selected sessions?";
 
         chinese["Common.Ok"] = "\u786e\u5b9a";
         chinese["Common.Cancel"] = "\u53d6\u6d88";
@@ -789,6 +826,7 @@ public sealed class LocalizationService : INotifyPropertyChanged
         chinese["Dialog.ServicePort.Placeholder"] = "\u641c\u7d22\u670d\u52a1\u6216\u7aef\u53e3";
         chinese["Dialog.SessionDelete.Title"] = "\u786e\u8ba4\u5220\u9664";
         chinese["Dialog.SessionDelete.Message"] = "\u786e\u5b9a\u8981\u5220\u9664\u4f1a\u8bdd\u201c{0}\u201d\u5417\uff1f";
+        chinese["Dialog.SessionDelete.BatchMessage"] = "\u786e\u5b9a\u8981\u5220\u9664\u9009\u4e2d\u7684 {0} \u4e2a\u4f1a\u8bdd\u5417\uff1f";
     }
 
     private static void AddGeneratedTexts(Dictionary<string, string> english, Dictionary<string, string> chinese)

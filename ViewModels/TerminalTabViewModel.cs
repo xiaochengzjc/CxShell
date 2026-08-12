@@ -1,4 +1,5 @@
 using System;
+using AtomUI.Theme.Resources;
 using Avalonia.Media;
 using CxShell.Models;
 using CxShell.Services;
@@ -212,8 +213,8 @@ public partial class TerminalTabViewModel : ObservableObject
     {
         return ThemeTokenColorHelper.GetColor(
             IsSelected
-                ? AtomUI.Theme.Styling.SharedTokenKind.ColorBgContainer
-                : AtomUI.Theme.Styling.SharedTokenKind.ColorBgLayout,
+                ? SharedTokenKind.ColorBgContainer
+                : SharedTokenKind.ColorBgLayout,
             IsSelected ? Color.Parse("#FFFFFF") : Color.Parse("#F5F5F5"));
     }
 

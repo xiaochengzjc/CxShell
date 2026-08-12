@@ -34,4 +34,5 @@ public partial class SessionManagerWindow : Window
     {
         Close();
     }
+
 }

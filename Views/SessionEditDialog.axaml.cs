@@ -274,6 +274,20 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         SetProtocol(protocolText, updateDefaultPort: !_isInitializingSelections);
     }
 
+    private void OnLoginScriptExecutionModeSelectionChanged(object? sender, SelectSelectionChangedEventArgs e)
+    {
+        if (_isInitializingSelections || DataContext is not SessionEditViewModel vm)
+            return;
+
+        if (Enum.TryParse<LoginScriptExecutionMode>(
+                GetSelectedOptionText(LoginScriptExecutionModeSelect, vm.LoginScriptExecutionMode.ToString()),
+                true,
+                out var mode))
+        {
+            vm.LoginScriptExecutionMode = mode;
+        }
+    }
+
     private void SetProtocol(string protocolText, bool updateDefaultPort)
     {
         if (DataContext is not SessionEditViewModel vm)
@@ -322,6 +336,13 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             vm.TelnetUsernamePrompt = TelnetUsernamePromptBox?.Text ?? vm.TelnetUsernamePrompt;
             vm.TelnetPasswordPrompt = TelnetPasswordPromptBox?.Text ?? vm.TelnetPasswordPrompt;
             vm.LoginScriptFilePath = LoginScriptFilePathBox?.Text ?? vm.LoginScriptFilePath;
+            if (Enum.TryParse<LoginScriptExecutionMode>(
+                    GetSelectedOptionText(LoginScriptExecutionModeSelect, vm.LoginScriptExecutionMode.ToString()),
+                    true,
+                    out var loginScriptExecutionMode))
+            {
+                vm.LoginScriptExecutionMode = loginScriptExecutionMode;
+            }
             vm.RloginPasswordPrompt = RloginPasswordPromptBox?.Text ?? vm.RloginPasswordPrompt;
             vm.RloginTerminalSpeed = GetSelectedOptionText(RloginTerminalSpeedSelect, vm.RloginTerminalSpeed);
             vm.SftpLocalStartDirectory = SftpLocalStartDirectoryBox?.Text ?? vm.SftpLocalStartDirectory;
@@ -514,7 +535,15 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         });
         var file = files.FirstOrDefault();
         if (file != null)
-            LoginScriptFilePathBox.Text = file.Path.LocalPath;
+        {
+            var path = file.Path.LocalPath;
+            LoginScriptFilePathBox.Text = path;
+            if (DataContext is SessionEditViewModel vm)
+            {
+                vm.ApplyLoginScriptFileSelection(path);
+                SelectOption(LoginScriptExecutionModeSelect, vm.LoginScriptExecutionMode.ToString());
+            }
+        }
     }
 
     private async void OnBrowseSessionAppearanceBackgroundImageClick(object? sender, RoutedEventArgs e)
@@ -1653,7 +1682,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         portBox.Width = 116;
         portBox.HorizontalAlignment = HorizontalAlignment.Left;
         var usernameBox = CreateLineEdit(editing.Username);
-        var passwordBox = CreateLineEdit(editing.Password);
+        var passwordBox = CreateLineEdit(PasswordEncryptionService.DecryptEncrypted(editing.Password));
         var useAgentCheck = new AtomUI.Desktop.Controls.CheckBox
         {
             Content = T("UiText.036"),
@@ -1915,7 +1944,9 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
                 Host = hostBox.Text.Trim(),
                 Port = port,
                 Username = isSocks4 ? string.Empty : usernameBox.Text?.Trim() ?? string.Empty,
-                Password = isSocks4 ? string.Empty : passwordBox.Text ?? string.Empty,
+                Password = isSocks4
+                    ? string.Empty
+                    : PasswordEncryptionService.Encrypt(passwordBox.Text),
                 AuthMethod = isJumpHost && privateKeyCheck.IsChecked == true ? AuthMethod.PrivateKey : AuthMethod.Password,
                 PrivateKeyPath = isJumpHost && privateKeyCheck.IsChecked == true ? privateKeyBox.Text?.Trim() ?? string.Empty : string.Empty,
                 PrivateKeyPassphrase = isJumpHost && privateKeyCheck.IsChecked == true
@@ -1985,7 +2016,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         var hostBox = CreateLineEdit(current.Host);
         var portBox = CreateLineEdit(current.Port > 0 ? current.Port.ToString() : string.Empty);
         var usernameBox = CreateLineEdit(current.Username);
-        var passwordBox = CreateLineEdit(current.Password);
+        var passwordBox = CreateLineEdit(PasswordEncryptionService.DecryptEncrypted(current.Password));
         var errorText = new Avalonia.Controls.TextBlock
         {
             IsVisible = false,
@@ -2072,7 +2103,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
                 Host = hostBox.Text.Trim(),
                 Port = port,
                 Username = usernameBox.Text?.Trim() ?? string.Empty,
-                Password = passwordBox.Text ?? string.Empty
+                Password = PasswordEncryptionService.Encrypt(passwordBox.Text)
             };
             dialog.Close();
         };
@@ -2565,6 +2596,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             return;
 
         SelectOption(SessionTerminalTypeSelect, vm.TerminalType);
+        SelectOption(LoginScriptExecutionModeSelect, vm.LoginScriptExecutionMode.ToString());
         SelectOption(SessionTerminalEncodingSelect, vm.TerminalEncoding);
         SelectOption(SessionTerminalSendLineEndingSelect, vm.TerminalSendLineEnding);
         SelectOption(SessionTerminalReceiveLineEndingSelect, vm.TerminalReceiveLineEnding);

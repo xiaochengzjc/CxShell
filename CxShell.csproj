@@ -22,36 +22,41 @@
 
     <ItemGroup>
         <Compile Remove="AtomUI/**" />
+        <Compile Remove="OpenCowork/**" />
         <Compile Remove=".tmp/**" />
         <Compile Remove=".buildcheck*/**" />
         <Compile Remove="tools/**" />
         <Compile Remove="CxShell.Tests/**" />
         <AvaloniaXaml Remove="AtomUI/**" />
+        <AvaloniaXaml Remove="OpenCowork/**" />
         <AvaloniaXaml Remove=".tmp/**" />
         <AvaloniaXaml Remove=".buildcheck*/**" />
         <AvaloniaXaml Remove="tools/**" />
         <AvaloniaXaml Remove="CxShell.Tests/**" />
         <None Remove=".buildcheck*/**" />
+        <None Remove="OpenCowork/**" />
         <None Remove="tools/**" />
         <None Remove="CxShell.Tests/**" />
         <Content Remove=".buildcheck*/**" />
+        <Content Remove="OpenCowork/**" />
         <Content Remove="tools/**" />
+        <EmbeddedResource Remove="OpenCowork/**" />
         <Content Remove="CxShell.Tests/**" />
         <AvaloniaResource Include="Assets/**" />
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="AtomUI.Desktop.Controls" Version="6.0.7" />
-        <PackageReference Include="AtomUI.Desktop.Controls.ColorPicker" Version="6.0.7" />
-        <PackageReference Include="AtomUI.Desktop.Controls.DataGrid" Version="6.0.7" />
+        <PackageReference Include="AtomUI.Desktop.Controls" Version="6.1.3" />
+        <PackageReference Include="AtomUI.Desktop.Controls.ColorPicker" Version="6.1.3" />
+        <PackageReference Include="AtomUI.Desktop.Controls.DataGrid" Version="6.1.3" />
         <PackageReference Include="Avalonia.AvaloniaEdit" Version="12.0.0" />
-        <PackageReference Include="Avalonia.Desktop" Version="12.0.4" />
-        <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.4" />
+        <PackageReference Include="Avalonia.Desktop" Version="12.1.1" />
+        <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
         <PackageReference Include="AvaloniaEdit.TextMate" Version="12.0.0" />
         <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.2" />
         <PackageReference Include="FluentFTP" Version="54.2.0" />
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.2" />
-        <PackageReference Include="ReactiveUI.Avalonia" Version="12.0.3" />
+        <PackageReference Include="ReactiveUI.Avalonia" Version="12.1.1" />
         <PackageReference Include="SSH.NET" Version="2024.2.0" />
         <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
         <PackageReference Include="SshNet.Agent" Version="2024.2.0.1" />

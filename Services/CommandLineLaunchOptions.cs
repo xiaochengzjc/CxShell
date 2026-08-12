@@ -764,7 +764,7 @@ public sealed class CommandLineLaunchOptions
             Host = host,
             Port = port,
             Username = username.Trim(),
-            Password = password,
+            Password = PasswordEncryptionService.Encrypt(password),
             AuthMethod = AuthMethod.Password,
             UseAgent = string.IsNullOrEmpty(password)
         };

@@ -42,6 +42,14 @@ public enum ProxyProtocol
     JumpHost
 }
 
+public enum LoginScriptExecutionMode
+{
+    SendText,
+    Python,
+    Bash,
+    PowerShell
+}
+
 public class ProxySettings : INotifyPropertyChanged
 {
     private string _nextProxyDisplay = string.Empty;
@@ -352,6 +360,9 @@ public class SessionInfo
     public bool RunLoginScriptFile { get; set; }
     public string LoginScriptFilePath { get; set; } = string.Empty;
     public string LoginScriptParameters { get; set; } = string.Empty;
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public LoginScriptExecutionMode LoginScriptExecutionMode { get; set; } = LoginScriptExecutionMode.SendText;
+    public string LoginScriptInterpreter { get; set; } = string.Empty;
     public string SshRemoteCommand { get; set; } = string.Empty;
     public string SshVersionPolicy { get; set; } = "Ssh2Only";
     public bool SshUseXagent { get; set; }

@@ -14,7 +14,7 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
-using AtomUI.Theme.Styling;
+using AtomUI.Theme.Resources;
 using CxShell.Services;
 using CxShell.ViewModels;
 using AtomButton = AtomUI.Desktop.Controls.Button;

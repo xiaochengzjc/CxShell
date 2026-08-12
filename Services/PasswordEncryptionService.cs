@@ -60,6 +60,24 @@ public static class PasswordEncryptionService
         }
     }
 
+    public static string DecryptEncrypted(string? cipherText)
+    {
+        if (string.IsNullOrEmpty(cipherText) ||
+            !cipherText.StartsWith(ProtectedPrefix, StringComparison.Ordinal))
+        {
+            return string.Empty;
+        }
+
+        return Decrypt(cipherText);
+    }
+
+    public static bool IsEncryptedValue(string? cipherText)
+    {
+        return !string.IsNullOrEmpty(cipherText) &&
+               cipherText.StartsWith(ProtectedPrefix, StringComparison.Ordinal) &&
+               !string.IsNullOrEmpty(DecryptEncrypted(cipherText));
+    }
+
     public static bool HasSavedPassword(string? cipherText)
         => !string.IsNullOrEmpty(Decrypt(cipherText));
 }

@@ -1,7 +1,7 @@
 using System;
 using System.Globalization;
 using AtomUI.Data;
-using AtomUI.Theme.Styling;
+using AtomUI.Theme.Resources;
 using Avalonia.Data.Converters;
 using Avalonia.Media;
 

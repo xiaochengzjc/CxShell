@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using AtomUI.Desktop.Controls;
-using AtomUI.Theme.Styling;
+using AtomUI.Theme.Resources;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
@@ -17,7 +17,7 @@ internal static class AtomUiDialogService
         string message,
         MessageBoxStyle style = MessageBoxStyle.Information)
     {
-        await MessageBox.ShowMessageModalAsync(
+        await MessageBox.ShowMessageBoxModalAsync(
             new Avalonia.Controls.TextBlock
             {
                 Text = message,
@@ -42,7 +42,7 @@ internal static class AtomUiDialogService
         string? okText = null,
         string? cancelText = null)
     {
-        var result = await MessageBox.ShowMessageModalAsync(
+        var result = await MessageBox.ShowMessageBoxModalAsync(
             new Avalonia.Controls.TextBlock
             {
                 Text = message,
@@ -133,7 +133,7 @@ internal static class AtomUiDialogService
             }
         };
 
-        await MessageBox.ShowMessageModalAsync(
+        await MessageBox.ShowMessageBoxModalAsync(
             content,
             options: new MessageBoxOptions
             {

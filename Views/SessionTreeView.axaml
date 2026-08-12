@@ -9,8 +9,8 @@
     <Grid>
         <Grid Width="760"
               HorizontalAlignment="Center"
-              VerticalAlignment="Top"
-              Margin="0,20,0,0"
+              VerticalAlignment="Stretch"
+              Margin="0,20,0,16"
               RowDefinitions="Auto,12,Auto,12,*">
             <StackPanel Grid.Row="0"
                         Orientation="Horizontal"
@@ -33,30 +33,39 @@
                 <atom:Button x:Name="DeleteSessionBtn"
                              Icon="{antdicons:AntDesignIconProvider Kind=DeleteOutlined}"
                              Content="{Binding DeleteText}"
-                             IsEnabled="{Binding CanUseSelectedSession}"/>
+                             IsEnabled="{Binding CanDeleteSelectedSessions}"/>
                 <atom:Button x:Name="MoveSessionUpBtn"
                              Content="{Binding MoveUpText}"
                              IsEnabled="{Binding CanMoveSelectedSessionUp}"/>
                 <atom:Button x:Name="MoveSessionDownBtn"
                              Content="{Binding MoveDownText}"
                              IsEnabled="{Binding CanMoveSelectedSessionDown}"/>
+                <atom:Button x:Name="ImportSessionBtn"
+                             Icon="{antdicons:AntDesignIconProvider Kind=ImportOutlined}"
+                             Content="{Binding ImportText}"/>
+                <atom:Button x:Name="ExportSessionBtn"
+                             Icon="{antdicons:AntDesignIconProvider Kind=ExportOutlined}"
+                             Content="{Binding ExportText}"
+                             IsEnabled="{Binding CanExportSelectedSessions}"/>
             </StackPanel>
 
             <atom:SearchEdit Grid.Row="2"
                              Width="320"
                              HorizontalAlignment="Left"
+                             Margin="0,0,0,8"
                              Text="{Binding SessionSearchText, Mode=TwoWay}"
                              PlaceholderText="{Binding SearchPlaceholderText}"
                              IsAllowClear="True"/>
 
             <atom:DataGrid x:Name="SessionTree"
                            Grid.Row="4"
-                           Height="500"
+                           Margin="0,16,0,16"
+                           VerticalAlignment="Stretch"
                            ItemsSource="{Binding SessionRows}"
                            SelectedItem="{Binding SelectedNode, Mode=TwoWay}"
                            AutoGenerateColumns="False"
                            IsReadOnly="True"
-                           SelectionMode="Single"
+                           SelectionMode="Extended"
                            SizeType="Middle"
                            GridLinesVisibility="Horizontal"
                            CanUserResizeColumns="True"

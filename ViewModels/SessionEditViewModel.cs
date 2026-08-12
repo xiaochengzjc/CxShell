@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.IO;
 using System.Threading.Tasks;
 using AtomUI.Controls;
 using AtomUI.Controls.Primitives;
@@ -32,6 +33,10 @@ public partial class SessionEditViewModel : ObservableObject
     public string ConnectionText => L.Text("SessionEdit.Connection");
     public string LoginPromptText => L.Text("SessionEdit.LoginPrompt");
     public string LoginScriptText => L.Text("SessionEdit.LoginScript");
+    public string LoginScriptExecutionModeText => L.Text("SessionEdit.LoginScriptExecutionMode");
+    public string LoginScriptInterpreterText => L.Text("SessionEdit.LoginScriptInterpreter");
+    public string LoginScriptExecutionModeHintText => L.Text("SessionEdit.LoginScriptExecutionModeHint");
+    public string LoginScriptInterpreterHintText => L.Text("SessionEdit.LoginScriptInterpreterHint");
     public string ProxyText => L.Text("SessionEdit.Proxy");
     public string KeepAliveText => L.Text("SessionEdit.KeepAlive");
     public string SerialText => L.Text("SessionEdit.Serial");
@@ -240,6 +245,8 @@ public partial class SessionEditViewModel : ObservableObject
     [ObservableProperty] private bool _runLoginScriptFile;
     [ObservableProperty] private string _loginScriptFilePath = string.Empty;
     [ObservableProperty] private string _loginScriptParameters = string.Empty;
+    [ObservableProperty] private LoginScriptExecutionMode _loginScriptExecutionMode = LoginScriptExecutionMode.Bash;
+    [ObservableProperty] private string _loginScriptInterpreter = "bash";
     [ObservableProperty] private string _sshRemoteCommand = string.Empty;
     [ObservableProperty] private string _sshVersionPolicy = "Ssh2Only";
     [ObservableProperty] private bool _sshUseXagent;
@@ -395,6 +402,7 @@ public partial class SessionEditViewModel : ObservableObject
     public bool IsSessionKeepAliveIntervalEnabled => SendSessionKeepAlive;
     public bool IsIdleStringSettingsEnabled => SendIdleString;
     public bool IsLoginScriptFileEnabled => RunLoginScriptFile;
+    public bool IsLoginScriptInterpreterEnabled => IsLoginScriptFileEnabled && LoginScriptExecutionMode != LoginScriptExecutionMode.SendText;
     public bool IsKeyboardMappingFileEnabled => string.Equals(TerminalKeyboardFunctionKeyMode, "UserCustom", StringComparison.OrdinalIgnoreCase);
     public bool IsCtrlAltAsAltGrEnabled => TerminalLeftAltAsMeta;
     public bool IsFileTransferPathSettingsEnabled => !FileTransferAlwaysAskDownloadFolder;
@@ -642,6 +650,12 @@ public partial class SessionEditViewModel : ObservableObject
         new SelectOption { Header = "FTP", Content = SessionProtocol.FTP.ToString() },
         new SelectOption { Header = "RDP", Content = SessionProtocol.RDP.ToString() },
         new SelectOption { Header = "VNC", Content = SessionProtocol.VNC.ToString() }
+    ];
+    public ObservableCollection<ISelectOption> LoginScriptExecutionModeOptions { get; } =
+    [
+        new SelectOption { Header = "Python", Content = LoginScriptExecutionMode.Python.ToString() },
+        new SelectOption { Header = "Bash / Shell", Content = LoginScriptExecutionMode.Bash.ToString() },
+        new SelectOption { Header = "PowerShell", Content = LoginScriptExecutionMode.PowerShell.ToString() }
     ];
     public ObservableCollection<ISelectOption> ProxyOptions { get; } =
     [
@@ -1036,6 +1050,10 @@ public partial class SessionEditViewModel : ObservableObject
         OnPropertyChanged(nameof(ConnectionText));
         OnPropertyChanged(nameof(LoginPromptText));
         OnPropertyChanged(nameof(LoginScriptText));
+        OnPropertyChanged(nameof(LoginScriptExecutionModeText));
+        OnPropertyChanged(nameof(LoginScriptInterpreterText));
+        OnPropertyChanged(nameof(LoginScriptExecutionModeHintText));
+        OnPropertyChanged(nameof(LoginScriptInterpreterHintText));
         OnPropertyChanged(nameof(ProxyText));
         OnPropertyChanged(nameof(KeepAliveText));
         OnPropertyChanged(nameof(SerialText));
@@ -1100,6 +1118,9 @@ public partial class SessionEditViewModel : ObservableObject
     private void RefreshLocalizedOptionHeaders()
     {
         SetOptionHeader(ProxyOptions, "None", "Option.None");
+        SetOptionHeader(LoginScriptExecutionModeOptions, "Python", "Option.LoginScriptPython");
+        SetOptionHeader(LoginScriptExecutionModeOptions, "Bash", "Option.LoginScriptBash");
+        SetOptionHeader(LoginScriptExecutionModeOptions, "PowerShell", "Option.LoginScriptPowerShell");
         SetOptionHeader(TerminalEncodingOptions, "default", "Option.DefaultLanguage");
         SetOptionHeader(TerminalKeyboardFunctionKeyOptions, "Default", "Option.Default");
         SetOptionHeader(TerminalKeyboardFunctionKeyOptions, "UserCustom", "Option.UserCustom");
@@ -1147,6 +1168,7 @@ public partial class SessionEditViewModel : ObservableObject
         SetOptionHeader(AdvancedIpVersionOptions, "Auto", "Option.Auto");
 
         OnPropertyChanged(nameof(ProxyOptions));
+        OnPropertyChanged(nameof(LoginScriptExecutionModeOptions));
         OnPropertyChanged(nameof(TerminalEncodingOptions));
         OnPropertyChanged(nameof(TerminalKeyboardFunctionKeyOptions));
         OnPropertyChanged(nameof(TerminalVtCursorKeyModeOptions));
@@ -1174,8 +1196,7 @@ public partial class SessionEditViewModel : ObservableObject
             {
                 Header = L.Text(key),
                 Content = content,
-                IsEnabled = isEnabled ?? options[i].IsEnabled,
-                IsSelected = options[i].IsSelected
+                IsEnabled = isEnabled ?? options[i].IsEnabled
             };
             return;
         }
@@ -1347,6 +1368,10 @@ public partial class SessionEditViewModel : ObservableObject
         RunLoginScriptFile = session.RunLoginScriptFile;
         LoginScriptFilePath = session.LoginScriptFilePath ?? string.Empty;
         LoginScriptParameters = session.LoginScriptParameters ?? string.Empty;
+        LoginScriptExecutionMode = NormalizeLoginScriptExecutionMode(session.LoginScriptExecutionMode, LoginScriptFilePath);
+        LoginScriptInterpreter = string.IsNullOrWhiteSpace(session.LoginScriptInterpreter)
+            ? GetDefaultLoginScriptInterpreter(LoginScriptExecutionMode)
+            : session.LoginScriptInterpreter;
         SshRemoteCommand = session.SshRemoteCommand ?? string.Empty;
         SshVersionPolicy = NormalizeSshVersionPolicy(session.SshVersionPolicy);
         SshUseXagent = session.SshUseXagent;
@@ -1522,7 +1547,14 @@ public partial class SessionEditViewModel : ObservableObject
         session.Port = port;
         session.Username = Username.Trim();
         session.Proxy = CreateProxySettings();
-        session.ProxyServers = ProxyServers.Select(CloneProxy).ToList();
+        session.ProxyServers = ProxyServers
+            .Select(CloneProxy)
+            .ToList();
+        foreach (var proxy in session.ProxyServers)
+        {
+            var plainPassword = PasswordEncryptionService.DecryptEncrypted(proxy.Password);
+            proxy.Password = PasswordEncryptionService.Encrypt(plainPassword);
+        }
         session.SelectedProxyId = session.Proxy.IsEnabled ? session.Proxy.Id : null;
         session.AuthMethod = IsPrivateKeyAuth ? AuthMethod.PrivateKey : AuthMethod.Password;
         session.Password = IsPasswordAuth ? PasswordEncryptionService.Encrypt(Password) : string.Empty;
@@ -1553,6 +1585,8 @@ public partial class SessionEditViewModel : ObservableObject
         session.RunLoginScriptFile = RunLoginScriptFile;
         session.LoginScriptFilePath = LoginScriptFilePath.Trim();
         session.LoginScriptParameters = LoginScriptParameters.Trim();
+        session.LoginScriptExecutionMode = LoginScriptExecutionMode;
+        session.LoginScriptInterpreter = LoginScriptInterpreter.Trim();
         session.SshRemoteCommand = SshRemoteCommand.Trim();
         session.SshVersionPolicy = NormalizeSshVersionPolicy(SshVersionPolicy);
         session.SshUseXagent = SshUseXagent;
@@ -2033,6 +2067,52 @@ public partial class SessionEditViewModel : ObservableObject
     partial void OnRunLoginScriptFileChanged(bool value)
     {
         OnPropertyChanged(nameof(IsLoginScriptFileEnabled));
+        OnPropertyChanged(nameof(IsLoginScriptInterpreterEnabled));
+    }
+
+    partial void OnLoginScriptExecutionModeChanged(LoginScriptExecutionMode value)
+    {
+        if (value != LoginScriptExecutionMode.SendText)
+            LoginScriptInterpreter = GetDefaultLoginScriptInterpreter(value);
+
+        OnPropertyChanged(nameof(IsLoginScriptInterpreterEnabled));
+    }
+
+    public void ApplyLoginScriptFileSelection(string path)
+    {
+        LoginScriptFilePath = path;
+        LoginScriptExecutionMode = InferLoginScriptExecutionMode(path);
+        LoginScriptInterpreter = GetDefaultLoginScriptInterpreter(LoginScriptExecutionMode);
+    }
+
+    public static LoginScriptExecutionMode InferLoginScriptExecutionMode(string? path)
+    {
+        return Path.GetExtension(path ?? string.Empty).ToLowerInvariant() switch
+        {
+            ".py" or ".pyw" => LoginScriptExecutionMode.Python,
+            ".ps1" or ".psm1" => LoginScriptExecutionMode.PowerShell,
+            ".sh" or ".bash" or ".zsh" or ".ksh" => LoginScriptExecutionMode.Bash,
+            _ => LoginScriptExecutionMode.Bash
+        };
+    }
+
+    public static LoginScriptExecutionMode NormalizeLoginScriptExecutionMode(
+        LoginScriptExecutionMode mode,
+        string? path)
+    {
+        return mode == LoginScriptExecutionMode.SendText
+            ? InferLoginScriptExecutionMode(path)
+            : mode;
+    }
+
+    public static string GetDefaultLoginScriptInterpreter(LoginScriptExecutionMode mode)
+    {
+        return mode switch
+        {
+            LoginScriptExecutionMode.Python => "python3",
+            LoginScriptExecutionMode.PowerShell => "pwsh",
+            _ => "bash"
+        };
     }
 
     partial void OnTerminalKeyboardFunctionKeyModeChanged(string value)
@@ -2412,7 +2492,7 @@ public partial class SessionEditViewModel : ObservableObject
         ProxyHost = proxy.Host ?? string.Empty;
         ProxyPort = proxy.Port > 0 ? proxy.Port.ToString() : string.Empty;
         ProxyUsername = proxy.Username ?? string.Empty;
-        ProxyPassword = proxy.Password ?? string.Empty;
+        ProxyPassword = PasswordEncryptionService.DecryptEncrypted(proxy.Password);
         RefreshProxyOptions();
     }
 
@@ -2431,7 +2511,7 @@ public partial class SessionEditViewModel : ObservableObject
             Host = ProxyHost.Trim(),
             Port = port,
             Username = ProxyUsername.Trim(),
-            Password = ProxyPassword,
+            Password = PasswordEncryptionService.Encrypt(ProxyPassword),
             AuthMethod = existing?.AuthMethod ?? AuthMethod.Password,
             PrivateKeyPath = existing?.PrivateKeyPath ?? string.Empty,
             PrivateKeyPassphrase = existing?.PrivateKeyPassphrase ?? string.Empty,

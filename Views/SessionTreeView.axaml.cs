@@ -1,11 +1,15 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using AtomUI.Desktop.Controls;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using Avalonia.VisualTree;
+using CxShell.Models;
 using CxShell.Services;
 using CxShell.ViewModels;
 using AtomContextMenu = AtomUI.Desktop.Controls.ContextMenu;
@@ -41,6 +45,7 @@ public partial class SessionTreeView : UserControl
         if (SessionTree != null)
         {
             SessionTree.AddHandler(PointerPressedEvent, OnTreePointerPressed, RoutingStrategies.Tunnel);
+            SessionTree.SelectionChanged += OnTreeSelectionChanged;
         }
         UpdateColumnHeaders();
         LocalizationService.Shared.LanguageChanged += OnLanguageChanged;
@@ -52,10 +57,14 @@ public partial class SessionTreeView : UserControl
         if (DeleteSessionBtn != null) DeleteSessionBtn.Click += OnDeleteClick;
         if (MoveSessionUpBtn != null) MoveSessionUpBtn.Click += OnMoveUpClick;
         if (MoveSessionDownBtn != null) MoveSessionDownBtn.Click += OnMoveDownClick;
+        if (ImportSessionBtn != null) ImportSessionBtn.Click += OnImportClick;
+        if (ExportSessionBtn != null) ExportSessionBtn.Click += OnExportClick;
     }
 
     protected override void OnUnloaded(RoutedEventArgs e)
     {
+        if (SessionTree != null)
+            SessionTree.SelectionChanged -= OnTreeSelectionChanged;
         LocalizationService.Shared.LanguageChanged -= OnLanguageChanged;
         base.OnUnloaded(e);
     }
@@ -90,8 +99,11 @@ public partial class SessionTreeView : UserControl
             var node = FindClickedNode(e);
             if (node != null)
             {
-                vm.SelectedNode = node;
-                SessionTree.SelectedItem = node;
+                if (!GetSelectedNodes().Contains(node))
+                {
+                    SessionTree.SelectedItems.Clear();
+                    SessionTree.SelectedItem = node;
+                }
                 ShowSessionContextMenu(SessionTree, vm);
             }
             e.Handled = true;
@@ -154,6 +166,7 @@ public partial class SessionTreeView : UserControl
     private async void OnEditClick(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not SessionTreeViewModel vm) return;
+        if (!vm.CanUseSelectedSession) return;
         var session = vm.SelectedSession;
         if (session == null) return;
 
@@ -189,6 +202,7 @@ public partial class SessionTreeView : UserControl
     private async void OnConnectClick(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not SessionTreeViewModel vm) return;
+        if (!vm.CanUseSelectedSession) return;
         var session = vm.SelectedSession;
         if (session == null) return;
 
@@ -202,15 +216,14 @@ public partial class SessionTreeView : UserControl
     private async void OnDeleteClick(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not SessionTreeViewModel vm) return;
-        var session = vm.SelectedSession;
-        if (session == null) return;
+        var sessions = vm.GetSelectedSessions();
+        if (sessions.Count == 0 || !vm.CanDeleteSelectedSessions) return;
 
         var owner = TopLevel.GetTopLevel(this) as Avalonia.Controls.Window;
-        if (owner == null || !await ShowLocalizedDeleteConfirmWindow(owner, session.Name))
+        if (owner == null || !await ShowLocalizedDeleteConfirmWindow(owner, sessions))
             return;
 
-        var mainVm = GetMainWindowViewModel();
-        mainVm?.DeleteSession(session);
+        vm.DeleteSelectedSessions();
     }
 
     private void OnMoveUpClick(object? sender, RoutedEventArgs e)
@@ -223,6 +236,90 @@ public partial class SessionTreeView : UserControl
     {
         if (DataContext is SessionTreeViewModel vm)
             vm.MoveSelectedSessionDown();
+    }
+
+    private async void OnImportClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SessionTreeViewModel vm ||
+            TopLevel.GetTopLevel(this) is not TopLevel topLevel)
+            return;
+
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = T("SessionManager.Import"),
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("CxShell session export")
+                {
+                    Patterns = ["*.cxsessions.json", "*.json"]
+                },
+                FilePickerFileTypes.All
+            ]
+        });
+        var file = files.FirstOrDefault();
+        if (file == null)
+            return;
+
+        try
+        {
+            var count = vm.ImportSessions(file.Path.LocalPath);
+            await AtomUiDialogService.ShowMessageAsync(
+                topLevel,
+                T("SessionManager.ImportSuccessTitle"),
+                Tf("SessionManager.ImportSuccessMessage", count),
+                MessageBoxStyle.Success);
+        }
+        catch (Exception ex)
+        {
+            await AtomUiDialogService.ShowMessageAsync(
+                topLevel,
+                T("SessionManager.ImportFailedTitle"),
+                Tf("SessionManager.ImportFailedMessage", ex.Message),
+                MessageBoxStyle.Error);
+        }
+    }
+
+    private async void OnExportClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SessionTreeViewModel vm ||
+            !vm.CanExportSelectedSessions ||
+            TopLevel.GetTopLevel(this) is not TopLevel topLevel)
+            return;
+
+        var file = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = T("SessionManager.Export"),
+            SuggestedFileName = $"CxShell-Sessions-{DateTime.Now:yyyy-MM-dd}.cxsessions.json",
+            DefaultExtension = "cxsessions.json",
+            FileTypeChoices =
+            [
+                new FilePickerFileType("CxShell session export")
+                {
+                    Patterns = ["*.cxsessions.json"]
+                }
+            ]
+        });
+        if (file == null)
+            return;
+
+        try
+        {
+            vm.ExportSelectedSessions(file.Path.LocalPath);
+            await AtomUiDialogService.ShowMessageAsync(
+                topLevel,
+                T("SessionManager.ExportSuccessTitle"),
+                Tf("SessionManager.ExportSuccessMessage", vm.SelectedSessionCount),
+                MessageBoxStyle.Success);
+        }
+        catch (Exception ex)
+        {
+            await AtomUiDialogService.ShowMessageAsync(
+                topLevel,
+                T("SessionManager.ExportFailedTitle"),
+                Tf("SessionManager.ExportFailedMessage", ex.Message),
+                MessageBoxStyle.Error);
+        }
     }
 
     private void ShowSessionContextMenu(Control anchor, SessionTreeViewModel vm)
@@ -286,14 +383,31 @@ public partial class SessionTreeView : UserControl
         }
     }
 
+    private void OnTreeSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (DataContext is SessionTreeViewModel vm)
+            vm.SetSelectedNodes(GetSelectedNodes());
+    }
+
+    private IReadOnlyList<SessionNodeViewModel> GetSelectedNodes()
+    {
+        return SessionTree?.SelectedItems
+            .OfType<SessionNodeViewModel>()
+            .Where(node => node.Session != null)
+            .ToList() ?? [];
+    }
+
     private static async System.Threading.Tasks.Task<bool> ShowLocalizedDeleteConfirmWindow(
         Avalonia.Controls.Window owner,
-        string sessionName)
+        IReadOnlyList<SessionInfo> sessions)
     {
+        var message = sessions.Count == 1
+            ? Tf("Dialog.SessionDelete.Message", sessions[0].Name)
+            : Tf("Dialog.SessionDelete.BatchMessage", sessions.Count);
         return await AtomUiDialogService.ShowConfirmAsync(
             owner,
             T("Dialog.SessionDelete.Title"),
-            Tf("Dialog.SessionDelete.Message", sessionName),
+            message,
             T("Common.Delete"),
             T("Common.Cancel"));
     }
