@@ -16,6 +16,7 @@ permissions:
 
 env:
   DOTNET_VERSION: "10.0.x"
+  VCPKG_REF: "a7eda31dc16994fcaa8587982eb833a8695f1b6f"
   RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag_name }}
 
 jobs:
@@ -64,7 +65,11 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          git clone --depth 1 https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
+          git init $env:VCPKG_ROOT
+          git -C $env:VCPKG_ROOT remote add origin https://github.com/microsoft/vcpkg.git
+          git -C $env:VCPKG_ROOT fetch --depth 1 origin $env:VCPKG_REF
+          git -C $env:VCPKG_ROOT checkout --detach $env:VCPKG_REF
+          Write-Host "Using vcpkg commit: $(git -C $env:VCPKG_ROOT rev-parse HEAD)"
           & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat"
 
       - name: Cache vcpkg packages
@@ -75,9 +80,9 @@ jobs:
             ${{ env.VCPKG_ROOT }}\installed
             ${{ env.VCPKG_ROOT }}\buildtrees
             ${{ env.VCPKG_ROOT }}\packages
-          key: ${{ runner.os }}-${{ matrix.triplet }}-vcpkg-freerdp-msvc-${{ hashFiles('tools/build-rdp-bridge.ps1', 'native/CxRdpBridge/CMakeLists.txt') }}
+          key: ${{ runner.os }}-${{ matrix.triplet }}-vcpkg-${{ env.VCPKG_REF }}-${{ hashFiles('tools/build-rdp-bridge.ps1', 'native/CxRdpBridge/CMakeLists.txt') }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.triplet }}-vcpkg-freerdp-msvc-
+            ${{ runner.os }}-${{ matrix.triplet }}-vcpkg-${{ env.VCPKG_REF }}-
 
       - name: Show MSVC toolchain
         shell: pwsh
@@ -394,7 +399,11 @@ jobs:
       - name: Bootstrap vcpkg
         shell: bash
         run: |
-          git clone --depth 1 https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
+          git init "$VCPKG_ROOT"
+          git -C "$VCPKG_ROOT" remote add origin https://github.com/microsoft/vcpkg.git
+          git -C "$VCPKG_ROOT" fetch --depth 1 origin "$VCPKG_REF"
+          git -C "$VCPKG_ROOT" checkout --detach "$VCPKG_REF"
+          echo "Using vcpkg commit: $(git -C "$VCPKG_ROOT" rev-parse HEAD)"
           "$VCPKG_ROOT/bootstrap-vcpkg.sh"
 
       - name: Cache vcpkg packages
@@ -405,9 +414,9 @@ jobs:
             ${{ env.VCPKG_ROOT }}/installed
             ${{ env.VCPKG_ROOT }}/buildtrees
             ${{ env.VCPKG_ROOT }}/packages
-          key: ${{ runner.os }}-${{ runner.arch }}-${{ matrix.triplet }}-vcpkg-freerdp-${{ hashFiles('tools/build-rdp-bridge.sh', 'native/CxRdpBridge/CMakeLists.txt') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ matrix.triplet }}-vcpkg-${{ env.VCPKG_REF }}-${{ hashFiles('tools/build-rdp-bridge.sh', 'native/CxRdpBridge/CMakeLists.txt') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-${{ matrix.triplet }}-vcpkg-freerdp-
+            ${{ runner.os }}-${{ runner.arch }}-${{ matrix.triplet }}-vcpkg-${{ env.VCPKG_REF }}-
 
       - name: Publish app
         shell: bash
@@ -545,7 +554,11 @@ jobs:
       - name: Bootstrap vcpkg
         shell: bash
         run: |
-          git clone --depth 1 https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
+          git init "$VCPKG_ROOT"
+          git -C "$VCPKG_ROOT" remote add origin https://github.com/microsoft/vcpkg.git
+          git -C "$VCPKG_ROOT" fetch --depth 1 origin "$VCPKG_REF"
+          git -C "$VCPKG_ROOT" checkout --detach "$VCPKG_REF"
+          echo "Using vcpkg commit: $(git -C "$VCPKG_ROOT" rev-parse HEAD)"
           "$VCPKG_ROOT/bootstrap-vcpkg.sh"
 
       - name: Cache vcpkg packages
@@ -556,9 +569,9 @@ jobs:
             ${{ env.VCPKG_ROOT }}/installed
             ${{ env.VCPKG_ROOT }}/buildtrees
             ${{ env.VCPKG_ROOT }}/packages
-          key: ${{ runner.os }}-${{ matrix.triplet }}-vcpkg-freerdp-${{ hashFiles('tools/build-rdp-bridge.sh', 'native/CxRdpBridge/CMakeLists.txt') }}
+          key: ${{ runner.os }}-${{ matrix.triplet }}-vcpkg-${{ env.VCPKG_REF }}-${{ hashFiles('tools/build-rdp-bridge.sh', 'native/CxRdpBridge/CMakeLists.txt') }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.triplet }}-vcpkg-freerdp-
+            ${{ runner.os }}-${{ matrix.triplet }}-vcpkg-${{ env.VCPKG_REF }}-
 
       - name: Publish app
         shell: bash
