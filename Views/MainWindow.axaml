@@ -226,8 +226,9 @@
                         <atom:TextBlock Text="{Binding SessionManagerText}" VerticalAlignment="Center"/>
                     </StackPanel>
                 </atom:Button>
-                <Border Width="1" Background="{atom:SharedTokenResource ColorSplit}" Margin="8,4" Opacity="0.6"/>
+                <Border Width="1" Background="{atom:SharedTokenResource ColorSplit}" Margin="8,4" Opacity="0.6" IsVisible="False"/>
                 <atom:Button Command="{Binding CurrentConnectCommand}"
+                             IsVisible="False"
                              ButtonType="Default"
                              atom:ToolTip.Tip="{Binding ConnectToolTip}"
                              atom:ToolTip.Placement="Bottom">
@@ -238,6 +239,7 @@
                     </StackPanel>
                 </atom:Button>
                 <atom:Button Command="{Binding CurrentDisconnectCommand}"
+                             IsVisible="False"
                              ButtonType="Default"
                              atom:ToolTip.Tip="{Binding DisconnectToolTip}"
                              atom:ToolTip.Placement="Bottom">
@@ -267,6 +269,13 @@
                                         TextAlignment="Center" VerticalAlignment="Center"/>
                         <atom:TextBlock Text="{Binding MonitorText}" VerticalAlignment="Center"/>
                     </StackPanel>
+                </atom:Button>
+                <atom:Button Command="{Binding ToggleTabBarCommand}"
+                             ButtonType="Default"
+                             Icon="{antdicons:AntDesignIconProvider Kind=MenuOutlined}"
+                             atom:ToolTip.Tip="{Binding TabBarToolTip}"
+                             atom:ToolTip.Placement="Bottom">
+                    <atom:TextBlock Text="{Binding TabBarText}" VerticalAlignment="Center"/>
                 </atom:Button>
                 <!-- 主题切换 -->
                 <Border Width="1" Background="{atom:SharedTokenResource ColorSplit}" Margin="8,4" Opacity="0.6"/>
@@ -440,17 +449,17 @@
                 Height="44"
                 Padding="8,5"
                 ClipToBounds="False"
-                IsVisible="{Binding IsMainChromeVisible}"
-                Background="{atom:SharedTokenResource ColorBgLayout}"
-                BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                 IsVisible="{Binding IsQuickSessionBarVisible}"
+                 Background="{atom:SharedTokenResource ColorBgLayout}"
+                BorderBrush="{atom:SharedTokenResource ColorBorderSecondary}"
                 BorderThickness="0,1,0,1">
             <DockPanel LastChildFill="True"
                        ClipToBounds="False"
                        VerticalAlignment="Center">
                 <atom:Button DockPanel.Dock="Left"
                              Classes="quick-session-bar-button"
-                              Width="32"
-                              Height="32"
+                               Width="28"
+                               Height="28"
                               Padding="0"
                               ButtonType="Default"
                               Shape="Default"
@@ -528,7 +537,7 @@
                 MinHeight="40"
                 IsVisible="{Binding IsMainChromeVisible}"
                 Background="{atom:SharedTokenResource ColorBgContainer}"
-                BorderBrush="{atom:SharedTokenResource ColorSplit}" BorderThickness="0,1,0,0">
+                BorderBrush="{atom:SharedTokenResource ColorBorderSecondary}" BorderThickness="0,1,0,0">
             <DockPanel LastChildFill="True"
                        VerticalAlignment="Center">
                 <StackPanel DockPanel.Dock="Right"

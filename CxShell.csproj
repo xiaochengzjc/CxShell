@@ -23,24 +23,29 @@
     <ItemGroup>
         <Compile Remove="AtomUI/**" />
         <Compile Remove="OpenCowork/**" />
+        <Compile Remove="VelaShell/**" />
         <Compile Remove=".tmp/**" />
         <Compile Remove=".buildcheck*/**" />
         <Compile Remove="tools/**" />
         <Compile Remove="CxShell.Tests/**" />
         <AvaloniaXaml Remove="AtomUI/**" />
         <AvaloniaXaml Remove="OpenCowork/**" />
+        <AvaloniaXaml Remove="VelaShell/**" />
         <AvaloniaXaml Remove=".tmp/**" />
         <AvaloniaXaml Remove=".buildcheck*/**" />
         <AvaloniaXaml Remove="tools/**" />
         <AvaloniaXaml Remove="CxShell.Tests/**" />
         <None Remove=".buildcheck*/**" />
         <None Remove="OpenCowork/**" />
+        <None Remove="VelaShell/**" />
         <None Remove="tools/**" />
         <None Remove="CxShell.Tests/**" />
         <Content Remove=".buildcheck*/**" />
         <Content Remove="OpenCowork/**" />
+        <Content Remove="VelaShell/**" />
         <Content Remove="tools/**" />
         <EmbeddedResource Remove="OpenCowork/**" />
+        <EmbeddedResource Remove="VelaShell/**" />
         <Content Remove="CxShell.Tests/**" />
         <AvaloniaResource Include="Assets/**" />
     </ItemGroup>

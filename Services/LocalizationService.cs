@@ -17,6 +17,8 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ["Toolbar.NewTip"] = "Create a new session",
         ["Toolbar.Sessions"] = "Sessions",
         ["Toolbar.SessionsTip"] = "Open session manager",
+        ["Toolbar.TabBar"] = "Tabs",
+        ["Toolbar.TabBarTip"] = "Show or hide tab bar",
         ["Toolbar.Connect"] = "Connect",
         ["Toolbar.ConnectTip"] = "Connect current session",
         ["Toolbar.Disconnect"] = "Disconnect",
@@ -248,6 +250,8 @@ public sealed class LocalizationService : INotifyPropertyChanged
 
     private static readonly Dictionary<string, string> ChineseTexts = new(StringComparer.Ordinal)
     {
+        ["Toolbar.TabBar"] = "\u6807\u7B7E",
+        ["Toolbar.TabBarTip"] = "\u663E\u793A\u6216\u9690\u85CF\u6807\u7B7E\u680F",
         ["Toolbar.New"] = "新建",
         ["Toolbar.NewTip"] = "新建会话",
         ["Toolbar.Sessions"] = "会话",

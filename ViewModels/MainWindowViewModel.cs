@@ -70,6 +70,7 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty] private string? _updateProgressText;
     [ObservableProperty] private TabArrangementMode _tabArrangementMode = TabArrangementMode.Single;
     [ObservableProperty] private KeyboardBroadcastTarget _keyboardBroadcastTarget = KeyboardBroadcastTarget.CurrentSession;
+    [ObservableProperty] private bool _isTabBarVisible;
 
     public ObservableCollection<TerminalTabViewModel> Tabs { get; } = new();
     public ObservableCollection<TerminalTabGroupViewModel> TabGroups { get; } = new();
@@ -86,6 +87,7 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsMonitorPanelVisible => IsMonitorVisible && !IsTerminalFullScreen;
     public bool IsTabHeaderVisible => !IsTerminalFullScreen;
     public bool IsMainTabHeaderVisible => IsTabHeaderVisible && !IsTabArrangementEnabled;
+    public bool IsQuickSessionBarVisible => IsMainChromeVisible && IsTabBarVisible;
     public bool IsSingleTabContentVisible => HasTabs && (!IsTabArrangementEnabled || IsTerminalFullScreen);
     public bool IsArrangedTabsVisible => HasTabs && IsTabArrangementEnabled && !IsTerminalFullScreen;
     public bool IsTabArrangementEnabled => TabArrangementMode != TabArrangementMode.Single;
@@ -112,6 +114,8 @@ public partial class MainWindowViewModel : ObservableObject
     public string NewSessionToolTip => _localization.Text("Toolbar.NewTip");
     public string SessionManagerText => _localization.Text("Toolbar.Sessions");
     public string SessionManagerToolTip => _localization.Text("Toolbar.SessionsTip");
+    public string TabBarText => _localization.Text("Toolbar.TabBar");
+    public string TabBarToolTip => _localization.Text("Toolbar.TabBarTip");
     public string ConnectText => _localization.Text("Toolbar.Connect");
     public string ConnectToolTip => _localization.Text("Toolbar.ConnectTip");
     public string DisconnectText => _localization.Text("Toolbar.Disconnect");
@@ -838,6 +842,8 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(NewSessionToolTip));
         OnPropertyChanged(nameof(SessionManagerText));
         OnPropertyChanged(nameof(SessionManagerToolTip));
+        OnPropertyChanged(nameof(TabBarText));
+        OnPropertyChanged(nameof(TabBarToolTip));
         OnPropertyChanged(nameof(ConnectText));
         OnPropertyChanged(nameof(ConnectToolTip));
         OnPropertyChanged(nameof(DisconnectText));
@@ -988,6 +994,7 @@ public partial class MainWindowViewModel : ObservableObject
     partial void OnIsTerminalFullScreenChanged(bool value)
     {
         OnPropertyChanged(nameof(IsMainChromeVisible));
+        OnPropertyChanged(nameof(IsQuickSessionBarVisible));
         OnPropertyChanged(nameof(IsSftpPanelVisible));
         OnPropertyChanged(nameof(SftpSplitterWidth));
         OnPropertyChanged(nameof(IsMonitorPanelVisible));
@@ -1216,6 +1223,17 @@ public partial class MainWindowViewModel : ObservableObject
     private void ToggleSftp()
     {
         IsSftpVisible = !IsSftpVisible;
+    }
+
+    [RelayCommand]
+    private void ToggleTabBar()
+    {
+        IsTabBarVisible = !IsTabBarVisible;
+    }
+
+    partial void OnIsTabBarVisibleChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsQuickSessionBarVisible));
     }
 
     private bool CanToggleTerminalFullScreen()
