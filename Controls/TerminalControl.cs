@@ -35,6 +35,10 @@ public class TerminalControl : Control
     private double _scrollbarDragOffsetY;
     private bool _isPointerOverScrollbar;
     private bool _scrollLockActive;
+    private string _searchQuery = string.Empty;
+    private IReadOnlyList<TerminalTextMatch> _searchMatches = [];
+    private readonly Dictionary<int, List<TerminalTextMatch>> _searchMatchesByRow = new();
+    private int _searchMatchIndex = -1;
     private readonly DispatcherTimer _cursorBlinkTimer;
     private bool _cursorBlinkVisible = true;
     private readonly TerminalTextInputMethodClient _textInputMethodClient;
@@ -406,6 +410,7 @@ public class TerminalControl : Control
 
     public event Action<string>? InputReceived;
     public event Action<int, int>? SizeChanged2;
+    public event Action? SearchChanged;
 
     private int _columns = 80;
     private int _rows = 24;
@@ -512,6 +517,7 @@ public class TerminalControl : Control
             _scrollOffset = 0;
             _selectionAnchor = null;
             _selectionEnd = null;
+            RefreshSearchMatches();
             if (IsSizeFixed)
                 ApplyFixedSizeToBuffer(notify: false);
             else
@@ -712,6 +718,7 @@ public class TerminalControl : Control
                     }
                 }
 
+                DrawSearchMatches(context, row, y, buffer);
                 DrawSelection(context, row, y);
 
                 // Draw foreground text at cell positions so wide CJK characters keep cursor alignment.
@@ -907,6 +914,33 @@ public class TerminalControl : Control
         }
 
         _lastScrollbackCount = count;
+        RefreshSearchMatches();
+    }
+
+    private void DrawSearchMatches(DrawingContext context, int row, double y, TerminalBuffer buffer)
+    {
+        if (_searchMatchesByRow.Count == 0)
+            return;
+
+        var combinedRow = buffer.ScrollbackCount - _scrollOffset + row;
+        if (!_searchMatchesByRow.TryGetValue(combinedRow, out var matches))
+            return;
+
+        foreach (var match in matches)
+        {
+            var start = Math.Clamp(match.Column, 0, buffer.Columns);
+            var end = Math.Clamp(match.Column + match.Length, start, buffer.Columns);
+            if (end <= start)
+                continue;
+
+            var isCurrent = _searchMatchIndex >= 0 &&
+                            _searchMatchIndex < _searchMatches.Count &&
+                            _searchMatches[_searchMatchIndex].Equals(match);
+            var color = isCurrent ? Color.Parse("#B8860B") : Color.Parse("#8069A7FF");
+            context.FillRectangle(
+                new SolidColorBrush(color),
+                new Rect(start * _cellWidth, y, (end - start) * _cellWidth, _cellHeight));
+        }
     }
 
     private void DrawSelection(DrawingContext context, int row, double y)
@@ -1331,6 +1365,87 @@ public class TerminalControl : Control
         {
             System.Diagnostics.Debug.WriteLine($"Error copying terminal selection: {ex.Message}");
         }
+    }
+
+    public string GetTextForExport()
+    {
+        return HasSelection
+            ? GetSelectedText()
+            : TerminalBuffer?.ExportText() ?? string.Empty;
+    }
+
+    public int SearchMatchCount => _searchMatches.Count;
+
+    public int SearchMatchIndex => _searchMatchIndex;
+
+    public void SetSearchQuery(string? query)
+    {
+        var normalized = query ?? string.Empty;
+        if (string.Equals(_searchQuery, normalized, StringComparison.Ordinal))
+            return;
+
+        _searchQuery = normalized;
+        _searchMatchIndex = -1;
+        RefreshSearchMatches();
+    }
+
+    public bool MoveToSearchMatch(bool backwards)
+    {
+        if (_searchMatches.Count == 0 || TerminalBuffer == null)
+            return false;
+
+        _searchMatchIndex = _searchMatchIndex < 0
+            ? backwards ? _searchMatches.Count - 1 : 0
+            : (_searchMatchIndex + (backwards ? -1 : 1) + _searchMatches.Count) % _searchMatches.Count;
+
+        var match = _searchMatches[_searchMatchIndex];
+        var buffer = TerminalBuffer;
+        var targetRow = match.Row < buffer.ScrollbackCount
+            ? Math.Max(0, match.Row - Math.Max(1, _rows / 2))
+            : match.Row;
+
+        _scrollOffset = targetRow < buffer.ScrollbackCount
+            ? buffer.ScrollbackCount - targetRow
+            : 0;
+        ClampScrollOffset();
+        _selectionAnchor = null;
+        _selectionEnd = null;
+        SearchChanged?.Invoke();
+        InvalidateVisual();
+        return true;
+    }
+
+    public void ClearSearch()
+    {
+        if (string.IsNullOrEmpty(_searchQuery) && _searchMatches.Count == 0)
+            return;
+
+        _searchQuery = string.Empty;
+        _searchMatchIndex = -1;
+        RefreshSearchMatches();
+    }
+
+    private void RefreshSearchMatches()
+    {
+        _searchMatches = TerminalBuffer?.FindTextMatches(_searchQuery) ?? [];
+        _searchMatchesByRow.Clear();
+        for (var index = 0; index < _searchMatches.Count; index++)
+        {
+            var match = _searchMatches[index];
+            if (!_searchMatchesByRow.TryGetValue(match.Row, out var rowMatches))
+            {
+                rowMatches = new List<TerminalTextMatch>();
+                _searchMatchesByRow[match.Row] = rowMatches;
+            }
+
+            rowMatches.Add(match);
+        }
+
+        if (_searchMatchIndex >= _searchMatches.Count)
+            _searchMatchIndex = -1;
+
+        SearchChanged?.Invoke();
+        InvalidateVisual();
     }
 
     public async Task PasteAsync()

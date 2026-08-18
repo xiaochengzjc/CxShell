@@ -1,4 +1,5 @@
 using CxShell.Terminal;
+using System.Text;
 
 namespace CxShell.Tests;
 
@@ -39,5 +40,33 @@ public sealed class TerminalOscCommandTests
     {
         Assert.True(TerminalOscCommand.TryParseTitle("2;" + new string('a', 300), out var title));
         Assert.Equal(TerminalOscCommand.MaximumTitleLength, title.Length);
+    }
+
+    [Fact]
+    public void TryParseClipboard_DecodesClipboardSelection()
+    {
+        var payload = Convert.ToBase64String(Encoding.UTF8.GetBytes("中文 from tmux"));
+
+        Assert.True(TerminalOscCommand.TryParseClipboard($"52;c;{payload}", out var text));
+        Assert.Equal("中文 from tmux", text);
+    }
+
+    [Theory]
+    [InlineData("52;c;?")]
+    [InlineData("52;p;not-base64")]
+    [InlineData("52;clipboard;dGVzdA==")]
+    public void TryParseClipboard_RejectsQueriesInvalidPayloadsAndUnknownSelections(string command)
+    {
+        Assert.False(TerminalOscCommand.TryParseClipboard(command, out var text));
+        Assert.Empty(text);
+    }
+
+    [Fact]
+    public void TryParseClipboard_RejectsOversizedPayload()
+    {
+        var payload = Convert.ToBase64String(new byte[TerminalOscCommand.MaximumClipboardBytes + 1]);
+
+        Assert.False(TerminalOscCommand.TryParseClipboard($"52;c;{payload}", out var text));
+        Assert.Empty(text);
     }
 }

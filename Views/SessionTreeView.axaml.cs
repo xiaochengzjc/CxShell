@@ -254,6 +254,10 @@ public partial class SessionTreeView : UserControl
                 {
                     Patterns = ["*.cxsessions.json", "*.json"]
                 },
+                new FilePickerFileType("OpenSSH config")
+                {
+                    Patterns = ["config", "*.conf"]
+                },
                 FilePickerFileTypes.All
             ]
         });
@@ -263,11 +267,15 @@ public partial class SessionTreeView : UserControl
 
         try
         {
-            var count = vm.ImportSessions(file.Path.LocalPath);
+            var result = vm.ImportFile(file.Path.LocalPath);
             await AtomUiDialogService.ShowMessageAsync(
                 topLevel,
                 T("SessionManager.ImportSuccessTitle"),
-                Tf("SessionManager.ImportSuccessMessage", count),
+                Tf(
+                    result.IsOpenSshConfig
+                        ? "SessionManager.ImportSshConfigSuccessMessage"
+                        : "SessionManager.ImportSuccessMessage",
+                    result.Count),
                 MessageBoxStyle.Success);
         }
         catch (Exception ex)
@@ -354,6 +362,15 @@ public partial class SessionTreeView : UserControl
         if (vm.SelectedSession is { } session)
         {
             menu.Items.Add(new AtomMenuSeparator());
+            if (session.Protocol == SessionProtocol.SSH)
+            {
+                AddItem(vm.DiagnosticsText, () =>
+                {
+                    var mainVm = GetMainWindowViewModel();
+                    return mainVm?.ShowConnectionDiagnosticsAsync(session)
+                        ?? System.Threading.Tasks.Task.CompletedTask;
+                });
+            }
             AddItem(T("SessionManager.CopyFullPath"), () => CopyTextAsync(anchor, vm.GetSessionPath(session)));
             AddItem(T("SessionManager.CopySessionId"), () => CopyTextAsync(anchor, session.Id.ToString()));
             AddItem(T("SessionManager.CopyLaunchCommand"), () => CopyTextAsync(anchor, vm.BuildSessionLaunchCommand(session)));

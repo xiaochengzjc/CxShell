@@ -173,6 +173,14 @@
                                        Text="{Binding CurrentNetworkSpeed.TxFormatted, FallbackValue='0 B/s'}"/>
                         </StackPanel>
                     </Grid>
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock Text="{Binding LatencyText}"
+                                   FontSize="10"
+                                   Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+                        <TextBlock Text="{Binding LatencyDisplay}"
+                                   FontSize="10"
+                                   Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                    </StackPanel>
                     <!-- 折线图 -->
                     <controls:LineChartControl
                         Series1="{Binding RxHistory}"

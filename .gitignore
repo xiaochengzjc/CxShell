@@ -28,6 +28,7 @@ Thumbs.db
 .codex-build
 .buildcheck*/
 .tmp/
+out-*/
 publish/
 artifacts/
 

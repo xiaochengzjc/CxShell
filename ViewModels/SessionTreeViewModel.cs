@@ -34,6 +34,8 @@ public sealed record SessionLookupResult(
         => new(SessionLookupStatus.Ambiguous, null, candidates);
 }
 
+public sealed record SessionImportResult(int Count, bool IsOpenSshConfig);
+
 public partial class SessionNodeViewModel : ObservableObject
 {
     [ObservableProperty] private string _name;
@@ -110,27 +112,13 @@ public partial class SessionTreeViewModel : ObservableObject
     public string MoveDownText => L.Text("SessionManager.MoveDown");
     public string SearchPlaceholderText => L.Text("SessionManager.SearchPlaceholder");
     public string ConnectText => L.Text("Toolbar.Connect");
+    public string DiagnosticsText => L.Text("Diagnostics.Title");
     public string CloseText => L.Text("SessionManager.Close");
-    public string ShowOnStartupText => L.Text("SessionManager.ShowOnStartup");
     public string ColumnNameText => L.Text("SessionManager.ColumnName");
     public string ColumnHostText => L.Text("SessionManager.ColumnHost");
     public string ColumnUsernameText => L.Text("SessionManager.ColumnUsername");
     public string ColumnProtocolText => L.Text("SessionManager.ColumnProtocol");
     public string ColumnPortText => L.Text("SessionManager.ColumnPort");
-    public bool ShowSessionManagerOnStartup
-    {
-        get => Settings.ShowSessionManagerOnStartup;
-        set
-        {
-            if (Settings.ShowSessionManagerOnStartup == value)
-                return;
-
-            Settings.ShowSessionManagerOnStartup = value;
-            SaveSettings(Settings);
-            OnPropertyChanged();
-        }
-    }
-
     public SessionTreeViewModel(MainWindowViewModel mainWindow)
     {
         _mainWindow = mainWindow;
@@ -156,8 +144,8 @@ public partial class SessionTreeViewModel : ObservableObject
         OnPropertyChanged(nameof(MoveDownText));
         OnPropertyChanged(nameof(SearchPlaceholderText));
         OnPropertyChanged(nameof(ConnectText));
+        OnPropertyChanged(nameof(DiagnosticsText));
         OnPropertyChanged(nameof(CloseText));
-        OnPropertyChanged(nameof(ShowOnStartupText));
         OnPropertyChanged(nameof(ColumnNameText));
         OnPropertyChanged(nameof(ColumnHostText));
         OnPropertyChanged(nameof(ColumnUsernameText));
@@ -226,6 +214,9 @@ public partial class SessionTreeViewModel : ObservableObject
         target.SshAcceptAndSaveHostKey = source.SshAcceptAndSaveHostKey;
         target.SshAutoOpenSftpPanel = source.SshAutoOpenSftpPanel;
         target.SshAutoOpenMonitorPanel = source.SshAutoOpenMonitorPanel;
+        target.SshEnableServerMonitoring = source.SshEnableServerMonitoring;
+        target.SshEnableMonitorNetworkLatency = source.SshEnableMonitorNetworkLatency;
+        target.SshMonitorRefreshIntervalSeconds = source.SshMonitorRefreshIntervalSeconds;
         target.SshDoNotStartFileManager = !source.SshAutoOpenSftpPanel;
         target.SshCipherAlgorithms = source.SshCipherAlgorithms;
         target.SshMacAlgorithms = source.SshMacAlgorithms;
@@ -336,6 +327,7 @@ public partial class SessionTreeViewModel : ObservableObject
         target.TerminalAdvancedDisableBlinkingText = source.TerminalAdvancedDisableBlinkingText;
         target.TerminalAdvancedDisableTitleChange = source.TerminalAdvancedDisableTitleChange;
         target.TerminalAdvancedAllowTitleChange = source.TerminalAdvancedAllowTitleChange;
+        target.TerminalAdvancedAllowOsc52Clipboard = source.TerminalAdvancedAllowOsc52Clipboard;
         target.TerminalAdvancedDisableTerminalPrint = source.TerminalAdvancedDisableTerminalPrint;
         target.TerminalAdvancedDisableAlternateScreen = source.TerminalAdvancedDisableAlternateScreen;
         target.TerminalAdvancedIgnoreResizeRequest = source.TerminalAdvancedIgnoreResizeRequest;
@@ -369,6 +361,7 @@ public partial class SessionTreeViewModel : ObservableObject
         target.AppearanceCharacterSpacing = source.AppearanceCharacterSpacing;
         target.AppearanceTabColorMode = source.AppearanceTabColorMode;
         target.AppearanceTabCustomColor = source.AppearanceTabCustomColor;
+        target.AppearanceTabIcon = SessionTabIconCatalog.Normalize(source.AppearanceTabIcon);
         target.AppearanceBackgroundImagePath = source.AppearanceBackgroundImagePath;
         target.AppearanceBackgroundImagePosition = source.AppearanceBackgroundImagePosition;
         target.AppearanceHighlightSetId = source.AppearanceHighlightSetId;
@@ -417,6 +410,21 @@ public partial class SessionTreeViewModel : ObservableObject
 
     partial void OnSelectedNodeChanged(SessionNodeViewModel? value)
     {
+        // The DataGrid updates SelectedItem and SelectedItems independently.
+        // Keep the single-selection command state aligned with the visible row.
+        if (value?.Session != null)
+        {
+            if (SelectedNodes.Count != 1 || !ReferenceEquals(SelectedNodes[0], value))
+            {
+                SelectedNodes.Clear();
+                SelectedNodes.Add(value);
+            }
+        }
+        else if (SelectedNodes.Count > 0)
+        {
+            SelectedNodes.Clear();
+        }
+
         OnPropertyChanged(nameof(SelectedSession));
         NotifySelectionStateChanged();
         OnPropertyChanged(nameof(CanMoveSelectedSessionUp));
@@ -520,6 +528,11 @@ public partial class SessionTreeViewModel : ObservableObject
 
         foreach (var session in _data.Sessions.Where(s => s.GroupId == null).OrderBy(s => s.SortOrder))
             yield return session;
+    }
+
+    public IReadOnlyList<SessionInfo> GetAllSessions()
+    {
+        return GetOrderedSessions().ToArray();
     }
 
     public SessionInfo? FindSessionById(Guid sessionId)
@@ -760,6 +773,72 @@ public partial class SessionTreeViewModel : ObservableObject
             SelectedNode = SessionRows.FirstOrDefault(node => node.Session?.Id == importedSessions[0].Id);
 
         return importedSessions.Count;
+    }
+
+    public SessionImportResult ImportFile(string path)
+    {
+        var content = File.ReadAllText(path);
+        if (OpenSshConfigParser.LooksLikeConfig(content))
+            return new SessionImportResult(ImportOpenSshConfig(path, content), true);
+
+        return new SessionImportResult(ImportSessions(path), false);
+    }
+
+    private int ImportOpenSshConfig(string path, string content)
+    {
+        var entries = OpenSshConfigParser.Parse(content, path);
+        if (entries.Count == 0)
+            throw new InvalidDataException("The OpenSSH config contains no concrete Host entries.");
+
+        var importedSessions = new List<SessionInfo>();
+        var nextSortOrder = _data.Sessions.Count == 0 ? 0 : _data.Sessions.Max(session => session.SortOrder) + 1;
+        foreach (var entry in entries)
+        {
+            var session = new SessionInfo
+            {
+                Id = Guid.NewGuid(),
+                Name = CreateUniqueSessionName(entry.Alias, importedSessions),
+                Host = entry.Host,
+                Port = entry.Port,
+                Username = entry.Username,
+                Protocol = SessionProtocol.SSH,
+                AuthMethod = entry.IdentityFile != null ? AuthMethod.PrivateKey : AuthMethod.Password,
+                PrivateKeyPath = entry.IdentityFile,
+                SortOrder = nextSortOrder++
+            };
+
+            ConfigureImportedJumpHosts(session, entry);
+            importedSessions.Add(session);
+        }
+
+        _data.Sessions.AddRange(importedSessions);
+        _storage.Save(_data);
+        LoadSessions();
+        SelectedNode = SessionRows.FirstOrDefault(node => node.Session?.Id == importedSessions[0].Id);
+        return importedSessions.Count;
+    }
+
+    private static void ConfigureImportedJumpHosts(SessionInfo session, OpenSshConfigEntry entry)
+    {
+        if (entry.JumpHosts.Count == 0)
+            return;
+
+        var proxies = entry.JumpHosts.Select(jump => new ProxySettings
+        {
+            Protocol = ProxyProtocol.JumpHost,
+            Host = jump.Host,
+            Port = jump.Port,
+            Username = jump.Username,
+            AuthMethod = entry.IdentityFile != null ? AuthMethod.PrivateKey : AuthMethod.Password,
+            PrivateKeyPath = entry.IdentityFile ?? string.Empty,
+            UseAgent = true
+        }).ToList();
+
+        for (var index = 0; index < proxies.Count - 1; index++)
+            proxies[index].NextProxyId = proxies[index + 1].Id;
+
+        session.Proxy = proxies[0];
+        session.ProxyServers = proxies.Skip(1).ToList();
     }
 
     public void DeleteSelectedSessions()
@@ -1023,6 +1102,9 @@ public partial class SessionTreeViewModel : ObservableObject
             SshAcceptAndSaveHostKey = source.SshAcceptAndSaveHostKey,
             SshAutoOpenSftpPanel = source.SshAutoOpenSftpPanel,
             SshAutoOpenMonitorPanel = source.SshAutoOpenMonitorPanel,
+            SshEnableServerMonitoring = source.SshEnableServerMonitoring,
+            SshEnableMonitorNetworkLatency = source.SshEnableMonitorNetworkLatency,
+            SshMonitorRefreshIntervalSeconds = source.SshMonitorRefreshIntervalSeconds,
             SshDoNotStartFileManager = !source.SshAutoOpenSftpPanel,
             SshCipherAlgorithms = source.SshCipherAlgorithms,
             SshMacAlgorithms = source.SshMacAlgorithms,
@@ -1129,6 +1211,7 @@ public partial class SessionTreeViewModel : ObservableObject
             TerminalAdvancedDisableBlinkingText = source.TerminalAdvancedDisableBlinkingText,
             TerminalAdvancedDisableTitleChange = source.TerminalAdvancedDisableTitleChange,
             TerminalAdvancedAllowTitleChange = source.TerminalAdvancedAllowTitleChange,
+            TerminalAdvancedAllowOsc52Clipboard = source.TerminalAdvancedAllowOsc52Clipboard,
             TerminalAdvancedDisableTerminalPrint = source.TerminalAdvancedDisableTerminalPrint,
             TerminalAdvancedDisableAlternateScreen = source.TerminalAdvancedDisableAlternateScreen,
             TerminalAdvancedIgnoreResizeRequest = source.TerminalAdvancedIgnoreResizeRequest,
@@ -1162,6 +1245,7 @@ public partial class SessionTreeViewModel : ObservableObject
             AppearanceCharacterSpacing = source.AppearanceCharacterSpacing,
             AppearanceTabColorMode = source.AppearanceTabColorMode,
             AppearanceTabCustomColor = source.AppearanceTabCustomColor,
+            AppearanceTabIcon = SessionTabIconCatalog.Normalize(source.AppearanceTabIcon),
             AppearanceBackgroundImagePath = source.AppearanceBackgroundImagePath,
             AppearanceBackgroundImagePosition = source.AppearanceBackgroundImagePosition,
             AppearanceHighlightSetId = source.AppearanceHighlightSetId,

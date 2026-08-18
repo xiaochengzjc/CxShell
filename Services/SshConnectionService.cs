@@ -82,8 +82,11 @@ public class SshConnectionService : ITerminalConnectionService
                     ? TimeSpan.FromSeconds(Math.Max(1, session.SessionKeepAliveIntervalSeconds))
                     : Timeout.InfiniteTimeSpan
             };
-            if (session.SshAcceptAndSaveHostKey)
-                _sshClient.HostKeyReceived += (_, e) => e.CanTrust = true;
+            SshHostKeyTrustService.Shared.Attach(
+                _sshClient,
+                session.Host,
+                session.Port,
+                session.SshAcceptAndSaveHostKey);
 
             TraceSshProtocol($"connecting to {session.Username}@{session.Host}:{session.Port}");
             await Task.Run(() => _sshClient.Connect(), cancellationToken);

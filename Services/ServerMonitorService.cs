@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -108,6 +109,8 @@ exit 0
     private MonitorTargetKind _targetKind = MonitorTargetKind.Linux;
     private Func<string, TimeSpan, CancellationToken, Task<string>>? _commandRunner;
     private bool _ownsSshClient;
+    private int _refreshIntervalSeconds = SessionInfo.DefaultSshMonitorRefreshIntervalSeconds;
+    private bool _enableNetworkLatencyProbe;
 
     private List<long[]>? _prevCpuStat;
     private Dictionary<string, (long rx, long tx)>? _prevNetStat;
@@ -118,25 +121,33 @@ exit 0
     public bool IsMonitoring => _monitorTask != null && !_monitorTask.IsCompleted;
     public static string DebugLogPath => Path.Combine(GetDebugLogDirectory(), "server-monitor-debug.log");
 
-    public event Action<MonitorSnapshot>? DataUpdated;
-    public event Action<string>? ErrorOccurred;
+    public event Action<MonitorSnapshot, long>? DataUpdated;
+    public event Action<string, long, bool>? ErrorOccurred;
 
     public async Task StartAsync(
         SessionInfo session,
         string? password,
         Func<string, TimeSpan, CancellationToken, Task<string>>? commandRunner = null,
-        bool isWindowsOpenSsh = false)
+        bool isWindowsOpenSsh = false,
+        int refreshIntervalSeconds = SessionInfo.DefaultSshMonitorRefreshIntervalSeconds,
+        bool enableNetworkLatencyProbe = false,
+        long callbackGeneration = 0)
     {
         Stop();
         _commandRunner = commandRunner;
         _ownsSshClient = commandRunner == null;
+        _refreshIntervalSeconds = Math.Clamp(
+            refreshIntervalSeconds,
+            SessionInfo.MinSshMonitorRefreshIntervalSeconds,
+            SessionInfo.MaxSshMonitorRefreshIntervalSeconds);
+        _enableNetworkLatencyProbe = enableNetworkLatencyProbe;
         _targetKind = isWindowsOpenSsh ? MonitorTargetKind.Windows : MonitorTargetKind.Linux;
         _hasLoggedWindowsScript = false;
-        DebugLog($"start session={session.Username}@{session.Host}:{session.Port} protocol={session.Protocol} commandRunner={commandRunner != null} hintedTarget={_targetKind}");
+        DebugLog($"start session={session.Username}@{session.Host}:{session.Port} protocol={session.Protocol} commandRunner={commandRunner != null} hintedTarget={_targetKind} refreshInterval={_refreshIntervalSeconds}s latencyProbe={_enableNetworkLatencyProbe}");
 
         if (commandRunner != null)
         {
-            StartMonitorLoop();
+            StartMonitorLoop(callbackGeneration);
             return;
         }
 
@@ -151,6 +162,11 @@ exit 0
             {
                 KeepAliveInterval = TimeSpan.FromSeconds(30)
             };
+            SshHostKeyTrustService.Shared.Attach(
+                _sshClient,
+                session.Host,
+                session.Port,
+                session.SshAcceptAndSaveHostKey);
 
             await ConnectWithRetryAsync(_sshClient, CancellationToken.None).ConfigureAwait(false);
             _targetKind = isWindowsOpenSsh || SshServerInfo.IsWindowsOpenSshServer(connectionInfo.ServerVersion)
@@ -162,7 +178,10 @@ exit 0
         {
             var displayMessage = SshServerInfo.BuildConnectionErrorMessage(ex);
             DebugLog($"ssh monitor connection failed message={displayMessage} exception={ex}");
-            ErrorOccurred?.Invoke(string.Format(LocalizationService.Shared.Text("Monitor.ConnectionFailed"), displayMessage));
+            ErrorOccurred?.Invoke(
+                string.Format(LocalizationService.Shared.Text("Monitor.ConnectionFailed"), displayMessage),
+                callbackGeneration,
+                true);
             _sshClient?.Dispose();
             _sshClient = null;
             _sshConnectionContext?.Dispose();
@@ -170,7 +189,7 @@ exit 0
             return;
         }
 
-        StartMonitorLoop();
+        StartMonitorLoop(callbackGeneration);
     }
 
     public void Stop()
@@ -192,6 +211,8 @@ exit 0
         _monitorTask = null;
         _lastSampleTime = default;
         _targetKind = MonitorTargetKind.Linux;
+        _refreshIntervalSeconds = SessionInfo.DefaultSshMonitorRefreshIntervalSeconds;
+        _enableNetworkLatencyProbe = false;
         _commandRunner = null;
         _ownsSshClient = false;
         _prevCpuStat = null;
@@ -199,7 +220,7 @@ exit 0
         _prevDiskStat = null;
     }
 
-    private void StartMonitorLoop()
+    private void StartMonitorLoop(long callbackGeneration)
     {
         _lastSampleTime = default;
         _prevCpuStat = null;
@@ -207,8 +228,8 @@ exit 0
         _prevDiskStat = null;
 
         _cts = new CancellationTokenSource();
-        DebugLog($"monitor loop start target={_targetKind} ownsSshClient={_ownsSshClient} commandRunner={_commandRunner != null}");
-        _monitorTask = Task.Run(() => MonitorLoop(_cts.Token));
+        DebugLog($"monitor loop start target={_targetKind} ownsSshClient={_ownsSshClient} commandRunner={_commandRunner != null} callbackGeneration={callbackGeneration}");
+        _monitorTask = Task.Run(() => MonitorLoop(_cts.Token, callbackGeneration));
     }
 
     private static async Task ConnectWithRetryAsync(SshClient client, CancellationToken cancellationToken)
@@ -236,19 +257,19 @@ exit 0
         throw lastError ?? new InvalidOperationException("SSH monitor connection failed.");
     }
 
-    private async Task MonitorLoop(CancellationToken ct)
+    private async Task MonitorLoop(CancellationToken ct, long callbackGeneration)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(_refreshIntervalSeconds));
         while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
         {
             if (ct.IsCancellationRequested) break;
             try
             {
-                var snapshot = await CollectAsync(ct).ConfigureAwait(false);
+                var snapshot = await CollectAsync(ct, callbackGeneration).ConfigureAwait(false);
                 if (snapshot != null)
                 {
-                    DebugLog($"collect success target={_targetKind} cpu={snapshot.CpuCores.Count} memory={snapshot.Memory != null} net={snapshot.NetworkSpeed != null} disks={snapshot.DiskPartitions.Count} diskIo={snapshot.DiskIo.Count}");
-                    DataUpdated?.Invoke(snapshot);
+                    DebugLog($"collect success target={_targetKind} cpu={snapshot.CpuCores.Count} memory={snapshot.Memory != null} net={snapshot.NetworkSpeed != null} latencyMs={snapshot.NetworkLatencyMilliseconds?.ToString(CultureInfo.InvariantCulture) ?? "-"} disks={snapshot.DiskPartitions.Count} diskIo={snapshot.DiskIo.Count}");
+                    DataUpdated?.Invoke(snapshot, callbackGeneration);
                 }
                 else
                 {
@@ -262,19 +283,22 @@ exit 0
             catch (Exception ex)
             {
                 DebugLog($"collect exception target={_targetKind} exception={ex}");
-                ErrorOccurred?.Invoke(string.Format(LocalizationService.Shared.Text("Monitor.CollectFailed"), ex.Message));
+                ErrorOccurred?.Invoke(
+                    string.Format(LocalizationService.Shared.Text("Monitor.CollectFailed"), ex.Message),
+                    callbackGeneration,
+                    false);
             }
         }
     }
 
-    private Task<MonitorSnapshot?> CollectAsync(CancellationToken ct)
+    private Task<MonitorSnapshot?> CollectAsync(CancellationToken ct, long callbackGeneration)
     {
         return _targetKind == MonitorTargetKind.Windows
-            ? CollectWindowsAsync(ct)
-            : CollectLinuxAsync(ct);
+            ? CollectWindowsAsync(ct, callbackGeneration)
+            : CollectLinuxAsync(ct, callbackGeneration);
     }
 
-    private async Task<MonitorSnapshot?> CollectLinuxAsync(CancellationToken ct)
+    private async Task<MonitorSnapshot?> CollectLinuxAsync(CancellationToken ct, long callbackGeneration)
     {
         if (!HasRemoteCommandSource())
             return null;
@@ -286,12 +310,18 @@ exit 0
             $"cat /proc/diskstats; echo '{LinuxSectionSeparator}'; " +
             $"df -P";
 
-        var output = await TryRunRemoteCommandAsync(cmd, TimeSpan.FromSeconds(5), ct, "linux-monitor").ConfigureAwait(false);
+        var output = await TryRunRemoteCommandAsync(
+                cmd,
+                TimeSpan.FromSeconds(5),
+                ct,
+                "linux-monitor",
+                callbackGeneration)
+            .ConfigureAwait(false);
         if (output == null)
             return null;
 
         var now = DateTime.Now;
-        var elapsed = _lastSampleTime == default ? 2.0 : (now - _lastSampleTime).TotalSeconds;
+        var elapsed = _lastSampleTime == default ? _refreshIntervalSeconds : (now - _lastSampleTime).TotalSeconds;
         _lastSampleTime = now;
 
         var normalizedOutput = output.Replace("\r\n", "\n", StringComparison.Ordinal);
@@ -330,18 +360,22 @@ exit 0
         _prevDiskStat = currDiskStat;
 
         var diskPartitions = LinuxProcParser.ParseDf(sections[4]);
+        var networkLatency = _enableNetworkLatencyProbe
+            ? await MeasureNetworkLatencyAsync(ct).ConfigureAwait(false)
+            : null;
 
         return new MonitorSnapshot
         {
             CpuCores = cpuCores,
             Memory = memory,
             NetworkSpeed = netSpeed,
+            NetworkLatencyMilliseconds = networkLatency,
             DiskPartitions = diskPartitions,
             DiskIo = diskIo
         };
     }
 
-    private async Task<MonitorSnapshot?> CollectWindowsAsync(CancellationToken ct)
+    private async Task<MonitorSnapshot?> CollectWindowsAsync(CancellationToken ct, long callbackGeneration)
     {
         if (!HasRemoteCommandSource())
             return null;
@@ -354,7 +388,13 @@ exit 0
             DebugLog($"windows monitor script length={WindowsMonitorScript.Length} base64Length={encodedScript.Length}");
         }
 
-        var output = await TryRunRemoteCommandAsync(cmd, TimeSpan.FromSeconds(10), ct, "windows-monitor").ConfigureAwait(false);
+        var output = await TryRunRemoteCommandAsync(
+                cmd,
+                TimeSpan.FromSeconds(10),
+                ct,
+                "windows-monitor",
+                callbackGeneration)
+            .ConfigureAwait(false);
         if (output == null)
             return null;
 
@@ -366,6 +406,9 @@ exit 0
         }
 
         var snapshot = ParseWindowsMonitorOutput(output);
+        snapshot.NetworkLatencyMilliseconds = _enableNetworkLatencyProbe
+            ? await MeasureNetworkLatencyAsync(ct).ConfigureAwait(false)
+            : null;
         DebugLog($"windows parse result lines={CountNonEmptyLines(output)} cpu={snapshot.CpuCores.Count} memory={snapshot.Memory != null} net={snapshot.NetworkSpeed != null} disks={snapshot.DiskPartitions.Count} diskIo={snapshot.DiskIo.Count}");
         if (snapshot.CpuCores.Count == 0 && snapshot.Memory == null && snapshot.NetworkSpeed == null && snapshot.DiskPartitions.Count == 0 && snapshot.DiskIo.Count == 0)
             DebugLog($"windows parse produced empty snapshot. raw={PreviewForLog(output)}");
@@ -373,12 +416,92 @@ exit 0
         return snapshot;
     }
 
-    private bool HasRemoteCommandSource()
+    private async Task<double?> MeasureNetworkLatencyAsync(CancellationToken ct)
     {
-        return _commandRunner != null || _sshClient?.IsConnected == true;
+        if (!HasRemoteCommandSource())
+            return null;
+
+        const string marker = "__CXSHELL_LATENCY__";
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(5));
+
+            string? output;
+            if (_commandRunner != null)
+            {
+                output = await _commandRunner($"echo {marker}", TimeSpan.FromSeconds(5), cts.Token)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                output = await Task.Run(() =>
+                {
+                    if (_sshClient == null || !_sshClient.IsConnected)
+                        return null;
+
+                    using var command = _sshClient.CreateCommand($"echo {marker}");
+                    command.CommandTimeout = TimeSpan.FromSeconds(5);
+                    var result = command.Execute();
+                    return command.ExitStatus == 0 ? result : null;
+                }, cts.Token).ConfigureAwait(false);
+            }
+
+            if (string.IsNullOrWhiteSpace(output) ||
+                !output.Contains(marker, StringComparison.Ordinal))
+            {
+                DebugLog($"latency probe returned unexpected output={PreviewForLog(output)}");
+                return null;
+            }
+
+            return Math.Round(stopwatch.Elapsed.TotalMilliseconds, 1);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            DebugLog("latency probe timed out");
+            return null;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            DebugLog($"latency probe failed exception={ex}");
+            return null;
+        }
     }
 
-    private async Task<string?> TryRunRemoteCommandAsync(string commandText, TimeSpan timeout, CancellationToken ct, string commandLabel)
+    private bool HasRemoteCommandSource()
+    {
+        // Keep a disconnected owned client as a valid source so the next
+        // sampling cycle can attempt to reconnect it.
+        return _commandRunner != null || (_ownsSshClient && _sshClient != null);
+    }
+
+    private async Task<bool> EnsureOwnedSshConnectionAsync(CancellationToken ct)
+    {
+        var client = _sshClient;
+        if (!_ownsSshClient || client == null)
+            return false;
+
+        if (client.IsConnected)
+            return true;
+
+        DebugLog("monitor ssh disconnected; attempting reconnect");
+        await Task.Run(() => ConnectWithRetryAsync(client, ct), ct).ConfigureAwait(false);
+        var connected = client.IsConnected;
+        DebugLog($"monitor ssh reconnect {(connected ? "succeeded" : "did not connect")}");
+        return connected;
+    }
+
+    private async Task<string?> TryRunRemoteCommandAsync(
+        string commandText,
+        TimeSpan timeout,
+        CancellationToken ct,
+        string commandLabel,
+        long callbackGeneration)
     {
         try
         {
@@ -392,13 +515,17 @@ exit 0
                 return output;
             }
 
+            if (!await EnsureOwnedSshConnectionAsync(cts.Token).ConfigureAwait(false))
+                throw new InvalidOperationException("The monitor SSH connection is unavailable.");
+
+            var client = _sshClient;
             return await Task.Run(() =>
             {
-                if (_sshClient == null || !_sshClient.IsConnected)
-                    return null;
+                if (client == null || !client.IsConnected)
+                    throw new InvalidOperationException("The monitor SSH connection closed during reconnect.");
 
                 DebugLog($"run command via monitor ssh label={commandLabel} timeout={timeout.TotalSeconds:F0}s commandLength={commandText.Length}");
-                using var command = _sshClient.CreateCommand(commandText);
+                using var command = client.CreateCommand(commandText);
                 command.CommandTimeout = timeout;
                 var result = command.Execute();
                 DebugLog($"command completed via monitor ssh label={commandLabel} exit={command.ExitStatus} stdoutLength={result?.Length ?? 0} stderrLength={command.Error?.Length ?? 0} stdout={PreviewForLog(result)} stderr={PreviewForLog(command.Error)}");
@@ -435,7 +562,10 @@ exit 0
         {
             var displayMessage = DecodePowerShellClixml(ex.Message);
             DebugLog($"command failed label={commandLabel} displayMessage={PreviewForLog(displayMessage)} exception={ex}");
-            ErrorOccurred?.Invoke(string.Format(LocalizationService.Shared.Text("Monitor.CommandFailed"), displayMessage));
+            ErrorOccurred?.Invoke(
+                string.Format(LocalizationService.Shared.Text("Monitor.CommandFailed"), displayMessage),
+                callbackGeneration,
+                false);
             return null;
         }
     }

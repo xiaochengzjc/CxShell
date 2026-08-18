@@ -184,6 +184,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         LoginScriptPage.IsVisible = key == "LoginScript";
         SshSecurityPage.IsVisible = key == "SshSecurity";
         SshTunnelPage.IsVisible = key == "SshTunnel";
+        SshOtherPage.IsVisible = key == "SshOther";
         TelnetPage.IsVisible = key == "Telnet";
         ProxyPage.IsVisible = key == "Proxy";
         KeepAlivePage.IsVisible = key == "KeepAlive";
@@ -214,6 +215,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             "SshSecurity" or
             "SshTunnel" or
             "SshSftp" or
+            "SshOther" or
             "Terminal" or
             "Keyboard" or
             "VtMode" or
@@ -243,6 +245,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             "SshSecurity" => $"SSH > {l.Text("SessionEdit.Security")}",
             "SshTunnel" => $"SSH > {l.Text("SessionEdit.Tunnel")}",
             "SshSftp" => "SSH > SFTP (Secure File Transfer)",
+            "SshOther" => $"SSH > {l.Text("SessionEdit.Monitor")}",
             "Telnet" => "TELNET",
             "Rlogin" => "RLOGIN",
             "Serial" => l.Text("SessionEdit.Serial"),
@@ -379,6 +382,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             vm.AppearanceCjkFontStyle = GetSelectedOptionText(SessionAppearanceCjkFontStyleSelect, vm.AppearanceCjkFontStyle);
             vm.AppearanceFontQuality = GetSelectedOptionText(SessionAppearanceFontQualitySelect, vm.AppearanceFontQuality);
             vm.AppearanceBoldTextMode = GetSelectedOptionText(SessionAppearanceBoldTextModeSelect, vm.AppearanceBoldTextMode);
+            vm.AppearanceTabIcon = GetSelectedOptionText(SessionAppearanceTabIconSelect, vm.AppearanceTabIcon);
             vm.AppearanceBackgroundImagePosition = GetSelectedOptionText(SessionAppearanceBackgroundImagePositionSelect, vm.AppearanceBackgroundImagePosition);
             vm.AppearanceHighlightSetId = GetSelectedOptionText(SessionAppearanceHighlightSetSelect, vm.AppearanceHighlightSetId);
             vm.TerminalKeyboardFunctionKeyMode = GetSelectedOptionText(SessionFunctionKeySelect, vm.TerminalKeyboardFunctionKeyMode);
@@ -594,6 +598,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         vm.AppearanceCjkFontStyle = GetSelectedOptionText(SessionAppearanceCjkFontStyleSelect, vm.AppearanceCjkFontStyle);
         vm.AppearanceFontQuality = GetSelectedOptionText(SessionAppearanceFontQualitySelect, vm.AppearanceFontQuality);
         vm.AppearanceBoldTextMode = GetSelectedOptionText(SessionAppearanceBoldTextModeSelect, vm.AppearanceBoldTextMode);
+        vm.AppearanceTabIcon = GetSelectedOptionText(SessionAppearanceTabIconSelect, vm.AppearanceTabIcon);
         vm.AppearanceBackgroundImagePosition = GetSelectedOptionText(SessionAppearanceBackgroundImagePositionSelect, vm.AppearanceBackgroundImagePosition);
         vm.AppearanceHighlightSetId = GetSelectedOptionText(SessionAppearanceHighlightSetSelect, vm.AppearanceHighlightSetId);
         ApplyAppearancePreviewTextOptions(vm.AppearanceFontQuality);
@@ -2197,9 +2202,9 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         {
             Title = T("Dialog.LoginScriptRule.Title"),
             Width = 536,
-            Height = 526,
+            Height = 610,
             MinWidth = 500,
-            MinHeight = 460,
+            MinHeight = 540,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             CanResize = false,
             ShowInTaskbar = false
@@ -2223,6 +2228,16 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         {
             Content = T("Dialog.LoginScriptRule.HideText"),
             IsChecked = rule.HideText
+        };
+        var regexBox = new AtomUI.Desktop.Controls.CheckBox
+        {
+            Content = T("Dialog.LoginScriptRule.Regex"),
+            IsChecked = rule.IsRegex
+        };
+        var keepWatchingBox = new AtomUI.Desktop.Controls.CheckBox
+        {
+            Content = T("Dialog.LoginScriptRule.KeepWatching"),
+            IsChecked = rule.KeepWatching
         };
 
         void UpdateSendTextVisibility()
@@ -2258,6 +2273,8 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
                 Expect = expectBox.Text.Trim(),
                 Send = sendBox.Text ?? string.Empty,
                 HideText = hideTextBox.IsChecked == true,
+                IsRegex = regexBox.IsChecked == true,
+                KeepWatching = keepWatchingBox.IsChecked == true,
                 SortOrder = rule.SortOrder
             };
             dialog.Close();
@@ -2296,9 +2313,19 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         Grid.SetRow(sendBox, 8);
         Grid.SetColumn(sendBox, 1);
 
-        form.Children.Add(hideTextBox);
-        Grid.SetRow(hideTextBox, 10);
-        Grid.SetColumn(hideTextBox, 1);
+        var options = new WrapPanel
+        {
+            Orientation = Orientation.Horizontal
+        };
+        hideTextBox.Margin = new Thickness(0, 0, 16, 8);
+        regexBox.Margin = new Thickness(0, 0, 16, 8);
+        keepWatchingBox.Margin = new Thickness(0, 0, 16, 8);
+        options.Children.Add(hideTextBox);
+        options.Children.Add(regexBox);
+        options.Children.Add(keepWatchingBox);
+        form.Children.Add(options);
+        Grid.SetRow(options, 10);
+        Grid.SetColumn(options, 1);
 
         var buttons = new StackPanel
         {
@@ -2607,6 +2634,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         SelectOption(SessionAppearanceCjkFontStyleSelect, vm.AppearanceCjkFontStyle);
         SelectOption(SessionAppearanceFontQualitySelect, vm.AppearanceFontQuality);
         SelectOption(SessionAppearanceBoldTextModeSelect, vm.AppearanceBoldTextMode);
+        SelectOption(SessionAppearanceTabIconSelect, vm.AppearanceTabIcon);
         SelectOption(SessionAppearanceBackgroundImagePositionSelect, vm.AppearanceBackgroundImagePosition);
         SelectOption(SessionAppearanceHighlightSetSelect, vm.AppearanceHighlightSetId);
         SelectOption(SessionFunctionKeySelect, vm.TerminalKeyboardFunctionKeyMode);

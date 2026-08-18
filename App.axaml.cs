@@ -6,6 +6,8 @@ using AtomUI;
 using AtomUI.Controls;
 using AtomUI.Desktop.Controls;
 using AtomUI.Theme;
+using AtomUI.Theme.Algorithms;
+using AtomUI.Theme.Configuration;
 using CxShell.ViewModels;
 using CxShell.Views;
 
@@ -20,7 +22,10 @@ public partial class App : Application
 
         this.UseAtomUI(builder =>
         {
-            builder.WithInitialTheme(IThemeManager.DEFAULT_THEME_ID);
+            var initialTheme = new ThemeConfigBuilder()
+                              .WithAlgorithms(ThemeAlgorithm.Default, ThemeAlgorithm.Dark)
+                              .Build();
+            builder.WithInitialTheme(IThemeManager.DEFAULT_THEME_ID, initialTheme);
             builder.UseAlibabaSansFont();
             builder.UseDesktopControls();
             builder.UseDesktopColorPicker();

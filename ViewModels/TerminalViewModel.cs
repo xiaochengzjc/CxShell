@@ -24,6 +24,11 @@ public partial class TerminalViewModel : ObservableObject
     public string ConnectingText => L.Text("Terminal.Connecting");
     public string CopyText => L.Text("Terminal.Copy");
     public string PasteText => L.Text("Terminal.Paste");
+    public string ExportText => L.Text("Terminal.Export");
+    public string SearchPlaceholderText => L.Text("Terminal.SearchPlaceholder");
+    public string SearchPreviousText => L.Text("Terminal.SearchPrevious");
+    public string SearchNextText => L.Text("Terminal.SearchNext");
+    public string SearchCloseText => L.Text("Terminal.SearchClose");
     public string QuickCommandsText => L.Text("TabMenu.QuickCommands");
     public string QuickCommandsEmptyText => L.Text("TabMenu.QuickCommandsEmpty");
 
@@ -44,6 +49,9 @@ public partial class TerminalViewModel : ObservableObject
     private readonly SemaphoreSlim _connectGate = new(1, 1);
     private bool _manualDisconnect = true;
     private int _connectionGeneration;
+    private long _reconnectAttemptId;
+    private long _reconnectTaskAttemptId;
+    private Task? _reconnectTask;
     private readonly object _zmodemLock = new();
     private readonly List<byte[]> _zmodemPendingBytes = new();
     private readonly List<byte> _zmodemProbeBytes = new();
@@ -70,6 +78,10 @@ public partial class TerminalViewModel : ObservableObject
     private DateTimeOffset _lastUserInputAt = DateTimeOffset.UtcNow;
     private readonly StringBuilder _loginScriptProbeBuffer = new();
     private List<LoginScriptRule> _pendingLoginScriptRules = new();
+    private readonly StringBuilder _terminalTriggerProbeBuffer = new();
+    private List<LoginScriptRule> _activeTerminalTriggers = new();
+    private readonly Dictionary<Guid, DateTimeOffset> _terminalTriggerLastFiredAt = new();
+    private static readonly TimeSpan TerminalTriggerCooldown = TimeSpan.FromMilliseconds(1500);
     private readonly object _recentOutputLock = new();
     private readonly StringBuilder _recentOutputBuffer = new();
     private DateTimeOffset _lastBellAt = DateTimeOffset.MinValue;
@@ -78,6 +90,7 @@ public partial class TerminalViewModel : ObservableObject
     private string? _previousRemoteCurrentDirectory;
     private int _remoteDirectoryQueryId;
     private SessionLogWriter? _sessionLogWriter;
+    private SessionRecorder? _sessionRecorder;
     private static readonly Regex WindowsPromptPathRegex = new(
         @"(?m)(?:^|[\r\n])(?:[^\r\n<>]*?\s)?(?<path>[A-Za-z]:\\[^\r\n<>]*)>\s*$",
         RegexOptions.CultureInvariant);
@@ -94,6 +107,7 @@ public partial class TerminalViewModel : ObservableObject
     public Func<Task<IReadOnlyList<string>>>? PickZmodemUploadFilesAsync { get; set; }
     public Func<Task<string?>>? PickZmodemDownloadFolderAsync { get; set; }
     public Func<Task<string?>>? PickSessionLogFileAsync { get; set; }
+    public Func<string, Task>? SetClipboardTextAsync { get; set; }
     public string ZmodemUploadStartDirectory => _session?.FileTransferUploadDirectory ?? string.Empty;
     public bool IsTerminalSizeFixed => _session?.TerminalFixedSize == true;
     public string KeyboardFunctionKeyMode => _session?.TerminalKeyboardFunctionKeyMode ?? "Default";
@@ -166,6 +180,11 @@ public partial class TerminalViewModel : ObservableObject
         OnPropertyChanged(nameof(ConnectingText));
         OnPropertyChanged(nameof(CopyText));
         OnPropertyChanged(nameof(PasteText));
+        OnPropertyChanged(nameof(ExportText));
+        OnPropertyChanged(nameof(SearchPlaceholderText));
+        OnPropertyChanged(nameof(SearchPreviousText));
+        OnPropertyChanged(nameof(SearchNextText));
+        OnPropertyChanged(nameof(SearchCloseText));
         OnPropertyChanged(nameof(QuickCommandsText));
         OnPropertyChanged(nameof(QuickCommandsEmptyText));
     }
@@ -287,6 +306,7 @@ public partial class TerminalViewModel : ObservableObject
             return;
 
         await _connectGate.WaitAsync(cancellationToken);
+        ITerminalConnectionService? connection = null;
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -296,7 +316,7 @@ public partial class TerminalViewModel : ObservableObject
             _connection = null;
             previous?.Dispose();
 
-            var connection = CreateConnectionService(_session.Protocol);
+            connection = CreateConnectionService(_session.Protocol);
             _connection = connection;
             PrepareLoginScript(_session);
 
@@ -312,10 +332,12 @@ public partial class TerminalViewModel : ObservableObject
                     if (string.IsNullOrEmpty(terminalData))
                         return;
 
+                    _sessionRecorder?.Write(terminalData);
                     LogTerminalData(terminalData);
                     AppendRecentOutput(terminalData);
                     TryUpdateWindowsCurrentDirectoryFromOutput(terminalData, connection);
                     HandleLoginScriptData(generation, connection, terminalData);
+                    HandleTerminalTriggerData(generation, connection, terminalData);
                     TryDetectPendingXymodemUploadFromOutput(terminalData);
                     TryStartPendingXymodemDownloadFromOutput(generation, terminalData);
                     Parser.Process(terminalData);
@@ -347,16 +369,50 @@ public partial class TerminalViewModel : ObservableObject
 
             cancellationToken.ThrowIfCancellationRequested();
             if (generation != _connectionGeneration || _manualDisconnect)
+            {
+                if (ReferenceEquals(_connection, connection))
+                    _connection = null;
+
+                try
+                {
+                    connection.Dispose();
+                }
+                catch
+                {
+                    // A stale connection is already being torn down; do not mask cancellation.
+                }
                 return;
+            }
 
             connection.ResizeTerminal(Columns, Rows);
             IsConnected = true;
             HostInfo = GetHostInfo(_session);
+            RefreshRecordingOptions();
             await StartSessionLogIfNeededAsync(_session);
             StartKeepAliveLoop(generation, _session, connection, cancellationToken);
             StartLoginScriptFileAsync(generation, _session, connection, cancellationToken);
             SendPreinputString(connection, _session);
             StartRemoteDirectoryTrackingAsync(generation, _session, connection, cancellationToken);
+        }
+        catch
+        {
+            StopSessionRecording();
+            if (connection != null)
+            {
+                if (ReferenceEquals(_connection, connection))
+                    _connection = null;
+
+                try
+                {
+                    connection.Dispose();
+                }
+                catch
+                {
+                    // Connection failures should not hide the original exception.
+                }
+            }
+
+            throw;
         }
         finally
         {
@@ -378,10 +434,30 @@ public partial class TerminalViewModel : ObservableObject
             return;
         }
 
+        if (_session?.TerminalAdvancedAllowOsc52Clipboard == true &&
+            TerminalOscCommand.TryParseClipboard(command, out var clipboardText) &&
+            SetClipboardTextAsync is { } setClipboardText)
+        {
+            _ = ApplyOsc52ClipboardAsync(setClipboardText, clipboardText);
+            return;
+        }
+
         if (_session?.TerminalAdvancedAllowTitleChange == true &&
             TerminalOscCommand.TryParseTitle(command, out var title))
         {
             RemoteTitle = title;
+        }
+    }
+
+    private static async Task ApplyOsc52ClipboardAsync(Func<string, Task> setClipboardText, string text)
+    {
+        try
+        {
+            await setClipboardText(text);
+        }
+        catch
+        {
+            // Clipboard backends can reject writes while the app is closing or inactive.
         }
     }
 
@@ -578,6 +654,7 @@ public partial class TerminalViewModel : ObservableObject
         HostInfo = string.Empty;
         RemoteTitle = string.Empty;
         StopKeepAliveLoop();
+        StopSessionRecording();
         AppendStatusMessage($"[Connection closed: {reason}]", "31");
 
         if (_session?.AutoReconnect != true)
@@ -587,14 +664,35 @@ public partial class TerminalViewModel : ObservableObject
         }
 
         var cancellationToken = _connectionCts?.Token ?? CancellationToken.None;
-        _ = ReconnectLoopAsync(generation, cancellationToken);
+        StartReconnectLoop(cancellationToken);
     }
 
-    private async Task ReconnectLoopAsync(int disconnectedGeneration, CancellationToken cancellationToken)
+    private void StartReconnectLoop(CancellationToken cancellationToken)
+    {
+        var currentAttemptId = Volatile.Read(ref _reconnectAttemptId);
+        if (_reconnectTask is { IsCompleted: false } &&
+            Volatile.Read(ref _reconnectTaskAttemptId) == currentAttemptId)
+        {
+            return;
+        }
+
+        var attemptId = Interlocked.Increment(ref _reconnectAttemptId);
+        Volatile.Write(ref _reconnectTaskAttemptId, attemptId);
+        _reconnectTask = ReconnectLoopAsync(attemptId, cancellationToken);
+    }
+
+    private bool IsReconnectAttemptCurrent(long attemptId, CancellationToken cancellationToken)
+    {
+        return attemptId == Volatile.Read(ref _reconnectAttemptId) &&
+               !_manualDisconnect &&
+               !cancellationToken.IsCancellationRequested;
+    }
+
+    private async Task ReconnectLoopAsync(long attemptId, CancellationToken cancellationToken)
     {
         var startedAt = DateTimeOffset.UtcNow;
 
-        while (!_manualDisconnect && disconnectedGeneration == _connectionGeneration)
+        while (IsReconnectAttemptCurrent(attemptId, cancellationToken))
         {
             try
             {
@@ -602,19 +700,37 @@ public partial class TerminalViewModel : ObservableObject
                 var limitMinutes = Math.Max(0, _session?.ReconnectLimitMinutes ?? 0);
                 if (limitMinutes > 0 && DateTimeOffset.UtcNow - startedAt >= TimeSpan.FromMinutes(limitMinutes))
                 {
-                    await Dispatcher.UIThread.InvokeAsync(() =>
-                        AppendStatusMessage($"[Auto reconnect stopped after {limitMinutes} minute(s)]", "33"));
+                    await AppendReconnectStatusAsync(
+                        attemptId,
+                        cancellationToken,
+                        $"[Auto reconnect stopped after {limitMinutes} minute(s)]",
+                        "33");
                     return;
                 }
 
                 await Task.Delay(reconnectDelay, cancellationToken);
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                    AppendStatusMessage($"[Auto reconnecting; retry interval: {reconnectDelay.TotalSeconds:0}s...]", "33"));
+                if (!IsReconnectAttemptCurrent(attemptId, cancellationToken))
+                    return;
+
+                await AppendReconnectStatusAsync(
+                    attemptId,
+                    cancellationToken,
+                    $"[Auto reconnecting; retry interval: {reconnectDelay.TotalSeconds:0}s...]",
+                    "33");
 
                 await ConnectCoreAsync(cancellationToken);
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                    AppendStatusMessage("[Auto reconnect succeeded]", "32"));
-                return;
+                if (!IsReconnectAttemptCurrent(attemptId, cancellationToken))
+                    return;
+
+                if (IsConnected && _connection?.IsConnected == true)
+                {
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (IsReconnectAttemptCurrent(attemptId, cancellationToken))
+                            AppendStatusMessage("[Auto reconnect succeeded]", "32");
+                    });
+                    return;
+                }
             }
             catch (OperationCanceledException)
             {
@@ -622,11 +738,38 @@ public partial class TerminalViewModel : ObservableObject
             }
             catch (Exception ex)
             {
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                    AppendStatusMessage($"[Auto reconnect failed: {ex.Message}]", "31"));
-                disconnectedGeneration = _connectionGeneration;
+                if (!IsReconnectAttemptCurrent(attemptId, cancellationToken))
+                    return;
+
+                await AppendReconnectStatusAsync(
+                    attemptId,
+                    cancellationToken,
+                    $"[Auto reconnect failed: {ex.Message}]",
+                    "31");
             }
         }
+    }
+
+    private void InvalidateReconnectLoop()
+    {
+        Interlocked.Increment(ref _reconnectAttemptId);
+        _reconnectTask = null;
+    }
+
+    private async Task AppendReconnectStatusAsync(
+        long attemptId,
+        CancellationToken cancellationToken,
+        string message,
+        string colorCode)
+    {
+        if (!IsReconnectAttemptCurrent(attemptId, cancellationToken))
+            return;
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (IsReconnectAttemptCurrent(attemptId, cancellationToken))
+                AppendStatusMessage(message, colorCode);
+        });
     }
 
     private void AppendStatusMessage(string message, string colorCode)
@@ -704,13 +847,23 @@ public partial class TerminalViewModel : ObservableObject
     private void PrepareLoginScript(SessionInfo session)
     {
         _loginScriptProbeBuffer.Clear();
-        _pendingLoginScriptRules = session.EnableLoginScriptRules
+        _terminalTriggerProbeBuffer.Clear();
+        _terminalTriggerLastFiredAt.Clear();
+
+        var rules = session.EnableLoginScriptRules
             ? session.LoginScriptRules
                 .OrderBy(rule => rule.SortOrder)
                 .Where(rule => !string.IsNullOrWhiteSpace(rule.Expect))
                 .Select(SessionEditViewModel.CloneLoginScriptRule)
                 .ToList()
             : new List<LoginScriptRule>();
+
+        _pendingLoginScriptRules = session.EnableLoginScriptRules
+            ? rules.Where(rule => !rule.KeepWatching).ToList()
+            : [];
+        _activeTerminalTriggers = session.EnableLoginScriptRules
+            ? rules.Where(rule => rule.KeepWatching).ToList()
+            : [];
     }
 
     private void HandleLoginScriptData(
@@ -733,7 +886,7 @@ public partial class TerminalViewModel : ObservableObject
         while (_pendingLoginScriptRules.Count > 0)
         {
             var rule = _pendingLoginScriptRules[0];
-            if (!_loginScriptProbeBuffer.ToString().Contains(rule.Expect, StringComparison.Ordinal))
+            if (!TerminalTriggerMatcher.IsMatch(rule, _loginScriptProbeBuffer.ToString()))
                 return;
 
             _pendingLoginScriptRules.RemoveAt(0);
@@ -741,6 +894,74 @@ public partial class TerminalViewModel : ObservableObject
             if (!string.IsNullOrEmpty(rule.Send))
                 connection.SendData(NormalizeScriptSendText(rule.Send));
         }
+    }
+
+    public void RefreshRecordingOptions()
+    {
+        if (_session == null || !IsConnected || !SessionRecordingService.Shared.IsEnabled)
+        {
+            StopSessionRecording();
+            return;
+        }
+
+        _sessionRecorder ??= SessionRecordingService.Shared.Start(_session, Columns, Rows);
+    }
+
+    private void StopSessionRecording()
+    {
+        try
+        {
+            _sessionRecorder?.Dispose();
+        }
+        catch
+        {
+            // Recording is best-effort and must never block terminal teardown.
+        }
+        finally
+        {
+            _sessionRecorder = null;
+        }
+    }
+
+    private void HandleTerminalTriggerData(
+        int generation,
+        ITerminalConnectionService connection,
+        string data)
+    {
+        if (generation != _connectionGeneration ||
+            _manualDisconnect ||
+            _activeTerminalTriggers.Count == 0 ||
+            string.IsNullOrEmpty(data))
+        {
+            return;
+        }
+
+        _terminalTriggerProbeBuffer.Append(data);
+        if (_terminalTriggerProbeBuffer.Length > 8192)
+            _terminalTriggerProbeBuffer.Remove(0, _terminalTriggerProbeBuffer.Length - 8192);
+
+        var output = _terminalTriggerProbeBuffer.ToString();
+        var now = DateTimeOffset.UtcNow;
+        var matched = false;
+        foreach (var rule in _activeTerminalTriggers)
+        {
+            if (!TerminalTriggerMatcher.IsMatch(rule, output))
+                continue;
+
+            if (_terminalTriggerLastFiredAt.TryGetValue(rule.Id, out var lastFiredAt) &&
+                now - lastFiredAt < TerminalTriggerCooldown)
+            {
+                continue;
+            }
+
+            _terminalTriggerLastFiredAt[rule.Id] = now;
+            if (!string.IsNullOrEmpty(rule.Send))
+                connection.SendData(NormalizeScriptSendText(rule.Send));
+            matched = true;
+        }
+
+        if (matched)
+            _terminalTriggerProbeBuffer.Clear();
     }
 
     private void StartLoginScriptFileAsync(
@@ -2549,6 +2770,7 @@ public partial class TerminalViewModel : ObservableObject
     public void Disconnect(string? statusMessage = null)
     {
         _manualDisconnect = true;
+        InvalidateReconnectLoop();
         _session = null;
         OnPropertyChanged(nameof(IsTerminalSizeFixed));
         NotifyKeyboardOptionsChanged();
@@ -2573,11 +2795,13 @@ public partial class TerminalViewModel : ObservableObject
             AppendStatusMessage(statusMessage, "33");
 
         StopSessionLog();
+        StopSessionRecording();
     }
 
     public void CloseDetached()
     {
         _manualDisconnect = true;
+        InvalidateReconnectLoop();
         _session = null;
         _connectionCts?.Cancel();
         _connectionCts?.Dispose();
@@ -2595,6 +2819,7 @@ public partial class TerminalViewModel : ObservableObject
         HostInfo = string.Empty;
         RemoteTitle = string.Empty;
         StopSessionLog();
+        StopSessionRecording();
 
         if (connection == null)
             return;

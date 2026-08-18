@@ -86,9 +86,11 @@
                 Padding="6,4"
                 BorderBrush="{atom:SharedTokenResource ColorSplit}"
                 BorderThickness="0,0,0,1">
-            <Grid>
+            <Grid ColumnDefinitions="*,160"
+                  ColumnSpacing="6">
                 <atom:LineEdit
                                x:Name="RemotePathInput"
+                               Grid.Column="0"
                                Text="{Binding PathInput, Mode=TwoWay}"
                                PlaceholderText="/home/user"
                                IsAllowClear="False"
@@ -98,6 +100,16 @@
                                HorizontalAlignment="Stretch"
                                GotFocus="OnRemotePathInputGotFocus"
                                KeyDown="OnRemotePathInputKeyDown"/>
+                <atom:LineEdit Grid.Column="1"
+                               x:Name="FileFilterInput"
+                               Text="{Binding FileFilterText, Mode=TwoWay}"
+                               PlaceholderText="{Binding FileFilterPlaceholderText}"
+                               IsAllowClear="True"
+                               IsEnabled="{Binding IsConnected}"
+                               FontSize="12"
+                               Height="32"
+                               HorizontalAlignment="Stretch"
+                               KeyDown="OnFileFilterKeyDown"/>
                 <Popup x:Name="PathSuggestionPopup"
                        IsOpen="{Binding IsPathSuggestionOpen}"
                        PlacementTarget="{Binding ElementName=RemotePathInput}"
@@ -299,7 +311,8 @@
                        VerticalAlignment="Stretch">
                 <atom:DataGrid x:Name="FileGrid"
                                Classes="sftp-file-grid"
-                               ItemsSource="{Binding Files}"
+                               Focusable="True"
+                               ItemsSource="{Binding VisibleFiles}"
                                SelectedItem="{Binding SelectedFile, Mode=TwoWay}"
                                AutoGenerateColumns="False"
                                IsReadOnly="True"
@@ -313,8 +326,7 @@
                                HeadersVisibility="Column"
                                SelectionChanged="OnFileGridSelectionChanged"
                                PointerMoved="OnFileGridPointerMoved"
-                               PointerReleased="OnFileGridPointerReleased"
-                               KeyDown="OnFileGridKeyDown">
+                               PointerReleased="OnFileGridPointerReleased">
                     <atom:DataGrid.Columns>
                         <atom:DataGridTemplateColumn Header="{Binding NameText}"
                                                      SortMemberPath="Name"

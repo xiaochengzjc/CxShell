@@ -146,6 +146,26 @@ public partial class MainWindow : Window
 
     private void OnPreviewKeyDown(object? sender, KeyEventArgs e)
     {
+        if (DataContext is MainWindowViewModel vm && vm.CommandPalette.IsOpen)
+        {
+            if (e.Key == Key.Escape)
+            {
+                vm.CommandPalette.Close();
+                e.Handled = true;
+            }
+
+            return;
+        }
+
+        if (DataContext is MainWindowViewModel mainWindowVm &&
+            (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0 &&
+            e.Key is Key.P or Key.K)
+        {
+            mainWindowVm.OpenCommandPalette();
+            e.Handled = true;
+            return;
+        }
+
         if (TryHandleQuickCommandShortcut(e))
             return;
 
@@ -155,11 +175,40 @@ public partial class MainWindow : Window
         if (e.Key != Key.Escape)
             return;
 
-        if (DataContext is MainWindowViewModel { IsTerminalFullScreen: true } vm)
+        if (DataContext is MainWindowViewModel { IsTerminalFullScreen: true } fullScreenVm)
         {
-            vm.ExitTerminalFullScreen();
+            fullScreenVm.ExitTerminalFullScreen();
             e.Handled = true;
         }
+    }
+
+    private void OnCommandPaletteBackdropPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel vm)
+            vm.CommandPalette.Close();
+
+        e.Handled = true;
+    }
+
+    private void OnRecentSessionsDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel { SelectedRecentSession: { } item } vm)
+            return;
+
+        vm.ConnectRecentSessionCommand.Execute(item);
+        e.Handled = true;
+    }
+
+    private void OnRecentSessionsKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter ||
+            DataContext is not MainWindowViewModel { SelectedRecentSession: { } item } vm)
+        {
+            return;
+        }
+
+        vm.ConnectRecentSessionCommand.Execute(item);
+        e.Handled = true;
     }
 
     private bool TryHandleQuickCommandShortcut(KeyEventArgs e)
@@ -222,6 +271,9 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (TryBeginTabHeaderDragFromPreview(source, e, vm))
+            return;
+
         foreach (var current in EnumerateControlLineage(source))
         {
             if (current.DataContext is TerminalTabViewModel tab)
@@ -243,6 +295,13 @@ public partial class MainWindow : Window
         PointerPressedEventArgs e,
         MainWindowViewModel vm)
     {
+        var properties = e.GetCurrentPoint(this).Properties;
+        if (!properties.IsLeftButtonPressed &&
+            properties.PointerUpdateKind != PointerUpdateKind.LeftButtonPressed)
+        {
+            return false;
+        }
+
         if (IsTabCloseButtonSource(source))
             return false;
 
@@ -1323,6 +1382,9 @@ public partial class MainWindow : Window
         _isDraggingSftpSplitter = false;
         pointer?.Capture(null);
         ClearSftpSplitterCursor();
+
+        if (DataContext is MainWindowViewModel vm)
+            vm.PersistSftpPanelWidth();
     }
 
     private void ShowSftpSplitterCursor()

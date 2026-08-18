@@ -1,10 +1,14 @@
 using System;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using CxShell.ViewModels;
@@ -63,6 +67,8 @@ public partial class TerminalView : UserControl
         _terminal.InputReceived += OnInputReceived;
         _terminal.SizeChanged2 += OnSizeChanged;
         _terminal.PointerPressed += OnPointerPressed;
+        _terminal.KeyDown += OnTerminalKeyDown;
+        _terminal.SearchChanged += OnTerminalSearchChanged;
         vm.BufferChanged += OnBufferChanged;
         vm.BellRequested += OnBellRequested;
         vm.PropertyChanged += OnVmPropertyChanged;
@@ -70,6 +76,7 @@ public partial class TerminalView : UserControl
         SyncTerminalSize(notifyRemote: false);
         Dispatcher.UIThread.Post(() => SyncTerminalSize(notifyRemote: false), DispatcherPriority.Loaded);
         Dispatcher.UIThread.Post(() => SyncTerminalSize(notifyRemote: true), DispatcherPriority.Background);
+        SearchBox.TextChanged += OnSearchBoxTextChanged;
 
         // 立即刷新一次
         _terminal.InvalidateVisual();
@@ -82,7 +89,12 @@ public partial class TerminalView : UserControl
             _terminal.InputReceived -= OnInputReceived;
             _terminal.SizeChanged2 -= OnSizeChanged;
             _terminal.PointerPressed -= OnPointerPressed;
+            _terminal.KeyDown -= OnTerminalKeyDown;
+            _terminal.SearchChanged -= OnTerminalSearchChanged;
+            _terminal.ClearSearch();
         }
+
+        SearchBox.TextChanged -= OnSearchBoxTextChanged;
         if (_boundVm != null)
         {
             _boundVm.BufferChanged -= OnBufferChanged;
@@ -91,9 +103,11 @@ public partial class TerminalView : UserControl
             _boundVm.PickZmodemUploadFilesAsync = null;
             _boundVm.PickZmodemDownloadFolderAsync = null;
             _boundVm.PickSessionLogFileAsync = null;
+            _boundVm.SetClipboardTextAsync = null;
         }
 
         _boundVm = null;
+        SearchBar.IsVisible = false;
     }
 
     private void InjectZmodemDelegates(TerminalViewModel vm)
@@ -150,6 +164,13 @@ public partial class TerminalView : UserControl
                 });
 
             return file?.Path.LocalPath;
+        };
+
+        vm.SetClipboardTextAsync = async text =>
+        {
+            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            if (clipboard != null)
+                await clipboard.SetTextAsync(text);
         };
     }
 
@@ -250,6 +271,107 @@ public partial class TerminalView : UserControl
         e.Handled = true;
     }
 
+    private void OnTerminalKeyDown(object? sender, KeyEventArgs e)
+    {
+        var commandModifier = e.KeyModifiers.HasFlag(KeyModifiers.Control) ||
+                              e.KeyModifiers.HasFlag(KeyModifiers.Meta);
+        if (commandModifier && e.Key == Key.F)
+        {
+            OpenSearchBar();
+            e.Handled = true;
+            return;
+        }
+
+        if (SearchBar.IsVisible && e.Key == Key.Escape)
+        {
+            CloseSearchBar();
+            e.Handled = true;
+        }
+    }
+
+    private void OpenSearchBar()
+    {
+        SearchBar.IsVisible = true;
+        SearchBox.Focus();
+        SearchBox.SelectAll();
+        UpdateSearchQuery();
+    }
+
+    private void CloseSearchBar()
+    {
+        SearchBar.IsVisible = false;
+        _terminal?.ClearSearch();
+        _terminal?.Focus();
+    }
+
+    private void OnSearchBoxKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            _terminal?.MoveToSearchMatch(e.KeyModifiers.HasFlag(KeyModifiers.Shift));
+            UpdateSearchStatus();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            CloseSearchBar();
+            e.Handled = true;
+        }
+    }
+
+    private void OnSearchBoxTextChanged(object? sender, EventArgs e)
+    {
+        UpdateSearchQuery();
+    }
+
+    private void OnSearchPreviousClick(object? sender, RoutedEventArgs e)
+    {
+        _terminal?.MoveToSearchMatch(backwards: true);
+        UpdateSearchStatus();
+        SearchBox.Focus();
+    }
+
+    private void OnSearchNextClick(object? sender, RoutedEventArgs e)
+    {
+        _terminal?.MoveToSearchMatch(backwards: false);
+        UpdateSearchStatus();
+        SearchBox.Focus();
+    }
+
+    private void OnSearchCloseClick(object? sender, RoutedEventArgs e)
+    {
+        CloseSearchBar();
+    }
+
+    private void UpdateSearchQuery()
+    {
+        if (!SearchBar.IsVisible || _terminal == null)
+            return;
+
+        _terminal.SetSearchQuery(SearchBox.Text);
+        if (!string.IsNullOrEmpty(SearchBox.Text))
+            _terminal.MoveToSearchMatch(backwards: false);
+
+        UpdateSearchStatus();
+    }
+
+    private void OnTerminalSearchChanged() => UpdateSearchStatus();
+
+    private void UpdateSearchStatus()
+    {
+        if (_terminal == null)
+        {
+            SearchStatus.Text = "0/0";
+            return;
+        }
+
+        var count = _terminal.SearchMatchCount;
+        var current = _terminal.SearchMatchIndex;
+        SearchStatus.Text = count == 0
+            ? "0/0"
+            : $"{(current < 0 ? 0 : current + 1)}/{count}";
+    }
+
     private void ShowTerminalContextMenu(Controls.TerminalControl terminal)
     {
         var menu = new AtomContextMenu
@@ -281,6 +403,18 @@ public partial class TerminalView : UserControl
 
         menu.Items.Add(copyItem);
         menu.Items.Add(pasteItem);
+        var exportItem = new AtomMenuItem
+        {
+            Header = _boundVm?.ExportText ?? "Export terminal output",
+            IsEnabled = terminal.TerminalBuffer != null
+        };
+        exportItem.Click += async (_, _) =>
+        {
+            menu.Close();
+            await ExportTerminalOutputAsync();
+        };
+
+        menu.Items.Add(exportItem);
         menu.Items.Add(new AtomMenuSeparator());
         AddKeyboardBroadcastMenuItems(menu);
         menu.Items.Add(new AtomMenuSeparator());
@@ -419,6 +553,46 @@ public partial class TerminalView : UserControl
             _terminal.Focus();
         }
     }
+
+    private async Task ExportTerminalOutputAsync()
+    {
+        if (_terminal == null)
+            return;
+
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel == null)
+            return;
+
+        var text = _terminal.GetTextForExport();
+        var file = await topLevel.StorageProvider.SaveFilePickerAsync(
+            new FilePickerSaveOptions
+            {
+                Title = _boundVm?.ExportText ?? "Export terminal output",
+                SuggestedFileName = $"terminal-{DateTime.Now:yyyyMMdd-HHmmss}.txt",
+                FileTypeChoices =
+                [
+                    new FilePickerFileType("Text files") { Patterns = ["*.txt", "*.log"] },
+                    FilePickerFileTypes.All
+                ]
+            });
+
+        if (file == null || string.IsNullOrWhiteSpace(file.Path.LocalPath))
+            return;
+
+        try
+        {
+            await File.WriteAllTextAsync(file.Path.LocalPath, text, new UTF8Encoding(false));
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error exporting terminal output: {ex.Message}");
+        }
+        finally
+        {
+            _terminal.Focus();
+        }
+    }
+
     private void OnBufferChanged() => _terminal?.InvalidateVisual();
 
     private void OnBellRequested()

@@ -436,8 +436,11 @@ public partial class VncViewModel : ObservableObject, IDisposable
         var authMethods = CreateVncSshAuthMethods(session, sshUser);
         var connectionInfo = new ConnectionInfo(sshHost, sshPort, sshUser, authMethods);
         _sshTunnelClient = new SshClient(connectionInfo);
-        if (session.SshAcceptAndSaveHostKey)
-            _sshTunnelClient.HostKeyReceived += (_, e) => e.CanTrust = true;
+        SshHostKeyTrustService.Shared.Attach(
+            _sshTunnelClient,
+            sshHost,
+            sshPort,
+            session.SshAcceptAndSaveHostKey);
 
         StatusText = $"Opening SSH tunnel to {sshHost}:{sshPort}...";
         await Task.Run(() => _sshTunnelClient.Connect(), cancellationToken);

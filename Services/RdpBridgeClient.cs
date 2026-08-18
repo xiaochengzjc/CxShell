@@ -241,8 +241,11 @@ public sealed class RdpBridgeClient : IDisposable
         var connectionInfo = new ConnectionInfo(sshHost, sshPort, sshUser, CreateRdpSshAuthMethods(session, sshUser));
         connectionInfo.Timeout = TimeSpan.FromSeconds(12);
         _sshTunnelClient = new SshClient(connectionInfo);
-        if (session.SshAcceptAndSaveHostKey)
-            _sshTunnelClient.HostKeyReceived += (_, e) => e.CanTrust = true;
+        SshHostKeyTrustService.Shared.Attach(
+            _sshTunnelClient,
+            sshHost,
+            sshPort,
+            session.SshAcceptAndSaveHostKey);
 
         DebugLog($"ssh tunnel connecting ssh={SanitizeLogValue(sshUser)}@{SanitizeLogValue(sshHost)}:{sshPort} local=127.0.0.1:{localPort} remote={SanitizeLogValue(remoteHost)}:{remotePort}");
         StatusChanged?.Invoke($"Opening SSH tunnel to {sshHost}:{sshPort}...");
@@ -466,24 +469,26 @@ public sealed class RdpBridgeClient : IDisposable
         var rid = GetCurrentRid();
         var candidates = new List<string>
         {
-            Path.Combine(baseDirectory, fileName),
-            Path.Combine(baseDirectory, "runtimes", rid, "native", fileName)
+            // Prefer the RID-specific bridge. A stale root-level DLL can be left
+            // behind by an earlier local build and may expose an older API.
+            Path.Combine(baseDirectory, "runtimes", rid, "native", fileName),
+            Path.Combine(baseDirectory, fileName)
         };
 
         var processDirectory = Path.GetDirectoryName(Environment.ProcessPath);
         if (!string.IsNullOrWhiteSpace(processDirectory) &&
             !string.Equals(processDirectory, baseDirectory, StringComparison.OrdinalIgnoreCase))
         {
-            candidates.Add(Path.Combine(processDirectory, fileName));
             candidates.Add(Path.Combine(processDirectory, "runtimes", rid, "native", fileName));
+            candidates.Add(Path.Combine(processDirectory, fileName));
         }
 
         if (AppContext.GetData("NATIVE_DLL_SEARCH_DIRECTORIES") is string nativeSearchDirectories)
         {
             foreach (var directory in nativeSearchDirectories.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
             {
-                candidates.Add(Path.Combine(directory, fileName));
                 candidates.Add(Path.Combine(directory, "runtimes", rid, "native", fileName));
+                candidates.Add(Path.Combine(directory, fileName));
             }
         }
 

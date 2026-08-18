@@ -1,0 +1,96 @@
+<atom:Window xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:antdicons="https://atomui.net/icons/antdesign"
+             xmlns:vm="using:CxShell.ViewModels"
+             x:Class="CxShell.Views.SshHostKeyPromptWindow"
+             x:DataType="vm:SshHostKeyPromptViewModel"
+             Title="{Binding TitleText}"
+             Width="520"
+             SizeToContent="Height"
+             CanResize="False"
+             ShowInTaskbar="False"
+             WindowStartupLocation="CenterOwner"
+             Background="{atom:SharedTokenResource ColorBgLayout}">
+
+    <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+            BorderBrush="{atom:SharedTokenResource ColorBorder}"
+            BorderThickness="1"
+            CornerRadius="8"
+            Padding="22">
+        <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="18">
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                <ContentControl Content="{antdicons:AntDesignIconProvider Kind=SafetyCertificateOutlined}"
+                                Width="20"
+                                Height="20"
+                                Foreground="{atom:SharedTokenResource ColorWarning}"/>
+                <TextBlock Grid.Column="1"
+                           Text="{Binding TitleText}"
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"
+                           Foreground="{atom:SharedTokenResource ColorText}"/>
+            </Grid>
+
+            <StackPanel Grid.Row="1" Spacing="14">
+                <Border Background="{atom:SharedTokenResource ColorWarningBg}"
+                        BorderBrush="{atom:SharedTokenResource ColorWarningBorder}"
+                        BorderThickness="1"
+                        CornerRadius="5"
+                        Padding="12,10">
+                    <TextBlock Text="{Binding WarningText}"
+                               TextWrapping="Wrap"
+                               Foreground="{atom:SharedTokenResource ColorWarningText}"/>
+                </Border>
+
+                <Border Background="{atom:SharedTokenResource ColorBgLayout}"
+                        BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                        BorderThickness="1"
+                        CornerRadius="5"
+                        Padding="14,12">
+                    <Grid ColumnDefinitions="120,*"
+                          RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+                          RowSpacing="9">
+                        <TextBlock Text="{Binding HostLabelText}" Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                        <TextBlock Grid.Column="1" Text="{Binding HostText}" Foreground="{atom:SharedTokenResource ColorText}"/>
+                        <TextBlock Grid.Row="1" Text="{Binding KeyTypeLabelText}" Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding KeyTypeText}" Foreground="{atom:SharedTokenResource ColorText}"/>
+                        <TextBlock Grid.Row="2" Text="{Binding KeyLengthLabelText}" Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding KeyLengthText}" Foreground="{atom:SharedTokenResource ColorText}"/>
+                        <TextBlock Grid.Row="3" Text="{Binding FingerprintLabelText}" Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                        <TextBlock Grid.Row="3" Grid.Column="1"
+                                   Text="{Binding FingerprintText}"
+                                   FontFamily="Cascadia Mono,Consolas,monospace"
+                                   TextWrapping="Wrap"
+                                   Foreground="{atom:SharedTokenResource ColorText}"/>
+                        <TextBlock Grid.Row="4"
+                                   Text="{Binding PreviousFingerprintLabelText}"
+                                   IsVisible="{Binding IsChanged}"
+                                   Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                        <TextBlock Grid.Row="4" Grid.Column="1"
+                                   Text="{Binding PreviousFingerprintText}"
+                                   IsVisible="{Binding IsChanged}"
+                                   FontFamily="Cascadia Mono,Consolas,monospace"
+                                   TextWrapping="Wrap"
+                                   Foreground="{atom:SharedTokenResource ColorError}"/>
+                    </Grid>
+                </Border>
+            </StackPanel>
+
+            <StackPanel Grid.Row="2"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Spacing="8">
+                <atom:Button Content="{Binding CancelText}"
+                             ButtonType="Default"
+                             Click="OnCancelClick"/>
+                <atom:Button Content="{Binding TrustOnceText}"
+                             ButtonType="Default"
+                             Click="OnTrustOnceClick"/>
+                <atom:Button Content="{Binding TrustPermanentlyText}"
+                             ButtonType="Primary"
+                             Click="OnTrustPermanentlyClick"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</atom:Window>

@@ -1,0 +1,122 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:antdicons="https://atomui.net/icons/antdesign"
+             xmlns:vm="using:CxShell.ViewModels"
+             x:Class="CxShell.Views.ApplicationSettingsPage"
+             x:DataType="vm:ApplicationSettingsViewModel">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="18" Margin="0,2,12,8">
+            <StackPanel Spacing="8">
+                <TextBlock Text="{Binding StartupText}"
+                           FontWeight="SemiBold"
+                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                <Border Background="{atom:SharedTokenResource ColorBgLayout}"
+                        BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                        BorderThickness="1"
+                        CornerRadius="5"
+                        Padding="12,10">
+                    <atom:CheckBox Content="{Binding ShowSessionManagerOnStartupText}"
+                                   IsChecked="{Binding ShowSessionManagerOnStartup, Mode=TwoWay}"/>
+                </Border>
+            </StackPanel>
+
+            <StackPanel Spacing="8">
+                <TextBlock Text="{Binding AppearanceText}"
+                           FontWeight="SemiBold"
+                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                <Border Background="{atom:SharedTokenResource ColorBgLayout}"
+                        BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                        BorderThickness="1"
+                        CornerRadius="5"
+                        Padding="12,10">
+                    <atom:CheckBox Content="{Binding ShowTabBarText}"
+                                   IsChecked="{Binding ShowTabBar, Mode=TwoWay}"/>
+                </Border>
+            </StackPanel>
+
+            <StackPanel Spacing="8">
+                <TextBlock Text="{Binding UpdatesText}"
+                           FontWeight="SemiBold"
+                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                <Border Background="{atom:SharedTokenResource ColorBgLayout}"
+                        BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                        BorderThickness="1"
+                        CornerRadius="5"
+                        Padding="12,10">
+                    <StackPanel Spacing="8">
+                        <atom:CheckBox Content="{Binding AutoCheckForUpdatesText}"
+                                       IsChecked="{Binding AutoCheckForUpdates, Mode=TwoWay}"/>
+                        <atom:CheckBox Content="{Binding IncludePrereleaseUpdatesText}"
+                                       IsChecked="{Binding IncludePrereleaseUpdates, Mode=TwoWay}"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <StackPanel Spacing="8">
+                <TextBlock Text="{Binding LanguageText}"
+                           FontWeight="SemiBold"
+                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                <StackPanel Orientation="Horizontal" Spacing="18">
+                    <atom:RadioButton Content="{Binding ChineseText}"
+                                      GroupName="ApplicationLanguage"
+                                      IsChecked="{Binding IsChineseSelected, Mode=TwoWay}"/>
+                    <atom:RadioButton Content="{Binding EnglishText}"
+                                      GroupName="ApplicationLanguage"
+                                      IsChecked="{Binding IsEnglishSelected, Mode=TwoWay}"/>
+                </StackPanel>
+            </StackPanel>
+
+            <StackPanel Spacing="8">
+                <TextBlock Text="{Binding RecordingText}"
+                           FontWeight="SemiBold"
+                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                <Border Background="{atom:SharedTokenResource ColorBgLayout}"
+                        BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                        BorderThickness="1"
+                        CornerRadius="5"
+                        Padding="12,10">
+                    <StackPanel Spacing="8">
+                        <atom:CheckBox Content="{Binding RecordTerminalSessionsText}"
+                                       IsChecked="{Binding RecordTerminalSessions, Mode=TwoWay}"/>
+                        <TextBlock Text="{Binding RecordingDescriptionText}"
+                                   TextWrapping="Wrap"
+                                   FontSize="11"
+                                   Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="{Binding RecordingRetentionText}"
+                                       VerticalAlignment="Center"
+                                       Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                            <atom:NumericUpDown Width="96"
+                                                Minimum="1"
+                                                Maximum="3650"
+                                                Value="{Binding RecordingRetentionDays, Mode=TwoWay}"/>
+                            <TextBlock Text="{Binding RecordingDaysText}"
+                                       VerticalAlignment="Center"
+                                       Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <StackPanel Spacing="8">
+                <TextBlock Text="{Binding SshSecurityText}"
+                           FontWeight="SemiBold"
+                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                <Border Background="{atom:SharedTokenResource ColorBgLayout}"
+                        BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                        BorderThickness="1"
+                        CornerRadius="5"
+                        Padding="12,10">
+                    <StackPanel Spacing="9">
+                        <atom:CheckBox Content="{Binding ConfirmSshHostKeyOnFirstConnectionText}"
+                                       IsChecked="{Binding ConfirmSshHostKeyOnFirstConnection, Mode=TwoWay}"/>
+                        <atom:CheckBox Content="{Binding BlockChangedSshHostKeysText}"
+                                       IsChecked="{Binding BlockChangedSshHostKeys, Mode=TwoWay}"/>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

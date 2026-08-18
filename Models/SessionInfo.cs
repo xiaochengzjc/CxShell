@@ -163,12 +163,20 @@ public class LoginScriptRule
     public string Expect { get; set; } = string.Empty;
     public string Send { get; set; } = string.Empty;
     public bool HideText { get; set; }
+    public bool IsRegex { get; set; }
+    public bool KeepWatching { get; set; }
     public int SortOrder { get; set; }
 
     [JsonIgnore]
     public string SendDisplay => HideText
         ? new string('*', Send.Length)
         : Send;
+
+    [JsonIgnore]
+    public string MatchModeDisplay => IsRegex ? "Regex" : "Text";
+
+    [JsonIgnore]
+    public string TriggerModeDisplay => KeepWatching ? "Persistent" : "Once";
 }
 
 public class HighlightRule
@@ -208,7 +216,19 @@ public class ApplicationSettings
     public bool ShowSessionManagerOnStartup { get; set; } = true;
     public bool AutoCheckForUpdates { get; set; } = true;
     public bool IncludePrereleaseUpdates { get; set; }
+    public bool ConfirmSshHostKeyOnFirstConnection { get; set; } = true;
+    public bool BlockChangedSshHostKeys { get; set; } = true;
+    public bool RecordTerminalSessions { get; set; }
+    private int _recordingRetentionDays = 30;
+
+    public int RecordingRetentionDays
+    {
+        get => _recordingRetentionDays;
+        set => _recordingRetentionDays = Math.Clamp(value, 1, 3650);
+    }
     public string BastionTokenEndpoint { get; set; } = string.Empty;
+    public double SftpPanelWidth { get; set; } = 318;
+    public bool ShowTabBar { get; set; }
 }
 
 public class SessionInfo
@@ -217,6 +237,9 @@ public class SessionInfo
     public const int DefaultVncCompressionLevel = 3;
     public const int DefaultVncJpegQualityLevel = 60;
     public const int DefaultVncScalePercent = 100;
+    public const int DefaultSshMonitorRefreshIntervalSeconds = 2;
+    public const int MinSshMonitorRefreshIntervalSeconds = 1;
+    public const int MaxSshMonitorRefreshIntervalSeconds = 30;
 
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Name { get; set; } = string.Empty;
@@ -289,6 +312,7 @@ public class SessionInfo
     public bool TerminalAdvancedDisableBlinkingText { get; set; }
     public bool TerminalAdvancedDisableTitleChange { get; set; }
     public bool TerminalAdvancedAllowTitleChange { get; set; }
+    public bool TerminalAdvancedAllowOsc52Clipboard { get; set; }
     public bool TerminalAdvancedDisableTerminalPrint { get; set; }
     public bool TerminalAdvancedDisableAlternateScreen { get; set; }
     public bool TerminalAdvancedIgnoreResizeRequest { get; set; } = true;
@@ -322,6 +346,7 @@ public class SessionInfo
     public int AppearanceCharacterSpacing { get; set; }
     public string AppearanceTabColorMode { get; set; } = "Default";
     public string AppearanceTabCustomColor { get; set; } = "#000000";
+    public string AppearanceTabIcon { get; set; } = "Default";
     public string AppearanceBackgroundImagePath { get; set; } = string.Empty;
     public string AppearanceBackgroundImagePosition { get; set; } = "Center";
     public string AppearanceHighlightSetId { get; set; } = "None";
@@ -372,6 +397,18 @@ public class SessionInfo
     public bool SshAcceptAndSaveHostKey { get; set; }
     public bool SshAutoOpenSftpPanel { get; set; }
     public bool SshAutoOpenMonitorPanel { get; set; }
+    public bool SshEnableServerMonitoring { get; set; } = true;
+    public bool SshEnableMonitorNetworkLatency { get; set; }
+    private int _sshMonitorRefreshIntervalSeconds = DefaultSshMonitorRefreshIntervalSeconds;
+
+    public int SshMonitorRefreshIntervalSeconds
+    {
+        get => _sshMonitorRefreshIntervalSeconds;
+        set => _sshMonitorRefreshIntervalSeconds = Math.Clamp(
+            value,
+            MinSshMonitorRefreshIntervalSeconds,
+            MaxSshMonitorRefreshIntervalSeconds);
+    }
     // Kept for older config files and older app versions.
     public bool SshDoNotStartFileManager { get; set; } = true;
     public string SshCipherAlgorithms { get; set; } = string.Empty;

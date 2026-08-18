@@ -1,0 +1,89 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:antdicons="https://atomui.net/icons/antdesign"
+             xmlns:vm="using:CxShell.ViewModels"
+             x:Class="CxShell.Views.ConnectionAuditPage"
+             x:DataType="vm:ConnectionAuditViewModel">
+    <UserControl.Styles>
+        <Style Selector="atom|DataGrid.connection-audit-grid atom|DataGridCell">
+            <Setter Property="Padding" Value="10,0"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="atom|DataGrid.connection-audit-grid atom|DataGridColumnHeader /template/ Border#PART_ContentFrame">
+            <Setter Property="Padding" Value="10,4"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Grid RowDefinitions="Auto,*,Auto">
+        <Border Grid.Row="0"
+                Padding="0,0,0,14"
+                BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+                <atom:TextBox Grid.Column="0"
+                              Text="{Binding FilterText, Mode=TwoWay}"
+                              PlaceholderText="{Binding FilterPlaceholderText}"
+                              MinWidth="240"
+                              HorizontalAlignment="Stretch"/>
+                <atom:CheckBox Grid.Column="1"
+                               Content="{Binding FailuresOnlyText}"
+                               IsChecked="{Binding ShowFailuresOnly, Mode=TwoWay}"
+                               VerticalAlignment="Center"/>
+                <atom:Button Grid.Column="2"
+                             Content="{Binding RefreshText}"
+                             Icon="{antdicons:AntDesignIconProvider Kind=ReloadOutlined}"
+                             Command="{Binding RefreshCommand}"/>
+                <atom:Button Grid.Column="3"
+                             Content="{Binding ClearText}"
+                             Icon="{antdicons:AntDesignIconProvider Kind=DeleteOutlined}"
+                             Click="OnClearClick"/>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="0,14">
+            <atom:DataGrid ItemsSource="{Binding Entries}"
+                           Classes="connection-audit-grid"
+                           AutoGenerateColumns="False"
+                           IsReadOnly="True"
+                           SizeType="Small"
+                           RowHeight="38"
+                           GridLinesVisibility="Horizontal"
+                           CanUserResizeColumns="True"
+                           CanUserSortColumns="True"
+                           IsHideOnSinglePage="True">
+                <atom:DataGrid.Columns>
+                    <atom:DataGridTextColumn Header="{Binding ColumnTimeText}" Binding="{Binding TimestampText}" Width="160"/>
+                    <atom:DataGridTextColumn Header="{Binding ColumnSessionText}" Binding="{Binding SessionText}" Width="170"/>
+                    <atom:DataGridTextColumn Header="{Binding ColumnEndpointText}" Binding="{Binding EndpointText}" Width="240"/>
+                    <atom:DataGridTextColumn Header="{Binding ColumnProtocolText}" Binding="{Binding ProtocolText}" Width="90"/>
+                    <atom:DataGridTextColumn Header="{Binding ColumnEventText}" Binding="{Binding EventText}" Width="110"/>
+                    <atom:DataGridTextColumn Header="{Binding ColumnDetailText}" Binding="{Binding Detail}" Width="1*"/>
+                </atom:DataGrid.Columns>
+            </atom:DataGrid>
+
+            <TextBlock Text="{Binding EmptyText}"
+                       IsVisible="{Binding !HasEntries}"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+        </Grid>
+
+        <Border Grid.Row="2"
+                Padding="0,10,0,0"
+                BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <atom:TextBlock Grid.Column="0"
+                                Text="{Binding CountText}"
+                                VerticalAlignment="Center"
+                                Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+                <atom:Button Grid.Column="1"
+                             Content="{Binding ExportText}"
+                             Icon="{antdicons:AntDesignIconProvider Kind=ExportOutlined}"
+                             IsEnabled="{Binding CanExport}"
+                             Click="OnExportClick"/>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

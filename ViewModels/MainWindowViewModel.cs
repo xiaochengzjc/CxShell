@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
+using System.Windows.Input;
 using AtomUI;
 using AtomUI.Controls;
 using AtomUI.Theme;
@@ -51,8 +52,11 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly SftpViewModel _emptySftp = new();
     private readonly ServerMonitorViewModel _emptyMonitor = new();
     private readonly AppUpdateService _appUpdateService = new();
+    private readonly ConnectionAuditService _connectionAuditService = new();
     private UpdateProgressWindow? _updateProgressWindow;
     private UpdateProgressViewModel? _updateProgressViewModel;
+    private SettingsCenterWindow? _settingsCenterWindow;
+    private RecentConnectionsWindow? _recentConnectionsWindow;
 
     [ObservableProperty] private SessionTreeViewModel _sessionTree;
     [ObservableProperty] private SftpViewModel _sftp = null!;
@@ -75,11 +79,15 @@ public partial class MainWindowViewModel : ObservableObject
     public ObservableCollection<TerminalTabViewModel> Tabs { get; } = new();
     public ObservableCollection<TerminalTabGroupViewModel> TabGroups { get; } = new();
     public ObservableCollection<TileTabGroupRowViewModel> TileRows { get; } = new();
+    public ObservableCollection<RecentSessionItemViewModel> RecentSessions { get; } = new();
+    public CommandPaletteViewModel CommandPalette { get; }
 
     [ObservableProperty] private TerminalTabViewModel? _selectedTab;
     [ObservableProperty] private TerminalTabGroupViewModel? _selectedTabGroup;
+    [ObservableProperty] private RecentSessionItemViewModel? _selectedRecentSession;
 
     public bool HasTabs => Tabs.Count > 0;
+    public bool HasRecentSessions => RecentSessions.Count > 0;
     public bool IsMainChromeVisible => !IsTerminalFullScreen;
     public bool IsSftpPanelVisible => IsSftpVisible && !IsTerminalFullScreen;
     public double SftpPanelPixelWidth => SftpPanelWidth.Value;
@@ -130,11 +138,16 @@ public partial class MainWindowViewModel : ObservableObject
     public string LanguageToolTip => _localization.Text("Toolbar.LanguageTip");
     public string HelpText => _localization.Text("Toolbar.Help");
     public string HelpToolTip => _localization.Text("Toolbar.HelpTip");
+    public string SettingsText => _localization.Text("Toolbar.Settings");
+    public string SettingsToolTip => _localization.Text("Toolbar.SettingsTip");
     public string UpdateText => IsCheckingForUpdates
         ? UpdateProgressText ?? _localization.Text("Toolbar.UpdateChecking")
         : _localization.Text("Toolbar.Update");
     public string UpdateToolTip => _localization.Text("Toolbar.UpdateTip");
     public string AboutCxShellText => _localization.Text("Help.AboutCxShell");
+    public string ConnectionAuditText => _localization.Text("Help.ConnectionAudit");
+    public string SessionRecordingsText => _localization.Text("Help.SessionRecordings");
+    public string ApplicationSettingsText => _localization.Text("Help.ApplicationSettings");
     public string AddQuickSessionToolTip => _localization.Text("Toolbar.AddQuickSessionTip");
     public string ArrangeVerticalText => _localization.Text("Arrange.Vertical");
     public string ArrangeHorizontalText => _localization.Text("Arrange.Horizontal");
@@ -161,6 +174,12 @@ public partial class MainWindowViewModel : ObservableObject
         ResolveKeyboardBroadcastTargets(SelectedTab).Count);
     public string WelcomeSelectSessionText => _localization.Text("Welcome.SelectSession");
     public string WelcomeBuiltWithAtomUiText => _localization.Text("Welcome.BuiltWithAtomUI");
+    public string RecentConnectionsText => _localization.Text("Welcome.RecentConnections");
+    public string RecentConnectionsHintText => _localization.Text("Welcome.RecentConnectionsHint");
+    public string ViewAllSessionsText => _localization.Text("Welcome.ViewAllSessions");
+    public string ConnectRecentSessionText => _localization.Text("Welcome.ConnectRecentSession");
+    public string WelcomeNewSessionText => _localization.Text("Welcome.NewSession");
+    public string WelcomeSessionManagerText => _localization.Text("Welcome.SessionManager");
     public string FullScreenEscBackText => _localization.Text("FullScreen.EscBack");
     public string ChineseLanguageText => _localization.Text("Language.Chinese");
     public string EnglishLanguageText => _localization.Text("Language.English");
@@ -170,8 +189,14 @@ public partial class MainWindowViewModel : ObservableObject
     {
         _sessionTreeVm = new SessionTreeViewModel(this);
         _sessionTree = _sessionTreeVm;
+        CommandPalette = new CommandPaletteViewModel(BuildCommandPaletteItems);
         _sftp = _emptySftp;
+        _lastSftpPanelWidth = Math.Max(MinimumSftpPanelWidth, _sessionTreeVm.Settings.SftpPanelWidth);
+        _isTabBarVisible = _sessionTreeVm.Settings.ShowTabBar;
         _localization.SetLanguage(_sessionTreeVm.Settings.UiLanguage);
+        SshHostKeyTrustService.Shared.Configure(_sessionTreeVm.Settings);
+        SessionRecordingService.Shared.Configure(_sessionTreeVm.Settings);
+        _ = Task.Run(() => SessionRecordingService.Shared.CleanupExpiredAsync());
 
         Tabs.CollectionChanged += (_, _) =>
         {
@@ -187,6 +212,8 @@ public partial class MainWindowViewModel : ObservableObject
             OnPropertyChanged(nameof(IsVerticalTabArrangement));
             OnPropertyChanged(nameof(IsHorizontalTabArrangement));
             OnPropertyChanged(nameof(IsTileTabArrangement));
+            if (Tabs.Count == 0)
+                RefreshRecentSessions();
             ToggleTerminalFullScreenCommand.NotifyCanExecuteChanged();
             ArrangeTabsVerticalCommand.NotifyCanExecuteChanged();
             ArrangeTabsHorizontalCommand.NotifyCanExecuteChanged();
@@ -202,6 +229,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         // Initialize theme state
         _isDarkMode = Application.Current?.GetThemeManager()?.CurrentTheme?.Appearance == ThemeAppearance.Dark;
+        RefreshRecentSessions();
     }
 
     [RelayCommand]
@@ -382,6 +410,11 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void SetLanguage(string? language)
     {
+        ApplyLanguage(language);
+    }
+
+    public void ApplyLanguage(string? language)
+    {
         _localization.SetLanguage(language);
         _sessionTreeVm.Settings.UiLanguage = _localization.Language;
         _sessionTreeVm.SaveSettings(_sessionTreeVm.Settings);
@@ -556,6 +589,32 @@ public partial class MainWindowViewModel : ObservableObject
             _localization.Text("About.BuiltWith"),
             _localization.Text("About.GitHub"),
             "https://github.com/xiaochengzjc/CxShell");
+    }
+
+    [RelayCommand]
+    private void ShowApplicationSettings()
+    {
+        ShowSettingsCenter(SettingsSection.Application);
+    }
+
+    [RelayCommand]
+    private void ShowSessionRecordings()
+    {
+        ShowSettingsCenter(SettingsSection.SessionRecordings);
+    }
+
+    private void ApplyApplicationSettings(ApplicationSettings settings)
+    {
+        if (!ReferenceEquals(_sessionTreeVm.Settings, settings))
+            return;
+
+        _sessionTreeVm.SaveSettings(settings);
+        SshHostKeyTrustService.Shared.Configure(settings);
+        SessionRecordingService.Shared.Configure(settings);
+        foreach (var tab in Tabs.Where(item => item.IsTerminalSession))
+            tab.Terminal.RefreshRecordingOptions();
+        if (IsTabBarVisible != settings.ShowTabBar)
+            IsTabBarVisible = settings.ShowTabBar;
     }
 
     private static string BuildAppVersion()
@@ -858,9 +917,14 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(LanguageToolTip));
         OnPropertyChanged(nameof(HelpText));
         OnPropertyChanged(nameof(HelpToolTip));
+        OnPropertyChanged(nameof(SettingsText));
+        OnPropertyChanged(nameof(SettingsToolTip));
         OnPropertyChanged(nameof(UpdateText));
         OnPropertyChanged(nameof(UpdateToolTip));
         OnPropertyChanged(nameof(AboutCxShellText));
+        OnPropertyChanged(nameof(ConnectionAuditText));
+        OnPropertyChanged(nameof(SessionRecordingsText));
+        OnPropertyChanged(nameof(ApplicationSettingsText));
         OnPropertyChanged(nameof(AddQuickSessionToolTip));
         OnPropertyChanged(nameof(ArrangeVerticalText));
         OnPropertyChanged(nameof(ArrangeHorizontalText));
@@ -885,6 +949,13 @@ public partial class MainWindowViewModel : ObservableObject
         NotifyKeyboardBroadcastStateChanged();
         OnPropertyChanged(nameof(WelcomeSelectSessionText));
         OnPropertyChanged(nameof(WelcomeBuiltWithAtomUiText));
+        OnPropertyChanged(nameof(RecentConnectionsText));
+        OnPropertyChanged(nameof(RecentConnectionsHintText));
+        OnPropertyChanged(nameof(ViewAllSessionsText));
+        OnPropertyChanged(nameof(ConnectRecentSessionText));
+        OnPropertyChanged(nameof(WelcomeNewSessionText));
+        OnPropertyChanged(nameof(WelcomeSessionManagerText));
+        RefreshRecentSessions();
         OnPropertyChanged(nameof(FullScreenEscBackText));
         OnPropertyChanged(nameof(ChineseLanguageText));
         OnPropertyChanged(nameof(EnglishLanguageText));
@@ -982,7 +1053,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (value)
         {
             if (!IsTerminalFullScreen)
-                RestoreSftpPanelWidth(resetToDefault: true);
+                RestoreSftpPanelWidth();
             UpdateSftp(SelectedTab);
         }
         else
@@ -1006,7 +1077,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (value)
             CollapseSftpPanelWidth();
         else if (IsSftpVisible)
-            RestoreSftpPanelWidth(resetToDefault: true);
+            RestoreSftpPanelWidth();
         IsFullScreenHintVisible = value;
     }
 
@@ -1022,6 +1093,16 @@ public partial class MainWindowViewModel : ObservableObject
 
         if (Math.Abs(clamped - value.Value) > 0.5)
             SftpPanelWidth = new GridLength(clamped);
+    }
+
+    public void PersistSftpPanelWidth()
+    {
+        var width = Math.Max(MinimumSftpPanelWidth, _lastSftpPanelWidth);
+        if (Math.Abs(_sessionTreeVm.Settings.SftpPanelWidth - width) < 0.5)
+            return;
+
+        _sessionTreeVm.Settings.SftpPanelWidth = width;
+        _sessionTreeVm.SaveSettings(_sessionTreeVm.Settings);
     }
 
     private bool CanArrangeTabsCore() => CanArrangeTabs;
@@ -1069,7 +1150,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void UpdateMonitor(TerminalTabViewModel? tab)
     {
-        if (!IsMonitorVisible) return;
+        if (!IsMonitorVisible)
+            return;
         if (tab == null ||
             tab.Vnc != null ||
             tab.Rdp != null ||
@@ -1078,12 +1160,21 @@ public partial class MainWindowViewModel : ObservableObject
         {
             return;
         }
+
+        if (!tab.Session.SshEnableServerMonitoring)
+        {
+            tab.Monitor.StopMonitoring();
+            return;
+        }
+
         var isWindowsOpenSsh = !tab.Terminal.SupportsPosixShellFeatures;
         tab.Monitor.SwitchConnection(
             tab.Session,
             tab.ConnectedPassword,
             isWindowsOpenSsh ? null : tab.Terminal.RunRemoteCommandAsync,
-            isWindowsOpenSsh);
+            isWindowsOpenSsh,
+            tab.Session.SshMonitorRefreshIntervalSeconds,
+            tab.Session.SshEnableMonitorNetworkLatency);
     }
 
     private void StopAllMonitors()
@@ -1104,7 +1195,8 @@ public partial class MainWindowViewModel : ObservableObject
 
         var isWindowsOpenSsh = !tab.Terminal.SupportsPosixShellFeatures;
 
-        if (tab.Session.SshAutoOpenMonitorPanel)
+        if (tab.Session.SshAutoOpenMonitorPanel &&
+            tab.Session.SshEnableServerMonitoring)
         {
             if (!IsMonitorVisible)
                 IsMonitorVisible = true;
@@ -1203,7 +1295,11 @@ public partial class MainWindowViewModel : ObservableObject
         {
             ShowInTaskbar = false
         };
-        _sessionManagerWindow.Closed += (_, _) => _sessionManagerWindow = null;
+        _sessionManagerWindow.Closed += (_, _) =>
+        {
+            _sessionManagerWindow = null;
+            RefreshRecentSessions();
+        };
         _sessionManagerWindow.Show(owner);
     }
 
@@ -1211,6 +1307,148 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (_sessionTreeVm.Settings.ShowSessionManagerOnStartup)
             ShowSessionManager();
+    }
+
+    public void OpenCommandPalette()
+    {
+        CommandPalette.Open();
+    }
+
+    [RelayCommand]
+    private Task ShowConnectionAudit()
+    {
+        return ShowConnectionAuditAsync();
+    }
+
+    [RelayCommand]
+    private void ShowRecentConnections()
+    {
+        var owner = GetMainWindow();
+        if (owner == null)
+            return;
+
+        if (_recentConnectionsWindow != null)
+        {
+            _recentConnectionsWindow.Activate();
+            return;
+        }
+
+        var viewModel = new RecentConnectionsViewModel(
+            _connectionAuditService,
+            _sessionTreeVm.GetAllSessions,
+            ConnectFromRecentConnectionsAsync);
+        _recentConnectionsWindow = new RecentConnectionsWindow
+        {
+            DataContext = viewModel,
+            ShowInTaskbar = false
+        };
+        _recentConnectionsWindow.Closed += (_, _) => _recentConnectionsWindow = null;
+        _recentConnectionsWindow.Show(owner);
+    }
+
+    private async Task ConnectFromRecentConnectionsAsync(SessionInfo session)
+    {
+        var window = _recentConnectionsWindow;
+        _recentConnectionsWindow = null;
+        window?.Close();
+        await ConnectSession(session);
+    }
+
+    private IReadOnlyList<CommandPaletteItem> BuildCommandPaletteItems()
+    {
+        var items = new List<CommandPaletteItem>();
+        var recentSessionsCategory = _localization.Text("Palette.RecentSessions");
+        var sessionsCategory = _localization.Text("Palette.Sessions");
+        var commandsCategory = _localization.Text("Palette.Commands");
+        var quickCommandsCategory = _localization.Text("Palette.QuickCommands");
+        var connectHint = _localization.Text("Palette.ConnectHint");
+        var executeHint = _localization.Text("Palette.ExecuteHint");
+        var sessions = _sessionTreeVm.GetAllSessions();
+        var sessionsById = sessions.ToDictionary(session => session.Id);
+        var recentSessionIds = new HashSet<Guid>();
+
+        foreach (var entry in _connectionAuditService.ReadRecentSuccessfulConnections())
+        {
+            if (!sessionsById.TryGetValue(entry.SessionId, out var recentSession))
+                continue;
+
+            recentSessionIds.Add(recentSession.Id);
+            AddSessionPaletteItem(
+                items,
+                recentSessionsCategory,
+                recentSession,
+                $"{connectHint} · {entry.LocalTimestamp:MM-dd HH:mm}");
+        }
+
+        foreach (var session in sessions.Where(session => !recentSessionIds.Contains(session.Id)))
+        {
+            AddSessionPaletteItem(items, sessionsCategory, session, connectHint);
+        }
+
+        var selectedTab = SelectedTab;
+        if (selectedTab?.IsTerminalSession == true && selectedTab.Terminal.IsConnected)
+        {
+            foreach (var quickCommand in GetQuickCommands(selectedTab))
+            {
+                var capturedCommand = quickCommand;
+                items.Add(new CommandPaletteItem(
+                    quickCommandsCategory,
+                    quickCommand.Name,
+                    () => ExecuteQuickCommand(selectedTab, capturedCommand),
+                    $"{executeHint} · {quickCommand.CommandText}"));
+            }
+        }
+
+        AddCommand(items, commandsCategory, NewSessionText, "Ctrl+N", NewSessionCommand);
+        AddCommand(items, commandsCategory, SessionManagerText, null, ShowSessionManagerCommand);
+        AddCommand(items, commandsCategory, SftpToolTip, null, ToggleSftpCommand);
+        AddCommand(items, commandsCategory, MonitorText, null, ToggleMonitorCommand);
+        AddCommand(items, commandsCategory, TabBarText, null, ToggleTabBarCommand);
+        AddCommand(items, commandsCategory, _localization.Text("Palette.ToggleTheme"), null, ToggleThemeCommand);
+        AddCommand(items, commandsCategory, FullScreenToolTip, "Esc", ToggleTerminalFullScreenCommand);
+        AddCommand(items, commandsCategory, ArrangeVerticalText, null, ArrangeTabsVerticalCommand);
+        AddCommand(items, commandsCategory, ArrangeHorizontalText, null, ArrangeTabsHorizontalCommand);
+        AddCommand(items, commandsCategory, ArrangeTileText, null, ArrangeTabsTileCommand);
+        AddCommand(items, commandsCategory, ArrangeMergeText, null, MergeTabGroupsCommand);
+        AddCommand(items, commandsCategory, AboutCxShellText, null, ShowAboutCommand);
+        AddCommand(items, commandsCategory, ConnectionAuditText, null, ShowConnectionAuditCommand);
+        AddCommand(items, commandsCategory, SessionRecordingsText, null, ShowSessionRecordingsCommand);
+        AddCommand(items, commandsCategory, ApplicationSettingsText, null, ShowApplicationSettingsCommand);
+        AddCommand(items, commandsCategory, _localization.Text("Toolbar.Update"), null, CheckForUpdatesCommand);
+        return items;
+    }
+
+    private void AddSessionPaletteItem(
+        ICollection<CommandPaletteItem> items,
+        string category,
+        SessionInfo session,
+        string connectHint)
+    {
+        var capturedSession = session;
+        var title = string.IsNullOrWhiteSpace(session.Name) ? session.Host : session.Name;
+        var endpoint = string.IsNullOrWhiteSpace(session.Username)
+            ? $"{session.Host}:{session.Port}"
+            : $"{session.Username}@{session.Host}:{session.Port}";
+        items.Add(new CommandPaletteItem(
+            category,
+            title,
+            () => _ = ConnectSession(capturedSession),
+            $"{connectHint} · {endpoint}",
+            session.Protocol.ToString(),
+            isSession: true));
+    }
+
+    private static void AddCommand(
+        ICollection<CommandPaletteItem> items,
+        string category,
+        string title,
+        string? hint,
+        ICommand command)
+    {
+        if (!command.CanExecute(null))
+            return;
+
+        items.Add(new CommandPaletteItem(category, title, () => command.Execute(null), hint));
     }
 
     [RelayCommand]
@@ -1234,6 +1472,8 @@ public partial class MainWindowViewModel : ObservableObject
     partial void OnIsTabBarVisibleChanged(bool value)
     {
         OnPropertyChanged(nameof(IsQuickSessionBarVisible));
+        _sessionTreeVm.Settings.ShowTabBar = value;
+        _sessionTreeVm.SaveSettings(_sessionTreeVm.Settings);
     }
 
     private bool CanToggleTerminalFullScreen()
@@ -1530,6 +1770,51 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
+    public async Task ShowConnectionDiagnosticsAsync(SessionInfo session)
+    {
+        if (session.Protocol != SessionProtocol.SSH)
+            return;
+
+        var dialog = new ConnectionDiagnosticsWindow
+        {
+            DataContext = new ConnectionDiagnosticsViewModel(session, GetSavedPassword(session))
+        };
+        var lifetime = Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
+        if (lifetime?.MainWindow != null)
+            await dialog.ShowDialog(lifetime.MainWindow);
+    }
+
+    public async Task ShowConnectionAuditAsync()
+    {
+        ShowSettingsCenter(SettingsSection.ConnectionAudit);
+        await Task.CompletedTask;
+    }
+
+    private void ShowSettingsCenter(SettingsSection section)
+    {
+        var owner = GetMainWindow();
+        if (owner == null)
+            return;
+
+        if (_settingsCenterWindow != null)
+        {
+            if (_settingsCenterWindow.DataContext is SettingsCenterViewModel existingViewModel)
+                existingViewModel.Select(section);
+            _settingsCenterWindow.Activate();
+            return;
+        }
+
+        var viewModel = new SettingsCenterViewModel(
+            _sessionTreeVm.Settings,
+            ApplyApplicationSettings,
+            ApplyLanguage,
+            _connectionAuditService);
+        viewModel.Select(section);
+        _settingsCenterWindow = new SettingsCenterWindow(viewModel);
+        _settingsCenterWindow.Closed += (_, _) => _settingsCenterWindow = null;
+        _settingsCenterWindow.Show(owner);
+    }
+
     private void RefreshOpenTabsForSession(SessionInfo session)
     {
         foreach (var tab in Tabs.Where(tab => tab.Session.Id == session.Id))
@@ -1540,12 +1825,14 @@ public partial class MainWindowViewModel : ObservableObject
             tab.NotifyThemeChanged();
             tab.Terminal.RefreshSessionOptions();
             tab.Vnc?.RefreshSessionOptions(tab.Session);
+            UpdateMonitor(tab);
         }
     }
 
     public void DeleteSession(SessionInfo session)
     {
         _sessionTreeVm.DeleteSession(session);
+        RefreshRecentSessions();
         AddCurrentSessionToQuickBarCommand.NotifyCanExecuteChanged();
     }
 
@@ -1573,6 +1860,38 @@ public partial class MainWindowViewModel : ObservableObject
             return;
 
         await ConnectSession(session);
+    }
+
+    [RelayCommand]
+    private async Task ConnectRecentSession(RecentSessionItemViewModel? item)
+    {
+        if (item == null)
+            return;
+
+        await ConnectSession(item.Session);
+    }
+
+    public void RefreshRecentSessions()
+    {
+        var selectedSessionId = SelectedRecentSession?.Session.Id;
+        var sessionsById = _sessionTreeVm.GetAllSessions().ToDictionary(session => session.Id);
+        var items = _connectionAuditService
+            .ReadRecentSuccessfulConnections(ConnectionAuditService.MaximumEntries)
+            .Where(entry => sessionsById.ContainsKey(entry.SessionId))
+            .Take(6)
+            .Select(entry => new RecentSessionItemViewModel(
+                sessionsById[entry.SessionId],
+                entry.LocalTimestamp))
+            .ToArray();
+
+        RecentSessions.Clear();
+        foreach (var item in items)
+            RecentSessions.Add(item);
+
+        SelectedRecentSession = selectedSessionId.HasValue
+            ? RecentSessions.FirstOrDefault(item => item.Session.Id == selectedSessionId.Value)
+            : null;
+        OnPropertyChanged(nameof(HasRecentSessions));
     }
 
     [RelayCommand]
@@ -1749,6 +2068,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         tab.Terminal.PropertyChanged += OnActiveTerminalPropertyChanged;
         tab.Terminal.RemoteCurrentDirectoryChanged += path => OnTerminalRemoteCurrentDirectoryChanged(tab, path);
+        RecordAudit(session, ConnectionAuditEventType.ConnectStarted);
 
         try
         {
@@ -1763,6 +2083,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
         catch (Exception ex)
         {
+            RecordAudit(session, ConnectionAuditEventType.Failed, ex.Message);
             ConnectionStatusText = $"Connection failed: {ex.Message}";
             ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FF4D4F"));
         }
@@ -1785,6 +2106,7 @@ public partial class MainWindowViewModel : ObservableObject
         tab.PropertyChanged += OnTerminalTabPropertyChanged;
         AddTabToActiveGroup(tab);
         SelectedTab = tab;
+        RecordAudit(session, ConnectionAuditEventType.ConnectStarted);
 
         IsTerminalFullScreen = false;
         ConnectionStatusText = "RDP ready";
@@ -1842,6 +2164,7 @@ public partial class MainWindowViewModel : ObservableObject
         SelectedTab = tab;
         IsSftpVisible = false;
         IsMonitorVisible = false;
+        RecordAudit(session, ConnectionAuditEventType.ConnectStarted);
 
         try
         {
@@ -1855,6 +2178,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
         catch (Exception ex)
         {
+            RecordAudit(session, ConnectionAuditEventType.Failed, ex.Message);
             ConnectionStatusText = $"VNC failed: {ex.Message}";
             ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FF4D4F"));
             vm.StatusText = $"VNC failed: {ex.Message}";
@@ -1893,6 +2217,7 @@ public partial class MainWindowViewModel : ObservableObject
         tab.PropertyChanged += OnTerminalTabPropertyChanged;
         AddTabToActiveGroup(tab);
         SelectedTab = tab;
+        RecordAudit(session, ConnectionAuditEventType.ConnectStarted);
 
         var connected = await fileTransfer.SwitchConnectionAsync(session, password);
         tab.ConnectedPassword = password;
@@ -1903,6 +2228,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
         else
         {
+            RecordAudit(session, ConnectionAuditEventType.Failed, $"{session.Protocol} connection failed");
             ConnectionStatusText = $"{session.Protocol} connection failed";
             ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FF4D4F"));
         }
@@ -1995,8 +2321,23 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void OnTerminalTabPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (sender is TerminalTabViewModel tab && e.PropertyName == nameof(TerminalTabViewModel.IsConnected))
+        {
+            RecordAudit(
+                tab.Session,
+                tab.IsConnected ? ConnectionAuditEventType.Connected : ConnectionAuditEventType.Disconnected);
+        }
+
         if (e.PropertyName == nameof(TerminalTabViewModel.IsKeyboardBroadcastEnabled))
             NotifyKeyboardBroadcastStateChanged();
+    }
+
+    private void RecordAudit(
+        SessionInfo session,
+        ConnectionAuditEventType eventType,
+        string? detail = null)
+    {
+        _connectionAuditService.Record(session, eventType, detail);
     }
 
     private static string BuildRemoteChangeDirectoryCommand(string remoteDirectory, bool supportsPosixShellFeatures)
@@ -2035,6 +2376,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         var wasSelected = SelectedTab == tab;
         var group = IsTabArrangementEnabled ? FindTabGroup(tab) : null;
+        RecordAudit(tab.Session, ConnectionAuditEventType.TabClosed);
 
         tab.PropertyChanged -= OnTerminalTabPropertyChanged;
         tab.Terminal.PropertyChanged -= OnActiveTerminalPropertyChanged;
@@ -2153,6 +2495,8 @@ public partial class MainWindowViewModel : ObservableObject
         if (tab == null)
             return;
 
+        RecordAudit(tab.Session, ConnectionAuditEventType.ConnectStarted);
+
         if (tab.Vnc != null)
         {
             if (tab.Vnc.IsConnected)
@@ -2173,6 +2517,7 @@ public partial class MainWindowViewModel : ObservableObject
             }
             catch (Exception ex)
             {
+                RecordAudit(tab.Session, ConnectionAuditEventType.Failed, ex.Message);
                 ConnectionStatusText = $"VNC failed: {ex.Message}";
                 ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FF4D4F"));
             }
@@ -2211,6 +2556,8 @@ public partial class MainWindowViewModel : ObservableObject
             ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FAAD14"));
             await tab.FileTransfer.SwitchConnectionAsync(tab.Session, filePassword);
             tab.ConnectedPassword = filePassword;
+            if (!tab.FileTransfer.IsConnected)
+                RecordAudit(tab.Session, ConnectionAuditEventType.Failed, $"{tab.Session.Protocol} connection failed");
             UpdateStatusBar();
             return;
         }
@@ -2244,6 +2591,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
         catch (Exception ex)
         {
+            RecordAudit(tab.Session, ConnectionAuditEventType.Failed, ex.Message);
             ConnectionStatusText = $"Connection failed: {ex.Message}";
             ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FF4D4F"));
         }

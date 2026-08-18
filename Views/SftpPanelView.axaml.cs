@@ -72,6 +72,7 @@ public partial class SftpPanelView : UserControl
         AddHandler(PointerPressedEvent, OnSftpPanelPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
         FileGrid.AddHandler(PointerPressedEvent, OnFileGridPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
         TransferGrid.AddHandler(PointerPressedEvent, OnTransferGridPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
+        FileGrid.AddHandler(KeyDownEvent, OnFileGridKeyDown, RoutingStrategies.Tunnel, handledEventsToo: true);
         FileGrid.GetObservable(BoundsProperty).Subscribe(_ => QueueFileGridColumnWidthUpdate());
     }
 
@@ -352,6 +353,19 @@ public partial class SftpPanelView : UserControl
         }
     }
 
+    public void OnFileFilterKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (_attachedViewModel == null)
+            return;
+
+        if (e.Key == Key.Escape)
+        {
+            e.Handled = true;
+            _attachedViewModel.FileFilterText = string.Empty;
+            FileGrid.Focus();
+        }
+    }
+
     public void OnPathSuggestionPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
         if (_attachedViewModel == null)
@@ -457,11 +471,21 @@ public partial class SftpPanelView : UserControl
             ConfirmActiveRename();
         }
 
+        var point = e.GetCurrentPoint(grid);
+        var isInsideRenameTextBox = _attachedViewModel.RenamingItem is { } activeRenameItem &&
+                                    IsInsideRenameTextBox(e.Source as Avalonia.Visual, activeRenameItem);
+        if (!isInsideRenameTextBox &&
+            (point.Properties.IsLeftButtonPressed || point.Properties.IsRightButtonPressed))
+        {
+            // The custom tunnel handler marks the event handled, so DataGrid does
+            // not get its usual pointer-focus behavior automatically.
+            grid.Focus();
+        }
+
         var item = TryGetItemFromVisual(e.Source as Avalonia.Visual);
         if (item == null || item.IsRenaming)
             return;
 
-        var point = e.GetCurrentPoint(grid);
         if (point.Properties.IsRightButtonPressed)
         {
             var selectedFiles = GetSelectedFiles(grid).ToList();
@@ -522,7 +546,7 @@ public partial class SftpPanelView : UserControl
         if (_attachedViewModel == null)
             return;
 
-        var files = _attachedViewModel.Files.ToList();
+        var files = _attachedViewModel.VisibleFiles.ToList();
         var selected = GetSelectedFiles(grid).ToList();
         var hasCtrl = modifiers.HasFlag(KeyModifiers.Control);
         var hasShift = modifiers.HasFlag(KeyModifiers.Shift);
@@ -657,16 +681,70 @@ public partial class SftpPanelView : UserControl
 
     private void OnFileGridKeyDown(object? sender, KeyEventArgs e)
     {
-        if (_attachedViewModel == null)
+        if (_attachedViewModel == null || sender is not AtomDataGrid grid)
             return;
+
+        var vm = _attachedViewModel;
+        var selected = vm.SelectedFiles.ToList();
+        var primary = selected.Count == 1 ? selected[0] : vm.SelectedFile;
+        var isCommandModifier = e.KeyModifiers.HasFlag(KeyModifiers.Control) ||
+                                e.KeyModifiers.HasFlag(KeyModifiers.Meta);
+
+        if (isCommandModifier && e.Key == Key.A)
+        {
+            e.Handled = true;
+            var allFiles = vm.VisibleFiles.ToList();
+            _selectionAnchorItem = allFiles.FirstOrDefault();
+            SetGridSelectedItems(grid, allFiles);
+            vm.SetSelectedFiles(allFiles);
+            return;
+        }
+
+        if (e.Key == Key.F5)
+        {
+            e.Handled = true;
+            _ = vm.RefreshCommand.ExecuteAsync(null);
+            return;
+        }
+
+        if (e.Key == Key.Back)
+        {
+            if (vm.CurrentPath != "/")
+            {
+                e.Handled = true;
+                _ = vm.NavigateUpCommand.ExecuteAsync(null);
+            }
+
+            return;
+        }
+
+        if (e.Key == Key.Enter)
+        {
+            if (primary == null || selected.Count > 1)
+                return;
+
+            e.Handled = true;
+            _ = vm.OpenItemCommand.ExecuteAsync(primary);
+            return;
+        }
+
+        if (e.Key == Key.F2)
+        {
+            if (selected.Count != 1)
+                return;
+
+            e.Handled = true;
+            vm.RenameCommand.Execute(null);
+            return;
+        }
 
         if (e.Key == Key.Delete)
         {
             e.Handled = true;
-            if (_attachedViewModel.DeleteCommand is CommunityToolkit.Mvvm.Input.IAsyncRelayCommand asyncCmd)
+            if (vm.DeleteCommand is CommunityToolkit.Mvvm.Input.IAsyncRelayCommand asyncCmd)
                 _ = asyncCmd.ExecuteAsync(null);
             else
-                _attachedViewModel.DeleteCommand.Execute(null);
+                vm.DeleteCommand.Execute(null);
         }
     }
 

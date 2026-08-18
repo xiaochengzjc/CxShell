@@ -129,6 +129,7 @@
                         <atom:NavMenuNode Header="{Binding SecurityText}" ItemKey="SshSecurity"/>
                         <atom:NavMenuNode Header="{Binding TunnelText}" ItemKey="SshTunnel"/>
                         <atom:NavMenuNode Header="SFTP" ItemKey="SshSftp"/>
+                        <atom:NavMenuNode Header="{Binding MonitorText}" ItemKey="SshOther"/>
                     </atom:NavMenuNode>
                     <atom:NavMenuNode Header="{Binding TerminalText}"
                                       ItemKey="Terminal"
@@ -714,6 +715,8 @@
                                 <atom:DataGrid.Columns>
                                     <atom:DataGridTextColumn Header="Expect" Binding="{Binding Expect}" Width="160"/>
                                     <atom:DataGridTextColumn Header="Send" Binding="{Binding SendDisplay}" Width="360"/>
+                                    <atom:DataGridTextColumn Header="Match" Binding="{Binding MatchModeDisplay}" Width="90"/>
+                                    <atom:DataGridTextColumn Header="Mode" Binding="{Binding TriggerModeDisplay}" Width="110"/>
                                 </atom:DataGrid.Columns>
                             </atom:DataGrid>
 
@@ -910,8 +913,45 @@
                                                IsChecked="{Binding SshAcceptAndSaveHostKey, Mode=TwoWay}"/>
                                 <atom:CheckBox Content="{Binding [UiText.042], Source={x:Static services:LocalizationService.Shared}}"
                                                IsChecked="{Binding SshAutoOpenSftpPanel, Mode=TwoWay}"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="SshOtherPage" IsVisible="False">
+                    <StackPanel Spacing="16">
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="{Binding ServerMonitoringText}"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <atom:CheckBox Content="{Binding EnableServerMonitoringText}"
+                                               IsChecked="{Binding SshEnableServerMonitoring, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="{Binding EnableMonitorNetworkLatencyText}"
+                                               IsChecked="{Binding SshEnableMonitorNetworkLatency, Mode=TwoWay}"
+                                               IsEnabled="{Binding SshEnableServerMonitoring}"/>
+                                <Grid ColumnDefinitions="160,120,40"
+                                      ColumnSpacing="10">
+                                    <TextBlock Text="{Binding MonitorRefreshIntervalText}"
+                                               VerticalAlignment="Center"
+                                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                    <atom:NumericUpDown Grid.Column="1"
+                                                        Minimum="1"
+                                                        Maximum="30"
+                                                        Value="{Binding SshMonitorRefreshIntervalSeconds, Mode=TwoWay}"
+                                                        IsEnabled="{Binding SshEnableServerMonitoring}"/>
+                                    <TextBlock Grid.Column="2"
+                                               Text="{Binding SecondsText}"
+                                               VerticalAlignment="Center"
+                                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                </Grid>
                                 <atom:CheckBox Content="{Binding [UiText.260], Source={x:Static services:LocalizationService.Shared}}"
-                                               IsChecked="{Binding SshAutoOpenMonitorPanel, Mode=TwoWay}"/>
+                                               IsChecked="{Binding SshAutoOpenMonitorPanel, Mode=TwoWay}"
+                                               IsEnabled="{Binding SshEnableServerMonitoring}"/>
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -2460,6 +2500,26 @@
                                 BorderThickness="1"
                                 CornerRadius="4"
                                 Padding="18">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="{Binding AppearanceTabIconText}" FontWeight="SemiBold"/>
+                                <Grid ColumnDefinitions="110,*" ColumnSpacing="10">
+                                    <TextBlock Text="{Binding AppearanceTabIconSelectionText}" VerticalAlignment="Center"/>
+                                    <atom:Select Grid.Column="1"
+                                                 x:Name="SessionAppearanceTabIconSelect"
+                                                 OptionsSource="{Binding AppearanceTabIconOptions}"
+                                                 Mode="Single"
+                                                 SelectionChanged="OnSessionAppearanceSelectionChanged"/>
+                                </Grid>
+                                <TextBlock Text="{Binding AppearanceTabIconHintText}"
+                                           TextWrapping="Wrap"
+                                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Background="{atom:SharedTokenResource ColorBgContainer}"
+                                BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="18">
                             <StackPanel Spacing="14">
                                 <TextBlock Text="{Binding [UiText.145], Source={x:Static services:LocalizationService.Shared}}" FontWeight="SemiBold"/>
                                 <Grid ColumnDefinitions="110,*,64"
@@ -2761,6 +2821,8 @@
                                                IsChecked="{Binding TerminalAdvancedDisableBlinkingText, Mode=TwoWay}"/>
                                 <atom:CheckBox Content="{Binding [SessionEdit.Terminal.AllowRemoteTitle], Source={x:Static services:LocalizationService.Shared}}"
                                                IsChecked="{Binding TerminalAdvancedAllowTitleChange, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="{Binding [SessionEdit.Terminal.AllowOsc52Clipboard], Source={x:Static services:LocalizationService.Shared}}"
+                                               IsChecked="{Binding TerminalAdvancedAllowOsc52Clipboard, Mode=TwoWay}"/>
                                 <atom:CheckBox Content="{Binding [UiText.184], Source={x:Static services:LocalizationService.Shared}}"
                                                IsVisible="False"
                                                IsChecked="{Binding TerminalAdvancedDisableTerminalPrint, Mode=TwoWay}"/>

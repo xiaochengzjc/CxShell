@@ -24,13 +24,27 @@ public class SftpService : IFileTransferService, IDisposable
 
     public event Action<string>? ErrorOccurred;
 
-    public async Task ConnectAsync(SessionInfo session, string? password)
+    public Task ConnectAsync(SessionInfo session, string? password)
+        => ConnectAsync(session, password, CancellationToken.None);
+
+    public async Task ConnectAsync(
+        SessionInfo session,
+        string? password,
+        CancellationToken cancellationToken)
     {
         Disconnect();
 
         try
         {
-            await ConnectWithRetryAsync(session, password);
+            await ConnectWithRetryAsync(session, password, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            _client?.Dispose();
+            _client = null;
+            _connectionContext?.Dispose();
+            _connectionContext = null;
+            throw;
         }
         catch (Exception ex)
         {
@@ -56,21 +70,27 @@ public class SftpService : IFileTransferService, IDisposable
         _connectionContext = null;
     }
 
-    private async Task ConnectWithRetryAsync(SessionInfo session, string? password)
+    private async Task ConnectWithRetryAsync(
+        SessionInfo session,
+        string? password,
+        CancellationToken cancellationToken)
     {
         Exception? lastError = null;
         foreach (var delay in ConnectRetryDelays)
         {
             if (delay > TimeSpan.Zero)
-                await Task.Delay(delay);
+                await Task.Delay(delay, cancellationToken);
 
             _client?.Dispose();
             _connectionContext?.Dispose();
-            (_client, _connectionContext) = await Task.Run(() => CreateClient(session, password));
+            (_client, _connectionContext) = await Task.Run(
+                () => CreateClient(session, password),
+                cancellationToken);
 
             try
             {
-                await Task.Run(() => _client.Connect());
+                var client = _client ?? throw new InvalidOperationException("SFTP client creation failed.");
+                await Task.Run(client.Connect, cancellationToken);
                 return;
             }
             catch (Exception ex) when (delay != ConnectRetryDelays[^1] && SshServerInfo.IsLikelyTransientOpenFailure(ex))
@@ -91,11 +111,18 @@ public class SftpService : IFileTransferService, IDisposable
         {
             var connectionInfo = context.ConnectionInfo;
             SshAlgorithmPreferenceService.Apply(connectionInfo, session);
-            return (new SftpClient(connectionInfo)
+            var client = new SftpClient(connectionInfo)
             {
                 KeepAliveInterval = TimeSpan.FromSeconds(30),
                 OperationTimeout = TimeSpan.FromSeconds(15)
-            }, context);
+            };
+            SshHostKeyTrustService.Shared.Attach(
+                client,
+                session.Host,
+                session.Port,
+                session.SshAcceptAndSaveHostKey);
+
+            return (client, context);
         }
         catch
         {
@@ -226,7 +253,7 @@ public class SftpService : IFileTransferService, IDisposable
 
         var fileInfo = new FileInfo(localPath);
         var totalBytes = fileInfo.Length;
-        var partPath = GetRemotePartPath(remotePath);
+        var partPath = SftpTransferPartPaths.GetRemotePath(remotePath);
         var offset = GetRemoteFileSize(partPath);
         if (offset > totalBytes)
         {
@@ -234,7 +261,7 @@ public class SftpService : IFileTransferService, IDisposable
             offset = 0;
         }
 
-        progress?.Invoke((ulong)offset);
+        progress?.Invoke(SftpTransferProgressPolicy.BeforeFinalize((ulong)offset, totalBytes));
 
         using (var localStream = File.OpenRead(localPath))
         using (var remoteStream = _client.Open(partPath, FileMode.OpenOrCreate, FileAccess.Write))
@@ -247,7 +274,8 @@ public class SftpService : IFileTransferService, IDisposable
                 remoteStream,
                 offset,
                 totalBytes,
-                progress,
+                transferred => progress?.Invoke(
+                    SftpTransferProgressPolicy.BeforeFinalize(transferred, totalBytes)),
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -267,7 +295,7 @@ public class SftpService : IFileTransferService, IDisposable
             throw new InvalidOperationException("SFTP is not connected.");
 
         var totalBytes = _client.GetAttributes(remotePath).Size;
-        var partPath = GetLocalPartPath(localPath);
+        var partPath = SftpTransferPartPaths.GetLocalPath(localPath);
         EnsureLocalParentDirectory(partPath);
 
         var offset = File.Exists(partPath) ? new FileInfo(partPath).Length : 0;
@@ -277,7 +305,7 @@ public class SftpService : IFileTransferService, IDisposable
             offset = 0;
         }
 
-        progress?.Invoke((ulong)offset);
+        progress?.Invoke(SftpTransferProgressPolicy.BeforeFinalize((ulong)offset, totalBytes));
 
         using (var remoteStream = _client.OpenRead(remotePath))
         using (var localStream = File.Open(partPath, FileMode.OpenOrCreate, FileAccess.Write, FileShare.Read))
@@ -290,7 +318,8 @@ public class SftpService : IFileTransferService, IDisposable
                 localStream,
                 offset,
                 totalBytes,
-                progress,
+                transferred => progress?.Invoke(
+                    SftpTransferProgressPolicy.BeforeFinalize(transferred, totalBytes)),
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -358,17 +387,22 @@ public class SftpService : IFileTransferService, IDisposable
         }
     }
 
-    private static string GetRemotePartPath(string remotePath)
+    public async Task DeletePartialUploadAsync(
+        string remotePath,
+        CancellationToken cancellationToken = default)
     {
-        var index = remotePath.LastIndexOf('/');
-        if (index < 0)
-            return remotePath + ".cxshell.part";
+        if (_client == null || !_client.IsConnected)
+            throw new InvalidOperationException("SFTP 未连接");
 
-        return remotePath[..(index + 1)] + "." + remotePath[(index + 1)..] + ".cxshell.part";
+        var partPath = SftpTransferPartPaths.GetRemotePath(remotePath);
+        cancellationToken.ThrowIfCancellationRequested();
+        await Task.Run(() =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_client.Exists(partPath))
+                _client.DeleteFile(partPath);
+        }, cancellationToken).ConfigureAwait(false);
     }
-
-    private static string GetLocalPartPath(string localPath)
-        => localPath + ".cxshell.part";
 
     private static void EnsureLocalParentDirectory(string path)
     {

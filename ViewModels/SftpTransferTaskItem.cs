@@ -15,6 +15,7 @@ public enum SftpTransferStatus
 {
     Pending,
     Running,
+    Retrying,
     Cancelling,
     Completed,
     Failed,
@@ -41,7 +42,10 @@ public partial class SftpTransferTaskItem : ObservableObject
     [ObservableProperty] private DateTimeOffset? _completedAt;
     [ObservableProperty] private bool _isExecutionActive;
     [ObservableProperty] private bool _supportsRetry = true;
+    [ObservableProperty] private int _automaticRetryCount;
+    [ObservableProperty] private int _maxAutomaticRetries = 3;
 
+    internal Guid ExecutionToken { get; private set; } = Guid.NewGuid();
     internal CancellationTokenSource? CancellationTokenSource { get; set; }
     internal IFileTransferService? ActiveService { get; set; }
     internal DateTimeOffset LastUiProgressAt { get; set; } = DateTimeOffset.MinValue;
@@ -57,6 +61,9 @@ public partial class SftpTransferTaskItem : ObservableObject
         SftpTransferStatus.Running => L.IsEnglish
             ? Direction == SftpTransferDirection.Upload ? "Uploading" : "Downloading"
             : Direction == SftpTransferDirection.Upload ? "\u4e0a\u4f20\u4e2d" : "\u4e0b\u8f7d\u4e2d",
+        SftpTransferStatus.Retrying => L.IsEnglish
+            ? $"Retrying ({AutomaticRetryCount}/{MaxAutomaticRetries})"
+            : $"\u91cd\u8bd5\u4e2d ({AutomaticRetryCount}/{MaxAutomaticRetries})",
         SftpTransferStatus.Cancelling => L.IsEnglish ? "Cancelling" : "\u6b63\u5728\u53d6\u6d88",
         SftpTransferStatus.Completed => L.IsEnglish ? "Completed" : "\u5df2\u5b8c\u6210",
         SftpTransferStatus.Failed => L.IsEnglish ? "Failed" : "\u5931\u8d25",
@@ -99,24 +106,39 @@ public partial class SftpTransferTaskItem : ObservableObject
     }
 
     public bool CanCancel => IsExecutionActive &&
-                             (Status is SftpTransferStatus.Pending or SftpTransferStatus.Running);
+                             (Status is SftpTransferStatus.Pending or
+                              SftpTransferStatus.Running or
+                              SftpTransferStatus.Retrying);
     public bool CanRetry => SupportsRetry && !IsExecutionActive &&
                             (Status is SftpTransferStatus.Failed or SftpTransferStatus.Cancelled);
     public bool CanRemove => !IsExecutionActive &&
-                             (Status is not SftpTransferStatus.Pending and
+                            (Status is not SftpTransferStatus.Pending and
                               not SftpTransferStatus.Running and
+                              not SftpTransferStatus.Retrying and
                               not SftpTransferStatus.Cancelling);
     public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
 
     public void PrepareForStart()
     {
+        ExecutionToken = Guid.NewGuid();
         Status = SftpTransferStatus.Pending;
         ErrorMessage = null;
         CompletedAt = null;
+        TransferredBytes = 0;
         SpeedBytesPerSecond = 0;
+        AutomaticRetryCount = 0;
         LastUiProgressAt = DateTimeOffset.MinValue;
         LastUiProgressBytes = 0;
         ResetCancellation();
+    }
+
+    internal bool IsCurrentExecution(Guid executionToken)
+        => ExecutionToken == executionToken;
+
+    internal Guid BeginExecutionAttempt()
+    {
+        ExecutionToken = Guid.NewGuid();
+        return ExecutionToken;
     }
 
     public void RefreshLocalization()
@@ -128,6 +150,7 @@ public partial class SftpTransferTaskItem : ObservableObject
     public void MarkRunning()
     {
         StartedAt = DateTimeOffset.Now;
+        ErrorMessage = null;
         Status = SftpTransferStatus.Running;
         _lastSpeedSampleAt = StartedAt.Value;
         _lastSpeedSampleBytes = TransferredBytes;
@@ -162,6 +185,7 @@ public partial class SftpTransferTaskItem : ObservableObject
         if (TotalBytes > 0)
             TransferredBytes = TotalBytes;
         SpeedBytesPerSecond = 0;
+        ErrorMessage = null;
         CompletedAt = DateTimeOffset.Now;
         Status = SftpTransferStatus.Completed;
         NotifyComputedProperties();
@@ -173,6 +197,17 @@ public partial class SftpTransferTaskItem : ObservableObject
         SpeedBytesPerSecond = 0;
         CompletedAt = DateTimeOffset.Now;
         Status = SftpTransferStatus.Failed;
+        NotifyComputedProperties();
+    }
+
+    public void MarkRetrying(int retryCount, int maxRetries, string message)
+    {
+        AutomaticRetryCount = Math.Max(0, retryCount);
+        MaxAutomaticRetries = Math.Max(0, maxRetries);
+        ErrorMessage = message;
+        SpeedBytesPerSecond = 0;
+        CompletedAt = null;
+        Status = SftpTransferStatus.Retrying;
         NotifyComputedProperties();
     }
 
@@ -203,6 +238,18 @@ public partial class SftpTransferTaskItem : ObservableObject
         ActiveService = null;
     }
 
+    internal void RestoreInterruptedState(string message, long transferredBytes)
+    {
+        ExecutionToken = Guid.NewGuid();
+        ResetCancellation();
+        TransferredBytes = Math.Max(0, transferredBytes);
+        ErrorMessage = message;
+        CompletedAt = DateTimeOffset.Now;
+        Status = SftpTransferStatus.Failed;
+        IsExecutionActive = false;
+        NotifyComputedProperties();
+    }
+
     partial void OnDirectionChanged(SftpTransferDirection value)
     {
         OnPropertyChanged(nameof(DirectionText));
@@ -218,6 +265,16 @@ public partial class SftpTransferTaskItem : ObservableObject
         OnPropertyChanged(nameof(CanRemove));
         OnPropertyChanged(nameof(SpeedText));
         OnPropertyChanged(nameof(RemainingText));
+    }
+
+    partial void OnAutomaticRetryCountChanged(int value)
+    {
+        OnPropertyChanged(nameof(StatusText));
+    }
+
+    partial void OnMaxAutomaticRetriesChanged(int value)
+    {
+        OnPropertyChanged(nameof(StatusText));
     }
 
     partial void OnLocalPathChanged(string value)

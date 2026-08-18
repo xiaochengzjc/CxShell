@@ -27,8 +27,13 @@ public class SessionStorageService
 
     public SessionStorageService()
     {
-        _storageDir = ResolveStorageDirectory();
+        _storageDir = GetStorageDirectory();
         _storagePath = Path.Combine(_storageDir, "sessions.json");
+    }
+
+    public static string GetStorageDirectory()
+    {
+        return ResolveStorageDirectory();
     }
 
     public SessionData Load()

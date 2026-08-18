@@ -1,0 +1,129 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:atom="https://atomui.net"
+        xmlns:antdicons="https://atomui.net/icons/antdesign"
+        xmlns:vm="using:CxShell.ViewModels"
+        x:Class="CxShell.Views.RecentConnectionsWindow"
+        x:DataType="vm:RecentConnectionsViewModel"
+        Title="{Binding TitleText}"
+        Icon="/Assets/CxShellLogo.png"
+        Width="900"
+        Height="560"
+        MinWidth="700"
+        MinHeight="420"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid RowDefinitions="Auto,*,Auto"
+          Background="{atom:SharedTokenResource ColorBgContainer}">
+        <Border Grid.Row="0"
+                Padding="18,15"
+                BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                BorderThickness="0,0,0,1">
+            <Grid RowDefinitions="Auto,Auto" RowSpacing="12">
+                <StackPanel Spacing="3">
+                    <atom:TextBlock Text="{Binding TitleText}"
+                                    FontSize="18"
+                                    FontWeight="SemiBold"
+                                    Foreground="{atom:SharedTokenResource ColorText}"/>
+                    <atom:TextBlock Text="{Binding DescriptionText}"
+                                    FontSize="11"
+                                    Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+                </StackPanel>
+                <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <atom:TextBox Text="{Binding FilterText, Mode=TwoWay}"
+                                  PlaceholderText="{Binding FilterPlaceholderText}"
+                                  MaxWidth="420"
+                                  HorizontalAlignment="Left"/>
+                    <atom:Button Grid.Column="1"
+                                 Content="{Binding RefreshText}"
+                                 Icon="{antdicons:AntDesignIconProvider Kind=ReloadOutlined}"
+                                 Command="{Binding RefreshCommand}"/>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="18,14">
+            <atom:DataGrid x:Name="RecentConnectionsGrid"
+                           ItemsSource="{Binding Entries}"
+                           SelectedItem="{Binding SelectedEntry, Mode=TwoWay}"
+                           AutoGenerateColumns="False"
+                           IsReadOnly="True"
+                           SelectionMode="Single"
+                           SizeType="Small"
+                           RowHeight="42"
+                           GridLinesVisibility="Horizontal"
+                           CanUserResizeColumns="True"
+                           CanUserSortColumns="False"
+                           IsHideOnSinglePage="True"
+                           IsVisible="{Binding HasEntries}"
+                           DoubleTapped="OnRecentConnectionDoubleTapped"
+                           KeyDown="OnRecentConnectionsKeyDown">
+                <atom:DataGrid.Columns>
+                    <atom:DataGridTemplateColumn Header="{Binding ColumnSessionText}"
+                                                 Width="220"
+                                                 MinWidth="150">
+                        <atom:DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate DataType="vm:RecentSessionItemViewModel">
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                    <atom:IconPresenter Icon="{Binding Icon}"
+                                                        Width="16"
+                                                        Height="16"
+                                                        IconBrush="{atom:SharedTokenResource ColorPrimary}"
+                                                        VerticalAlignment="Center"/>
+                                    <atom:TextBlock Grid.Column="1"
+                                                    Text="{Binding Name}"
+                                                    TextTrimming="CharacterEllipsis"
+                                                    VerticalAlignment="Center"/>
+                                </Grid>
+                            </DataTemplate>
+                        </atom:DataGridTemplateColumn.CellTemplate>
+                    </atom:DataGridTemplateColumn>
+                    <atom:DataGridTextColumn Header="{Binding ColumnEndpointText}"
+                                             Binding="{Binding Endpoint}"
+                                             Width="1*"
+                                             MinWidth="220"/>
+                    <atom:DataGridTextColumn Header="{Binding ColumnProtocolText}"
+                                             Binding="{Binding ProtocolText}"
+                                             Width="100"/>
+                    <atom:DataGridTextColumn Header="{Binding ColumnTimeText}"
+                                             Binding="{Binding ConnectedText}"
+                                             Width="150"/>
+                </atom:DataGrid.Columns>
+            </atom:DataGrid>
+
+            <StackPanel IsVisible="{Binding !HasEntries}"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Spacing="8">
+                <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider Kind=HistoryOutlined}"
+                                    Width="26"
+                                    Height="26"
+                                    IconBrush="{atom:SharedTokenResource ColorTextQuaternary}"
+                                    HorizontalAlignment="Center"/>
+                <atom:TextBlock Text="{Binding EmptyText}"
+                                Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+            </StackPanel>
+        </Grid>
+
+        <Border Grid.Row="2"
+                Padding="18,10"
+                BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                <atom:TextBlock Text="{Binding CountText}"
+                                VerticalAlignment="Center"
+                                Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+                <atom:Button Grid.Column="1"
+                             Content="{Binding ConnectText}"
+                             Icon="{antdicons:AntDesignIconProvider Kind=LoginOutlined}"
+                             ButtonType="Primary"
+                             Command="{Binding ConnectCommand}"
+                             CommandParameter="{Binding SelectedEntry}"/>
+                <atom:Button Grid.Column="2"
+                             Content="{Binding CloseText}"
+                             Icon="{antdicons:AntDesignIconProvider Kind=CloseOutlined}"
+                             Click="OnCloseClick"/>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

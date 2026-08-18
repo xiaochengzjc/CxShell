@@ -105,6 +105,19 @@
         <Style Selector="Border.session-tab-header.tab-dragging">
             <Setter Property="Opacity" Value="0.64"/>
         </Style>
+        <Style Selector="atom|ListBox.recent-session-list">
+            <Setter Property="Background" Value="{atom:SharedTokenResource ColorBgContainer}"/>
+            <Setter Property="BorderBrush" Value="{atom:SharedTokenResource ColorBorderSecondary}"/>
+            <Setter Property="Padding" Value="4"/>
+        </Style>
+        <Style Selector="atom|ListBox.recent-session-list atom|ListBoxItem">
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="MinHeight" Value="58"/>
+            <Setter Property="Padding" Value="12,7"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        </Style>
     </atom:Window.Styles>
 
     <atom:Window.Resources>
@@ -122,6 +135,12 @@
                              Fill="{Binding ConnectionIndicatorBrush}"
                              VerticalAlignment="Center"
                              atom:ToolTip.Tip="{Binding ConnectionIndicatorText}"/>
+                    <atom:IconPresenter IsVisible="{Binding HasTabIcon}"
+                                        Icon="{Binding TabIcon}"
+                                        Width="14"
+                                        Height="14"
+                                        IconBrush="{atom:SharedTokenResource ColorTextSecondary}"
+                                        VerticalAlignment="Center"/>
                     <atom:TextBlock Text="{Binding Title}"
                                     FontSize="12"
                                     MaxWidth="160"
@@ -326,6 +345,13 @@
                              Content="{Binding HelpText}"
                              Click="OnHelpButtonClick"
                              atom:ToolTip.Tip="{Binding HelpToolTip}"
+                             atom:ToolTip.Placement="Bottom"/>
+                <atom:Button x:Name="SettingsButton"
+                             ButtonType="Default"
+                             Icon="{antdicons:AntDesignIconProvider Kind=SettingOutlined}"
+                             Content="{Binding SettingsText}"
+                             Command="{Binding ShowApplicationSettingsCommand}"
+                             atom:ToolTip.Tip="{Binding SettingsToolTip}"
                              atom:ToolTip.Placement="Bottom"/>
                 <atom:Popup x:Name="LanguagePopup"
                             Placement="Bottom"
@@ -620,26 +646,146 @@
                             Background="{atom:SharedTokenResource ColorSplit}"/>
                 </Border>
 
-                <!-- Col 1: 终端区域（始终深色）-->
+                <!-- Col 1: 首屏与终端区域 -->
                 <Grid Grid.Column="2" Background="#141414">
-                    <!-- 无标签时显示欢迎页 -->
-                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
-                                Spacing="12"
-                                IsVisible="{Binding !HasTabs}">
-                        <atom:TextBlock Text="CxShell" FontSize="32" FontWeight="Bold"
-                                       HorizontalAlignment="Center" Opacity="0.3"
-                                       Foreground="{atom:SharedTokenResource ColorTextLightSolid}"/>
-                        <atom:TextBlock Text="{Binding WelcomeSelectSessionText}"
-                                       HorizontalAlignment="Center" Opacity="0.5"
-                                       Foreground="{atom:SharedTokenResource ColorTextLightSolid}"/>
-                        <atom:TextBlock Text="{Binding WelcomeBuiltWithAtomUiText}"
-                                       HorizontalAlignment="Center" Opacity="0.25"
-                                       Foreground="{atom:SharedTokenResource ColorTextLightSolid}"
-                                       FontSize="11"/>
-                    </StackPanel>
+                    <!-- 无标签时显示最近连接首屏 -->
+                    <Grid IsVisible="{Binding !HasTabs}"
+                          Background="{atom:SharedTokenResource ColorBgContainer}">
+                        <Grid MaxWidth="720"
+                              Margin="24"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center"
+                              RowDefinitions="Auto,Auto,Auto"
+                              IsVisible="{Binding HasRecentSessions}">
+                            <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+                                <StackPanel Spacing="4">
+                                    <atom:TextBlock Text="{Binding RecentConnectionsText}"
+                                                    FontSize="22"
+                                                    FontWeight="SemiBold"
+                                                    Foreground="{atom:SharedTokenResource ColorText}"/>
+                                    <atom:TextBlock Text="{Binding RecentConnectionsHintText}"
+                                                    FontSize="12"
+                                                    Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+                                </StackPanel>
+                                <atom:Button Grid.Column="1"
+                                             Content="{Binding ViewAllSessionsText}"
+                                             Command="{Binding ShowRecentConnectionsCommand}"
+                                             ButtonType="Link"
+                                             SizeType="Small"
+                                             VerticalAlignment="Center"/>
+                            </Grid>
+
+                            <atom:ListBox x:Name="RecentSessionsList"
+                                          Grid.Row="1"
+                                          Classes="recent-session-list"
+                                          Margin="0,16,0,0"
+                                          HorizontalAlignment="Stretch"
+                                          ItemsSource="{Binding RecentSessions}"
+                                          SelectedItem="{Binding SelectedRecentSession, Mode=TwoWay}"
+                                          SelectionMode="Single"
+                                          SizeType="Middle"
+                                          IsShowSelectedIndicator="False"
+                                          DoubleTapped="OnRecentSessionsDoubleTapped"
+                                          KeyDown="OnRecentSessionsKeyDown">
+                                <atom:ListBox.ItemTemplate>
+                                    <DataTemplate DataType="vm:RecentSessionItemViewModel">
+                                        <Grid ColumnDefinitions="Auto,*,Auto,118,Auto"
+                                              ColumnSpacing="12"
+                                              MinHeight="44">
+                                            <atom:IconPresenter Grid.Column="0"
+                                                                Icon="{Binding Icon}"
+                                                                Width="18"
+                                                                Height="18"
+                                                                IconBrush="{atom:SharedTokenResource ColorPrimary}"
+                                                                VerticalAlignment="Center"/>
+                                            <StackPanel Grid.Column="1"
+                                                        Spacing="2"
+                                                        VerticalAlignment="Center">
+                                                <atom:TextBlock Text="{Binding Name}"
+                                                                FontSize="14"
+                                                                FontWeight="SemiBold"
+                                                                TextTrimming="CharacterEllipsis"
+                                                                Foreground="{atom:SharedTokenResource ColorText}"/>
+                                                <atom:TextBlock Text="{Binding Endpoint}"
+                                                                FontSize="11"
+                                                                TextTrimming="CharacterEllipsis"
+                                                                Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+                                            </StackPanel>
+                                            <atom:Tag Grid.Column="2"
+                                                      Text="{Binding ProtocolText}"
+                                                      TagColor="blue"
+                                                      VerticalAlignment="Center"/>
+                                            <atom:TextBlock Grid.Column="3"
+                                                            Text="{Binding ConnectedText}"
+                                                            FontSize="11"
+                                                            TextAlignment="Right"
+                                                            TextTrimming="CharacterEllipsis"
+                                                            VerticalAlignment="Center"
+                                                            Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+                                            <atom:Button Grid.Column="4"
+                                                         Width="30"
+                                                         Height="30"
+                                                         Padding="0"
+                                                         ButtonType="Text"
+                                                         Shape="Circle"
+                                                         Icon="{antdicons:AntDesignIconProvider Kind=LoginOutlined}"
+                                                         Command="{Binding $parent[Window].DataContext.ConnectRecentSessionCommand, x:CompileBindings=False}"
+                                                         CommandParameter="{Binding}"
+                                                         atom:ToolTip.Tip="{Binding $parent[Window].DataContext.ConnectRecentSessionText, x:CompileBindings=False}"
+                                                         VerticalAlignment="Center"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </atom:ListBox.ItemTemplate>
+                            </atom:ListBox>
+
+                            <Border Grid.Row="2"
+                                    Margin="0,16,0,0"
+                                    Padding="0,16,0,0"
+                                    BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                                    BorderThickness="0,1,0,0">
+                                <Grid ColumnDefinitions="Auto,*,Auto">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <atom:Button Content="{Binding WelcomeNewSessionText}"
+                                                     Icon="{antdicons:AntDesignIconProvider Kind=PlusOutlined}"
+                                                     Command="{Binding NewSessionCommand}"
+                                                     ButtonType="Primary"/>
+                                        <atom:Button Content="{Binding WelcomeSessionManagerText}"
+                                                     Icon="{antdicons:AntDesignIconProvider Kind=UnorderedListOutlined}"
+                                                     Command="{Binding ShowSessionManagerCommand}"
+                                                     ButtonType="Default"/>
+                                    </StackPanel>
+                                    <atom:TextBlock Grid.Column="2"
+                                                    Text="{Binding WelcomeBuiltWithAtomUiText}"
+                                                    FontSize="11"
+                                                    VerticalAlignment="Center"
+                                                    Foreground="{atom:SharedTokenResource ColorTextQuaternary}"/>
+                                </Grid>
+                            </Border>
+                        </Grid>
+
+                        <!-- 尚无最近记录时保留原欢迎内容 -->
+                        <StackPanel HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Spacing="12"
+                                    IsVisible="{Binding !HasRecentSessions}">
+                            <atom:TextBlock Text="CxShell"
+                                            FontSize="32"
+                                            FontWeight="Bold"
+                                            HorizontalAlignment="Center"
+                                            Foreground="{atom:SharedTokenResource ColorText}"/>
+                            <atom:TextBlock Text="{Binding WelcomeSelectSessionText}"
+                                            HorizontalAlignment="Center"
+                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                            <atom:TextBlock Text="{Binding WelcomeBuiltWithAtomUiText}"
+                                            HorizontalAlignment="Center"
+                                            Foreground="{atom:SharedTokenResource ColorTextQuaternary}"
+                                            FontSize="11"/>
+                        </StackPanel>
+                    </Grid>
 
                     <!-- 有标签时显示多标签布局 -->
-                    <Grid IsVisible="{Binding HasTabs}" RowDefinitions="Auto,*">
+                    <Grid IsVisible="{Binding HasTabs}"
+                          RowDefinitions="Auto,*">
                         <!-- Tab 标题栏 -->
                         <Border Grid.Row="0"
                                 IsVisible="{Binding IsMainTabHeaderVisible}"
@@ -840,5 +986,16 @@
                     Background="{atom:SharedTokenResource ColorPrimary}"
                     IsVisible="False"/>
         </Canvas>
+
+        <Grid Grid.RowSpan="4"
+              ZIndex="300"
+              IsVisible="{Binding CommandPalette.IsOpen}">
+            <Border Background="#66000000"
+                    PointerPressed="OnCommandPaletteBackdropPressed"/>
+            <views:CommandPaletteView DataContext="{Binding CommandPalette}"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Top"
+                                      Margin="0,72,0,0"/>
+        </Grid>
     </Grid>
 </atom:Window>

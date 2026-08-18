@@ -1,0 +1,102 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:atom="https://atomui.net"
+        xmlns:antdicons="https://atomui.net/icons/antdesign"
+        xmlns:vm="using:CxShell.ViewModels"
+        x:Class="CxShell.Views.ConnectionAuditWindow"
+        x:DataType="vm:ConnectionAuditViewModel"
+        Title="{Binding TitleText}"
+        Width="1040"
+        Height="620"
+        MinWidth="760"
+        MinHeight="420"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid RowDefinitions="Auto,*,Auto" Background="{atom:SharedTokenResource ColorBgContainer}">
+        <Border Grid.Row="0"
+                Padding="18,16,18,12"
+                BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                BorderThickness="0,0,0,1">
+            <Grid RowDefinitions="Auto,Auto" RowSpacing="10">
+                <StackPanel Grid.Row="0" Spacing="3">
+                    <TextBlock Text="{Binding TitleText}"
+                               FontSize="18"
+                               FontWeight="SemiBold"
+                               Foreground="{atom:SharedTokenResource ColorText}"/>
+                    <TextBlock Text="{Binding DescriptionText}"
+                               FontSize="11"
+                               Foreground="{atom:SharedTokenResource ColorTextTertiary}"
+                               TextWrapping="Wrap"/>
+                </StackPanel>
+
+                <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+                    <atom:TextBox Grid.Column="0"
+                                  Text="{Binding FilterText, Mode=TwoWay}"
+                                  PlaceholderText="{Binding FilterPlaceholderText}"
+                                  MinWidth="240"
+                                  HorizontalAlignment="Stretch"/>
+                    <atom:CheckBox Grid.Column="1"
+                                   Content="{Binding FailuresOnlyText}"
+                                   IsChecked="{Binding ShowFailuresOnly, Mode=TwoWay}"
+                                   VerticalAlignment="Center"/>
+                    <atom:Button Grid.Column="2"
+                                 Content="{Binding RefreshText}"
+                                 Icon="{antdicons:AntDesignIconProvider Kind=ReloadOutlined}"
+                                 Command="{Binding RefreshCommand}"/>
+                    <atom:Button Grid.Column="3"
+                                 Content="{Binding ClearText}"
+                                 Icon="{antdicons:AntDesignIconProvider Kind=DeleteOutlined}"
+                                 Click="OnClearClick"/>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="18,12">
+            <atom:DataGrid ItemsSource="{Binding Entries}"
+                           AutoGenerateColumns="False"
+                           IsReadOnly="True"
+                           SizeType="Small"
+                           RowHeight="32"
+                           GridLinesVisibility="Horizontal"
+                           CanUserResizeColumns="True"
+                           CanUserSortColumns="True"
+                           IsHideOnSinglePage="True">
+                <atom:DataGrid.Columns>
+                    <atom:DataGridTextColumn Header="{Binding ColumnTimeText}" Binding="{Binding TimestampText}" Width="160"/>
+                    <atom:DataGridTextColumn Header="{Binding ColumnSessionText}" Binding="{Binding SessionText}" Width="170"/>
+                    <atom:DataGridTextColumn Header="{Binding ColumnEndpointText}" Binding="{Binding EndpointText}" Width="240"/>
+                    <atom:DataGridTextColumn Header="{Binding ColumnProtocolText}" Binding="{Binding ProtocolText}" Width="90"/>
+                    <atom:DataGridTextColumn Header="{Binding ColumnEventText}" Binding="{Binding EventText}" Width="110"/>
+                    <atom:DataGridTextColumn Header="{Binding ColumnDetailText}" Binding="{Binding Detail}" Width="1*"/>
+                </atom:DataGrid.Columns>
+            </atom:DataGrid>
+
+            <TextBlock Text="{Binding EmptyText}"
+                       IsVisible="{Binding !HasEntries}"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+        </Grid>
+
+        <Border Grid.Row="2"
+                Padding="18,10"
+                BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                <TextBlock Grid.Column="0"
+                           Text="{Binding CountText}"
+                           VerticalAlignment="Center"
+                           Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+                <atom:Button Grid.Column="1"
+                             Content="{Binding ExportText}"
+                             Icon="{antdicons:AntDesignIconProvider Kind=ExportOutlined}"
+                             IsEnabled="{Binding CanExport}"
+                             Click="OnExportClick"/>
+                <atom:Button Grid.Column="2"
+                             Content="{Binding CloseText}"
+                             Icon="{antdicons:AntDesignIconProvider Kind=CloseOutlined}"
+                             Click="OnCloseClick"/>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

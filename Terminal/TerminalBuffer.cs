@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Text;
 using Avalonia.Media;
 
 namespace CxShell.Terminal;
+
+public readonly record struct TerminalTextMatch(int Row, int Column, int Length);
 
 public class TerminalBuffer
 {
@@ -138,6 +141,82 @@ public class TerminalBuffer
         return screenRow >= 0 && screenRow < Rows
             ? _cells[screenRow, col]
             : TerminalCell.Default;
+    }
+
+    public string ExportText()
+    {
+        var lines = new List<string>(_scrollback.Count + Rows);
+        foreach (var row in _scrollback)
+            lines.Add(FormatRowText(row));
+
+        for (var row = 0; row < Rows; row++)
+        {
+            var cells = new TerminalCell[Columns];
+            for (var column = 0; column < Columns; column++)
+                cells[column] = _cells[row, column];
+
+            lines.Add(FormatRowText(cells));
+        }
+
+        while (lines.Count > 0 && lines[^1].Length == 0)
+            lines.RemoveAt(lines.Count - 1);
+
+        return string.Join('\n', lines);
+    }
+
+    private static string FormatRowText(IReadOnlyList<TerminalCell> row)
+    {
+        var end = row.Count;
+        while (end > 0 && (row[end - 1].Character == ' ' || row[end - 1].Character == '\0'))
+            end--;
+
+        var text = new StringBuilder(end);
+        for (var column = 0; column < end; column++)
+        {
+            var cell = row[column];
+            if (!cell.IsWideContinuation)
+                text.Append(cell.Character == '\0' ? ' ' : cell.Character);
+        }
+
+        return text.ToString().TrimEnd();
+    }
+
+    public IReadOnlyList<TerminalTextMatch> FindTextMatches(string query)
+    {
+        if (string.IsNullOrEmpty(query))
+            return [];
+
+        var matches = new List<TerminalTextMatch>();
+        for (var row = 0; row < _scrollback.Count + Rows; row++)
+        {
+            var cells = new TerminalCell[Columns];
+            if (row < _scrollback.Count)
+            {
+                var scrollbackRow = _scrollback[row];
+                for (var column = 0; column < Columns && column < scrollbackRow.Length; column++)
+                    cells[column] = scrollbackRow[column];
+            }
+            else
+            {
+                var screenRow = row - _scrollback.Count;
+                for (var column = 0; column < Columns; column++)
+                    cells[column] = _cells[screenRow, column];
+            }
+
+            var line = FormatRowText(cells);
+            var start = 0;
+            while (start < line.Length)
+            {
+                var index = line.IndexOf(query, start, StringComparison.OrdinalIgnoreCase);
+                if (index < 0)
+                    break;
+
+                matches.Add(new TerminalTextMatch(row, index, query.Length));
+                start = index + Math.Max(1, query.Length);
+            }
+        }
+
+        return matches;
     }
 
     public void PutChar(char c)

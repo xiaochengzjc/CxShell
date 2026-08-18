@@ -42,11 +42,15 @@ public partial class SessionEditViewModel : ObservableObject
     public string SerialText => L.Text("SessionEdit.Serial");
     public string SecurityText => L.Text("SessionEdit.Security");
     public string TunnelText => L.Text("SessionEdit.Tunnel");
+    public string MonitorText => L.Text("SessionEdit.Monitor");
     public string TerminalText => L.Text("SessionEdit.Terminal");
     public string KeyboardText => L.Text("SessionEdit.Keyboard");
     public string VtModeText => L.Text("SessionEdit.VtMode");
     public string AdvancedText => L.Text("SessionEdit.Advanced");
     public string AppearanceText => L.Text("SessionEdit.Appearance");
+    public string AppearanceTabIconText => L.Text("SessionEdit.TabIcon");
+    public string AppearanceTabIconSelectionText => L.Text("SessionEdit.TabIconSelection");
+    public string AppearanceTabIconHintText => L.Text("SessionEdit.TabIconHint");
     public string WindowText => L.Text("SessionEdit.Window");
     public string HighlightText => L.Text("SessionEdit.Highlight");
     public string TransferText => L.Text("SessionEdit.Transfer");
@@ -85,6 +89,10 @@ public partial class SessionEditViewModel : ObservableObject
     public string SshUsernameText => L.Text("SessionEdit.SshUsername");
     public string SshPasswordText => L.Text("SessionEdit.SshPassword");
     public string SshPrivateKeyText => L.Text("SessionEdit.SshPrivateKey");
+    public string ServerMonitoringText => L.Text("SessionEdit.ServerMonitoring");
+    public string EnableServerMonitoringText => L.Text("SessionEdit.EnableServerMonitoring");
+    public string EnableMonitorNetworkLatencyText => L.Text("SessionEdit.EnableMonitorNetworkLatency");
+    public string MonitorRefreshIntervalText => L.Text("SessionEdit.MonitorRefreshInterval");
     public string BrowseText => L.Text("SessionEdit.Browse");
     public string ReconnectText => L.Text("SessionEdit.Reconnect");
     public string AutoReconnectText => L.Text("SessionEdit.AutoReconnect");
@@ -170,6 +178,7 @@ public partial class SessionEditViewModel : ObservableObject
     [ObservableProperty] private bool _terminalAdvancedDisableBlinkingText;
     [ObservableProperty] private bool _terminalAdvancedDisableTitleChange;
     [ObservableProperty] private bool _terminalAdvancedAllowTitleChange;
+    [ObservableProperty] private bool _terminalAdvancedAllowOsc52Clipboard;
     [ObservableProperty] private bool _terminalAdvancedDisableTerminalPrint;
     [ObservableProperty] private bool _terminalAdvancedDisableAlternateScreen;
     [ObservableProperty] private bool _terminalAdvancedIgnoreResizeRequest = true;
@@ -204,6 +213,7 @@ public partial class SessionEditViewModel : ObservableObject
     [ObservableProperty] private decimal _appearanceCharacterSpacing;
     [ObservableProperty] private string _appearanceTabColorMode = "Default";
     [ObservableProperty] private Color _appearanceTabCustomColor = Color.Parse("#000000");
+    [ObservableProperty] private string _appearanceTabIcon = SessionTabIconCatalog.Default;
     [ObservableProperty] private string _appearanceBackgroundImagePath = string.Empty;
     [ObservableProperty] private string _appearanceBackgroundImagePosition = "Center";
     [ObservableProperty] private string _appearanceHighlightSetId = "None";
@@ -256,6 +266,9 @@ public partial class SessionEditViewModel : ObservableObject
     [ObservableProperty] private bool _sshAcceptAndSaveHostKey;
     [ObservableProperty] private bool _sshAutoOpenSftpPanel;
     [ObservableProperty] private bool _sshAutoOpenMonitorPanel;
+    [ObservableProperty] private bool _sshEnableServerMonitoring = true;
+    [ObservableProperty] private bool _sshEnableMonitorNetworkLatency;
+    [ObservableProperty] private decimal _sshMonitorRefreshIntervalSeconds = SessionInfo.DefaultSshMonitorRefreshIntervalSeconds;
     [ObservableProperty] private bool _sshDoNotStartFileManager = true;
     [ObservableProperty] private string _sshCipherAlgorithms = string.Empty;
     [ObservableProperty] private string _sshMacAlgorithms = string.Empty;
@@ -785,6 +798,15 @@ public partial class SessionEditViewModel : ObservableObject
         new SelectOption { Header = "White on Black", Content = "WhiteOnBlack" },
         new SelectOption { Header = "XTerm", Content = "XTerm" }
     ];
+    public ObservableCollection<ISelectOption> AppearanceTabIconOptions { get; } =
+    [
+        new SelectOption { Header = "Default", Content = SessionTabIconCatalog.Default },
+        new SelectOption { Header = "Server", Content = SessionTabIconCatalog.Server },
+        new SelectOption { Header = "Database", Content = SessionTabIconCatalog.Database },
+        new SelectOption { Header = "Desktop", Content = SessionTabIconCatalog.Desktop },
+        new SelectOption { Header = "Code", Content = SessionTabIconCatalog.Code },
+        new SelectOption { Header = "Cloud", Content = SessionTabIconCatalog.Cloud }
+    ];
 
     public ObservableCollection<ISelectOption> AppearanceFontOptions { get; } = CreateFontOptions();
     public ObservableCollection<ISelectOption> AppearanceFontStyleOptions { get; } =
@@ -1059,11 +1081,15 @@ public partial class SessionEditViewModel : ObservableObject
         OnPropertyChanged(nameof(SerialText));
         OnPropertyChanged(nameof(SecurityText));
         OnPropertyChanged(nameof(TunnelText));
+        OnPropertyChanged(nameof(MonitorText));
         OnPropertyChanged(nameof(TerminalText));
         OnPropertyChanged(nameof(KeyboardText));
         OnPropertyChanged(nameof(VtModeText));
         OnPropertyChanged(nameof(AdvancedText));
         OnPropertyChanged(nameof(AppearanceText));
+        OnPropertyChanged(nameof(AppearanceTabIconText));
+        OnPropertyChanged(nameof(AppearanceTabIconSelectionText));
+        OnPropertyChanged(nameof(AppearanceTabIconHintText));
         OnPropertyChanged(nameof(WindowText));
         OnPropertyChanged(nameof(HighlightText));
         OnPropertyChanged(nameof(TransferText));
@@ -1102,6 +1128,10 @@ public partial class SessionEditViewModel : ObservableObject
         OnPropertyChanged(nameof(SshUsernameText));
         OnPropertyChanged(nameof(SshPasswordText));
         OnPropertyChanged(nameof(SshPrivateKeyText));
+        OnPropertyChanged(nameof(ServerMonitoringText));
+        OnPropertyChanged(nameof(EnableServerMonitoringText));
+        OnPropertyChanged(nameof(EnableMonitorNetworkLatencyText));
+        OnPropertyChanged(nameof(MonitorRefreshIntervalText));
         OnPropertyChanged(nameof(BrowseText));
         OnPropertyChanged(nameof(ReconnectText));
         OnPropertyChanged(nameof(AutoReconnectText));
@@ -1135,6 +1165,12 @@ public partial class SessionEditViewModel : ObservableObject
         SetOptionHeader(AppearanceFontQualityOptions, "NonAntiAliased", "Option.NonAntiAliased");
         SetOptionHeader(AppearanceFontQualityOptions, "AntiAliased", "Option.AntiAliased");
         SetOptionHeader(AppearanceFontQualityOptions, "NaturalClearType", "Option.NaturalClearType");
+        SetOptionHeader(AppearanceTabIconOptions, SessionTabIconCatalog.Default, "Option.TabIconDefault");
+        SetOptionHeader(AppearanceTabIconOptions, SessionTabIconCatalog.Server, "Option.TabIconServer");
+        SetOptionHeader(AppearanceTabIconOptions, SessionTabIconCatalog.Database, "Option.TabIconDatabase");
+        SetOptionHeader(AppearanceTabIconOptions, SessionTabIconCatalog.Desktop, "Option.TabIconDesktop");
+        SetOptionHeader(AppearanceTabIconOptions, SessionTabIconCatalog.Code, "Option.TabIconCode");
+        SetOptionHeader(AppearanceTabIconOptions, SessionTabIconCatalog.Cloud, "Option.TabIconCloud");
         SetOptionHeader(AppearanceBoldTextModeOptions, "Color", "Option.BoldColor");
         SetOptionHeader(AppearanceBoldTextModeOptions, "Font", "Option.BoldFont");
         SetOptionHeader(AppearanceBoldTextModeOptions, "ColorAndFont", "Option.BoldColorAndFont");
@@ -1174,6 +1210,7 @@ public partial class SessionEditViewModel : ObservableObject
         OnPropertyChanged(nameof(TerminalVtCursorKeyModeOptions));
         OnPropertyChanged(nameof(TerminalVtNumericKeypadModeOptions));
         OnPropertyChanged(nameof(AppearanceFontQualityOptions));
+        OnPropertyChanged(nameof(AppearanceTabIconOptions));
         OnPropertyChanged(nameof(AppearanceBoldTextModeOptions));
         OnPropertyChanged(nameof(AppearanceCursorShapeOptions));
         OnPropertyChanged(nameof(AppearanceBackgroundImagePositionOptions));
@@ -1294,6 +1331,7 @@ public partial class SessionEditViewModel : ObservableObject
         TerminalAdvancedDisableBlinkingText = session.TerminalAdvancedDisableBlinkingText;
         TerminalAdvancedDisableTitleChange = session.TerminalAdvancedDisableTitleChange;
         TerminalAdvancedAllowTitleChange = session.TerminalAdvancedAllowTitleChange;
+        TerminalAdvancedAllowOsc52Clipboard = session.TerminalAdvancedAllowOsc52Clipboard;
         TerminalAdvancedDisableTerminalPrint = session.TerminalAdvancedDisableTerminalPrint;
         TerminalAdvancedDisableAlternateScreen = session.TerminalAdvancedDisableAlternateScreen;
         TerminalAdvancedIgnoreResizeRequest = session.TerminalAdvancedIgnoreResizeRequest;
@@ -1327,6 +1365,7 @@ public partial class SessionEditViewModel : ObservableObject
         AppearanceCharacterSpacing = Math.Clamp(session.AppearanceCharacterSpacing, -5, 32);
         AppearanceTabColorMode = string.IsNullOrWhiteSpace(session.AppearanceTabColorMode) ? "Default" : session.AppearanceTabColorMode;
         AppearanceTabCustomColor = ParseColorOrDefault(session.AppearanceTabCustomColor, "#000000");
+        AppearanceTabIcon = SessionTabIconCatalog.Normalize(session.AppearanceTabIcon);
         AppearanceBackgroundImagePath = session.AppearanceBackgroundImagePath ?? string.Empty;
         AppearanceBackgroundImagePosition = string.IsNullOrWhiteSpace(session.AppearanceBackgroundImagePosition)
             ? "Center"
@@ -1381,6 +1420,12 @@ public partial class SessionEditViewModel : ObservableObject
         SshAcceptAndSaveHostKey = session.SshAcceptAndSaveHostKey;
         SshAutoOpenSftpPanel = session.SshAutoOpenSftpPanel;
         SshAutoOpenMonitorPanel = session.SshAutoOpenMonitorPanel;
+        SshEnableServerMonitoring = session.SshEnableServerMonitoring;
+        SshEnableMonitorNetworkLatency = session.SshEnableMonitorNetworkLatency;
+        SshMonitorRefreshIntervalSeconds = Math.Clamp(
+            session.SshMonitorRefreshIntervalSeconds,
+            SessionInfo.MinSshMonitorRefreshIntervalSeconds,
+            SessionInfo.MaxSshMonitorRefreshIntervalSeconds);
         SshDoNotStartFileManager = session.SshDoNotStartFileManager;
         SshCipherAlgorithms = session.SshCipherAlgorithms ?? string.Empty;
         SshMacAlgorithms = session.SshMacAlgorithms ?? string.Empty;
@@ -1596,6 +1641,12 @@ public partial class SessionEditViewModel : ObservableObject
         session.SshAcceptAndSaveHostKey = SshAcceptAndSaveHostKey;
         session.SshAutoOpenSftpPanel = SshAutoOpenSftpPanel;
         session.SshAutoOpenMonitorPanel = SshAutoOpenMonitorPanel;
+        session.SshEnableServerMonitoring = SshEnableServerMonitoring;
+        session.SshEnableMonitorNetworkLatency = SshEnableMonitorNetworkLatency;
+        session.SshMonitorRefreshIntervalSeconds = Math.Clamp(
+            (int)SshMonitorRefreshIntervalSeconds,
+            SessionInfo.MinSshMonitorRefreshIntervalSeconds,
+            SessionInfo.MaxSshMonitorRefreshIntervalSeconds);
         session.SshDoNotStartFileManager = !SshAutoOpenSftpPanel;
         session.SshCipherAlgorithms = NormalizeAlgorithmList(SshCipherAlgorithms);
         session.SshMacAlgorithms = NormalizeAlgorithmList(SshMacAlgorithms);
@@ -1664,6 +1715,7 @@ public partial class SessionEditViewModel : ObservableObject
         session.TerminalAdvancedDisableBlinkingText = TerminalAdvancedDisableBlinkingText;
         session.TerminalAdvancedDisableTitleChange = TerminalAdvancedDisableTitleChange;
         session.TerminalAdvancedAllowTitleChange = TerminalAdvancedAllowTitleChange;
+        session.TerminalAdvancedAllowOsc52Clipboard = TerminalAdvancedAllowOsc52Clipboard;
         session.TerminalAdvancedDisableTerminalPrint = TerminalAdvancedDisableTerminalPrint;
         session.TerminalAdvancedDisableAlternateScreen = TerminalAdvancedDisableAlternateScreen;
         session.TerminalAdvancedIgnoreResizeRequest = TerminalAdvancedIgnoreResizeRequest;
@@ -1701,6 +1753,7 @@ public partial class SessionEditViewModel : ObservableObject
         session.AppearanceCharacterSpacing = Math.Clamp((int)AppearanceCharacterSpacing, -5, 32);
         session.AppearanceTabColorMode = string.IsNullOrWhiteSpace(AppearanceTabColorMode) ? "Default" : AppearanceTabColorMode;
         session.AppearanceTabCustomColor = ToHex(AppearanceTabCustomColor);
+        session.AppearanceTabIcon = SessionTabIconCatalog.Normalize(AppearanceTabIcon);
         session.AppearanceBackgroundImagePath = AppearanceBackgroundImagePath.Trim();
         session.AppearanceBackgroundImagePosition = string.IsNullOrWhiteSpace(AppearanceBackgroundImagePosition)
             ? "Center"
@@ -2838,12 +2891,14 @@ public partial class SessionEditViewModel : ObservableObject
     {
         return new LoginScriptRule
         {
-            Id = source.Id,
-            Expect = source.Expect,
-            Send = source.Send,
-            HideText = source.HideText,
-            SortOrder = source.SortOrder
-        };
+                Id = source.Id,
+                Expect = source.Expect,
+                Send = source.Send,
+                HideText = source.HideText,
+                IsRegex = source.IsRegex,
+                KeepWatching = source.KeepWatching,
+                SortOrder = source.SortOrder
+            };
     }
 
     public void RefreshHighlightSetOptions()

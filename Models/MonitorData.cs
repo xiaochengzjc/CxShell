@@ -100,6 +100,7 @@ public class MonitorSnapshot
     public List<CpuCoreInfo> CpuCores { get; set; } = new();
     public MemoryInfo? Memory { get; set; }
     public NetworkSpeed? NetworkSpeed { get; set; }
+    public double? NetworkLatencyMilliseconds { get; set; }
     public List<DiskPartitionInfo> DiskPartitions { get; set; } = new();
     public List<DiskIoInfo> DiskIo { get; set; } = new();
 }

@@ -1,0 +1,176 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:antdicons="https://atomui.net/icons/antdesign"
+             xmlns:controls="using:CxShell.Controls"
+             xmlns:vm="using:CxShell.ViewModels"
+             x:Class="CxShell.Views.SessionRecordingPage"
+             x:DataType="vm:SessionRecordingViewModel">
+    <Grid RowDefinitions="Auto,*" ColumnDefinitions="340,14,*">
+        <Grid Grid.Row="0"
+              Grid.ColumnSpan="3"
+              ColumnDefinitions="*,Auto,Auto,Auto"
+              ColumnSpacing="8"
+              Margin="0,0,0,12">
+            <atom:TextBlock Grid.Column="0"
+                            Text="{Binding StatusText}"
+                            VerticalAlignment="Center"
+                            Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+            <atom:Button Grid.Column="1"
+                         Content="{Binding RefreshText}"
+                         Icon="{antdicons:AntDesignIconProvider Kind=ReloadOutlined}"
+                         Command="{Binding RefreshCommand}"/>
+            <atom:Button Grid.Column="2"
+                         Content="{Binding ExportText}"
+                         Icon="{antdicons:AntDesignIconProvider Kind=ExportOutlined}"
+                         IsEnabled="{Binding HasSelection}"
+                         Click="OnExportClick"/>
+            <atom:Button Grid.Column="3"
+                         Content="{Binding DeleteText}"
+                         Icon="{antdicons:AntDesignIconProvider Kind=DeleteOutlined}"
+                         IsEnabled="{Binding CanDeleteSelection}"
+                         Click="OnDeleteClick"/>
+        </Grid>
+
+        <Border Grid.Row="1"
+                Grid.Column="0"
+                BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                BorderThickness="1"
+                CornerRadius="5"
+                ClipToBounds="True">
+            <Grid RowDefinitions="38,*">
+                <Border Padding="12,0"
+                        Background="{atom:SharedTokenResource ColorBgLayout}"
+                        BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                        BorderThickness="0,0,0,1">
+                    <TextBlock Text="{Binding ListText}"
+                               VerticalAlignment="Center"
+                               FontWeight="SemiBold"
+                               Foreground="{atom:SharedTokenResource ColorText}"/>
+                </Border>
+                <Grid Grid.Row="1">
+                    <atom:DataGrid ItemsSource="{Binding Recordings}"
+                                   SelectedItem="{Binding SelectedRecording, Mode=TwoWay}"
+                                   AutoGenerateColumns="False"
+                                   IsReadOnly="True"
+                                   SelectionMode="Single"
+                                   SizeType="Small"
+                                   RowHeight="38"
+                                   GridLinesVisibility="Horizontal"
+                                   CanUserResizeColumns="True"
+                                   IsHideOnSinglePage="True"
+                                   IsVisible="{Binding HasRecordings}">
+                        <atom:DataGrid.Columns>
+                            <atom:DataGridTextColumn Header="{Binding ColumnSessionText}"
+                                                     Binding="{Binding Label}"
+                                                     Width="130"/>
+                            <atom:DataGridTextColumn Header="{Binding ColumnStartedText}"
+                                                     Binding="{Binding StartedText}"
+                                                     Width="145"/>
+                            <atom:DataGridTextColumn Header="{Binding ColumnDurationText}"
+                                                     Binding="{Binding DurationText}"
+                                                     Width="72"/>
+                        </atom:DataGrid.Columns>
+                    </atom:DataGrid>
+                    <TextBlock Text="{Binding EmptyText}"
+                               IsVisible="{Binding !HasRecordings}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               TextWrapping="Wrap"
+                               Margin="20"
+                               Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="1"
+                Grid.Column="2"
+                BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                BorderThickness="1"
+                CornerRadius="5"
+                ClipToBounds="True">
+            <Grid RowDefinitions="38,*,Auto,Auto">
+                <Border Padding="12,0"
+                        Background="{atom:SharedTokenResource ColorBgLayout}"
+                        BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                        BorderThickness="0,0,0,1">
+                    <TextBlock Text="{Binding PlayerText}"
+                               VerticalAlignment="Center"
+                               FontWeight="SemiBold"
+                               Foreground="{atom:SharedTokenResource ColorText}"/>
+                </Border>
+
+                <Border Grid.Row="1"
+                        Margin="10"
+                        Background="#000000"
+                        ClipToBounds="True">
+                    <controls:TerminalControl x:Name="PlaybackTerminal"
+                                              IsHitTestVisible="False"
+                                              Focusable="False"
+                                              IsSizeFixed="True"
+                                              FixedColumns="{Binding PlaybackBuffer.Columns}"
+                                              FixedRows="{Binding PlaybackBuffer.Rows}"
+                                              TerminalFontFamily="Cascadia Mono,Consolas,monospace"
+                                              TerminalCjkFontFamily="Microsoft YaHei UI,PingFang SC,Noto Sans CJK SC,monospace"
+                                              TerminalFontSize="13"
+                                              TerminalCjkFontSize="13"
+                                              TerminalBuffer="{Binding PlaybackBuffer}"/>
+                </Border>
+
+                <Grid Grid.Row="2"
+                      Margin="12,2,12,6"
+                      ColumnDefinitions="58,8,*,8,58">
+                    <TextBlock Text="{Binding PositionText}"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Right"
+                               FontFamily="Cascadia Mono,Consolas,monospace"
+                               FontSize="11"
+                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                    <Slider Grid.Column="2"
+                            Minimum="0"
+                            Maximum="{Binding DurationMilliseconds}"
+                            Value="{Binding PositionMilliseconds, Mode=TwoWay}"
+                            IsEnabled="{Binding HasSelection}"
+                            VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="4"
+                               Text="{Binding TotalDurationText}"
+                               VerticalAlignment="Center"
+                               FontFamily="Cascadia Mono,Consolas,monospace"
+                               FontSize="11"
+                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                </Grid>
+
+                <Grid Grid.Row="3"
+                      Margin="12,0,12,10"
+                      ColumnDefinitions="Auto,8,Auto,16,Auto,*,Auto"
+                      VerticalAlignment="Center">
+                    <atom:Button Content="{Binding PlayText}"
+                                 ButtonType="Primary"
+                                 Width="74"
+                                 IsEnabled="{Binding HasSelection}"
+                                 Command="{Binding TogglePlaybackCommand}"/>
+                    <atom:Button Grid.Column="2"
+                                 Content="{Binding SpeedText}"
+                                 Width="52"
+                                 Command="{Binding CycleSpeedCommand}"/>
+                    <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="7">
+                        <atom:ToggleSwitch IsChecked="{Binding SkipIdle, Mode=TwoWay}"
+                                           OnContent=""
+                                           OffContent=""
+                                           MinWidth="42"
+                                           VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding SkipIdleText}"
+                                   VerticalAlignment="Center"
+                                   Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                    </StackPanel>
+                    <TextBlock Grid.Column="6"
+                               Text="{Binding StatusText}"
+                               VerticalAlignment="Center"
+                               TextWrapping="Wrap"
+                               MaxWidth="260"
+                               Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

@@ -259,8 +259,11 @@ public static class ProxyConnectionFactory
         {
             KeepAliveInterval = TimeSpan.FromSeconds(30)
         };
-        if (session.SshAcceptAndSaveHostKey)
-            jumpClient.HostKeyReceived += (_, e) => e.CanTrust = true;
+        SshHostKeyTrustService.Shared.Attach(
+            jumpClient,
+            proxy.Host,
+            proxy.Port,
+            session.SshAcceptAndSaveHostKey);
 
         return jumpClient;
     }

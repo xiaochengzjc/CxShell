@@ -1,5 +1,6 @@
 using System;
 using AtomUI.Theme.Resources;
+using Avalonia.Controls;
 using Avalonia.Media;
 using CxShell.Models;
 using CxShell.Services;
@@ -34,6 +35,8 @@ public partial class TerminalTabViewModel : ObservableObject
         : Color.Parse("#F5222D"));
     public string ConnectionIndicatorText => IsConnected ? "已连接" : "已断开";
     public bool HasTabColor => !string.Equals(Session.AppearanceTabColorMode, "Default", StringComparison.OrdinalIgnoreCase);
+    public bool HasTabIcon => !string.Equals(SessionTabIconCatalog.Normalize(Session.AppearanceTabIcon), SessionTabIconCatalog.Default, StringComparison.Ordinal);
+    public PathIcon? TabIcon => SessionTabIconCatalog.CreateIcon(Session.AppearanceTabIcon);
     public IBrush TabColorBrush => new SolidColorBrush(ResolveTabColor());
     public IBrush TabBackgroundBrush => HasTabColor
         ? new SolidColorBrush(IsSelected ? ResolveTabColor() : ResolveMutedTabColor())
@@ -164,6 +167,8 @@ public partial class TerminalTabViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsSelected));
         OnPropertyChanged(nameof(HasTabColor));
+        OnPropertyChanged(nameof(HasTabIcon));
+        OnPropertyChanged(nameof(TabIcon));
         OnPropertyChanged(nameof(TabColorBrush));
         OnPropertyChanged(nameof(TabBackgroundBrush));
     }
