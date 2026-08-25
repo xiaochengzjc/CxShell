@@ -62,7 +62,7 @@
                            Margin="0,16,0,16"
                            VerticalAlignment="Stretch"
                            ItemsSource="{Binding SessionRows}"
-                           SelectedItem="{Binding SelectedNode, Mode=TwoWay}"
+                           SelectedItem="{Binding SelectedNode, Mode=OneWay}"
                            AutoGenerateColumns="False"
                            IsReadOnly="True"
                            SelectionMode="Extended"

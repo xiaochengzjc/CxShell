@@ -18,7 +18,12 @@ public class SshConnectionService : ITerminalConnectionService
     private SshConnectionContext? _sshConnectionContext;
     private ShellStream? _shellStream;
     private SshAgentForwardingService? _agentForwarding;
-    private readonly List<ForwardedPort> _forwardedPorts = new();
+    private readonly Dictionary<Guid, ForwardedPort> _forwardedPorts = new();
+    private readonly Dictionary<Guid, DateTimeOffset> _forwardedPortStartedAt = new();
+    private readonly Dictionary<Guid, string> _forwardedPortErrors = new();
+    private readonly Dictionary<Guid, SshTunnelActivitySnapshot> _forwardedPortActivity = new();
+    private readonly object _forwardedPortsLock = new();
+    private readonly object _forwardedPortsOperationLock = new();
     private ForwardedPortRemote? _x11ForwardedPort;
     private string? _remoteX11Display;
     private string? _x11StatusMessage;
@@ -41,11 +46,13 @@ public class SshConnectionService : ITerminalConnectionService
 
     public bool SupportsPosixShellFeatures { get; private set; } = true;
     public bool IsConnected => _sshClient?.IsConnected ?? false;
+    public bool AutoStartConfiguredTunnels { get; set; } = true;
 
     public event Action<string>? DataReceived;
     public event Func<byte[], bool>? BinaryDataReceived;
     public event Action<string>? ConnectionClosed;
     public event Action<string>? ErrorOccurred;
+    public event Action? TunnelRuntimeChanged;
 
     public async Task ConnectAsync(
         SessionInfo session,
@@ -92,7 +99,8 @@ public class SshConnectionService : ITerminalConnectionService
             await Task.Run(() => _sshClient.Connect(), cancellationToken);
             SupportsPosixShellFeatures = !SshServerInfo.IsWindowsOpenSshServer(connectionInfo.ServerVersion);
             TraceSshProtocol($"connected; SSH version policy={session.SshVersionPolicy}, auth={session.AuthMethod}");
-            StartForwardedPorts(session);
+            if (AutoStartConfiguredTunnels)
+                StartForwardedPorts(session);
             if (SupportsPosixShellFeatures)
                 StartX11Forwarding(session);
 
@@ -140,35 +148,273 @@ public class SshConnectionService : ITerminalConnectionService
 
         foreach (var rule in session.SshTunnelRules)
         {
-            if (rule.ListenPort is < 1 or > 65535)
-                continue;
+            StartTunnel(rule.Id);
+        }
+    }
 
-            ForwardedPort forwardedPort = rule.Type switch
+    public IReadOnlyList<SshTunnelRuntimeSnapshot> GetTunnelRuntimeSnapshot()
+    {
+        var rules = _session?.SshTunnelRules.ToArray() ?? [];
+        lock (_forwardedPortsLock)
+        {
+            return rules.Select(rule =>
             {
-                SshTunnelRuleType.Remote => new ForwardedPortRemote(
-                    NormalizeBindHost(rule.SourceHost, fallback: "0.0.0.0"),
-                    (uint)rule.ListenPort,
-                    NormalizeHost(rule.DestinationHost),
-                    (uint)rule.DestinationPort),
-                SshTunnelRuleType.Dynamic => new ForwardedPortDynamic(
-                    GetLocalBindHost(rule),
-                    (uint)rule.ListenPort),
-                _ => new ForwardedPortLocal(
-                    GetLocalBindHost(rule),
-                    (uint)rule.ListenPort,
-                    NormalizeHost(rule.DestinationHost),
-                    (uint)rule.DestinationPort)
-            };
+                _forwardedPorts.TryGetValue(rule.Id, out var forwardedPort);
+                _forwardedPortErrors.TryGetValue(rule.Id, out var lastError);
+                var activity = _forwardedPortActivity.GetValueOrDefault(
+                    rule.Id,
+                    SshTunnelActivitySnapshot.Empty);
+                var hasStartedAt = _forwardedPortStartedAt.TryGetValue(rule.Id, out var startedAt);
+                var isRunning = forwardedPort?.IsStarted == true;
+                var status = isRunning
+                    ? SshTunnelRuntimeStatus.Running
+                    : string.IsNullOrWhiteSpace(lastError)
+                        ? SshTunnelRuntimeStatus.Stopped
+                        : SshTunnelRuntimeStatus.Error;
 
-            forwardedPort.Exception += (_, e) =>
+                return new SshTunnelRuntimeSnapshot(
+                    rule.Id,
+                    rule.Type,
+                    rule.Description,
+                    GetTunnelListenHost(rule),
+                    rule.ListenPort,
+                    rule.Type == SshTunnelRuleType.Dynamic ? string.Empty : NormalizeHost(rule.DestinationHost),
+                    rule.Type == SshTunnelRuleType.Dynamic ? 0 : rule.DestinationPort,
+                    status,
+                    isRunning && hasStartedAt ? startedAt : null,
+                    lastError,
+                    activity);
+            }).ToArray();
+        }
+    }
+
+    public SshTunnelOperationResult StartTunnel(Guid ruleId)
+    {
+        SshTunnelOperationResult result;
+        SshTunnelRule? rule;
+        lock (_forwardedPortsOperationLock)
+        {
+            if (_sshClient?.IsConnected != true || _session == null)
+                return SshTunnelOperationResult.Failed("The SSH connection is not active.");
+
+            rule = _session.SshTunnelRules.FirstOrDefault(item => item.Id == ruleId);
+            if (rule == null)
+                return SshTunnelOperationResult.Failed("The tunnel rule no longer exists.");
+
+            ForwardedPort? current;
+            lock (_forwardedPortsLock)
             {
-                ErrorOccurred?.Invoke($"SSH tunnel {rule.TypeDisplay} {rule.ListenPort} failed: {e.Exception.Message}");
-            };
+                if (_forwardedPorts.TryGetValue(rule.Id, out current) && current.IsStarted)
+                    return SshTunnelOperationResult.Completed();
 
-            _sshClient.AddForwardedPort(forwardedPort);
-            forwardedPort.Start();
-            TraceSshTunneling($"started {rule.TypeDisplay} tunnel on {rule.ListenPort} -> {rule.DestinationHost}:{rule.DestinationPort}");
-            _forwardedPorts.Add(forwardedPort);
+                _forwardedPorts.Remove(rule.Id);
+            }
+
+            if (current != null)
+                DisposeForwardedPort(current);
+
+            var validationError = ValidateTunnelRule(rule);
+            if (validationError != null)
+            {
+                lock (_forwardedPortsLock)
+                {
+                    _forwardedPortStartedAt.Remove(rule.Id);
+                    _forwardedPortErrors[rule.Id] = validationError;
+                }
+                result = SshTunnelOperationResult.Failed(validationError);
+            }
+            else
+            {
+                ForwardedPort? forwardedPort = null;
+                try
+                {
+                    forwardedPort = CreateForwardedPort(rule);
+                    var observedPort = forwardedPort;
+                    forwardedPort.RequestReceived += (_, e) =>
+                        HandleTunnelRequest(rule.Id, observedPort, e);
+                    forwardedPort.Exception += (_, e) =>
+                        HandleTunnelException(rule.Id, observedPort, e.Exception);
+
+                    _sshClient.AddForwardedPort(forwardedPort);
+                    lock (_forwardedPortsLock)
+                    {
+                        _forwardedPorts[rule.Id] = forwardedPort;
+                        _forwardedPortActivity[rule.Id] = SshTunnelActivitySnapshot.Empty;
+                    }
+                    forwardedPort.Start();
+                    lock (_forwardedPortsLock)
+                    {
+                        _forwardedPortStartedAt[rule.Id] = DateTimeOffset.UtcNow;
+                        _forwardedPortErrors.Remove(rule.Id);
+                    }
+                    TraceSshTunneling(
+                        $"started {rule.TypeDisplay} tunnel on {rule.ListenPort} -> {rule.DestinationHost}:{rule.DestinationPort}");
+                    result = SshTunnelOperationResult.Completed();
+                }
+                catch (Exception ex)
+                {
+                    if (forwardedPort != null)
+                    {
+                        lock (_forwardedPortsLock)
+                        {
+                            _forwardedPorts.Remove(rule.Id);
+                            _forwardedPortActivity.Remove(rule.Id);
+                        }
+                        DisposeForwardedPort(forwardedPort);
+                    }
+
+                    lock (_forwardedPortsLock)
+                    {
+                        _forwardedPortStartedAt.Remove(rule.Id);
+                        _forwardedPortErrors[rule.Id] = ex.Message;
+                    }
+                    result = SshTunnelOperationResult.Failed(ex.Message);
+                }
+            }
+        }
+
+        if (!result.Success)
+            ErrorOccurred?.Invoke($"SSH tunnel {rule.TypeDisplay} {rule.ListenPort} failed: {result.ErrorMessage}");
+        TunnelRuntimeChanged?.Invoke();
+        return result;
+    }
+
+    public SshTunnelOperationResult StopTunnel(Guid ruleId)
+    {
+        lock (_forwardedPortsOperationLock)
+        {
+            ForwardedPort? forwardedPort;
+            lock (_forwardedPortsLock)
+            {
+                _forwardedPorts.Remove(ruleId, out forwardedPort);
+                _forwardedPortStartedAt.Remove(ruleId);
+                _forwardedPortErrors.Remove(ruleId);
+                _forwardedPortActivity.Remove(ruleId);
+            }
+
+            if (forwardedPort != null)
+                DisposeForwardedPort(forwardedPort);
+        }
+
+        TunnelRuntimeChanged?.Invoke();
+        return SshTunnelOperationResult.Completed();
+    }
+
+    public SshTunnelOperationResult RestartTunnel(Guid ruleId)
+    {
+        StopTunnel(ruleId);
+        return StartTunnel(ruleId);
+    }
+
+    private ForwardedPort CreateForwardedPort(SshTunnelRule rule)
+    {
+        return rule.Type switch
+        {
+            SshTunnelRuleType.Remote => new ForwardedPortRemote(
+                NormalizeBindHost(rule.SourceHost, fallback: "0.0.0.0"),
+                (uint)rule.ListenPort,
+                NormalizeHost(rule.DestinationHost),
+                (uint)rule.DestinationPort),
+            SshTunnelRuleType.Dynamic => new ForwardedPortDynamic(
+                GetLocalBindHost(rule),
+                (uint)rule.ListenPort),
+            _ => new ForwardedPortLocal(
+                GetLocalBindHost(rule),
+                (uint)rule.ListenPort,
+                NormalizeHost(rule.DestinationHost),
+                (uint)rule.DestinationPort)
+        };
+    }
+
+    private static string? ValidateTunnelRule(SshTunnelRule rule)
+    {
+        if (rule.ListenPort is < 1 or > 65535)
+            return "The listen port must be between 1 and 65535.";
+        if (rule.Type != SshTunnelRuleType.Dynamic && rule.DestinationPort is < 1 or > 65535)
+            return "The destination port must be between 1 and 65535.";
+        return null;
+    }
+
+    private static string GetTunnelListenHost(SshTunnelRule rule)
+    {
+        return rule.Type == SshTunnelRuleType.Remote
+            ? NormalizeBindHost(rule.SourceHost, fallback: "0.0.0.0")
+            : GetLocalBindHost(rule);
+    }
+
+    private void HandleTunnelException(Guid ruleId, ForwardedPort forwardedPort, Exception exception)
+    {
+        SshTunnelRule? rule;
+        lock (_forwardedPortsLock)
+        {
+            if (!_forwardedPorts.TryGetValue(ruleId, out var current) ||
+                !ReferenceEquals(current, forwardedPort))
+            {
+                return;
+            }
+
+            _forwardedPortErrors[ruleId] = exception.Message;
+            rule = _session?.SshTunnelRules.FirstOrDefault(item => item.Id == ruleId);
+        }
+
+        ErrorOccurred?.Invoke(
+            $"SSH tunnel {rule?.TypeDisplay ?? "unknown"} {rule?.ListenPort ?? 0} failed: {exception.Message}");
+        TunnelRuntimeChanged?.Invoke();
+    }
+
+    private void HandleTunnelRequest(
+        Guid ruleId,
+        ForwardedPort forwardedPort,
+        PortForwardEventArgs request)
+    {
+        lock (_forwardedPortsLock)
+        {
+            if (!_forwardedPorts.TryGetValue(ruleId, out var current) ||
+                !ReferenceEquals(current, forwardedPort))
+            {
+                return;
+            }
+
+            var activity = _forwardedPortActivity.GetValueOrDefault(
+                ruleId,
+                SshTunnelActivitySnapshot.Empty);
+            var originator = $"{request.OriginatorHost}:{request.OriginatorPort}";
+            _forwardedPortActivity[ruleId] = activity.RecordConnection(
+                DateTimeOffset.UtcNow,
+                originator);
+        }
+
+        TunnelRuntimeChanged?.Invoke();
+    }
+
+    private void DisposeForwardedPort(ForwardedPort forwardedPort)
+    {
+        try
+        {
+            if (forwardedPort.IsStarted)
+                forwardedPort.Stop();
+        }
+        catch
+        {
+            // Tunnel shutdown is best-effort.
+        }
+
+        try
+        {
+            _sshClient?.RemoveForwardedPort(forwardedPort);
+        }
+        catch
+        {
+            // The SSH client may already be disconnecting.
+        }
+
+        try
+        {
+            forwardedPort.Dispose();
+        }
+        catch
+        {
+            // A failed or partially started tunnel may already be disposed.
         }
     }
 
@@ -893,31 +1139,23 @@ public class SshConnectionService : ITerminalConnectionService
 
     private void StopForwardedPorts()
     {
-        foreach (var forwardedPort in _forwardedPorts.ToArray())
+        lock (_forwardedPortsOperationLock)
         {
-            try
+            ForwardedPort[] forwardedPorts;
+            lock (_forwardedPortsLock)
             {
-                if (forwardedPort.IsStarted)
-                    forwardedPort.Stop();
-            }
-            catch
-            {
-                // Ignore tunnel shutdown failures during disconnect.
-            }
-
-            try
-            {
-                _sshClient?.RemoveForwardedPort(forwardedPort);
-            }
-            catch
-            {
-                // Ignore removal failures during disconnect.
+                forwardedPorts = _forwardedPorts.Values.ToArray();
+                _forwardedPorts.Clear();
+                _forwardedPortStartedAt.Clear();
+                _forwardedPortErrors.Clear();
+                _forwardedPortActivity.Clear();
             }
 
-            forwardedPort.Dispose();
+            foreach (var forwardedPort in forwardedPorts)
+                DisposeForwardedPort(forwardedPort);
         }
 
-        _forwardedPorts.Clear();
+        TunnelRuntimeChanged?.Invoke();
     }
 
     private void StopX11Forwarding()

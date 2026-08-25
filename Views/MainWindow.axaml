@@ -178,7 +178,8 @@
                                        BorderThickness="0"
                                        Closing="OnTabStripClosing"/>
                     </Border>
-                    <Grid Grid.Row="1" Background="#141414">
+                    <Grid Grid.Row="1"
+                          Background="{atom:SharedTokenResource ColorBgLayout}">
                         <Grid IsVisible="{Binding IsSelectedTerminalSession}"
                               RowDefinitions="Auto,*">
                             <Border Grid.Row="0"
@@ -288,6 +289,13 @@
                                         TextAlignment="Center" VerticalAlignment="Center"/>
                         <atom:TextBlock Text="{Binding MonitorText}" VerticalAlignment="Center"/>
                     </StackPanel>
+                </atom:Button>
+                <atom:Button Command="{Binding ShowSshTunnelCenterCommand}"
+                             ButtonType="Default"
+                             Icon="{antdicons:AntDesignIconProvider Kind=DeploymentUnitOutlined}"
+                             atom:ToolTip.Tip="{Binding TunnelsToolTip}"
+                             atom:ToolTip.Placement="Bottom">
+                    <atom:TextBlock Text="{Binding TunnelsText}" VerticalAlignment="Center"/>
                 </atom:Button>
                 <atom:Button Command="{Binding ToggleTabBarCommand}"
                              ButtonType="Default"
@@ -613,7 +621,8 @@
         </Border>
 
         <Grid Grid.Row="2">
-            <Grid x:Name="MainContentGrid">
+            <Grid x:Name="MainContentGrid"
+                  Background="{atom:SharedTokenResource ColorBgLayout}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="0"/>
                     <ColumnDefinition Width="{Binding SftpSplitterWidth}"/>
@@ -636,18 +645,19 @@
                         x:Name="SftpSplitterHandle"
                         IsVisible="{Binding IsSftpPanelVisible}"
                         HorizontalAlignment="Stretch"
-                        Background="Transparent"
+                        Background="{atom:SharedTokenResource ColorBgLayout}"
                         Cursor="SizeWestEast"
                         PointerPressed="OnSftpSplitterPointerPressed"
                         PointerMoved="OnSftpSplitterPointerMoved"
                         PointerReleased="OnSftpSplitterPointerReleased">
                     <Border Width="1"
                             HorizontalAlignment="Center"
-                            Background="{atom:SharedTokenResource ColorSplit}"/>
+                            Background="{atom:SharedTokenResource ColorBorderSecondary}"/>
                 </Border>
 
                 <!-- Col 1: 首屏与终端区域 -->
-                <Grid Grid.Column="2" Background="#141414">
+                <Grid Grid.Column="2"
+                      Background="{atom:SharedTokenResource ColorBgLayout}">
                     <!-- 无标签时显示最近连接首屏 -->
                     <Grid IsVisible="{Binding !HasTabs}"
                           Background="{atom:SharedTokenResource ColorBgContainer}">

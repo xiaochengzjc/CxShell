@@ -1,0 +1,88 @@
+<atom:Window xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:vm="using:CxShell.ViewModels"
+             x:Class="CxShell.Views.SshTunnelRuleDialogWindow"
+             x:DataType="vm:SshTunnelRuleDialogViewModel"
+             Title="{Binding TitleText}"
+             Width="620"
+             Height="520"
+             MinWidth="540"
+             MinHeight="460"
+             CanResize="False"
+             ShowInTaskbar="False"
+             WindowStartupLocation="CenterOwner"
+             Background="{atom:SharedTokenResource ColorBgLayout}">
+
+    <Grid RowDefinitions="*,Auto">
+        <ScrollViewer Grid.Row="0">
+            <StackPanel Margin="24,20,24,12" Spacing="12">
+                <TextBlock Text="{Binding TitleText}"
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           Foreground="{atom:SharedTokenResource ColorText}"/>
+
+                <Grid ColumnDefinitions="145,*" RowDefinitions="Auto,8,Auto,8,Auto,8,Auto,8,Auto,8,Auto,8,Auto">
+                    <TextBlock Grid.Row="0" Text="{Binding TypeText}" VerticalAlignment="Center" Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                    <atom:Select Grid.Row="0" Grid.Column="1"
+                                 OptionsSource="{Binding TypeOptions}"
+                                 SelectedOption="{Binding SelectedTypeOption, Mode=TwoWay}"
+                                 Mode="Single"/>
+
+                    <TextBlock Grid.Row="2" Text="{Binding SourceHostText}" VerticalAlignment="Center" Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                    <atom:LineEdit Grid.Row="2" Grid.Column="1"
+                                   Text="{Binding SourceHost, Mode=TwoWay}"
+                                   PlaceholderText="{Binding SourceHostHintText}"/>
+
+                    <TextBlock Grid.Row="4" Text="{Binding ListenPortText}" VerticalAlignment="Center" Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                    <atom:LineEdit Grid.Row="4" Grid.Column="1"
+                                   Text="{Binding ListenPort, Mode=TwoWay}"
+                                   PlaceholderText="{Binding ListenPortHintText}"/>
+
+                    <atom:CheckBox Grid.Row="6" Grid.Column="1"
+                                   Content="{Binding AcceptLocalOnlyText}"
+                                   IsChecked="{Binding AcceptLocalConnectionsOnly, Mode=TwoWay}"
+                                   IsEnabled="{Binding IsLocalOnlyEnabled}"/>
+
+                    <TextBlock Grid.Row="8" Text="{Binding DestinationHostText}"
+                               VerticalAlignment="Center"
+                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"
+                               IsVisible="{Binding ShowDestination}"/>
+                    <atom:LineEdit Grid.Row="8" Grid.Column="1"
+                                   Text="{Binding DestinationHost, Mode=TwoWay}"
+                                   PlaceholderText="{Binding DestinationHostHintText}"
+                                   IsVisible="{Binding ShowDestination}"/>
+
+                    <TextBlock Grid.Row="10" Text="{Binding DestinationPortText}"
+                               VerticalAlignment="Center"
+                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"
+                               IsVisible="{Binding ShowDestination}"/>
+                    <atom:LineEdit Grid.Row="10" Grid.Column="1"
+                                   Text="{Binding DestinationPort, Mode=TwoWay}"
+                                   IsVisible="{Binding ShowDestination}"/>
+
+                    <TextBlock Grid.Row="12" Text="{Binding DescriptionText}" VerticalAlignment="Center" Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                    <atom:LineEdit Grid.Row="12" Grid.Column="1"
+                                   Text="{Binding Description, Mode=TwoWay}"/>
+                </Grid>
+
+                <atom:TextBlock Text="{Binding ValidationMessage}"
+                                IsVisible="{Binding HasValidationMessage}"
+                                TextWrapping="Wrap"
+                                Foreground="{atom:SharedTokenResource ColorErrorText}"/>
+            </StackPanel>
+        </ScrollViewer>
+
+        <Border Grid.Row="1"
+                Padding="24,10,24,18"
+                BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                BorderThickness="0,1,0,0">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+                <atom:Button Content="{Binding CancelText}" Click="OnCancelClick"/>
+                <atom:Button Content="{Binding SaveText}"
+                             ButtonType="Primary"
+                             Click="OnSaveClick"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</atom:Window>

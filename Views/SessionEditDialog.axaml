@@ -1035,7 +1035,7 @@
                                 BorderThickness="1"
                                 CornerRadius="4"
                                 Padding="18">
-                            <Grid RowDefinitions="Auto,10,Auto,14,260,14,Auto"
+                            <Grid RowDefinitions="Auto,10,Auto,10,Auto,14,260,14,Auto"
                                   ColumnDefinitions="*,120,120,120,56">
                                 <TextBlock Grid.ColumnSpan="5"
                                            Text="{Binding [UiText.050], Source={x:Static services:LocalizationService.Shared}}"
@@ -1047,8 +1047,14 @@
                                            TextWrapping="Wrap"
                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
 
+                                <atom:CheckBox Grid.Row="4"
+                                               Grid.ColumnSpan="5"
+                                               Content="{Binding AutoRestoreSshTunnelsText}"
+                                               IsChecked="{Binding AutoRestoreSshTunnels, Mode=TwoWay}"
+                                               ToolTip.Tip="{Binding AutoRestoreSshTunnelsDescriptionText}"/>
+
                                 <atom:DataGrid x:Name="SshTunnelRulesGrid"
-                                               Grid.Row="4"
+                                               Grid.Row="6"
                                                Grid.ColumnSpan="5"
                                                ItemsSource="{Binding SshTunnelRules}"
                                                SelectedItem="{Binding SelectedSshTunnelRule, Mode=TwoWay}"
@@ -1065,21 +1071,21 @@
                                     </atom:DataGrid.Columns>
                                 </atom:DataGrid>
 
-                                <atom:Button Grid.Row="6"
+                                <atom:Button Grid.Row="8"
                                              Grid.Column="1"
                                              Content="{Binding [UiText.022], Source={x:Static services:LocalizationService.Shared}}"
                                              Click="OnAddSshTunnelRuleClick"/>
-                                <atom:Button Grid.Row="6"
+                                <atom:Button Grid.Row="8"
                                              Grid.Column="2"
                                              Content="{Binding [UiText.023], Source={x:Static services:LocalizationService.Shared}}"
                                              IsEnabled="{Binding HasSelectedSshTunnelRule}"
                                              Click="OnEditSshTunnelRuleClick"/>
-                                <atom:Button Grid.Row="6"
+                                <atom:Button Grid.Row="8"
                                              Grid.Column="3"
                                              Content="{Binding [UiText.024], Source={x:Static services:LocalizationService.Shared}}"
                                              IsEnabled="{Binding HasSelectedSshTunnelRule}"
                                              Click="OnDeleteSshTunnelRuleClick"/>
-                                <atom:Button Grid.Row="6"
+                                <atom:Button Grid.Row="8"
                                              Grid.Column="4"
                                              Content="..."
                                              Click="OnAddSshTunnelRuleClick"/>

@@ -1,0 +1,299 @@
+<atom:Window xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:antdicons="https://atomui.net/icons/antdesign"
+             xmlns:vm="using:CxShell.ViewModels"
+             x:Class="CxShell.Views.SshTunnelCenterWindow"
+             x:Name="TunnelCenter"
+             x:DataType="vm:SshTunnelCenterViewModel"
+             Title="{Binding TitleText}"
+             Width="1100"
+             Height="600"
+             MinWidth="900"
+             MinHeight="460"
+             WindowStartupLocation="CenterOwner"
+             ShowInTaskbar="False"
+             Background="{atom:SharedTokenResource ColorBgLayout}">
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
+        <Border Grid.Row="0"
+                Padding="20,16"
+                Background="{atom:SharedTokenResource ColorBgContainer}"
+                BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                <atom:IconPresenter Grid.Column="0"
+                                    Icon="{antdicons:AntDesignIconProvider Kind=DeploymentUnitOutlined}"
+                                    Width="24"
+                                    Height="24"
+                                    IconBrush="{atom:SharedTokenResource ColorPrimary}"
+                                    VerticalAlignment="Top"/>
+                <StackPanel Grid.Column="1" Spacing="3">
+                    <atom:TextBlock Text="{Binding TitleText}"
+                                    FontSize="18"
+                                    FontWeight="SemiBold"
+                                    Foreground="{atom:SharedTokenResource ColorText}"/>
+                    <atom:TextBlock Text="{Binding DescriptionText}"
+                                    FontSize="11"
+                                    TextWrapping="Wrap"
+                                    Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="1"
+                Padding="20,10"
+                Background="{atom:SharedTokenResource ColorBgContainer}"
+                BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                <atom:TextBlock Grid.Column="0"
+                                Text="{Binding SessionLabelText}"
+                                FontSize="11"
+                                Foreground="{atom:SharedTokenResource ColorTextTertiary}"
+                                VerticalAlignment="Center"/>
+                <atom:TextBlock Grid.Column="1"
+                                Text="{Binding SessionText}"
+                                FontWeight="SemiBold"
+                                TextTrimming="CharacterEllipsis"
+                                Foreground="{atom:SharedTokenResource ColorText}"
+                                VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="2"
+                            Orientation="Horizontal"
+                            Spacing="6"
+                            VerticalAlignment="Center">
+                    <Ellipse Width="8" Height="8"
+                             Fill="{atom:SharedTokenResource ColorSuccess}"
+                             IsVisible="{Binding IsConnected}"/>
+                    <Ellipse Width="8" Height="8"
+                             Fill="{atom:SharedTokenResource ColorTextQuaternary}"
+                             IsVisible="{Binding !IsConnected}"/>
+                    <atom:TextBlock Text="{Binding ConnectedText}"
+                                    FontSize="11"
+                                    Foreground="{atom:SharedTokenResource ColorTextSecondary}"
+                                    VerticalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="2" Margin="20,16,20,14">
+            <StackPanel HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Spacing="8"
+                        IsVisible="{Binding ShowNoSshSession}">
+                <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider Kind=SelectOutlined}"
+                                    Width="30"
+                                    Height="30"
+                                    IconBrush="{atom:SharedTokenResource ColorTextQuaternary}"
+                                    HorizontalAlignment="Center"/>
+                <atom:TextBlock Text="{Binding NoSshSessionText}"
+                                Foreground="{atom:SharedTokenResource ColorTextSecondary}"
+                                TextAlignment="Center"/>
+            </StackPanel>
+
+            <StackPanel HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Spacing="8"
+                        IsVisible="{Binding ShowNoRules}">
+                <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider Kind=DeploymentUnitOutlined}"
+                                    Width="30"
+                                    Height="30"
+                                    IconBrush="{atom:SharedTokenResource ColorTextQuaternary}"
+                                    HorizontalAlignment="Center"/>
+                <atom:TextBlock Text="{Binding NoRulesText}"
+                                Foreground="{atom:SharedTokenResource ColorTextSecondary}"
+                                TextAlignment="Center"/>
+                <atom:TextBlock Text="{Binding EditHintText}"
+                                FontSize="11"
+                                Foreground="{atom:SharedTokenResource ColorTextTertiary}"
+                                TextAlignment="Center"/>
+            </StackPanel>
+
+            <Grid RowDefinitions="Auto,Auto,*"
+                  IsVisible="{Binding HasTunnels}">
+                <Border Grid.Row="0"
+                        Padding="10,8"
+                        Margin="0,0,0,10"
+                        Background="{atom:SharedTokenResource ColorWarningBg}"
+                        BorderBrush="{atom:SharedTokenResource ColorWarningBorder}"
+                        BorderThickness="1"
+                        CornerRadius="4"
+                        IsVisible="{Binding ShowDisconnected}">
+                    <atom:TextBlock Text="{Binding DisconnectedText}"
+                                    FontSize="11"
+                                    TextWrapping="Wrap"
+                                    Foreground="{atom:SharedTokenResource ColorWarningText}"/>
+                </Border>
+
+                <Border Grid.Row="1"
+                        Background="{atom:SharedTokenResource ColorFillQuaternary}"
+                        BorderBrush="{atom:SharedTokenResource ColorBorderSecondary}"
+                        BorderThickness="1"
+                        Padding="12,8">
+                    <Grid ColumnDefinitions="1.2*,82,1.05*,1.05*,122,90,126,108" ColumnSpacing="12">
+                        <atom:TextBlock Grid.Column="0" Text="{Binding NameHeaderText}" FontWeight="SemiBold" FontSize="11"/>
+                        <atom:TextBlock Grid.Column="1" Text="{Binding TypeHeaderText}" FontWeight="SemiBold" FontSize="11"/>
+                        <atom:TextBlock Grid.Column="2" Text="{Binding ListenHeaderText}" FontWeight="SemiBold" FontSize="11"/>
+                        <atom:TextBlock Grid.Column="3" Text="{Binding TargetHeaderText}" FontWeight="SemiBold" FontSize="11"/>
+                        <atom:TextBlock Grid.Column="4" Text="{Binding StatusHeaderText}" FontWeight="SemiBold" FontSize="11"/>
+                        <atom:TextBlock Grid.Column="5" Text="{Binding RuntimeHeaderText}" FontWeight="SemiBold" FontSize="11"/>
+                        <atom:TextBlock Grid.Column="6" Text="{Binding ActivityHeaderText}" FontWeight="SemiBold" FontSize="11"/>
+                        <atom:TextBlock Grid.Column="7" Text="{Binding ActionsHeaderText}" FontWeight="SemiBold" FontSize="11" TextAlignment="Center"/>
+                    </Grid>
+                </Border>
+
+                <Border Grid.Row="2"
+                        BorderBrush="{atom:SharedTokenResource ColorBorderSecondary}"
+                        BorderThickness="1,0,1,1">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding Tunnels}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SshTunnelItemViewModel">
+                                    <Border Padding="12,9"
+                                            MinHeight="48"
+                                            BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                                            BorderThickness="0,0,0,1">
+                                        <Grid RowDefinitions="Auto,Auto"
+                                              ColumnDefinitions="1.2*,82,1.05*,1.05*,122,90,126,108"
+                                              ColumnSpacing="12"
+                                              RowSpacing="4">
+                                            <atom:TextBlock Grid.Row="0" Grid.Column="0"
+                                                            Text="{Binding DescriptionText}"
+                                                            TextTrimming="CharacterEllipsis"
+                                                            Foreground="{atom:SharedTokenResource ColorText}"
+                                                            VerticalAlignment="Center"/>
+                                            <atom:TextBlock Grid.Row="0" Grid.Column="1"
+                                                            Text="{Binding TypeText}"
+                                                            FontSize="11"
+                                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"
+                                                            VerticalAlignment="Center"/>
+                                            <atom:TextBlock Grid.Row="0" Grid.Column="2"
+                                                            Text="{Binding ListenText}"
+                                                            FontFamily="Consolas"
+                                                            FontSize="11"
+                                                            TextTrimming="CharacterEllipsis"
+                                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"
+                                                            VerticalAlignment="Center"/>
+                                            <atom:TextBlock Grid.Row="0" Grid.Column="3"
+                                                            Text="{Binding TargetText}"
+                                                            FontFamily="Consolas"
+                                                            FontSize="11"
+                                                            TextTrimming="CharacterEllipsis"
+                                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"
+                                                            VerticalAlignment="Center"/>
+                                            <StackPanel Grid.Row="0" Grid.Column="4"
+                                                        Orientation="Horizontal"
+                                                        Spacing="6"
+                                                        VerticalAlignment="Center">
+                                                <Ellipse Width="8" Height="8"
+                                                         Fill="{atom:SharedTokenResource ColorSuccess}"
+                                                         IsVisible="{Binding IsRunning}"/>
+                                                <Ellipse Width="8" Height="8"
+                                                         Fill="{atom:SharedTokenResource ColorTextQuaternary}"
+                                                         IsVisible="{Binding IsStopped}"/>
+                                                <Ellipse Width="8" Height="8"
+                                                         Fill="{atom:SharedTokenResource ColorError}"
+                                                         IsVisible="{Binding IsError}"/>
+                                                <atom:TextBlock Text="{Binding StatusText}"
+                                                                FontSize="11"
+                                                                Foreground="{atom:SharedTokenResource ColorTextSecondary}"
+                                                                TextTrimming="CharacterEllipsis"
+                                                                VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                            <atom:TextBlock Grid.Row="0" Grid.Column="5"
+                                                            Text="{Binding RuntimeText}"
+                                                            FontFamily="Consolas"
+                                                            FontSize="11"
+                                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"
+                                                            VerticalAlignment="Center"/>
+                                            <atom:TextBlock Grid.Row="0" Grid.Column="6"
+                                                            Text="{Binding ActivityText}"
+                                                            FontFamily="Consolas"
+                                                            FontSize="11"
+                                                            TextTrimming="CharacterEllipsis"
+                                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"
+                                                            VerticalAlignment="Center"
+                                                            atom:ToolTip.Tip="{Binding ActivityToolTip}"/>
+                                            <StackPanel Grid.Row="0" Grid.Column="7"
+                                                        Orientation="Horizontal"
+                                                        Spacing="4"
+                                                        HorizontalAlignment="Center">
+                                                <atom:Button Width="28" Height="28" Padding="0"
+                                                             ButtonType="Text"
+                                                             Icon="{antdicons:AntDesignIconProvider Kind=PlayCircleOutlined}"
+                                                             Command="{Binding StartCommand}"
+                                                             IsVisible="{Binding ShowStartAction}"
+                                                             atom:ToolTip.Tip="{Binding StartText}"/>
+                                                <atom:Button Width="28" Height="28" Padding="0"
+                                                             ButtonType="Text"
+                                                             Icon="{antdicons:AntDesignIconProvider Kind=StopOutlined}"
+                                                             Command="{Binding StopCommand}"
+                                                             IsVisible="{Binding IsRunning}"
+                                                             atom:ToolTip.Tip="{Binding StopText}"/>
+                                             <atom:Button Width="28" Height="28" Padding="0"
+                                                              ButtonType="Text"
+                                                              Icon="{antdicons:AntDesignIconProvider Kind=ReloadOutlined}"
+                                                              Command="{Binding RestartCommand}"
+                                                              IsVisible="{Binding ShowRestartAction}"
+                                                              atom:ToolTip.Tip="{Binding RestartText}"/>
+                                                <atom:Button Width="28" Height="28" Padding="0"
+                                                             ButtonType="Text"
+                                                             Icon="{antdicons:AntDesignIconProvider Kind=EditOutlined}"
+                                                             Command="{Binding EditCommand}"
+                                                             IsVisible="{Binding ShowEditAction}"
+                                                             atom:ToolTip.Tip="{Binding EditText}"/>
+                                                <atom:Button Width="28" Height="28" Padding="0"
+                                                             ButtonType="Text"
+                                                             Icon="{antdicons:AntDesignIconProvider Kind=DeleteOutlined}"
+                                                             Command="{Binding DeleteCommand}"
+                                                             atom:ToolTip.Tip="{Binding DeleteText}"/>
+                                            </StackPanel>
+                                            <atom:TextBlock Grid.Row="1"
+                                                            Grid.Column="2"
+                                                            Grid.ColumnSpan="6"
+                                                            Text="{Binding ErrorText}"
+                                                            IsVisible="{Binding HasError}"
+                                                            FontSize="10"
+                                                            TextWrapping="Wrap"
+                                                            Foreground="{atom:SharedTokenResource ColorErrorText}"/>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <Border Grid.Row="3"
+                Padding="20,10"
+                Background="{atom:SharedTokenResource ColorBgContainer}"
+                BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                <atom:Button Grid.Column="0"
+                             Content="{Binding AddText}"
+                             Icon="{antdicons:AntDesignIconProvider Kind=PlusOutlined}"
+                             Command="{Binding AddTunnelCommand}"/>
+                <atom:TextBlock Grid.Column="1"
+                                Text="{Binding StatusMessage}"
+                                IsVisible="{Binding HasStatusMessage}"
+                                FontSize="11"
+                                TextWrapping="Wrap"
+                                Foreground="{atom:SharedTokenResource ColorTextSecondary}"
+                                VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="2"
+                            Orientation="Horizontal"
+                            Spacing="8">
+                    <atom:Button Content="{Binding RefreshText}"
+                                 Icon="{antdicons:AntDesignIconProvider Kind=ReloadOutlined}"
+                                 Command="{Binding RefreshCommand}"/>
+                    <atom:Button Content="{Binding CloseText}"
+                                 ButtonType="Primary"
+                                 Click="OnCloseClick"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</atom:Window>

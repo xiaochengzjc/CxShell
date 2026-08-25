@@ -57,6 +57,7 @@ public partial class MainWindowViewModel : ObservableObject
     private UpdateProgressViewModel? _updateProgressViewModel;
     private SettingsCenterWindow? _settingsCenterWindow;
     private RecentConnectionsWindow? _recentConnectionsWindow;
+    private SshTunnelCenterWindow? _sshTunnelCenterWindow;
 
     [ObservableProperty] private SessionTreeViewModel _sessionTree;
     [ObservableProperty] private SftpViewModel _sftp = null!;
@@ -131,6 +132,8 @@ public partial class MainWindowViewModel : ObservableObject
     public string SftpToolTip => _localization.Text("Toolbar.SftpTip");
     public string MonitorText => _localization.Text("Toolbar.Monitor");
     public string MonitorToolTip => _localization.Text("Toolbar.MonitorTip");
+    public string TunnelsText => _localization.Text("Toolbar.Tunnels");
+    public string TunnelsToolTip => _localization.Text("Toolbar.TunnelsTip");
     public string ThemeToolTip => _localization.Text("Toolbar.ThemeTip");
     public string FullScreenToolTip => _localization.Text("Toolbar.FullScreenTip");
     public string ArrangeText => _localization.Text("Toolbar.Arrange");
@@ -257,6 +260,10 @@ public partial class MainWindowViewModel : ObservableObject
             return;
 
         IsDarkMode = result.State?.Appearance == ThemeAppearance.Dark;
+        _sessionTreeVm.Settings.ThemeMode = IsDarkMode
+            ? ApplicationSettings.DarkThemeMode
+            : ApplicationSettings.LightThemeMode;
+        _sessionTreeVm.SaveSettings(_sessionTreeVm.Settings);
 
         foreach (var tab in Tabs)
         {
@@ -603,6 +610,39 @@ public partial class MainWindowViewModel : ObservableObject
         ShowSettingsCenter(SettingsSection.SessionRecordings);
     }
 
+    [RelayCommand(CanExecute = nameof(CanShowSshTunnelCenter))]
+    private void ShowSshTunnelCenter()
+    {
+        var owner = GetMainWindow();
+        if (owner == null)
+            return;
+
+        if (_sshTunnelCenterWindow != null)
+        {
+            _sshTunnelCenterWindow.Activate();
+            return;
+        }
+
+        var viewModel = new SshTunnelCenterViewModel(this);
+        viewModel.ShowRuleDialogAsync = rule => ShowSshTunnelRuleDialogAsync(owner, rule);
+        viewModel.ConfirmDialogAsync = (title, message) =>
+            AtomUiDialogService.ShowConfirmAsync(owner, title, message);
+        _sshTunnelCenterWindow = new SshTunnelCenterWindow(viewModel);
+        _sshTunnelCenterWindow.Closed += (_, _) => _sshTunnelCenterWindow = null;
+        _sshTunnelCenterWindow.Show(owner);
+    }
+
+    private bool CanShowSshTunnelCenter()
+        => SelectedTab is { IsTerminalSession: true, Session.Protocol: SessionProtocol.SSH };
+
+    private static async Task<SshTunnelRule?> ShowSshTunnelRuleDialogAsync(
+        AtomUI.Desktop.Controls.Window owner,
+        SshTunnelRule? source)
+    {
+        var dialog = new SshTunnelRuleDialogWindow(new SshTunnelRuleDialogViewModel(source));
+        return await dialog.ShowRuleDialogAsync(owner);
+    }
+
     private void ApplyApplicationSettings(ApplicationSettings settings)
     {
         if (!ReferenceEquals(_sessionTreeVm.Settings, settings))
@@ -910,6 +950,8 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(SftpToolTip));
         OnPropertyChanged(nameof(MonitorText));
         OnPropertyChanged(nameof(MonitorToolTip));
+        OnPropertyChanged(nameof(TunnelsText));
+        OnPropertyChanged(nameof(TunnelsToolTip));
         OnPropertyChanged(nameof(ThemeToolTip));
         OnPropertyChanged(nameof(FullScreenToolTip));
         OnPropertyChanged(nameof(ArrangeText));
@@ -1000,6 +1042,7 @@ public partial class MainWindowViewModel : ObservableObject
         CurrentDisconnectCommand.NotifyCanExecuteChanged();
         AddCurrentSessionToQuickBarCommand.NotifyCanExecuteChanged();
         ToggleTerminalFullScreenCommand.NotifyCanExecuteChanged();
+        ShowSshTunnelCenterCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnTabArrangementModeChanged(TabArrangementMode value)
@@ -2768,10 +2811,10 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    private static Window? GetMainWindow()
+    private static AtomUI.Desktop.Controls.Window? GetMainWindow()
     {
         var lifetime = Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
-        return lifetime?.MainWindow;
+        return lifetime?.MainWindow as AtomUI.Desktop.Controls.Window;
     }
 
     private sealed record PrivateKeyPassphrasePromptResult(string Passphrase, bool Save);

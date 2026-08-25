@@ -212,7 +212,11 @@ public class HighlightSet
 
 public class ApplicationSettings
 {
+    public const string DarkThemeMode = "Dark";
+    public const string LightThemeMode = "Light";
+
     public string UiLanguage { get; set; } = "zh-CN";
+    public string ThemeMode { get; set; } = DarkThemeMode;
     public bool ShowSessionManagerOnStartup { get; set; } = true;
     public bool AutoCheckForUpdates { get; set; } = true;
     public bool IncludePrereleaseUpdates { get; set; }
@@ -415,6 +419,7 @@ public class SessionInfo
     public string SshMacAlgorithms { get; set; } = string.Empty;
     public string SshKeyExchangeAlgorithms { get; set; } = string.Empty;
     public List<SshTunnelRule> SshTunnelRules { get; set; } = new();
+    public bool SshAutoRestoreTunnels { get; set; } = true;
     public bool SshForwardX11 { get; set; } = true;
     public bool SshX11UseXmanager { get; set; } = true;
     public string SshX11Display { get; set; } = "localhost:0.0";

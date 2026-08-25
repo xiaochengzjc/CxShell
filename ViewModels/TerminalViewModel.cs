@@ -209,6 +209,7 @@ public partial class TerminalViewModel : ObservableObject
 
     public event Action? BufferChanged;
     public event Action? BellRequested;
+    public event Action? SshTunnelRuntimeChanged;
     public event Action<string>? RemoteCurrentDirectoryChanged;
     public string? RemoteCurrentDirectory { get; private set; }
 
@@ -239,6 +240,40 @@ public partial class TerminalViewModel : ObservableObject
             throw new InvalidOperationException("Current terminal connection does not support remote commands.");
 
         return connection.RunCommandAsync(commandText, timeout, cancellationToken);
+    }
+
+    public IReadOnlyList<SshTunnelRuntimeSnapshot> GetSshTunnelRuntimeSnapshot()
+    {
+        return _connection is SshConnectionService connection
+            ? connection.GetTunnelRuntimeSnapshot()
+            : [];
+    }
+
+    public Task<SshTunnelOperationResult> StartSshTunnelAsync(Guid ruleId)
+    {
+        return RunSshTunnelOperationAsync(connection => connection.StartTunnel(ruleId));
+    }
+
+    public Task<SshTunnelOperationResult> StopSshTunnelAsync(Guid ruleId)
+    {
+        return RunSshTunnelOperationAsync(connection => connection.StopTunnel(ruleId));
+    }
+
+    public Task<SshTunnelOperationResult> RestartSshTunnelAsync(Guid ruleId)
+    {
+        return RunSshTunnelOperationAsync(connection => connection.RestartTunnel(ruleId));
+    }
+
+    private Task<SshTunnelOperationResult> RunSshTunnelOperationAsync(
+        Func<SshConnectionService, SshTunnelOperationResult> operation)
+    {
+        if (_connection is not SshConnectionService connection || !connection.IsConnected)
+        {
+            return Task.FromResult(
+                SshTunnelOperationResult.Failed("The SSH connection is not active."));
+        }
+
+        return Task.Run(() => operation(connection));
     }
 
     public async Task ConnectAsync(SessionInfo session, string? password)
@@ -297,10 +332,10 @@ public partial class TerminalViewModel : ObservableObject
             _recentOutputBuffer.Clear();
         OnPropertyChanged(nameof(Buffer));
 
-        await ConnectCoreAsync(_connectionCts.Token);
+        await ConnectCoreAsync(_connectionCts.Token, isReconnect: false);
     }
 
-    private async Task ConnectCoreAsync(CancellationToken cancellationToken)
+    private async Task ConnectCoreAsync(CancellationToken cancellationToken, bool isReconnect)
     {
         if (_session == null)
             return;
@@ -319,6 +354,22 @@ public partial class TerminalViewModel : ObservableObject
             connection = CreateConnectionService(_session.Protocol);
             _connection = connection;
             PrepareLoginScript(_session);
+
+            if (connection is SshConnectionService sshConnection)
+            {
+                sshConnection.AutoStartConfiguredTunnels = !isReconnect || _session.SshAutoRestoreTunnels;
+                sshConnection.TunnelRuntimeChanged += () =>
+                {
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        if (generation == _connectionGeneration &&
+                            ReferenceEquals(_connection, sshConnection))
+                        {
+                            SshTunnelRuntimeChanged?.Invoke();
+                        }
+                    });
+                };
+            }
 
             connection.DataReceived += data =>
             {
@@ -718,7 +769,7 @@ public partial class TerminalViewModel : ObservableObject
                     $"[Auto reconnecting; retry interval: {reconnectDelay.TotalSeconds:0}s...]",
                     "33");
 
-                await ConnectCoreAsync(cancellationToken);
+                await ConnectCoreAsync(cancellationToken, isReconnect: true);
                 if (!IsReconnectAttemptCurrent(attemptId, cancellationToken))
                     return;
 
@@ -2790,6 +2841,7 @@ public partial class TerminalViewModel : ObservableObject
         SupportsPosixShellFeatures = true;
         HostInfo = string.Empty;
         RemoteTitle = string.Empty;
+        SshTunnelRuntimeChanged?.Invoke();
 
         if (!string.IsNullOrWhiteSpace(statusMessage))
             AppendStatusMessage(statusMessage, "33");
@@ -2818,6 +2870,7 @@ public partial class TerminalViewModel : ObservableObject
         SupportsPosixShellFeatures = true;
         HostInfo = string.Empty;
         RemoteTitle = string.Empty;
+        SshTunnelRuntimeChanged?.Invoke();
         StopSessionLog();
         StopSessionRecording();
 

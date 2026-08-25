@@ -46,6 +46,17 @@ public sealed class SessionInfoCompatibilityTests
 
         Assert.Equal(318, settings.SftpPanelWidth);
         Assert.False(settings.ShowTabBar);
+        Assert.Equal(ApplicationSettings.DarkThemeMode, settings.ThemeMode);
+    }
+
+    [Fact]
+    public void ApplicationSettings_PreservesThemeMode()
+    {
+        var settings = JsonSerializer.Deserialize<ApplicationSettings>(
+            """{"ThemeMode":"Light"}""");
+
+        Assert.NotNull(settings);
+        Assert.Equal(ApplicationSettings.LightThemeMode, settings.ThemeMode);
     }
 
     [Fact]

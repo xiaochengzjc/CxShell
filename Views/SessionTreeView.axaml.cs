@@ -8,6 +8,7 @@ using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using CxShell.Models;
 using CxShell.Services;
@@ -20,6 +21,10 @@ namespace CxShell.Views;
 
 public partial class SessionTreeView : UserControl
 {
+    private bool _selectionSyncPending;
+    private int _selectionSyncGeneration;
+    private SessionNodeViewModel? _selectionAnchorNode;
+
     private static string T(string key) => LocalizationService.Shared.Text(key);
 
     private static string Tf(string key, params object[] args) => string.Format(T(key), args);
@@ -34,13 +39,18 @@ public partial class SessionTreeView : UserControl
     {
         if (DataContext is SessionTreeViewModel vm && SessionTree != null)
         {
+            _selectionSyncGeneration++;
+            _selectionSyncPending = false;
             SessionTree.ItemsSource = vm.SessionRows;
+            SessionTree.SelectedItems.Clear();
+            SessionTree.SelectedItem = null;
         }
     }
 
     protected override void OnLoaded(RoutedEventArgs e)
     {
         base.OnLoaded(e);
+        _selectionSyncGeneration++;
 
         if (SessionTree != null)
         {
@@ -63,6 +73,8 @@ public partial class SessionTreeView : UserControl
 
     protected override void OnUnloaded(RoutedEventArgs e)
     {
+        _selectionSyncGeneration++;
+        _selectionSyncPending = false;
         if (SessionTree != null)
             SessionTree.SelectionChanged -= OnTreeSelectionChanged;
         LocalizationService.Shared.LanguageChanged -= OnLanguageChanged;
@@ -92,46 +104,109 @@ public partial class SessionTreeView : UserControl
         if (SessionTree == null) return;
 
         var point = e.GetCurrentPoint(SessionTree);
+        var node = FindClickedNode(e);
 
         // Right-click opens the context menu.
         if (point.Properties.IsRightButtonPressed)
         {
-            var node = FindClickedNode(e);
             if (node != null)
             {
-                if (!GetSelectedNodes().Contains(node))
+                var selectedNodes = GetSelectedNodes();
+                if (!selectedNodes.Contains(node))
                 {
-                    SessionTree.SelectedItems.Clear();
-                    SessionTree.SelectedItem = node;
+                    SetGridSelectedItems([node]);
+                    vm.SetSelectedNodes([node]);
+                    _selectionAnchorNode = node;
                 }
+                else
+                    vm.SetSelectedNodes(selectedNodes);
+
                 ShowSessionContextMenu(SessionTree, vm);
             }
             e.Handled = true;
             return;
         }
 
-        // Double-click connects the selected session.
-        if (e.ClickCount == 2)
+        if (!point.Properties.IsLeftButtonPressed || node == null)
+            return;
+
+        SessionTree.Focus();
+        ApplySessionSelection(vm, node, e.KeyModifiers);
+        e.Handled = true;
+
+        if (e.ClickCount != 2 || node.Session == null)
+            return;
+
+        var mainVm = GetMainWindowViewModel();
+        if (mainVm != null)
         {
-            var node = FindClickedNode(e);
-            if (node != null)
+            _ = mainVm.ConnectSession(node.Session);
+
+            // Close the standalone session manager window after connecting.
+            var window = TopLevel.GetTopLevel(this) as Avalonia.Controls.Window;
+            if (window is SessionManagerWindow)
+                window.Close();
+        }
+    }
+
+    private void ApplySessionSelection(
+        SessionTreeViewModel vm,
+        SessionNodeViewModel node,
+        KeyModifiers modifiers)
+    {
+        var rows = vm.SessionRows.ToList();
+        var selected = GetSelectedNodes().ToList();
+        var hasCommandModifier = modifiers.HasFlag(KeyModifiers.Control) ||
+                                 modifiers.HasFlag(KeyModifiers.Meta);
+        var hasShift = modifiers.HasFlag(KeyModifiers.Shift);
+
+        if (hasShift && _selectionAnchorNode != null)
+        {
+            var anchorIndex = rows.IndexOf(_selectionAnchorNode);
+            var nodeIndex = rows.IndexOf(node);
+            if (anchorIndex >= 0 && nodeIndex >= 0)
             {
-                vm.SelectedNode = node;
+                var start = Math.Min(anchorIndex, nodeIndex);
+                var count = Math.Abs(anchorIndex - nodeIndex) + 1;
+                var range = rows.Skip(start).Take(count).ToList();
+                selected = hasCommandModifier
+                    ? selected.Concat(range).Distinct().OrderBy(item => rows.IndexOf(item)).ToList()
+                    : range;
             }
-
-            var session = vm.SelectedSession;
-            if (session == null) return;
-
-            var mainVm = GetMainWindowViewModel();
-            if (mainVm != null)
+            else
             {
-                _ = mainVm.ConnectSession(session);
-
-                // Close the standalone session manager window after connecting.
-                var window = TopLevel.GetTopLevel(this) as Avalonia.Controls.Window;
-                if (window is SessionManagerWindow)
-                    window.Close();
+                selected = [node];
+                _selectionAnchorNode = node;
             }
+        }
+        else if (hasCommandModifier)
+        {
+            if (selected.Contains(node))
+                selected.Remove(node);
+            else
+                selected.Add(node);
+
+            selected = selected.OrderBy(item => rows.IndexOf(item)).ToList();
+            _selectionAnchorNode = node;
+        }
+        else
+        {
+            selected = [node];
+            _selectionAnchorNode = node;
+        }
+
+        SetGridSelectedItems(selected);
+        vm.SetSelectedNodes(selected);
+    }
+
+    private void SetGridSelectedItems(IReadOnlyList<SessionNodeViewModel> selected)
+    {
+        var selectedItems = SessionTree.SelectedItems;
+        selectedItems.Clear();
+        foreach (var item in selected)
+        {
+            if (!selectedItems.Contains(item))
+                selectedItems.Add(item);
         }
     }
 
@@ -402,8 +477,35 @@ public partial class SessionTreeView : UserControl
 
     private void OnTreeSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (DataContext is SessionTreeViewModel vm)
-            vm.SetSelectedNodes(GetSelectedNodes());
+        if (_selectionSyncPending)
+            return;
+
+        _selectionSyncPending = true;
+        var generation = _selectionSyncGeneration;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (generation != _selectionSyncGeneration || !IsLoaded)
+            {
+                _selectionSyncPending = false;
+                return;
+            }
+
+            _selectionSyncPending = false;
+            if (DataContext is not SessionTreeViewModel vm)
+                return;
+
+            var selectedNodes = GetSelectedNodes();
+            if (selectedNodes.Count == 0 &&
+                SessionTree.SelectedItem is SessionNodeViewModel selectedItem &&
+                selectedItem.Session != null)
+            {
+                // AtomUI's DataGrid can update SelectedItem before its extended
+                // SelectedItems collection. Preserve a real single-row selection.
+                selectedNodes = [selectedItem];
+            }
+
+            vm.SetSelectedNodes(selectedNodes);
+        }, DispatcherPriority.Background);
     }
 
     private IReadOnlyList<SessionNodeViewModel> GetSelectedNodes()

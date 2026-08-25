@@ -84,6 +84,8 @@ public partial class SessionEditViewModel : ObservableObject
     public string VncSshTunnelDescriptionText => L.Text("SessionEdit.VncSshTunnelDescription");
     public string UseRdpSshTunnelText => L.Text("SessionEdit.UseRdpSshTunnel");
     public string RdpSshTunnelDescriptionText => L.Text("SessionEdit.RdpSshTunnelDescription");
+    public string AutoRestoreSshTunnelsText => L.Text("SessionEdit.AutoRestoreSshTunnels");
+    public string AutoRestoreSshTunnelsDescriptionText => L.Text("SessionEdit.AutoRestoreSshTunnelsDescription");
     public string SshHostText => L.Text("SessionEdit.SshHost");
     public string SshPortText => L.Text("SessionEdit.SshPort");
     public string SshUsernameText => L.Text("SessionEdit.SshUsername");
@@ -273,6 +275,7 @@ public partial class SessionEditViewModel : ObservableObject
     [ObservableProperty] private string _sshCipherAlgorithms = string.Empty;
     [ObservableProperty] private string _sshMacAlgorithms = string.Empty;
     [ObservableProperty] private string _sshKeyExchangeAlgorithms = string.Empty;
+    [ObservableProperty] private bool _autoRestoreSshTunnels = true;
     [ObservableProperty] private SshTunnelRule? _selectedSshTunnelRule;
     [ObservableProperty] private bool _sshForwardX11 = true;
     [ObservableProperty] private bool _sshX11UseXmanager = true;
@@ -1123,6 +1126,8 @@ public partial class SessionEditViewModel : ObservableObject
         OnPropertyChanged(nameof(VncSshTunnelDescriptionText));
         OnPropertyChanged(nameof(UseRdpSshTunnelText));
         OnPropertyChanged(nameof(RdpSshTunnelDescriptionText));
+        OnPropertyChanged(nameof(AutoRestoreSshTunnelsText));
+        OnPropertyChanged(nameof(AutoRestoreSshTunnelsDescriptionText));
         OnPropertyChanged(nameof(SshHostText));
         OnPropertyChanged(nameof(SshPortText));
         OnPropertyChanged(nameof(SshUsernameText));
@@ -1430,6 +1435,7 @@ public partial class SessionEditViewModel : ObservableObject
         SshCipherAlgorithms = session.SshCipherAlgorithms ?? string.Empty;
         SshMacAlgorithms = session.SshMacAlgorithms ?? string.Empty;
         SshKeyExchangeAlgorithms = session.SshKeyExchangeAlgorithms ?? string.Empty;
+        AutoRestoreSshTunnels = session.SshAutoRestoreTunnels;
         foreach (var rule in session.SshTunnelRules)
             SshTunnelRules.Add(CloneTunnelRule(rule));
         SshForwardX11 = session.SshForwardX11;
@@ -1652,6 +1658,7 @@ public partial class SessionEditViewModel : ObservableObject
         session.SshMacAlgorithms = NormalizeAlgorithmList(SshMacAlgorithms);
         session.SshKeyExchangeAlgorithms = NormalizeAlgorithmList(SshKeyExchangeAlgorithms);
         session.SshTunnelRules = SshTunnelRules.Select(CloneTunnelRule).ToList();
+        session.SshAutoRestoreTunnels = AutoRestoreSshTunnels;
         session.SshForwardX11 = SshForwardX11;
         session.SshX11UseXmanager = SshX11UseXmanager;
         session.SshX11Display = SshX11Display.Trim();

@@ -79,7 +79,7 @@ public partial class SessionTreeViewModel : ObservableObject
     private SessionInfo? _copiedSession;
 
     public SessionInfo? SelectedSession => SelectedNode?.Session;
-    public bool CanUseSelectedSession => SelectedNodes.Count == 1 && SelectedSession != null;
+    public bool CanUseSelectedSession => SelectedSession != null && SelectedNodes.Count <= 1;
     public bool HasSelectedSessions => SelectedNodes.Any(node => node.Session != null);
     public int SelectedSessionCount => SelectedNodes.Count(node => node.Session != null);
     public bool CanExportSelectedSessions => HasSelectedSessions;
@@ -222,6 +222,7 @@ public partial class SessionTreeViewModel : ObservableObject
         target.SshMacAlgorithms = source.SshMacAlgorithms;
         target.SshKeyExchangeAlgorithms = source.SshKeyExchangeAlgorithms;
         target.SshTunnelRules = source.SshTunnelRules.Select(SessionEditViewModel.CloneTunnelRule).ToList();
+        target.SshAutoRestoreTunnels = source.SshAutoRestoreTunnels;
         target.SshForwardX11 = source.SshForwardX11;
         target.SshX11UseXmanager = source.SshX11UseXmanager;
         target.SshX11Display = source.SshX11Display;
@@ -410,17 +411,10 @@ public partial class SessionTreeViewModel : ObservableObject
 
     partial void OnSelectedNodeChanged(SessionNodeViewModel? value)
     {
-        // The DataGrid updates SelectedItem and SelectedItems independently.
-        // Keep the single-selection command state aligned with the visible row.
-        if (value?.Session != null)
-        {
-            if (SelectedNodes.Count != 1 || !ReferenceEquals(SelectedNodes[0], value))
-            {
-                SelectedNodes.Clear();
-                SelectedNodes.Add(value);
-            }
-        }
-        else if (SelectedNodes.Count > 0)
+        // DataGrid raises SelectedItem before its extended selection has settled.
+        // Do not write the previous SelectedNodes collection back into the grid
+        // from this callback; SelectionChanged is the source of truth for rows.
+        if (value == null)
         {
             SelectedNodes.Clear();
         }
@@ -1110,6 +1104,7 @@ public partial class SessionTreeViewModel : ObservableObject
             SshMacAlgorithms = source.SshMacAlgorithms,
             SshKeyExchangeAlgorithms = source.SshKeyExchangeAlgorithms,
             SshTunnelRules = source.SshTunnelRules.Select(SessionEditViewModel.CloneTunnelRule).ToList(),
+            SshAutoRestoreTunnels = source.SshAutoRestoreTunnels,
             SshForwardX11 = source.SshForwardX11,
             SshX11UseXmanager = source.SshX11UseXmanager,
             SshX11Display = source.SshX11Display,
