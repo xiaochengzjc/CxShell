@@ -39,8 +39,8 @@ public partial class App : Application
 
         try
         {
-            themeMode = new SessionStorageService().Load().Settings?.ThemeMode
-                        ?? ApplicationSettings.DarkThemeMode;
+            var legacySettings = new SessionStorageService().Load().Settings;
+            themeMode = new ApplicationSettingsStore().Load(legacySettings).ThemeMode;
         }
         catch
         {

@@ -1,0 +1,51 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:antdicons="https://atomui.net/icons/antdesign"
+             xmlns:vm="using:CxShell.ViewModels"
+             x:Class="CxShell.Views.AboutPage"
+             x:DataType="vm:SettingsCenterViewModel">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="18" Margin="0,2,12,8">
+            <Border Background="{atom:SharedTokenResource ColorBgLayout}"
+                    BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                    BorderThickness="1"
+                    CornerRadius="5"
+                    Padding="18">
+                <StackPanel Spacing="8">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider Kind=InfoCircleOutlined}"
+                                            Width="24"
+                                            Height="24"
+                                            IconBrush="{atom:SharedTokenResource ColorPrimary}"
+                                            VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding AboutAppNameText}"
+                                   FontSize="22"
+                                   FontWeight="SemiBold"
+                                   Foreground="{atom:SharedTokenResource ColorText}"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <TextBlock Text="{Binding AboutVersionText}"
+                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                    <TextBlock Text="{Binding AboutContentText}"
+                               TextWrapping="Wrap"
+                               Foreground="{atom:SharedTokenResource ColorText}"/>
+                    <TextBlock Text="{Binding AboutBuiltWithText}"
+                               TextWrapping="Wrap"
+                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                </StackPanel>
+            </Border>
+
+            <StackPanel Spacing="8">
+                <TextBlock Text="{Binding AboutGitHubLabelText}"
+                           FontWeight="SemiBold"
+                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                <TextBlock Text="{Binding AboutGitHubUrlText}"
+                           Cursor="Hand"
+                           Foreground="{atom:SharedTokenResource ColorPrimary}"
+                           TextWrapping="Wrap"
+                           PointerPressed="OnGitHubPointerPressed"/>
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

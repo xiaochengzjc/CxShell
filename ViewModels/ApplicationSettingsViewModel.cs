@@ -44,11 +44,14 @@ public partial class ApplicationSettingsViewModel : ObservableObject
     private readonly ApplicationSettings _settings;
     private readonly Action<ApplicationSettings> _saveSettings;
     private readonly Action<string> _applyLanguage;
+    private readonly Action<string> _applyTheme;
     private readonly LocalizationService _localization = LocalizationService.Shared;
     private readonly SshHostKeyTrustService _hostKeyTrust = SshHostKeyTrustService.Shared;
 
     [ObservableProperty] private bool _showSessionManagerOnStartup;
     [ObservableProperty] private bool _showTabBar;
+    [ObservableProperty] private bool _enableCommandSuggestions;
+    [ObservableProperty] private string _themeMode;
     [ObservableProperty] private bool _autoCheckForUpdates;
     [ObservableProperty] private bool _includePrereleaseUpdates;
     [ObservableProperty] private bool _confirmSshHostKeyOnFirstConnection;
@@ -63,6 +66,9 @@ public partial class ApplicationSettingsViewModel : ObservableObject
     public string GeneralText => Text("ApplicationSettings.General");
     public string StartupText => Text("ApplicationSettings.Startup");
     public string AppearanceText => Text("ApplicationSettings.Appearance");
+    public string ThemeText => Text("ApplicationSettings.Theme");
+    public string DarkThemeText => Text("ApplicationSettings.DarkTheme");
+    public string LightThemeText => Text("ApplicationSettings.LightTheme");
     public string UpdatesText => Text("ApplicationSettings.Updates");
     public string LanguageText => Text("ApplicationSettings.Language");
     public string SshSecurityText => Text("ApplicationSettings.SshSecurity");
@@ -77,12 +83,33 @@ public partial class ApplicationSettingsViewModel : ObservableObject
     public string RecordingDaysText => Text("ApplicationSettings.Days");
     public string ShowSessionManagerOnStartupText => Text("ApplicationSettings.ShowSessionManagerOnStartup");
     public string ShowTabBarText => Text("ApplicationSettings.ShowTabBar");
+    public string EnableCommandSuggestionsText => Text("ApplicationSettings.EnableCommandSuggestions");
     public string AutoCheckForUpdatesText => Text("ApplicationSettings.AutoCheckForUpdates");
     public string IncludePrereleaseUpdatesText => Text("ApplicationSettings.IncludePrereleaseUpdates");
     public string ChineseText => Text("Language.Chinese");
     public string EnglishText => Text("Language.English");
     public string CloseText => Text("ApplicationSettings.Close");
     public bool HasKnownHosts => KnownHosts.Count > 0;
+
+    public bool IsDarkThemeSelected
+    {
+        get => string.Equals(ThemeMode, ApplicationSettings.DarkThemeMode, StringComparison.OrdinalIgnoreCase);
+        set
+        {
+            if (value)
+                ThemeMode = ApplicationSettings.DarkThemeMode;
+        }
+    }
+
+    public bool IsLightThemeSelected
+    {
+        get => string.Equals(ThemeMode, ApplicationSettings.LightThemeMode, StringComparison.OrdinalIgnoreCase);
+        set
+        {
+            if (value)
+                ThemeMode = ApplicationSettings.LightThemeMode;
+        }
+    }
 
     public bool IsChineseSelected
     {
@@ -107,14 +134,18 @@ public partial class ApplicationSettingsViewModel : ObservableObject
     public ApplicationSettingsViewModel(
         ApplicationSettings settings,
         Action<ApplicationSettings> saveSettings,
-        Action<string> applyLanguage)
+        Action<string> applyLanguage,
+        Action<string> applyTheme)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _saveSettings = saveSettings ?? throw new ArgumentNullException(nameof(saveSettings));
         _applyLanguage = applyLanguage ?? throw new ArgumentNullException(nameof(applyLanguage));
+        _applyTheme = applyTheme ?? throw new ArgumentNullException(nameof(applyTheme));
 
         _showSessionManagerOnStartup = settings.ShowSessionManagerOnStartup;
         _showTabBar = settings.ShowTabBar;
+        _enableCommandSuggestions = settings.EnableCommandSuggestions;
+        _themeMode = NormalizeThemeMode(settings.ThemeMode);
         _autoCheckForUpdates = settings.AutoCheckForUpdates;
         _includePrereleaseUpdates = settings.IncludePrereleaseUpdates;
         _confirmSshHostKeyOnFirstConnection = settings.ConfirmSshHostKeyOnFirstConnection;
@@ -142,6 +173,28 @@ public partial class ApplicationSettingsViewModel : ObservableObject
     {
         _settings.ShowTabBar = value;
         Persist();
+    }
+
+    partial void OnEnableCommandSuggestionsChanged(bool value)
+    {
+        _settings.EnableCommandSuggestions = value;
+        Persist();
+    }
+
+    partial void OnThemeModeChanged(string value)
+    {
+        var normalized = NormalizeThemeMode(value);
+        if (!string.Equals(value, normalized, StringComparison.Ordinal))
+        {
+            ThemeMode = normalized;
+            return;
+        }
+
+        _settings.ThemeMode = normalized;
+        Persist();
+        _applyTheme(normalized);
+        OnPropertyChanged(nameof(IsDarkThemeSelected));
+        OnPropertyChanged(nameof(IsLightThemeSelected));
     }
 
     partial void OnAutoCheckForUpdatesChanged(bool value)
@@ -214,6 +267,9 @@ public partial class ApplicationSettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(GeneralText));
         OnPropertyChanged(nameof(StartupText));
         OnPropertyChanged(nameof(AppearanceText));
+        OnPropertyChanged(nameof(ThemeText));
+        OnPropertyChanged(nameof(DarkThemeText));
+        OnPropertyChanged(nameof(LightThemeText));
         OnPropertyChanged(nameof(UpdatesText));
         OnPropertyChanged(nameof(LanguageText));
         OnPropertyChanged(nameof(SshSecurityText));
@@ -228,6 +284,7 @@ public partial class ApplicationSettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(RecordingDaysText));
         OnPropertyChanged(nameof(ShowSessionManagerOnStartupText));
         OnPropertyChanged(nameof(ShowTabBarText));
+        OnPropertyChanged(nameof(EnableCommandSuggestionsText));
         OnPropertyChanged(nameof(AutoCheckForUpdatesText));
         OnPropertyChanged(nameof(IncludePrereleaseUpdatesText));
         OnPropertyChanged(nameof(ChineseText));
@@ -261,6 +318,13 @@ public partial class ApplicationSettingsViewModel : ObservableObject
         return string.Equals(language, LocalizationService.English, StringComparison.OrdinalIgnoreCase)
             ? LocalizationService.English
             : LocalizationService.Chinese;
+    }
+
+    private static string NormalizeThemeMode(string? themeMode)
+    {
+        return string.Equals(themeMode, ApplicationSettings.LightThemeMode, StringComparison.OrdinalIgnoreCase)
+            ? ApplicationSettings.LightThemeMode
+            : ApplicationSettings.DarkThemeMode;
     }
 
     private string Text(string key) => _localization.Text(key);

@@ -30,9 +30,27 @@
                         BorderThickness="1"
                         CornerRadius="5"
                         Padding="12,10">
-                    <atom:CheckBox Content="{Binding ShowTabBarText}"
-                                   IsChecked="{Binding ShowTabBar, Mode=TwoWay}"/>
+                    <StackPanel Spacing="8">
+                        <atom:CheckBox Content="{Binding ShowTabBarText}"
+                                       IsChecked="{Binding ShowTabBar, Mode=TwoWay}"/>
+                        <atom:CheckBox Content="{Binding EnableCommandSuggestionsText}"
+                                       IsChecked="{Binding EnableCommandSuggestions, Mode=TwoWay}"/>
+                    </StackPanel>
                 </Border>
+            </StackPanel>
+
+            <StackPanel Spacing="8">
+                <TextBlock Text="{Binding ThemeText}"
+                           FontWeight="SemiBold"
+                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                <StackPanel Orientation="Horizontal" Spacing="18">
+                    <atom:RadioButton Content="{Binding DarkThemeText}"
+                                      GroupName="ApplicationTheme"
+                                      IsChecked="{Binding IsDarkThemeSelected, Mode=TwoWay}"/>
+                    <atom:RadioButton Content="{Binding LightThemeText}"
+                                      GroupName="ApplicationTheme"
+                                      IsChecked="{Binding IsLightThemeSelected, Mode=TwoWay}"/>
+                </StackPanel>
             </StackPanel>
 
             <StackPanel Spacing="8">

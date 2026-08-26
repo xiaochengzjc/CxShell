@@ -17,6 +17,7 @@ public sealed class SftpTransferQueueRecord
     public string Username { get; set; } = string.Empty;
     public long TotalBytes { get; set; }
     public long TransferredBytes { get; set; }
+    public string Status { get; set; } = "Failed";
     public string? ErrorMessage { get; set; }
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

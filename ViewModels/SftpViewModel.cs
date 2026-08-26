@@ -18,7 +18,7 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace CxShell.ViewModels;
 
-public partial class SftpViewModel : ObservableObject
+public partial class SftpViewModel : ObservableObject, IDisposable
 {
     private LocalizationService L => LocalizationService.Shared;
 
@@ -60,6 +60,7 @@ public partial class SftpViewModel : ObservableObject
     private readonly SemaphoreSlim _switchGate = new(1, 1);
     private readonly Dictionary<Guid, (SessionInfo Session, string? Password)> _transferSessions = new();
     private readonly ConcurrentDictionary<Guid, TaskCompletionSource> _transferCompletions = new();
+    private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _transferPersistenceCancellations = new();
     private readonly SftpTransferQueueStore _transferQueueStore = new();
     private readonly SemaphoreSlim _stopGate = new(1, 1);
     private long _connectionVersion;
@@ -67,6 +68,7 @@ public partial class SftpViewModel : ObservableObject
     private readonly LatestRequestVersion _switchRequests = new();
     private static int _dragCacheCleanupStarted;
     private const long MaxEditableFileSize = 5 * 1024 * 1024;
+    private int _disposeState;
 
     [ObservableProperty] private bool _isConnected;
     [ObservableProperty] private string _currentPath = "/";
@@ -127,18 +129,27 @@ public partial class SftpViewModel : ObservableObject
 
     public bool IsBrowsingSession(SessionInfo session)
     {
-        return _service.IsConnected &&
+        return !IsDisposed &&
+               _service.IsConnected &&
                string.Equals(RemoteEditorConnectionKey, BuildConnectionKey(session), StringComparison.Ordinal);
     }
+
+    public bool IsDisposed => Volatile.Read(ref _disposeState) != 0;
 
     public SftpViewModel()
     {
         _service = CreateService(SessionProtocol.SFTP);
         _service.ErrorOccurred += OnServiceError;
         TransferTasks.CollectionChanged += OnTransferTasksCollectionChanged;
-        LocalizationService.Shared.LanguageChanged += (_, _) => RefreshLocalization();
+        LocalizationService.Shared.LanguageChanged += OnLanguageChanged;
         if (Interlocked.Exchange(ref _dragCacheCleanupStarted, 1) == 0)
             _ = Task.Run(CleanupExpiredDragCache);
+    }
+
+    private void OnLanguageChanged(object? sender, EventArgs e)
+    {
+        if (!IsDisposed)
+            RefreshLocalization();
     }
 
     private void RefreshLocalization()
@@ -204,6 +215,9 @@ public partial class SftpViewModel : ObservableObject
 
     private void OnTransferTaskPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (IsDisposed)
+            return;
+
         if (e.PropertyName is nameof(SftpTransferTaskItem.Status) or nameof(SftpTransferTaskItem.TransferredBytes))
         {
             OnPropertyChanged(nameof(HasCompletedTransfers));
@@ -215,9 +229,23 @@ public partial class SftpViewModel : ObservableObject
             _transferSessions.TryGetValue(task.Id, out var connection))
         {
             if (task.Status == SftpTransferStatus.Completed)
+            {
+                CancelScheduledTransferPersistence(task.Id);
                 _transferQueueStore.Remove(task.Id);
+            }
             else
-                PersistTransferTask(task, connection.Session);
+            {
+                var isTerminalState = task.Status is
+                    SftpTransferStatus.Failed or SftpTransferStatus.Cancelled;
+                SchedulePersistTransferTask(task, connection.Session, isTerminalState);
+            }
+        }
+
+        if (e.PropertyName == nameof(SftpTransferTaskItem.TransferredBytes) &&
+            sender is SftpTransferTaskItem progressTask &&
+            _transferSessions.TryGetValue(progressTask.Id, out var progressConnection))
+        {
+            SchedulePersistTransferTask(progressTask, progressConnection.Session, immediate: false);
         }
     }
 
@@ -333,11 +361,14 @@ public partial class SftpViewModel : ObservableObject
 
     public async Task<bool> SwitchConnectionAsync(SessionInfo session, string? password)
     {
+        if (IsDisposed)
+            return false;
+
         var requestVersion = _switchRequests.Begin();
         await _switchGate.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (!_switchRequests.IsCurrent(requestVersion))
+            if (IsDisposed || !_switchRequests.IsCurrent(requestVersion))
                 return false;
 
             if (IsBrowsingSession(session))
@@ -349,7 +380,7 @@ public partial class SftpViewModel : ObservableObject
 
             // Do not reconnect an intermediate tab after a newer selection has arrived
             // while the previous service was stopping.
-            if (!_switchRequests.IsCurrent(requestVersion))
+            if (IsDisposed || !_switchRequests.IsCurrent(requestVersion))
                 return false;
 
             var connectionVersion = Interlocked.Increment(ref _connectionVersion);
@@ -385,6 +416,9 @@ public partial class SftpViewModel : ObservableObject
 
     private async Task StopBrowsingAsync(bool invalidateSwitchRequests)
     {
+        if (IsDisposed)
+            return;
+
         if (invalidateSwitchRequests)
             _switchRequests.Invalidate();
 
@@ -503,7 +537,7 @@ public partial class SftpViewModel : ObservableObject
         {
             await RunServiceAsync(activeService => activeService.ConnectAsync(session, password), service);
             _homeDirectory = await RunServiceAsync(activeService => activeService.GetHomeDirectoryAsync(), service);
-            if (!IsCurrentConnection(connectionVersion, service))
+            if (IsDisposed || !IsCurrentConnection(connectionVersion, service))
                 return false;
 
             var startDirectory = string.IsNullOrWhiteSpace(session.SftpRemoteStartDirectory)
@@ -611,7 +645,8 @@ public partial class SftpViewModel : ObservableObject
 
     private bool IsCurrentConnection(long connectionVersion, IFileTransferService service)
     {
-        return connectionVersion == Volatile.Read(ref _connectionVersion) &&
+        return !IsDisposed &&
+               connectionVersion == Volatile.Read(ref _connectionVersion) &&
                ReferenceEquals(_service, service);
     }
 
@@ -1510,6 +1545,15 @@ public partial class SftpViewModel : ObservableObject
             if (!task.IsExecutionActive)
                 return;
 
+            if (task.CancellationTokenSource?.IsCancellationRequested == true ||
+                task.Status == SftpTransferStatus.Cancelling)
+            {
+                task.MarkCancelled();
+                task.ClearRuntimeHandles();
+                task.IsExecutionActive = false;
+                return;
+            }
+
             if (task.TotalBytes > 0)
                 task.UpdateProgress(task.TotalBytes, task.TotalBytes);
             task.MarkCompleted();
@@ -1764,6 +1808,8 @@ public partial class SftpViewModel : ObservableObject
         if (session.Protocol != SessionProtocol.SFTP)
             return;
 
+        var restoredTransferKeys = new HashSet<string>(StringComparer.Ordinal);
+
         foreach (var record in _transferQueueStore.Load())
         {
             if (!string.Equals(record.Protocol, nameof(SessionProtocol.SFTP), StringComparison.OrdinalIgnoreCase) ||
@@ -1773,6 +1819,14 @@ public partial class SftpViewModel : ObservableObject
             {
                 continue;
             }
+
+            var transferKey = BuildTransferKey(
+                session,
+                direction,
+                record.LocalPath,
+                record.RemotePath);
+            if (!restoredTransferKeys.Add(transferKey))
+                continue;
 
             var task = new SftpTransferTaskItem
             {
@@ -1788,7 +1842,12 @@ public partial class SftpViewModel : ObservableObject
                     ? "The transfer was interrupted before the application closed."
                     : "应用关闭前传输未完成。"
                 : record.ErrorMessage;
-            task.RestoreInterruptedState(message, record.TransferredBytes);
+            var wasCancelled = Enum.TryParse<SftpTransferStatus>(
+                record.Status,
+                true,
+                out var persistedStatus) &&
+                persistedStatus == SftpTransferStatus.Cancelled;
+            task.RestoreInterruptedState(message, record.TransferredBytes, wasCancelled);
             _transferSessions[task.Id] = (CloneTransferSession(session), password);
             TransferTasks.Add(task);
         }
@@ -1805,12 +1864,15 @@ public partial class SftpViewModel : ObservableObject
                string.Equals(record.Username, session.Username, StringComparison.Ordinal);
     }
 
-    private void PersistTransferTask(SftpTransferTaskItem task, SessionInfo session)
+    private void SchedulePersistTransferTask(
+        SftpTransferTaskItem task,
+        SessionInfo session,
+        bool immediate)
     {
         if (session.Protocol != SessionProtocol.SFTP || task.Status == SftpTransferStatus.Completed)
             return;
 
-        _transferQueueStore.Upsert(new SftpTransferQueueRecord
+        var record = new SftpTransferQueueRecord
         {
             TaskId = task.Id,
             SessionId = session.Id,
@@ -1824,17 +1886,59 @@ public partial class SftpViewModel : ObservableObject
             Username = session.Username,
             TotalBytes = task.TotalBytes,
             TransferredBytes = task.TransferredBytes,
+            Status = task.Status.ToString(),
             ErrorMessage = task.ErrorMessage
-        });
+        };
+
+        CancelScheduledTransferPersistence(task.Id);
+        if (immediate)
+        {
+            _ = Task.Run(() => _transferQueueStore.Upsert(record));
+            return;
+        }
+
+        var cancellation = new CancellationTokenSource();
+        _transferPersistenceCancellations[task.Id] = cancellation;
+        _ = PersistTransferTaskAfterDelayAsync(task.Id, record, cancellation);
+    }
+
+    private async Task PersistTransferTaskAfterDelayAsync(
+        Guid taskId,
+        SftpTransferQueueRecord record,
+        CancellationTokenSource cancellation)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(350), cancellation.Token).ConfigureAwait(false);
+            if (!cancellation.IsCancellationRequested)
+                _transferQueueStore.Upsert(record);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            ((ICollection<KeyValuePair<Guid, CancellationTokenSource>>)_transferPersistenceCancellations)
+                .Remove(new KeyValuePair<Guid, CancellationTokenSource>(taskId, cancellation));
+            cancellation.Dispose();
+        }
+    }
+
+    private void CancelScheduledTransferPersistence(Guid taskId)
+    {
+        if (_transferPersistenceCancellations.TryRemove(taskId, out var cancellation))
+            cancellation.Cancel();
     }
 
     private SftpTransferTaskItem EnqueueTransferTask(SftpTransferTaskItem task, SessionInfo session, string? password)
     {
         var matchingTask = TransferTasks.FirstOrDefault(existing =>
             existing.IsExecutionActive &&
-            existing.Direction == task.Direction &&
-            string.Equals(existing.LocalPath, task.LocalPath, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(existing.RemotePath, task.RemotePath, StringComparison.Ordinal));
+            TransferTasksBelongToSameSession(existing, session) &&
+            string.Equals(
+                BuildTransferKey(session, existing.Direction, existing.LocalPath, existing.RemotePath),
+                BuildTransferKey(session, task.Direction, task.LocalPath, task.RemotePath),
+                StringComparison.Ordinal));
         if (matchingTask != null)
         {
             IsTransferPanelExpanded = true;
@@ -1846,7 +1950,7 @@ public partial class SftpViewModel : ObservableObject
         _transferSessions[task.Id] = (session, password);
         TransferTasks.Add(task);
         IsTransferPanelExpanded = true;
-        PersistTransferTask(task, session);
+        SchedulePersistTransferTask(task, session, immediate: true);
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _transferCompletions[task.Id] = completion;
         _ = RunTransferTaskAsync(task, completion);
@@ -1939,12 +2043,10 @@ public partial class SftpViewModel : ObservableObject
                     }
 
                     cancellation.Token.ThrowIfCancellationRequested();
-                    await Dispatcher.UIThread.InvokeAsync(() =>
-                    {
-                        if (task.TotalBytes > 0)
-                            task.UpdateProgress(task.TotalBytes, task.TotalBytes);
-                        task.MarkCompleted();
-                    });
+                    var completed = await Dispatcher.UIThread.InvokeAsync(() =>
+                        TryCompleteTransfer(task, executionToken, cancellation));
+                    if (!completed)
+                        return;
 
                     if (task.Direction == SftpTransferDirection.Upload)
                         RefreshBrowserAfterUpload(task, connection.Session);
@@ -1953,12 +2055,14 @@ public partial class SftpViewModel : ObservableObject
                 }
                 catch (OperationCanceledException)
                 {
-                    await Dispatcher.UIThread.InvokeAsync(task.MarkCancelled);
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                        TryCancelTransfer(task, executionToken));
                     return;
                 }
                 catch (Exception) when (cancellation.IsCancellationRequested)
                 {
-                    await Dispatcher.UIThread.InvokeAsync(task.MarkCancelled);
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                        TryCancelTransfer(task, executionToken));
                     return;
                 }
                 catch (Exception ex)
@@ -1979,13 +2083,21 @@ public partial class SftpViewModel : ObservableObject
                 if (failure == null)
                     return;
 
+                if (cancellation.IsCancellationRequested)
+                {
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                        TryCancelTransfer(task, executionToken));
+                    return;
+                }
+
                 if (retryCount >= SftpTransferRetryPolicy.MaxAutomaticRetries ||
                     !SftpTransferRetryPolicy.ShouldRetry(
                         connection.Session.Protocol,
                         task.SupportsRetry,
                         failure))
                 {
-                    await Dispatcher.UIThread.InvokeAsync(() => task.MarkFailed(failure.Message));
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                        TryFailTransfer(task, executionToken, cancellation, failure.Message));
                     return;
                 }
 
@@ -2002,7 +2114,8 @@ public partial class SftpViewModel : ObservableObject
                 }
                 catch (OperationCanceledException)
                 {
-                    await Dispatcher.UIThread.InvokeAsync(task.MarkCancelled);
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                        TryCancelTransfer(task, executionToken));
                     return;
                 }
             }
@@ -2024,6 +2137,76 @@ public partial class SftpViewModel : ObservableObject
     {
         ((ICollection<KeyValuePair<Guid, TaskCompletionSource>>)_transferCompletions)
             .Remove(new KeyValuePair<Guid, TaskCompletionSource>(taskId, completion));
+    }
+
+    private static bool TryCompleteTransfer(
+        SftpTransferTaskItem task,
+        Guid executionToken,
+        CancellationTokenSource cancellation)
+    {
+        if (!task.IsExecutionActive || !task.IsCurrentExecution(executionToken))
+            return false;
+
+        if (cancellation.IsCancellationRequested || task.Status == SftpTransferStatus.Cancelling)
+        {
+            task.MarkCancelled();
+            return false;
+        }
+
+        if (task.TotalBytes > 0)
+            task.UpdateProgress(task.TotalBytes, task.TotalBytes);
+        task.MarkCompleted();
+        return task.Status == SftpTransferStatus.Completed;
+    }
+
+    private static bool TryCancelTransfer(SftpTransferTaskItem task, Guid executionToken)
+    {
+        if (!task.IsExecutionActive || !task.IsCurrentExecution(executionToken))
+            return false;
+
+        task.MarkCancelled();
+        return true;
+    }
+
+    private static bool TryFailTransfer(
+        SftpTransferTaskItem task,
+        Guid executionToken,
+        CancellationTokenSource cancellation,
+        string message)
+    {
+        if (!task.IsExecutionActive || !task.IsCurrentExecution(executionToken))
+            return false;
+
+        if (cancellation.IsCancellationRequested || task.Status == SftpTransferStatus.Cancelling)
+        {
+            task.MarkCancelled();
+            return false;
+        }
+
+        task.MarkFailed(message);
+        return task.Status == SftpTransferStatus.Failed;
+    }
+
+    private bool TransferTasksBelongToSameSession(SftpTransferTaskItem task, SessionInfo session)
+    {
+        return _transferSessions.TryGetValue(task.Id, out var connection) &&
+               string.Equals(
+                   BuildConnectionKey(connection.Session),
+                   BuildConnectionKey(session),
+                   StringComparison.Ordinal);
+    }
+
+    private static string BuildTransferKey(
+        SessionInfo session,
+        SftpTransferDirection direction,
+        string localPath,
+        string remotePath)
+    {
+        var normalizedLocalPath = Path.GetFullPath(localPath).TrimEnd(
+            Path.DirectorySeparatorChar,
+            Path.AltDirectorySeparatorChar);
+        var normalizedRemotePath = remotePath.Replace('\\', '/').TrimEnd('/');
+        return $"{BuildConnectionKey(session)}\0{direction}\0{normalizedLocalPath}\0{normalizedRemotePath}";
     }
 
     private static void QueueTransferProgress(
@@ -2107,7 +2290,7 @@ public partial class SftpViewModel : ObservableObject
         if (task == null || !task.CanRetry || !_transferSessions.ContainsKey(task.Id))
             return;
 
-        task.PrepareForStart();
+        task.PrepareForResume();
         task.IsExecutionActive = true;
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _transferCompletions[task.Id] = completion;
@@ -2121,6 +2304,7 @@ public partial class SftpViewModel : ObservableObject
             return;
 
         var hasConnection = _transferSessions.TryGetValue(task.Id, out var connection);
+        CancelScheduledTransferPersistence(task.Id);
         _transferQueueStore.Remove(task.Id);
         task.CancellationTokenSource?.Dispose();
         task.CancellationTokenSource = null;
@@ -2406,11 +2590,63 @@ public partial class SftpViewModel : ObservableObject
 
     private void OnServiceError(string message)
     {
+        if (IsDisposed)
+            return;
+
         Dispatcher.UIThread.Post(() =>
         {
+            if (IsDisposed)
+                return;
+
             ErrorMessage = message;
             IsConnected = false;
         });
+    }
+
+    /// <summary>
+    /// Releases the resources owned by this SFTP document. A document owns its
+    /// browsing service and transfer cancellation state; it must not be shared
+    /// with another terminal tab.
+    /// </summary>
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+            return;
+
+        _switchRequests.Invalidate();
+        Interlocked.Increment(ref _connectionVersion);
+        Interlocked.Increment(ref _navigationVersion);
+
+        LocalizationService.Shared.LanguageChanged -= OnLanguageChanged;
+        _service.ErrorOccurred -= OnServiceError;
+        TransferTasks.CollectionChanged -= OnTransferTasksCollectionChanged;
+
+        foreach (var task in TransferTasks)
+        {
+            task.PropertyChanged -= OnTransferTaskPropertyChanged;
+            if (!task.IsExecutionActive)
+                continue;
+
+            task.CancellationTokenSource?.Cancel();
+            try
+            {
+                task.ActiveService?.Disconnect();
+            }
+            catch
+            {
+                // Teardown remains best-effort; the cancellation token is authoritative.
+            }
+        }
+
+        foreach (var cancellation in _transferPersistenceCancellations.Values)
+            cancellation.Cancel();
+        _transferPersistenceCancellations.Clear();
+        _transferSessions.Clear();
+
+        DisposeFileTransferService(_service);
+        _currentSession = null;
+        _currentPassword = null;
+        RemoteEditorConnectionKey = string.Empty;
     }
 
     private sealed class OwnedFileTransferStream(Stream inner, IFileTransferService owner) : Stream

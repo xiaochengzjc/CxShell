@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using AtomUI.Theme.Resources;
 using Avalonia.Controls;
 using Avalonia.Media;
@@ -9,7 +10,7 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace CxShell.ViewModels;
 
-public partial class TerminalTabViewModel : ObservableObject
+public partial class TerminalTabViewModel : ObservableObject, IDisposable
 {
     [ObservableProperty] private string _title;
     [ObservableProperty] private bool _isConnected;
@@ -17,6 +18,9 @@ public partial class TerminalTabViewModel : ObservableObject
     [ObservableProperty] private bool _isKeyboardBroadcastBarVisible;
     [ObservableProperty] private bool _isKeyboardBroadcastEnabled = true;
     [ObservableProperty] private string _keyboardBroadcastStatusText = string.Empty;
+    private int _disposeState;
+    private readonly CancellationTokenSource _lifetimeCancellation = new();
+    private readonly CancellationToken _lifetimeToken;
 
     public SessionInfo Session { get; }
     public TerminalViewModel Terminal { get; }
@@ -47,6 +51,9 @@ public partial class TerminalTabViewModel : ObservableObject
 
     public event Action<TerminalTabViewModel>? CloseRequested;
 
+    public bool IsDisposed => Volatile.Read(ref _disposeState) != 0;
+    public CancellationToken LifetimeToken => _lifetimeToken;
+
     public TerminalTabViewModel(SessionInfo session)
         : this(session, null, null, null)
     {
@@ -69,6 +76,7 @@ public partial class TerminalTabViewModel : ObservableObject
 
     private TerminalTabViewModel(SessionInfo session, VncViewModel? vnc, RdpViewModel? rdp, SftpViewModel? fileTransfer)
     {
+        _lifetimeToken = _lifetimeCancellation.Token;
         Session = session;
         Vnc = vnc;
         Rdp = rdp;
@@ -226,6 +234,45 @@ public partial class TerminalTabViewModel : ObservableObject
     [RelayCommand]
     private void CloseTab()
     {
-        CloseRequested?.Invoke(this);
+        if (!IsDisposed)
+            CloseRequested?.Invoke(this);
+    }
+
+    /// <summary>
+    /// Releases every connection and companion panel owned by this tab. The
+    /// method is intentionally idempotent because close can be requested by
+    /// both the tab header and the window lifecycle at nearly the same time.
+    /// </summary>
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+            return;
+
+        _lifetimeCancellation.Cancel();
+        ConnectedPassword = null;
+        Terminal.CloseDetached();
+
+        try
+        {
+            Vnc?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"VNC tab cleanup failed: {ex.Message}");
+        }
+
+        try
+        {
+            Rdp?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"RDP tab cleanup failed: {ex.Message}");
+        }
+
+        FileTransfer?.Dispose();
+        CompanionSftp.Dispose();
+        Monitor.Dispose();
+        _lifetimeCancellation.Dispose();
     }
 }

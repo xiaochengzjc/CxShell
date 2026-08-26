@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -12,7 +13,8 @@ public sealed class SftpTransferQueueStore
 {
     private const string CurrentAppDirectoryName = "CxShell";
     private const int MaxRecords = 200;
-    private readonly object _syncRoot = new();
+    private static readonly ConcurrentDictionary<string, object> SharedSyncRoots = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _syncRoot;
     private readonly string _storagePath;
 
     public SftpTransferQueueStore(string? storagePath = null)
@@ -20,6 +22,7 @@ public sealed class SftpTransferQueueStore
         _storagePath = string.IsNullOrWhiteSpace(storagePath)
             ? Path.Combine(ResolveStorageDirectory(), "sftp-transfer-queue.json")
             : Path.GetFullPath(storagePath);
+        _syncRoot = SharedSyncRoots.GetOrAdd(_storagePath, static _ => new object());
     }
 
     public IReadOnlyList<SftpTransferQueueRecord> Load()
@@ -76,8 +79,14 @@ public sealed class SftpTransferQueueStore
                 return new List<SftpTransferQueueRecord>();
             }
 
+            // A previous process can be interrupted between a task update and its
+            // atomic queue replacement. Keep the newest snapshot for each task so
+            // a restored queue cannot show the same transfer twice.
             return (data.Transfers ?? new List<SftpTransferQueueRecord>())
                 .Where(record => record.TaskId != Guid.Empty)
+                .GroupBy(record => record.TaskId)
+                .Select(group => group.OrderByDescending(record => record.UpdatedAt).First())
+                .OrderByDescending(record => record.UpdatedAt)
                 .Take(MaxRecords)
                 .ToList();
         }

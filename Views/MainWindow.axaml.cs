@@ -111,6 +111,12 @@ public partial class MainWindow : Window
             }
         };
         DataContext = vm;
+        Closed += (_, _) => vm.Dispose();
+        PropertyChanged += (_, e) =>
+        {
+            if (e.Property.Name is nameof(WindowState) or nameof(IsVisible))
+                UpdateApplicationSuspension(vm);
+        };
         MainContentGrid.AddHandler(PointerPressedEvent, OnMainContentGridPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
         AddHandler(PointerMovedEvent, OnQuickSessionDragPointerMoved, RoutingStrategies.Tunnel, handledEventsToo: true);
         AddHandler(PointerReleasedEvent, OnQuickSessionDragPointerReleased, RoutingStrategies.Tunnel, handledEventsToo: true);
@@ -134,14 +140,24 @@ public partial class MainWindow : Window
         HandleCommandLineLaunchIfRequested();
         ShowSessionManagerOnStartupIfNeeded();
         if (DataContext is MainWindowViewModel vm)
+        {
+            UpdateApplicationSuspension(vm);
             vm.StartAutomaticUpdateCheck(_startupArgs);
+        }
     }
 
     protected override void OnUnloaded(RoutedEventArgs e)
     {
+        if (DataContext is MainWindowViewModel vm)
+            vm.SetApplicationSuspended(true);
         _commandLineHandoffServer?.Dispose();
         _commandLineHandoffServer = null;
         base.OnUnloaded(e);
+    }
+
+    private void UpdateApplicationSuspension(MainWindowViewModel vm)
+    {
+        vm.SetApplicationSuspended(!IsVisible || WindowState == Avalonia.Controls.WindowState.Minimized);
     }
 
     private void OnPreviewKeyDown(object? sender, KeyEventArgs e)
@@ -1225,17 +1241,6 @@ public partial class MainWindow : Window
     private void OnLanguageMenuItemClick(object? sender, RoutedEventArgs e)
     {
         LanguagePopup.Close();
-    }
-
-    private void OnHelpButtonClick(object? sender, RoutedEventArgs e)
-    {
-        HelpPopup.PlacementTarget = HelpButton;
-        HelpPopup.IsOpen = true;
-    }
-
-    private void OnHelpMenuItemClick(object? sender, RoutedEventArgs e)
-    {
-        HelpPopup.Close();
     }
 
     private async void OnSendRemoteClipboardClick(object? sender, RoutedEventArgs e)

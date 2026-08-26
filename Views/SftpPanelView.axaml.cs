@@ -42,6 +42,7 @@ public partial class SftpPanelView : UserControl
     private PointerPressedEventArgs? _dragStartEventArgs;
     private Avalonia.Point _dragStartPoint;
     private bool _isDraggingFileItem;
+    private bool _isFilePointerPressed;
     private bool _isHandlingDropUpload;
     private bool _doubleTapHandlerAttached;
     private bool _isFileGridColumnUpdateQueued;
@@ -488,6 +489,7 @@ public partial class SftpPanelView : UserControl
 
         if (point.Properties.IsRightButtonPressed)
         {
+            _isFilePointerPressed = false;
             var selectedFiles = GetSelectedFiles(grid).ToList();
             if (selectedFiles.Contains(item))
             {
@@ -507,6 +509,7 @@ public partial class SftpPanelView : UserControl
 
         if (point.Properties.IsLeftButtonPressed)
         {
+            _isFilePointerPressed = true;
             ApplyFileSelection(grid, item, e.KeyModifiers);
             _dragSourceItem = item;
             _dragStartEventArgs = e;
@@ -537,6 +540,7 @@ public partial class SftpPanelView : UserControl
 
     private void OnFileGridPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        _isFilePointerPressed = false;
         if (!_isDraggingFileItem)
             ClearFileDragState();
     }
@@ -603,6 +607,7 @@ public partial class SftpPanelView : UserControl
         var point = e.GetCurrentPoint(this);
         if (!point.Properties.IsLeftButtonPressed)
         {
+            _isFilePointerPressed = false;
             ClearFileDragState();
             return;
         }
@@ -624,6 +629,9 @@ public partial class SftpPanelView : UserControl
             if (_attachedViewModel.CanStreamDragOut(item))
             {
                 var dragFiles = await _attachedViewModel.CreateVirtualDragFilesAsync(item);
+                if (!_isFilePointerPressed)
+                    return;
+
                 if (dragFiles.Count > 0)
                 {
                     System.Console.WriteLine($"[SFTP] Starting virtual drag-out: {item.FullPath}, files={dragFiles.Count}");
@@ -643,12 +651,11 @@ public partial class SftpPanelView : UserControl
                 }
             }
 
-            var wasCached = _attachedViewModel.IsItemCachedForDrag(item);
             var localPath = await _attachedViewModel.ExportItemForDragAsync(item);
             if (string.IsNullOrWhiteSpace(localPath))
                 return;
 
-            if (!wasCached)
+            if (!_isFilePointerPressed)
                 return;
 
             var storageItem = await GetStorageItemForDragAsync(topLevel, localPath);
@@ -676,6 +683,7 @@ public partial class SftpPanelView : UserControl
         {
             ClearFileDragState();
             _isDraggingFileItem = false;
+            _isFilePointerPressed = false;
         }
     }
 

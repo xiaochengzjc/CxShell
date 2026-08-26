@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using AtomUI;
@@ -42,7 +43,7 @@ public enum KeyboardBroadcastTarget
     CurrentTabGroup
 }
 
-public partial class MainWindowViewModel : ObservableObject
+public partial class MainWindowViewModel : ObservableObject, IDisposable
 {
     private const double DefaultSftpPanelWidth = 318;
     private const double MinimumSftpPanelWidth = 120;
@@ -58,6 +59,7 @@ public partial class MainWindowViewModel : ObservableObject
     private SettingsCenterWindow? _settingsCenterWindow;
     private RecentConnectionsWindow? _recentConnectionsWindow;
     private SshTunnelCenterWindow? _sshTunnelCenterWindow;
+    private int _disposeState;
 
     [ObservableProperty] private SessionTreeViewModel _sessionTree;
     [ObservableProperty] private SftpViewModel _sftp = null!;
@@ -76,6 +78,7 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty] private TabArrangementMode _tabArrangementMode = TabArrangementMode.Single;
     [ObservableProperty] private KeyboardBroadcastTarget _keyboardBroadcastTarget = KeyboardBroadcastTarget.CurrentSession;
     [ObservableProperty] private bool _isTabBarVisible;
+    private bool _isApplicationSuspended;
 
     public ObservableCollection<TerminalTabViewModel> Tabs { get; } = new();
     public ObservableCollection<TerminalTabGroupViewModel> TabGroups { get; } = new();
@@ -238,6 +241,19 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private async Task ToggleTheme()
     {
+        var newMode = IsDarkMode
+            ? ApplicationSettings.LightThemeMode
+            : ApplicationSettings.DarkThemeMode;
+        await ApplyThemeModeAsync(newMode);
+    }
+
+    private void ApplyThemeMode(string mode)
+    {
+        _ = ApplyThemeModeAsync(mode);
+    }
+
+    private async Task ApplyThemeModeAsync(string mode)
+    {
         var app = Application.Current;
         var themeManager = app?.GetThemeManager();
         if (themeManager == null)
@@ -245,7 +261,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         var currentTheme = themeManager.CurrentTheme;
         var algorithms = currentTheme?.Algorithms?.ToList() ?? [ThemeAlgorithm.Default];
-        var newMode = currentTheme?.Appearance != ThemeAppearance.Dark;
+        var newMode = !string.Equals(mode, ApplicationSettings.LightThemeMode, StringComparison.OrdinalIgnoreCase);
         algorithms.RemoveAll(static algorithm => algorithm == ThemeAlgorithm.Dark);
         if (newMode)
             algorithms.Add(ThemeAlgorithm.Dark);
@@ -652,7 +668,10 @@ public partial class MainWindowViewModel : ObservableObject
         SshHostKeyTrustService.Shared.Configure(settings);
         SessionRecordingService.Shared.Configure(settings);
         foreach (var tab in Tabs.Where(item => item.IsTerminalSession))
+        {
+            tab.Terminal.SetCommandSuggestionsEnabled(settings.EnableCommandSuggestions);
             tab.Terminal.RefreshRecordingOptions();
+        }
         if (IsTabBarVisible != settings.ShowTabBar)
             IsTabBarVisible = settings.ShowTabBar;
     }
@@ -1193,9 +1212,11 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void UpdateMonitor(TerminalTabViewModel? tab)
     {
-        if (!IsMonitorVisible)
+        if (!IsMonitorVisible || _isApplicationSuspended)
             return;
         if (tab == null ||
+            tab.IsDisposed ||
+            !Tabs.Contains(tab) ||
             tab.Vnc != null ||
             tab.Rdp != null ||
             !tab.Terminal.IsConnected ||
@@ -1227,8 +1248,24 @@ public partial class MainWindowViewModel : ObservableObject
             tab.Monitor.StopMonitoring();
     }
 
+    public void SetApplicationSuspended(bool suspended)
+    {
+        if (_isApplicationSuspended == suspended)
+            return;
+
+        _isApplicationSuspended = suspended;
+        foreach (var tab in Tabs)
+            tab.Monitor.SetSuspended(suspended);
+
+        if (!suspended)
+            UpdateMonitor(SelectedTab);
+    }
+
     private async Task UpdateCompanionPanelsAfterTerminalConnectAsync(TerminalTabViewModel tab)
     {
+        if (tab.IsDisposed || !Tabs.Contains(tab))
+            return;
+
         if (tab.Session.Protocol != SessionProtocol.SSH)
         {
             UpdateMonitor(tab);
@@ -1254,8 +1291,19 @@ public partial class MainWindowViewModel : ObservableObject
         if (tab.Session.SshAutoOpenSftpPanel &&
             isWindowsOpenSsh)
         {
-            await Task.Delay(TimeSpan.FromMilliseconds(2500));
-            if (SelectedTab != tab || !tab.Terminal.IsConnected)
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(2500), tab.LifetimeToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            if (tab.IsDisposed ||
+                !Tabs.Contains(tab) ||
+                SelectedTab != tab ||
+                !tab.Terminal.IsConnected)
                 return;
         }
 
@@ -1277,6 +1325,8 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (!IsSftpVisible) return;
         if (tab == null ||
+            tab.IsDisposed ||
+            !Tabs.Contains(tab) ||
             tab.Vnc != null ||
             tab.Rdp != null ||
             tab.FileTransfer != null ||
@@ -1639,6 +1689,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void AddTabToActiveGroup(TerminalTabViewModel tab)
     {
+        tab.Terminal.SetCommandSuggestionsEnabled(_sessionTreeVm.Settings.EnableCommandSuggestions);
+
         if (!IsTabArrangementEnabled)
         {
             Tabs.Add(tab);
@@ -1851,7 +1903,10 @@ public partial class MainWindowViewModel : ObservableObject
             _sessionTreeVm.Settings,
             ApplyApplicationSettings,
             ApplyLanguage,
-            _connectionAuditService);
+            ApplyThemeMode,
+            _connectionAuditService,
+            BuildAppVersion(),
+            CheckForUpdatesCommand);
         viewModel.Select(section);
         _settingsCenterWindow = new SettingsCenterWindow(viewModel);
         _settingsCenterWindow.Closed += (_, _) => _settingsCenterWindow = null;
@@ -2120,6 +2175,9 @@ public partial class MainWindowViewModel : ObservableObject
 
             await tab.Terminal.ConnectAsync(session, password);
 
+            if (tab.IsDisposed || !Tabs.Contains(tab))
+                return;
+
             tab.ConnectedPassword = password;
             await UpdateCompanionPanelsAfterTerminalConnectAsync(tab);
             StartInitialRemoteDirectoryChange(tab, initialRemoteDirectory);
@@ -2215,6 +2273,9 @@ public partial class MainWindowViewModel : ObservableObject
             ConnectionStatusColor = new SolidColorBrush(Color.Parse("#FAAD14"));
             ConnectedHostInfo = BuildVncHostInfo(session);
             await vm.ConnectAsync(session, password);
+            if (tab.IsDisposed || !Tabs.Contains(tab))
+                return;
+
             ConnectionStatusText = "VNC connected";
             ConnectionStatusColor = new SolidColorBrush(Color.Parse("#52C41A"));
             UpdateTerminalSize();
@@ -2263,6 +2324,9 @@ public partial class MainWindowViewModel : ObservableObject
         RecordAudit(session, ConnectionAuditEventType.ConnectStarted);
 
         var connected = await fileTransfer.SwitchConnectionAsync(session, password);
+        if (tab.IsDisposed || !Tabs.Contains(tab))
+            return;
+
         tab.ConnectedPassword = password;
         if (connected)
         {
@@ -2417,6 +2481,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void CloseTab(TerminalTabViewModel tab)
     {
+        if (tab == null || !Tabs.Contains(tab))
+            return;
+
         var wasSelected = SelectedTab == tab;
         var group = IsTabArrangementEnabled ? FindTabGroup(tab) : null;
         RecordAudit(tab.Session, ConnectionAuditEventType.TabClosed);
@@ -2429,7 +2496,12 @@ public partial class MainWindowViewModel : ObservableObject
             TabGroups.Remove(group);
 
         Tabs.Remove(tab);
-        CleanupClosedTabResources(tab);
+        if (ReferenceEquals(Sftp, tab.CompanionSftp) ||
+            ReferenceEquals(Sftp, tab.FileTransfer))
+        {
+            Sftp = _emptySftp;
+        }
+        tab.Dispose();
 
         if (wasSelected && Tabs.Count > 0)
         {
@@ -2463,27 +2535,21 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    private static void CleanupClosedTabResources(TerminalTabViewModel tab)
+    /// <summary>
+    /// Closes all tabs and releases the window-level companion view models.
+    /// This is also used by the desktop window shutdown path so connections do
+    /// not outlive the main window.
+    /// </summary>
+    public void Dispose()
     {
-        tab.Terminal.CloseDetached();
-        if (tab.Vnc != null)
-        {
-            _ = Task.Run(() =>
-            {
-                try
-                {
-                    tab.Vnc.Dispose();
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"VNC close cleanup failed: {ex.Message}");
-                }
-            });
-        }
-        tab.Rdp?.Dispose();
-        tab.FileTransfer?.StopBrowsing();
-        tab.CompanionSftp.StopBrowsing();
-        tab.Monitor.Dispose();
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+            return;
+
+        foreach (var tab in Tabs.ToList())
+            CloseTab(tab);
+
+        _emptySftp.Dispose();
+        _emptyMonitor.Dispose();
     }
 
     [RelayCommand]

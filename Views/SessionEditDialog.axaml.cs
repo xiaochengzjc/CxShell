@@ -957,14 +957,21 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
         HighlightSet? selectedSet = vm.SelectedHighlightSet ?? vm.AppearanceHighlightSets.FirstOrDefault();
         HighlightRule? selectedRule = null;
+        var isMovingRule = false;
+
+        void RefreshRuleGrid(HighlightRule? ruleToSelect = null)
+        {
+            ruleGrid.SelectedItem = null;
+            ruleGrid.ItemsSource = null;
+            ruleGrid.ItemsSource = selectedSet?.Rules;
+            ruleGrid.SelectedItem = ruleToSelect;
+        }
 
         void ApplySelectedSet(HighlightSet? set)
         {
             selectedSet = set;
             selectedRule = null;
-            ruleGrid.SelectedItem = null;
-            ruleGrid.ItemsSource = null;
-            ruleGrid.ItemsSource = selectedSet?.Rules;
+            RefreshRuleGrid();
         }
 
         void RenumberCurrentRules()
@@ -994,7 +1001,11 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             ApplySelectedSet(setGrid.SelectedItem as HighlightSet);
             RefreshState();
         };
-        ruleGrid.SelectionChanged += (_, _) => RefreshState();
+        ruleGrid.SelectionChanged += (_, _) =>
+        {
+            if (!isMovingRule)
+                RefreshState();
+        };
 
         newSetButton.Click += (_, _) =>
         {
@@ -1102,10 +1113,25 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             if (index < 0 || newIndex < 0 || newIndex >= selectedSet.Rules.Count)
                 return;
 
-            selectedSet.Rules.RemoveAt(index);
-            selectedSet.Rules.Insert(newIndex, selectedRule);
-            RenumberCurrentRules();
-            ruleGrid.SelectedItem = selectedRule;
+            var selectedRuleId = selectedRule.Id;
+            isMovingRule = true;
+            try
+            {
+                // Move emits one collection change. Remove+Insert makes DataGrid process
+                // a transient deletion and addition, which can duplicate rows or lose selection.
+                selectedSet.Rules.Move(index, newIndex);
+                RenumberCurrentRules();
+                var movedRule = selectedSet.Rules.FirstOrDefault(rule => rule.Id == selectedRuleId);
+                // AtomUI's DataGrid does not reliably re-layout an existing ItemsSource
+                // after a Move notification, so rebind the same collection once.
+                RefreshRuleGrid(movedRule);
+                selectedRule = movedRule;
+            }
+            finally
+            {
+                isMovingRule = false;
+            }
+
             RefreshState();
         }
 

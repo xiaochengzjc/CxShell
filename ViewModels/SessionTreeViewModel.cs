@@ -74,6 +74,7 @@ public partial class SessionTreeViewModel : ObservableObject
     [ObservableProperty] private string _sessionSearchText = string.Empty;
 
     private readonly SessionStorageService _storage;
+    private readonly ApplicationSettingsStore _settingsStore;
     private readonly MainWindowViewModel _mainWindow;
     private SessionData _data;
     private SessionInfo? _copiedSession;
@@ -98,7 +99,7 @@ public partial class SessionTreeViewModel : ObservableObject
     }
 
     public MainWindowViewModel MainWindow => _mainWindow;
-    public ApplicationSettings Settings => _data.Settings;
+    public ApplicationSettings Settings => _data.Settings ??= new ApplicationSettings();
     private LocalizationService L => LocalizationService.Shared;
     public string SessionManagerTitle => L.Text("SessionManager.Title");
     public string NewText => L.Text("SessionManager.New");
@@ -125,6 +126,8 @@ public partial class SessionTreeViewModel : ObservableObject
         _storage = new SessionStorageService();
         _data = _storage.Load();
         _data.Settings ??= new ApplicationSettings();
+        _settingsStore = new ApplicationSettingsStore();
+        _data.Settings = _settingsStore.Load(_data.Settings);
         LocalizationService.Shared.SetLanguage(_data.Settings.UiLanguage);
         LocalizationService.Shared.LanguageChanged += (_, _) => NotifyLocalizationChanged();
         LoadSessions();
@@ -174,7 +177,7 @@ public partial class SessionTreeViewModel : ObservableObject
     public void SaveSettings(ApplicationSettings settings)
     {
         _data.Settings = settings;
-        _storage.Save(_data);
+        _settingsStore.Save(settings);
     }
 
     public static void CopySessionValues(SessionInfo target, SessionInfo source)

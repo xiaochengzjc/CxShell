@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -8,6 +9,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
+using Avalonia.Input;
 using Avalonia.Threading;
 using Avalonia.Media;
 using CxShell.Models;
@@ -39,14 +41,21 @@ public partial class TerminalViewModel : ObservableObject
     [ObservableProperty] private int _columns = 80;
     [ObservableProperty] private int _rows = 24;
 
+    private bool _enableCommandSuggestions = true;
+
     public TerminalBuffer Buffer { get; private set; }
     public AnsiParser Parser { get; private set; }
 
     private ITerminalConnectionService? _connection;
+    private TerminalSendQueue? _sendQueue;
     private SessionInfo? _session;
     private string? _password;
     private CancellationTokenSource? _connectionCts;
     private readonly SemaphoreSlim _connectGate = new(1, 1);
+    private readonly ConcurrentQueue<PendingTerminalOutput> _pendingTerminalOutput = new();
+    private int _terminalOutputDrainScheduled;
+    private const int TerminalOutputBatchChunkLimit = 64;
+    private const int TerminalOutputBatchCharacterLimit = 192 * 1024;
     private bool _manualDisconnect = true;
     private int _connectionGeneration;
     private long _reconnectAttemptId;
@@ -58,6 +67,7 @@ public partial class TerminalViewModel : ObservableObject
     private readonly object _xymodemLock = new();
     private readonly List<byte[]> _xymodemPendingBytes = new();
     private readonly StringBuilder _outgoingCommandLine = new();
+    private readonly TerminalCommandHistory _commandHistory = new();
     private Decoder _terminalByteDecoder = Encoding.UTF8.GetDecoder();
     private ZmodemTransfer? _zmodemTransfer;
     private bool _zmodemStarting;
@@ -86,6 +96,8 @@ public partial class TerminalViewModel : ObservableObject
     private readonly StringBuilder _recentOutputBuffer = new();
     private DateTimeOffset _lastBellAt = DateTimeOffset.MinValue;
     private DateTimeOffset _bellMutedUntil = DateTimeOffset.MinValue;
+    private int _inputEscapeSequenceState;
+    private bool _suppressNextCommandHistoryEntry;
     private string? _remoteHomeDirectory;
     private string? _previousRemoteCurrentDirectory;
     private int _remoteDirectoryQueryId;
@@ -103,6 +115,10 @@ public partial class TerminalViewModel : ObservableObject
     }
 
     private readonly record struct DirectoryChangeRequest(DirectoryChangeKind Kind, string? Path);
+    private readonly record struct PendingTerminalOutput(
+        int Generation,
+        ITerminalConnectionService Connection,
+        string Data);
 
     public Func<Task<IReadOnlyList<string>>>? PickZmodemUploadFilesAsync { get; set; }
     public Func<Task<string?>>? PickZmodemDownloadFolderAsync { get; set; }
@@ -110,6 +126,7 @@ public partial class TerminalViewModel : ObservableObject
     public Func<string, Task>? SetClipboardTextAsync { get; set; }
     public string ZmodemUploadStartDirectory => _session?.FileTransferUploadDirectory ?? string.Empty;
     public bool IsTerminalSizeFixed => _session?.TerminalFixedSize == true;
+    public bool EnableCommandSuggestions => _enableCommandSuggestions;
     public string KeyboardFunctionKeyMode => _session?.TerminalKeyboardFunctionKeyMode ?? "Default";
     public string KeyboardMappingFile => _session?.TerminalKeyboardMappingFile ?? string.Empty;
     public string DeleteKeySequence => _session?.TerminalDeleteKeySequence ?? "VT220";
@@ -209,6 +226,7 @@ public partial class TerminalViewModel : ObservableObject
 
     public event Action? BufferChanged;
     public event Action? BellRequested;
+    public event Action? CommandLineChanged;
     public event Action? SshTunnelRuntimeChanged;
     public event Action<string>? RemoteCurrentDirectoryChanged;
     public string? RemoteCurrentDirectory { get; private set; }
@@ -231,6 +249,71 @@ public partial class TerminalViewModel : ObservableObject
         }
 
         SendInput(command.CommandText.TrimEnd() + "\r");
+    }
+
+    /// <summary>
+    /// Handles shell history while a locally tracked command line or a
+    /// conventional shell prompt is visible. This keeps arrow keys available
+    /// to most full-screen remote applications.
+    /// </summary>
+    public bool TryHandleCommandHistoryKey(Key key)
+    {
+        if (!IsConnected || key is not (Key.Up or Key.Down) || _commandHistory.Count == 0)
+            return false;
+
+        var currentLine = _outgoingCommandLine.ToString();
+        if (key == Key.Up)
+        {
+            if (currentLine.Length == 0 &&
+                !_commandHistory.IsNavigating &&
+                !IsLikelyShellPromptVisible())
+                return false;
+
+            var previous = _commandHistory.MovePrevious(currentLine);
+            return previous != null && ReplaceCurrentCommandLine(previous);
+        }
+
+        if (!_commandHistory.IsNavigating)
+            return false;
+
+        var next = _commandHistory.MoveNext();
+        return next != null && ReplaceCurrentCommandLine(next);
+    }
+
+    public string? GetCommandSuggestion()
+    {
+        if (!IsConnected ||
+            !_enableCommandSuggestions ||
+            _suppressNextCommandHistoryEntry ||
+            !IsLikelyShellPromptVisible())
+            return null;
+
+        return TerminalCommandSuggestionService.FindBest(
+            _outgoingCommandLine.ToString(),
+            _commandHistory.Entries,
+            GetQuickCommands());
+    }
+
+    public void SetCommandSuggestionsEnabled(bool enabled)
+    {
+        if (_enableCommandSuggestions == enabled)
+            return;
+
+        _enableCommandSuggestions = enabled;
+        CommandLineChanged?.Invoke();
+    }
+
+    public string GetCommandLineText() => _outgoingCommandLine.ToString();
+
+    public bool TryAcceptCommandSuggestion()
+    {
+        var currentLine = _outgoingCommandLine.ToString();
+        var suggestion = GetCommandSuggestion();
+        if (suggestion == null || suggestion.Length <= currentLine.Length)
+            return false;
+
+        SendInput(suggestion[currentLine.Length..]);
+        return true;
     }
 
     public Task<string> RunRemoteCommandAsync(string commandText, TimeSpan timeout, CancellationToken cancellationToken = default)
@@ -342,17 +425,23 @@ public partial class TerminalViewModel : ObservableObject
 
         await _connectGate.WaitAsync(cancellationToken);
         ITerminalConnectionService? connection = null;
+        TerminalSendQueue? sendQueue = null;
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             int generation = ++_connectionGeneration;
+            _pendingTerminalOutput.Clear();
             var previous = _connection;
             _connection = null;
+            var previousSendQueue = Interlocked.Exchange(ref _sendQueue, null);
+            previousSendQueue?.Dispose();
             previous?.Dispose();
 
             connection = CreateConnectionService(_session.Protocol);
             _connection = connection;
+            sendQueue = new TerminalSendQueue();
+            _sendQueue = sendQueue;
             PrepareLoginScript(_session);
 
             if (connection is SshConnectionService sshConnection)
@@ -373,28 +462,7 @@ public partial class TerminalViewModel : ObservableObject
 
             connection.DataReceived += data =>
             {
-                Dispatcher.UIThread.Post(() =>
-                {
-                    if (generation != _connectionGeneration)
-                        return;
-
-                    var terminalData = ProcessAnswerback(data, connection);
-                    terminalData = TerminalSessionOptions.NormalizeReceiveLineEndings(terminalData, _session);
-                    if (string.IsNullOrEmpty(terminalData))
-                        return;
-
-                    _sessionRecorder?.Write(terminalData);
-                    LogTerminalData(terminalData);
-                    AppendRecentOutput(terminalData);
-                    TryUpdateWindowsCurrentDirectoryFromOutput(terminalData, connection);
-                    HandleLoginScriptData(generation, connection, terminalData);
-                    HandleTerminalTriggerData(generation, connection, terminalData);
-                    TryDetectPendingXymodemUploadFromOutput(terminalData);
-                    TryStartPendingXymodemDownloadFromOutput(generation, terminalData);
-                    Parser.Process(terminalData);
-                    Buffer.MarkAllDirty();
-                    BufferChanged?.Invoke();
-                });
+                EnqueueTerminalOutput(generation, connection, data);
             };
 
             connection.BinaryDataReceived += bytes => HandleBinaryData(generation, bytes);
@@ -424,8 +492,12 @@ public partial class TerminalViewModel : ObservableObject
                 if (ReferenceEquals(_connection, connection))
                     _connection = null;
 
+                if (ReferenceEquals(_sendQueue, sendQueue))
+                    _sendQueue = null;
+
                 try
                 {
+                    sendQueue?.Dispose();
                     connection.Dispose();
                 }
                 catch
@@ -453,6 +525,9 @@ public partial class TerminalViewModel : ObservableObject
                 if (ReferenceEquals(_connection, connection))
                     _connection = null;
 
+                var failedSendQueue = Interlocked.Exchange(ref _sendQueue, null);
+                failedSendQueue?.Dispose();
+
                 try
                 {
                     connection.Dispose();
@@ -475,6 +550,109 @@ public partial class TerminalViewModel : ObservableObject
     {
         parser.BellReceived += OnBellReceived;
         parser.OperatingSystemCommandReceived += OnOperatingSystemCommandReceived;
+    }
+
+    private void EnqueueTerminalOutput(
+        int generation,
+        ITerminalConnectionService connection,
+        string data)
+    {
+        if (string.IsNullOrEmpty(data) || generation != _connectionGeneration)
+            return;
+
+        _pendingTerminalOutput.Enqueue(new PendingTerminalOutput(generation, connection, data));
+        if (Interlocked.Exchange(ref _terminalOutputDrainScheduled, 1) == 0)
+            Dispatcher.UIThread.Post(DrainTerminalOutput);
+    }
+
+    private void DrainTerminalOutput()
+    {
+        var processedChunks = 0;
+        var processedCharacters = 0;
+        var changed = false;
+
+        try
+        {
+            while (processedChunks < TerminalOutputBatchChunkLimit &&
+                   processedCharacters < TerminalOutputBatchCharacterLimit &&
+                   _pendingTerminalOutput.TryDequeue(out var pending))
+            {
+                processedChunks++;
+                processedCharacters += pending.Data.Length;
+                changed |= ProcessTerminalOutput(pending);
+            }
+
+            if (changed)
+            {
+                Buffer.MarkAllDirty();
+                BufferChanged?.Invoke();
+            }
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _terminalOutputDrainScheduled, 0);
+            if (!_pendingTerminalOutput.IsEmpty &&
+                Interlocked.Exchange(ref _terminalOutputDrainScheduled, 1) == 0)
+            {
+                Dispatcher.UIThread.Post(DrainTerminalOutput);
+            }
+        }
+    }
+
+    private bool ProcessTerminalOutput(PendingTerminalOutput pending)
+    {
+        if (pending.Generation != _connectionGeneration ||
+            !ReferenceEquals(_connection, pending.Connection))
+        {
+            return false;
+        }
+
+        var terminalData = ProcessAnswerback(pending.Data, pending.Connection);
+        terminalData = TerminalSessionOptions.NormalizeReceiveLineEndings(terminalData, _session);
+        if (string.IsNullOrEmpty(terminalData))
+            return false;
+
+        _sessionRecorder?.Write(terminalData);
+        LogTerminalData(terminalData);
+        AppendRecentOutput(terminalData);
+        if (LooksLikePasswordPrompt(terminalData))
+            _suppressNextCommandHistoryEntry = true;
+        TryUpdateWindowsCurrentDirectoryFromOutput(terminalData, pending.Connection);
+        HandleLoginScriptData(pending.Generation, pending.Connection, terminalData);
+        HandleTerminalTriggerData(pending.Generation, pending.Connection, terminalData);
+        TryDetectPendingXymodemUploadFromOutput(terminalData);
+        TryStartPendingXymodemDownloadFromOutput(pending.Generation, terminalData);
+        Parser.Process(terminalData);
+        return true;
+    }
+
+    private bool IsLikelyShellPromptVisible()
+    {
+        var visibleLine = GetVisibleXymodemCommandLine();
+        if (string.IsNullOrWhiteSpace(visibleLine))
+            return false;
+
+        var cursorIndex = Math.Clamp(Buffer.CursorCol, 0, visibleLine.Length);
+        if (cursorIndex == 0)
+            return false;
+
+        var textBeforeCursor = visibleLine[..cursorIndex];
+        return LastPromptMarkerIndex(textBeforeCursor) >= 0;
+    }
+
+    private static bool LooksLikePasswordPrompt(string text)
+    {
+        var normalized = text.TrimEnd();
+        if (!normalized.EndsWith(':'))
+            return false;
+
+        return normalized.Contains("password", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("passcode", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void ClearPendingTerminalOutput()
+    {
+        _pendingTerminalOutput.Clear();
     }
 
     private void OnOperatingSystemCommandReceived(string command)
@@ -943,7 +1121,7 @@ public partial class TerminalViewModel : ObservableObject
             _pendingLoginScriptRules.RemoveAt(0);
             _loginScriptProbeBuffer.Clear();
             if (!string.IsNullOrEmpty(rule.Send))
-                connection.SendData(NormalizeScriptSendText(rule.Send));
+                TrySendData(connection, NormalizeScriptSendText(rule.Send));
         }
     }
 
@@ -1007,7 +1185,7 @@ public partial class TerminalViewModel : ObservableObject
 
             _terminalTriggerLastFiredAt[rule.Id] = now;
             if (!string.IsNullOrEmpty(rule.Send))
-                connection.SendData(NormalizeScriptSendText(rule.Send));
+                TrySendData(connection, NormalizeScriptSendText(rule.Send));
             matched = true;
         }
 
@@ -1046,7 +1224,7 @@ public partial class TerminalViewModel : ObservableObject
 
                 var expandedScript = ApplyLoginScriptParameters(scriptText, session.LoginScriptParameters);
                 var payload = BuildLoginScriptPayload(session, connection, expandedScript);
-                connection.SendData(payload);
+                TrySendData(connection, payload);
             }
             catch (OperationCanceledException)
             {
@@ -1059,7 +1237,7 @@ public partial class TerminalViewModel : ObservableObject
         }, cancellationToken);
     }
 
-    private static void SendPreinputString(ITerminalConnectionService connection, SessionInfo session)
+    private void SendPreinputString(ITerminalConnectionService connection, SessionInfo session)
     {
         if (string.IsNullOrWhiteSpace(session.TerminalAdvancedPreinputString) || !connection.IsConnected)
             return;
@@ -1067,7 +1245,7 @@ public partial class TerminalViewModel : ObservableObject
         var text = NormalizeScriptSendText(session.TerminalAdvancedPreinputString);
         text = TerminalSessionOptions.NormalizeSendLineEndings(text, session);
         if (!string.IsNullOrEmpty(text))
-            connection.SendData(text);
+            TrySendData(connection, text);
     }
 
     private void StartRemoteDirectoryTrackingAsync(
@@ -1718,7 +1896,7 @@ public partial class TerminalViewModel : ObservableObject
             if (ZmodemTransfer.TryFindStartupHeader(bytes, out _, out _))
             {
                 ClearPendingXymodemDownload();
-                _connection?.SendBytes(new[] { (byte)24, (byte)24, (byte)24, (byte)24, (byte)24 });
+                TrySendBytes(_connection, new[] { (byte)24, (byte)24, (byte)24, (byte)24, (byte)24 });
                 PostStatusMessage("[YMODEM download cancelled: remote started ZMODEM; use sz for ZMODEM download]", "33");
                 return PendingXymodemDownloadByteAction.Consume;
             }
@@ -1929,7 +2107,7 @@ public partial class TerminalViewModel : ObservableObject
             if (string.IsNullOrWhiteSpace(downloadFolder))
             {
                 PostStatusMessage($"[{GetXymodemName(protocol)} download cancelled]", "33");
-                _connection?.SendBytes(new[] { (byte)24, (byte)24, (byte)24 });
+                TrySendBytes(_connection, new[] { (byte)24, (byte)24, (byte)24 });
                 return;
             }
 
@@ -1958,7 +2136,7 @@ public partial class TerminalViewModel : ObservableObject
         catch (Exception ex)
         {
             PostStatusMessage($"[{GetXymodemName(protocol)} failed: {ex.Message}]", "31");
-            _connection?.SendBytes(new[] { (byte)24, (byte)24, (byte)24 });
+            TrySendBytes(_connection, new[] { (byte)24, (byte)24, (byte)24 });
         }
     }
 
@@ -1986,7 +2164,7 @@ public partial class TerminalViewModel : ObservableObject
             _zmodemProbeBytes.Clear();
         }
 
-        _connection?.SendBytes(new byte[] { 24, 24, 24, 24, 24, 8, 8, 8, 8, 8 });
+        TrySendBytes(_connection, new byte[] { 24, 24, 24, 24, 24, 8, 8, 8, 8, 8 });
         PostStatusMessage(message, "33");
     }
 
@@ -2002,7 +2180,7 @@ public partial class TerminalViewModel : ObservableObject
             _pendingXymodemUploadProtocol = null;
         }
 
-        _connection?.SendBytes(new[] { (byte)24, (byte)24, (byte)24 });
+        TrySendBytes(_connection, new[] { (byte)24, (byte)24, (byte)24 });
         PostStatusMessage(message, "33");
     }
 
@@ -2141,14 +2319,69 @@ public partial class TerminalViewModel : ObservableObject
         return -1;
     }
 
+    private bool TrySendData(ITerminalConnectionService? connection, string data)
+    {
+        if (connection == null || string.IsNullOrEmpty(data) || !connection.IsConnected)
+            return false;
+
+        var queue = _sendQueue;
+        if (queue == null)
+            return false;
+
+        return queue.TryEnqueue(_ =>
+        {
+            if (ReferenceEquals(_connection, connection) && connection.IsConnected)
+                connection.SendData(data);
+
+            return Task.CompletedTask;
+        });
+    }
+
+    private bool TrySendBytes(ITerminalConnectionService? connection, byte[] bytes)
+    {
+        if (connection == null || bytes.Length == 0 || !connection.IsConnected)
+            return false;
+
+        var queue = _sendQueue;
+        if (queue == null)
+            return false;
+
+        var payload = bytes.ToArray();
+        return queue.TryEnqueue(_ =>
+        {
+            if (ReferenceEquals(_connection, connection) && connection.IsConnected)
+                connection.SendBytes(payload);
+
+            return Task.CompletedTask;
+        });
+    }
+
+    private bool TrySendKeepAlive(ITerminalConnectionService connection)
+    {
+        if (!connection.IsConnected)
+            return false;
+
+        var queue = _sendQueue;
+        if (queue == null)
+            return false;
+
+        return queue.TryEnqueue(_ =>
+        {
+            if (ReferenceEquals(_connection, connection) && connection.IsConnected)
+                connection.SendKeepAlive();
+
+            return Task.CompletedTask;
+        });
+    }
+
     private void SendZmodemBytes(byte[] bytes)
     {
-        _connection?.SendBytes(bytes);
+        TrySendBytes(_connection, bytes);
     }
 
     private void SendXymodemBytes(byte[] bytes)
     {
-        _connection?.SendBytes(bytes);
+        TrySendBytes(_connection, bytes);
     }
 
     private static string GetXymodemName(XymodemProtocol protocol)
@@ -2184,7 +2417,7 @@ public partial class TerminalViewModel : ObservableObject
 
         var answerback = _session?.TerminalAdvancedAnswerback ?? "CxShell";
         if (!string.IsNullOrEmpty(answerback) && connection?.IsConnected == true)
-            connection.SendData(answerback);
+            TrySendData(connection, answerback);
 
         return text.Replace("\x05", string.Empty, StringComparison.Ordinal);
     }
@@ -2196,8 +2429,14 @@ public partial class TerminalViewModel : ObservableObject
 
     public void SendInput(string data)
     {
+        SendInputCore(data, observeCommandLine: true);
+    }
+
+    private void SendInputCore(string data, bool observeCommandLine)
+    {
         _lastUserInputAt = DateTimeOffset.UtcNow;
-        ObservePotentialXymodemCommand(data);
+        if (observeCommandLine)
+            ObservePotentialXymodemCommand(data);
         if (_session?.TerminalVtEchoMode == true)
         {
             Parser.Process(data);
@@ -2205,10 +2444,53 @@ public partial class TerminalViewModel : ObservableObject
             BufferChanged?.Invoke();
         }
 
+        var connection = _connection;
+        var session = _session;
+        if (connection == null || session == null)
+            return;
+
         if (ShouldDelayInput(data))
-            _ = SendInputWithDelayAsync(data, _session!, _connection);
+        {
+            var queue = _sendQueue;
+            if (queue == null)
+                return;
+
+            queue.TryEnqueue(async cancellationToken =>
+                await SendInputWithDelayAsync(data, session, connection, cancellationToken));
+        }
         else
-            _connection?.SendData(data);
+        {
+            TrySendData(connection, data);
+        }
+    }
+
+    private bool ReplaceCurrentCommandLine(string replacement)
+    {
+        var currentLine = _outgoingCommandLine.ToString();
+        var eraseMode = _session?.TerminalAdvancedDestructiveBackspace == true
+            ? _session.TerminalDeleteKeySequence
+            : _session?.TerminalBackspaceKeySequence;
+        var eraseSequence = ResolveBackspaceSequence(eraseMode);
+        var payload = string.Concat(Enumerable.Repeat(eraseSequence, currentLine.Length)) + replacement;
+
+        // Keep the history cursor active while replacing the visible line so
+        // repeated Up/Down presses can continue through the history.
+        SendInputCore(payload, observeCommandLine: false);
+
+        _outgoingCommandLine.Clear();
+        _outgoingCommandLine.Append(replacement);
+        CommandLineChanged?.Invoke();
+        return true;
+    }
+
+    private static string ResolveBackspaceSequence(string? mode)
+    {
+        return mode?.Trim().ToUpperInvariant() switch
+        {
+            "ASCII127" => "\x7F",
+            "VT220" => "\x1B[3~",
+            _ => "\x08"
+        };
     }
 
     private void ObservePotentialXymodemCommand(string data)
@@ -2216,6 +2498,7 @@ public partial class TerminalViewModel : ObservableObject
         if (string.IsNullOrEmpty(data))
             return;
 
+        var changed = false;
         foreach (var ch in data)
         {
             if (ch is '\r' or '\n')
@@ -2224,24 +2507,99 @@ public partial class TerminalViewModel : ObservableObject
                 var visibleCommandLine = GetVisibleXymodemCommandLine();
                 var commandLine = visibleCommandLine ?? typedCommandLine;
                 _outgoingCommandLine.Clear();
+                if (!_suppressNextCommandHistoryEntry)
+                    _commandHistory.Add(typedCommandLine);
+
+                _suppressNextCommandHistoryEntry = false;
                 HandlePotentialXymodemCommand(commandLine);
                 HandlePotentialDirectoryChangeCommand(typedCommandLine, visibleCommandLine);
+                changed = true;
+                continue;
+            }
+
+            if (ch == '\x1B')
+            {
+                _inputEscapeSequenceState = 1;
+                continue;
+            }
+
+            if (ch == '\x9B')
+            {
+                _inputEscapeSequenceState = 2;
+                continue;
+            }
+
+            if (_inputEscapeSequenceState == 1)
+            {
+                _inputEscapeSequenceState = ch switch
+                {
+                    '[' or 'O' => 2,
+                    ']' => 3,
+                    _ => 0
+                };
+                continue;
+            }
+
+            if (_inputEscapeSequenceState == 2)
+            {
+                // CSI/SS3 sequences end at their final byte. Ignore all
+                // parameters and printable bytes until then.
+                if (ch is >= '@' and <= '~')
+                    _inputEscapeSequenceState = 0;
+                continue;
+            }
+
+            if (_inputEscapeSequenceState == 3)
+            {
+                if (ch == '\x07')
+                    _inputEscapeSequenceState = 0;
                 continue;
             }
 
             if (ch == '\b' || ch == '\x7f')
             {
                 if (_outgoingCommandLine.Length > 0)
+                {
                     _outgoingCommandLine.Length--;
+                    changed = true;
+                }
+                _commandHistory.ResetNavigation();
+                continue;
+            }
+
+            if (ch == '\x15' || ch == '\x03')
+            {
+                changed = _outgoingCommandLine.Length > 0;
+                _outgoingCommandLine.Clear();
+                _commandHistory.ResetNavigation();
+                continue;
+            }
+
+            if (ch == '\x17')
+            {
+                var beforeLength = _outgoingCommandLine.Length;
+                while (_outgoingCommandLine.Length > 0 && char.IsWhiteSpace(_outgoingCommandLine[^1]))
+                    _outgoingCommandLine.Length--;
+                while (_outgoingCommandLine.Length > 0 && !char.IsWhiteSpace(_outgoingCommandLine[^1]))
+                    _outgoingCommandLine.Length--;
+                changed |= beforeLength != _outgoingCommandLine.Length;
+                _commandHistory.ResetNavigation();
                 continue;
             }
 
             if (!char.IsControl(ch))
             {
                 if (_outgoingCommandLine.Length < 1024)
+                {
                     _outgoingCommandLine.Append(ch);
+                    changed = true;
+                }
+                _commandHistory.ResetNavigation();
             }
         }
+
+        if (changed)
+            CommandLineChanged?.Invoke();
     }
 
     private void HandlePotentialXymodemCommand(string commandLine)
@@ -2606,9 +2964,13 @@ public partial class TerminalViewModel : ObservableObject
                (_session.AdvancedUsePromptDelay && !string.IsNullOrEmpty(_session.AdvancedPromptText));
     }
 
-    private async Task SendInputWithDelayAsync(string data, SessionInfo session, ITerminalConnectionService? connection)
+    private async Task SendInputWithDelayAsync(
+        string data,
+        SessionInfo session,
+        ITerminalConnectionService connection,
+        CancellationToken cancellationToken)
     {
-        if (connection?.IsConnected != true)
+        if (!connection.IsConnected)
             return;
 
         var characterDelay = Math.Clamp(session.AdvancedCharacterDelayMilliseconds, 0, 60000);
@@ -2621,18 +2983,37 @@ public partial class TerminalViewModel : ObservableObject
             var segments = SplitInputLines(data).ToArray();
             for (var i = 0; i < segments.Length; i++)
             {
-                await SendSegmentWithCharacterDelayAsync(segments[i], connection, characterDelay);
+                if (!await SendSegmentWithCharacterDelayAsync(
+                        segments[i],
+                        connection,
+                        characterDelay,
+                        cancellationToken))
+                {
+                    return;
+                }
+
                 if (i + 1 < segments.Length)
-                    await WaitForPromptAsync(session.AdvancedPromptText, session.AdvancedPromptMaxWaitMilliseconds);
+                    await WaitForPromptAsync(
+                        session.AdvancedPromptText,
+                        session.AdvancedPromptMaxWaitMilliseconds,
+                        cancellationToken);
             }
             return;
         }
 
         foreach (var segment in SplitInputLines(data))
         {
-            await SendSegmentWithCharacterDelayAsync(segment, connection, characterDelay);
+            if (!await SendSegmentWithCharacterDelayAsync(
+                    segment,
+                    connection,
+                    characterDelay,
+                    cancellationToken))
+            {
+                return;
+            }
+
             if (lineDelay > 0 && EndsWithLineBreak(segment))
-                await Task.Delay(lineDelay);
+                await Task.Delay(lineDelay, cancellationToken);
         }
     }
 
@@ -2663,25 +3044,47 @@ public partial class TerminalViewModel : ObservableObject
         return value.EndsWith('\r') || value.EndsWith('\n');
     }
 
-    private static async Task SendSegmentWithCharacterDelayAsync(
+    private async Task<bool> SendSegmentWithCharacterDelayAsync(
         string segment,
         ITerminalConnectionService connection,
-        int characterDelay)
+        int characterDelay,
+        CancellationToken cancellationToken)
     {
         if (characterDelay <= 0)
         {
+            if (!IsCurrentSendConnection(connection, cancellationToken))
+                return false;
+
             connection.SendData(segment);
-            return;
+            return true;
         }
 
         foreach (var ch in segment)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!IsCurrentSendConnection(connection, cancellationToken))
+                return false;
+
             connection.SendData(ch.ToString());
-            await Task.Delay(characterDelay);
+            await Task.Delay(characterDelay, cancellationToken);
         }
+
+        return true;
     }
 
-    private async Task WaitForPromptAsync(string prompt, int maxWaitMilliseconds)
+    private bool IsCurrentSendConnection(
+        ITerminalConnectionService connection,
+        CancellationToken cancellationToken)
+    {
+        return !cancellationToken.IsCancellationRequested &&
+               ReferenceEquals(_connection, connection) &&
+               connection.IsConnected;
+    }
+
+    private async Task WaitForPromptAsync(
+        string prompt,
+        int maxWaitMilliseconds,
+        CancellationToken cancellationToken)
     {
         var timeout = Math.Clamp(maxWaitMilliseconds, 0, 600000);
         if (timeout == 0)
@@ -2696,7 +3099,7 @@ public partial class TerminalViewModel : ObservableObject
                     return;
             }
 
-            await Task.Delay(50);
+            await Task.Delay(50, cancellationToken);
         }
     }
 
@@ -2782,7 +3185,7 @@ public partial class TerminalViewModel : ObservableObject
                     var now = DateTimeOffset.UtcNow;
                     if (sendSessionKeepAlive && now - lastSessionKeepAliveAt >= sessionInterval)
                     {
-                        connection.SendKeepAlive();
+                        TrySendKeepAlive(connection);
                         lastSessionKeepAliveAt = now;
                     }
 
@@ -2790,7 +3193,7 @@ public partial class TerminalViewModel : ObservableObject
                         now - _lastUserInputAt >= idleInterval &&
                         now - lastIdleStringAt >= idleInterval)
                     {
-                        connection.SendData(session.IdleString);
+                        TrySendData(connection, session.IdleString);
                         lastIdleStringAt = now;
                     }
                 }
@@ -2829,14 +3232,20 @@ public partial class TerminalViewModel : ObservableObject
         _connectionCts?.Dispose();
         _connectionCts = null;
         _connectionGeneration++;
+        ClearPendingTerminalOutput();
 
         var connection = _connection;
         _connection = null;
         StopKeepAliveLoop();
+        var sendQueue = Interlocked.Exchange(ref _sendQueue, null);
+        sendQueue?.Dispose();
         connection?.Dispose();
         ClearZmodemTransfer();
         ClearXymodemTransfer();
         _outgoingCommandLine.Clear();
+        _commandHistory.Clear();
+        _inputEscapeSequenceState = 0;
+        _suppressNextCommandHistoryEntry = false;
         IsConnected = false;
         SupportsPosixShellFeatures = true;
         HostInfo = string.Empty;
@@ -2859,13 +3268,19 @@ public partial class TerminalViewModel : ObservableObject
         _connectionCts?.Dispose();
         _connectionCts = null;
         _connectionGeneration++;
+        ClearPendingTerminalOutput();
 
         var connection = _connection;
         _connection = null;
         StopKeepAliveLoop();
+        var sendQueue = Interlocked.Exchange(ref _sendQueue, null);
+        sendQueue?.Dispose();
         ClearZmodemTransfer();
         ClearXymodemTransfer();
         _outgoingCommandLine.Clear();
+        _commandHistory.Clear();
+        _inputEscapeSequenceState = 0;
+        _suppressNextCommandHistoryEntry = false;
         IsConnected = false;
         SupportsPosixShellFeatures = true;
         HostInfo = string.Empty;

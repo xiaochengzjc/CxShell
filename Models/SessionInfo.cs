@@ -214,7 +214,9 @@ public class ApplicationSettings
 {
     public const string DarkThemeMode = "Dark";
     public const string LightThemeMode = "Light";
+    public const int CurrentSchemaVersion = 1;
 
+    public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public string UiLanguage { get; set; } = "zh-CN";
     public string ThemeMode { get; set; } = DarkThemeMode;
     public bool ShowSessionManagerOnStartup { get; set; } = true;
@@ -233,6 +235,7 @@ public class ApplicationSettings
     public string BastionTokenEndpoint { get; set; } = string.Empty;
     public double SftpPanelWidth { get; set; } = 318;
     public bool ShowTabBar { get; set; }
+    public bool EnableCommandSuggestions { get; set; } = true;
 }
 
 public class SessionInfo

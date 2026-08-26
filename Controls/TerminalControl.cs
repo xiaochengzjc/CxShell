@@ -25,6 +25,8 @@ public class TerminalControl : Control
     private double _cellHeight;
     private Typeface _typeface;
     private Typeface _cjkTypeface;
+    private readonly Dictionary<Color, SolidColorBrush> _brushCache = new();
+    private readonly Dictionary<(bool IsCjk, bool Bold, bool Italic), Typeface> _forcedTypefaceCache = new();
     private CellPosition? _selectionAnchor;
     private CellPosition? _selectionEnd;
     private bool _isSelecting;
@@ -39,12 +41,14 @@ public class TerminalControl : Control
     private IReadOnlyList<TerminalTextMatch> _searchMatches = [];
     private readonly Dictionary<int, List<TerminalTextMatch>> _searchMatchesByRow = new();
     private int _searchMatchIndex = -1;
+    private bool _searchRefreshScheduled;
     private readonly DispatcherTimer _cursorBlinkTimer;
     private bool _cursorBlinkVisible = true;
     private readonly TerminalTextInputMethodClient _textInputMethodClient;
     private Bitmap? _backgroundImage;
     private string? _loadedBackgroundImagePath;
     private IReadOnlyList<CompiledHighlightRule> _compiledHighlightRules = [];
+    private string _ghostText = string.Empty;
     private const double ScrollbarWidth = 16;
     private const double ScrollbarMinThumbHeight = 28;
 
@@ -412,6 +416,22 @@ public class TerminalControl : Control
     public event Action<int, int>? SizeChanged2;
     public event Action? SearchChanged;
 
+    /// <summary>
+    /// Gives the host a chance to handle a local key before it becomes a
+    /// terminal escape sequence. Returning true marks the key as handled.
+    /// </summary>
+    public Func<Key, bool>? LocalKeyHandler { get; set; }
+
+    public void SetGhostText(string? text)
+    {
+        var normalized = text ?? string.Empty;
+        if (string.Equals(_ghostText, normalized, StringComparison.Ordinal))
+            return;
+
+        _ghostText = normalized;
+        InvalidateVisual();
+    }
+
     private int _columns = 80;
     private int _rows = 24;
     private string? _loadedKeyboardMappingFile;
@@ -549,6 +569,7 @@ public class TerminalControl : Control
         {
             _typeface = CreateTypeface();
             _cjkTypeface = CreateCjkTypeface();
+            _forcedTypefaceCache.Clear();
             CalculateCellSize();
             UpdateTerminalSize(Bounds.Size, notify: true);
             InvalidateMeasure();
@@ -674,7 +695,7 @@ public class TerminalControl : Control
         if (buffer == null)
         {
             context.FillRectangle(
-                new SolidColorBrush(TerminalColors.DefaultBackground),
+                GetBrush(TerminalColors.DefaultBackground),
                 new Rect(Bounds.Size));
             DrawBackgroundImage(context, new Rect(Bounds.Size));
             return;
@@ -682,7 +703,7 @@ public class TerminalControl : Control
 
         // Draw background
         context.FillRectangle(
-            new SolidColorBrush(buffer.DefaultBackgroundColor),
+            GetBrush(buffer.DefaultBackgroundColor),
             new Rect(Bounds.Size));
         DrawBackgroundImage(context, GetContentRect(Bounds.Size));
 
@@ -710,7 +731,7 @@ public class TerminalControl : Control
                         if (segColor != buffer.DefaultBackgroundColor)
                         {
                             context.FillRectangle(
-                                new SolidColorBrush(segColor),
+                                GetBrush(segColor),
                                 new Rect(segStart * _cellWidth, y, (col - segStart) * _cellWidth, _cellHeight));
                         }
                         segStart = col;
@@ -749,7 +770,7 @@ public class TerminalControl : Control
                         var width = col + 1 < buffer.Columns && GetViewportCell(buffer, row, col + 1).IsWideContinuation
                             ? 2
                             : 1;
-                        var pen = new Pen(new SolidColorBrush(ResolveHighlightForeground(buffer, cell, highlight)), 1);
+                        var pen = new Pen(GetBrush(ResolveHighlightForeground(buffer, cell, highlight)), 1);
                         if (cell.Underline || highlight?.Underline == true)
                         {
                             context.DrawLine(pen,
@@ -788,6 +809,24 @@ public class TerminalControl : Control
                         CursorTextColor, cursorCell.Bold);
                 }
             }
+
+            if (!string.IsNullOrEmpty(_ghostText) &&
+                _scrollOffset == 0 &&
+                buffer.CursorRow >= 0 && buffer.CursorRow < buffer.Rows &&
+                buffer.CursorCol >= 0 && buffer.CursorCol < buffer.Columns)
+            {
+                var ghostLength = Math.Min(_ghostText.Length, buffer.Columns - buffer.CursorCol);
+                if (ghostLength > 0)
+                {
+                    DrawTextRun(
+                        context,
+                        _ghostText[..ghostLength],
+                        buffer.CursorCol * _cellWidth,
+                        buffer.CursorRow * _cellHeight,
+                        Color.FromArgb(150, CursorColor.R, CursorColor.G, CursorColor.B),
+                        bold: false);
+                }
+            }
         }
 
         DrawScrollbar(context, buffer);
@@ -804,10 +843,10 @@ public class TerminalControl : Control
         var track = GetScrollbarTrackRect();
         var thumb = GetScrollbarThumbRect(buffer, track);
         context.FillRectangle(
-            new SolidColorBrush(Color.FromArgb(90, 80, 86, 96)),
+            GetBrush(Color.FromArgb(90, 80, 86, 96)),
             track);
         context.FillRectangle(
-            new SolidColorBrush(_isDraggingScrollbar
+            GetBrush(_isDraggingScrollbar
                 ? Color.FromArgb(230, 150, 170, 205)
                 : Color.FromArgb(190, 120, 140, 175)),
             thumb);
@@ -914,7 +953,21 @@ public class TerminalControl : Control
         }
 
         _lastScrollbackCount = count;
-        RefreshSearchMatches();
+        ScheduleSearchMatchesRefresh();
+    }
+
+    private void ScheduleSearchMatchesRefresh()
+    {
+        if (string.IsNullOrEmpty(_searchQuery) || _searchRefreshScheduled)
+            return;
+
+        _searchRefreshScheduled = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _searchRefreshScheduled = false;
+            if (!string.IsNullOrEmpty(_searchQuery))
+                RefreshSearchMatches();
+        }, DispatcherPriority.Background);
     }
 
     private void DrawSearchMatches(DrawingContext context, int row, double y, TerminalBuffer buffer)
@@ -938,7 +991,7 @@ public class TerminalControl : Control
                             _searchMatches[_searchMatchIndex].Equals(match);
             var color = isCurrent ? Color.Parse("#B8860B") : Color.Parse("#8069A7FF");
             context.FillRectangle(
-                new SolidColorBrush(color),
+                GetBrush(color),
                 new Rect(start * _cellWidth, y, (end - start) * _cellWidth, _cellHeight));
         }
     }
@@ -958,7 +1011,7 @@ public class TerminalControl : Control
             return;
 
         context.FillRectangle(
-            new SolidColorBrush(Color.Parse("#8069A7FF")),
+            GetBrush(Color.Parse("#8069A7FF")),
             new Rect(startCol * _cellWidth, y, (endColExclusive - startCol) * _cellWidth, _cellHeight));
     }
 
@@ -1087,11 +1140,9 @@ public class TerminalControl : Control
             text,
             System.Globalization.CultureInfo.CurrentCulture,
             FlowDirection.LeftToRight,
-            useCjk
-                ? CreateCjkTypeface(forceBold: bold, forceItalic: italic)
-                : bold || italic ? CreateTypeface(forceBold: bold, forceItalic: italic) : _typeface,
+            GetTextTypeface(useCjk, bold, italic),
             useCjk ? TerminalCjkFontSize : TerminalFontSize,
-            new SolidColorBrush(color));
+            GetBrush(color));
 
         context.DrawText(ft, new Point(x, y));
     }
@@ -1141,6 +1192,32 @@ public class TerminalControl : Control
             ? family
             : $"{family}, Microsoft YaHei UI, SimSun, Noto Sans CJK SC, Cascadia Mono, Consolas, monospace";
         return new Typeface(fallback, fontStyle, fontWeight);
+    }
+
+    private Typeface GetTextTypeface(bool useCjk, bool bold, bool italic)
+    {
+        if (!bold && !italic)
+            return useCjk ? _cjkTypeface : _typeface;
+
+        var key = (useCjk, bold, italic);
+        if (_forcedTypefaceCache.TryGetValue(key, out var typeface))
+            return typeface;
+
+        typeface = useCjk
+            ? CreateCjkTypeface(forceBold: bold, forceItalic: italic)
+            : CreateTypeface(forceBold: bold, forceItalic: italic);
+        _forcedTypefaceCache[key] = typeface;
+        return typeface;
+    }
+
+    private SolidColorBrush GetBrush(Color color)
+    {
+        if (_brushCache.TryGetValue(color, out var brush))
+            return brush;
+
+        brush = new SolidColorBrush(color);
+        _brushCache[color] = brush;
+        return brush;
     }
 
     private void ApplyTextQuality()
@@ -1221,7 +1298,7 @@ public class TerminalControl : Control
 
     private void DrawCursor(DrawingContext context, double x, double y, double width)
     {
-        var brush = new SolidColorBrush(CursorColor);
+        var brush = GetBrush(CursorColor);
         var shape = CursorShape?.Trim();
         if (string.Equals(shape, "Vertical", StringComparison.OrdinalIgnoreCase))
         {
@@ -1538,6 +1615,12 @@ public class TerminalControl : Control
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
+
+        if (LocalKeyHandler?.Invoke(e.Key) == true)
+        {
+            e.Handled = true;
+            return;
+        }
 
         bool ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
         bool alt = e.KeyModifiers.HasFlag(KeyModifiers.Alt);

@@ -20,6 +20,8 @@ public partial class ServerMonitorViewModel : ObservableObject, IDisposable
     private long _monitorGeneration;
     private readonly LatestRequestVersion _switchRequests = new();
     private bool _isDisposed;
+    private bool _isSuspended;
+    private int _disposeState;
 
     [ObservableProperty] private bool _isMonitoring;
     [ObservableProperty] private string? _errorMessage;
@@ -66,6 +68,8 @@ public partial class ServerMonitorViewModel : ObservableObject, IDisposable
     // 折线图用的简化数值序列（最近 60 个点）
     public ObservableCollection<double> RxHistory { get; } = new();
     public ObservableCollection<double> TxHistory { get; } = new();
+    public bool IsSuspended => _isSuspended;
+    public bool IsDisposed => Volatile.Read(ref _disposeState) != 0;
 
     public ServerMonitorViewModel()
     {
@@ -114,6 +118,7 @@ public partial class ServerMonitorViewModel : ObservableObject, IDisposable
         try
         {
             if (_isDisposed ||
+                _isSuspended ||
                 !_switchRequests.IsCurrent(requestVersion) ||
                 (IsMonitoring && string.Equals(_currentTargetKey, targetKey, StringComparison.Ordinal)))
             {
@@ -127,6 +132,9 @@ public partial class ServerMonitorViewModel : ObservableObject, IDisposable
             // A newer tab selection may have arrived while the old monitor command
             // was stopping. Skip the intermediate target instead of reconnecting it.
             if (!_switchRequests.IsCurrent(requestVersion))
+                return;
+
+            if (_isSuspended)
                 return;
 
             var generation = Interlocked.Increment(ref _monitorGeneration);
@@ -179,6 +187,50 @@ public partial class ServerMonitorViewModel : ObservableObject, IDisposable
     public void StopMonitoring()
     {
         _ = StopMonitoringAsync();
+    }
+
+    public void SetSuspended(bool suspended)
+    {
+        if (_isDisposed || _isSuspended == suspended)
+            return;
+
+        _isSuspended = suspended;
+        var requestVersion = _switchRequests.Begin();
+        _ = SetSuspendedAsync(suspended, requestVersion);
+    }
+
+    private async Task SetSuspendedAsync(bool suspended, long requestVersion)
+    {
+        if (!suspended)
+            return;
+
+        await _lifecycleGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_isDisposed ||
+                !_isSuspended ||
+                !_switchRequests.IsCurrent(requestVersion))
+            {
+                return;
+            }
+
+            await Task.Run(_service.Stop).ConfigureAwait(false);
+
+            var generation = Interlocked.Increment(ref _monitorGeneration);
+            _currentTargetKey = null;
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (!IsCurrentGeneration(generation))
+                    return;
+
+                IsMonitoring = false;
+                ClearData();
+            });
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
     }
 
     public async Task StopMonitoringAsync()
@@ -390,7 +442,11 @@ public partial class ServerMonitorViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+            return;
+
         _isDisposed = true;
+        _switchRequests.Invalidate();
         Interlocked.Increment(ref _monitorGeneration);
         _service.DataUpdated -= OnDataUpdated;
         _service.ErrorOccurred -= OnError;

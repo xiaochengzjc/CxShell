@@ -347,13 +347,6 @@
                         <atom:TextBlock Text="▾" FontSize="10" VerticalAlignment="Center" Opacity="0.75"/>
                     </StackPanel>
                 </atom:Button>
-                <atom:Button x:Name="HelpButton"
-                             ButtonType="Default"
-                             Icon="{antdicons:AntDesignIconProvider Kind=QuestionCircleOutlined}"
-                             Content="{Binding HelpText}"
-                             Click="OnHelpButtonClick"
-                             atom:ToolTip.Tip="{Binding HelpToolTip}"
-                             atom:ToolTip.Placement="Bottom"/>
                 <atom:Button x:Name="SettingsButton"
                              ButtonType="Default"
                              Icon="{antdicons:AntDesignIconProvider Kind=SettingOutlined}"
@@ -385,37 +378,6 @@
                                          Command="{Binding SetLanguageCommand}"
                                          CommandParameter="en-US"
                                          Click="OnLanguageMenuItemClick"
-                                         Background="Transparent"
-                                         BorderThickness="0"
-                                         HorizontalAlignment="Stretch"
-                                         HorizontalContentAlignment="Left"
-                                         Padding="16,7"
-                                         FontSize="13"/>
-                        </StackPanel>
-                    </Border>
-                </atom:Popup>
-                <atom:Popup x:Name="HelpPopup"
-                            Placement="Bottom"
-                            IsLightDismissEnabled="True">
-                    <Border Background="{atom:SharedTokenResource ColorBgElevated}"
-                            BorderBrush="{atom:SharedTokenResource ColorBorder}"
-                            BorderThickness="1"
-                            CornerRadius="6"
-                            Padding="0,4"
-                            MinWidth="150">
-                        <StackPanel Spacing="0">
-                            <atom:Button Content="{Binding AboutCxShellText}"
-                                         Command="{Binding ShowAboutCommand}"
-                                         Click="OnHelpMenuItemClick"
-                                         Background="Transparent"
-                                         BorderThickness="0"
-                                         HorizontalAlignment="Stretch"
-                                         HorizontalContentAlignment="Left"
-                                         Padding="16,7"
-                                         FontSize="13"/>
-                            <atom:Button Content="{Binding UpdateText}"
-                                         Command="{Binding CheckForUpdatesCommand}"
-                                         Click="OnHelpMenuItemClick"
                                          Background="Transparent"
                                          BorderThickness="0"
                                          HorizontalAlignment="Stretch"

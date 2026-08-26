@@ -60,13 +60,17 @@
                         <TextBlock Text="{Binding AppearanceText}"
                                    FontWeight="SemiBold"
                                    Foreground="{atom:SharedTokenResource ColorText}"/>
-                        <Border Background="{atom:SharedTokenResource ColorBgLayout}"
-                                BorderBrush="{atom:SharedTokenResource ColorSplit}"
-                                BorderThickness="1"
-                                CornerRadius="5"
-                                Padding="12,10">
-                            <atom:CheckBox Content="{Binding ShowTabBarText}"
-                                           IsChecked="{Binding ShowTabBar, Mode=TwoWay}"/>
+                            <Border Background="{atom:SharedTokenResource ColorBgLayout}"
+                                    BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                                    BorderThickness="1"
+                                    CornerRadius="5"
+                                    Padding="12,10">
+                            <StackPanel Spacing="8">
+                                <atom:CheckBox Content="{Binding ShowTabBarText}"
+                                               IsChecked="{Binding ShowTabBar, Mode=TwoWay}"/>
+                                <atom:CheckBox Content="{Binding EnableCommandSuggestionsText}"
+                                               IsChecked="{Binding EnableCommandSuggestions, Mode=TwoWay}"/>
+                            </StackPanel>
                         </Border>
                     </StackPanel>
 

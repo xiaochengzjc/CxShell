@@ -46,7 +46,9 @@ public sealed class SessionInfoCompatibilityTests
 
         Assert.Equal(318, settings.SftpPanelWidth);
         Assert.False(settings.ShowTabBar);
+        Assert.True(settings.EnableCommandSuggestions);
         Assert.Equal(ApplicationSettings.DarkThemeMode, settings.ThemeMode);
+        Assert.Equal(ApplicationSettings.CurrentSchemaVersion, settings.SchemaVersion);
     }
 
     [Fact]
@@ -97,6 +99,16 @@ public sealed class SessionInfoCompatibilityTests
 
         Assert.NotNull(settings);
         Assert.True(settings.ShowTabBar);
+    }
+
+    [Fact]
+    public void ApplicationSettings_PreservesCommandSuggestionVisibility()
+    {
+        var settings = JsonSerializer.Deserialize<ApplicationSettings>(
+            """{"EnableCommandSuggestions":false}""");
+
+        Assert.NotNull(settings);
+        Assert.False(settings.EnableCommandSuggestions);
     }
 
     [Fact]

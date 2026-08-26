@@ -23,7 +23,7 @@
                     BorderBrush="{atom:SharedTokenResource ColorSplit}"
                     BorderThickness="0,0,1,0"
                     Padding="14,18">
-                <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*">
+                <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,*">
                     <StackPanel Spacing="4" Margin="8,0,8,18">
                         <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider Kind=SettingOutlined}"
                                             Width="24"
@@ -91,6 +91,36 @@
                                      Background="Transparent"
                                      BorderThickness="0"
                                      HorizontalAlignment="Stretch"
+                                      HorizontalContentAlignment="Left"
+                                      Foreground="{atom:SharedTokenResource ColorText}"/>
+                    </Grid>
+
+                    <Grid Grid.Row="5" Margin="0,0,0,4">
+                        <Border Background="{atom:SharedTokenResource ColorPrimaryBg}"
+                                CornerRadius="4"
+                                IsVisible="{Binding IsAboutSelected}"/>
+                        <atom:Button Content="{Binding AboutNavigation.Text}"
+                                     Icon="{Binding AboutNavigation.Icon}"
+                                     Command="{Binding SelectAboutCommand}"
+                                     ButtonType="Text"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     HorizontalAlignment="Stretch"
+                                     HorizontalContentAlignment="Left"
+                                     Foreground="{atom:SharedTokenResource ColorText}"/>
+                    </Grid>
+
+                    <Grid Grid.Row="6">
+                        <Border Background="{atom:SharedTokenResource ColorPrimaryBg}"
+                                CornerRadius="4"
+                                IsVisible="{Binding IsUpdateSelected}"/>
+                        <atom:Button Content="{Binding UpdateNavigation.Text}"
+                                     Icon="{Binding UpdateNavigation.Icon}"
+                                     Command="{Binding SelectUpdateCommand}"
+                                     ButtonType="Text"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     HorizontalAlignment="Stretch"
                                      HorizontalContentAlignment="Left"
                                      Foreground="{atom:SharedTokenResource ColorText}"/>
                     </Grid>
@@ -124,6 +154,12 @@
                     <views:TrustedHostsPage Grid.Row="1"
                                             DataContext="{Binding ApplicationSettings}"
                                             IsVisible="{Binding #SettingsCenter.DataContext.IsTrustedHostsSelected, x:CompileBindings=False}"/>
+                    <views:AboutPage Grid.Row="1"
+                                     DataContext="{Binding #SettingsCenter.DataContext, x:CompileBindings=False}"
+                                     IsVisible="{Binding #SettingsCenter.DataContext.IsAboutSelected, x:CompileBindings=False}"/>
+                    <views:UpdatePage Grid.Row="1"
+                                      DataContext="{Binding #SettingsCenter.DataContext, x:CompileBindings=False}"
+                                      IsVisible="{Binding #SettingsCenter.DataContext.IsUpdateSelected, x:CompileBindings=False}"/>
                 </Grid>
             </Border>
         </Grid>

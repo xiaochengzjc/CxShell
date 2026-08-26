@@ -32,7 +32,8 @@ public static class SessionTransferService
             Format = Format,
             Version = "1.0",
             ExportedAt = DateTime.Now,
-            Settings = new ApplicationSettings(),
+            // Global application settings are intentionally not part of a session package.
+            Settings = null,
             Groups = exportGroups.Values
                 .OrderBy(group => group.SortOrder)
                 .Select(CloneGroup)

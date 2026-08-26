@@ -68,8 +68,10 @@ public partial class TerminalView : UserControl
         _terminal.SizeChanged2 += OnSizeChanged;
         _terminal.PointerPressed += OnPointerPressed;
         _terminal.KeyDown += OnTerminalKeyDown;
+        _terminal.LocalKeyHandler = HandleLocalTerminalKey;
         _terminal.SearchChanged += OnTerminalSearchChanged;
         vm.BufferChanged += OnBufferChanged;
+        vm.CommandLineChanged += OnCommandLineChanged;
         vm.BellRequested += OnBellRequested;
         vm.PropertyChanged += OnVmPropertyChanged;
         InjectZmodemDelegates(vm);
@@ -90,6 +92,8 @@ public partial class TerminalView : UserControl
             _terminal.SizeChanged2 -= OnSizeChanged;
             _terminal.PointerPressed -= OnPointerPressed;
             _terminal.KeyDown -= OnTerminalKeyDown;
+            _terminal.LocalKeyHandler = null;
+            _terminal.SetGhostText(null);
             _terminal.SearchChanged -= OnTerminalSearchChanged;
             _terminal.ClearSearch();
         }
@@ -98,6 +102,7 @@ public partial class TerminalView : UserControl
         if (_boundVm != null)
         {
             _boundVm.BufferChanged -= OnBufferChanged;
+            _boundVm.CommandLineChanged -= OnCommandLineChanged;
             _boundVm.BellRequested -= OnBellRequested;
             _boundVm.PropertyChanged -= OnVmPropertyChanged;
             _boundVm.PickZmodemUploadFilesAsync = null;
@@ -287,6 +292,30 @@ public partial class TerminalView : UserControl
             CloseSearchBar();
             e.Handled = true;
         }
+    }
+
+    private bool HandleLocalTerminalKey(Key key)
+    {
+        if (key == Key.Right && _boundVm?.TryAcceptCommandSuggestion() == true)
+        {
+            OnCommandLineChanged();
+            return true;
+        }
+
+        return _boundVm?.TryHandleCommandHistoryKey(key) == true;
+    }
+
+    private void OnCommandLineChanged()
+    {
+        if (_terminal == null || _boundVm == null)
+            return;
+
+        var current = _boundVm.GetCommandLineText();
+        var suggestion = _boundVm.GetCommandSuggestion();
+        var remainder = suggestion is { Length: > 0 } && suggestion.Length > current.Length
+            ? suggestion[current.Length..]
+            : string.Empty;
+        _terminal.SetGhostText(remainder);
     }
 
     private void OpenSearchBar()
@@ -612,9 +641,16 @@ public partial class TerminalView : UserControl
         {
             _terminal?.InvalidateVisual();
         }
-        else if (e.PropertyName == nameof(TerminalViewModel.IsConnected) &&
-                 _boundVm?.IsConnected == true)
+        else if (e.PropertyName == nameof(TerminalViewModel.IsConnected))
         {
+            if (_boundVm?.IsConnected != true)
+            {
+                Dispatcher.UIThread.Post(
+                    () => _terminal?.SetGhostText(null),
+                    DispatcherPriority.Background);
+                return;
+            }
+
             Dispatcher.UIThread.Post(
                 () => SyncTerminalSize(notifyRemote: true),
                 DispatcherPriority.Background);

@@ -47,4 +47,60 @@ public sealed class SftpTransferTaskItemTests
         Assert.Null(task.CompletedAt);
         Assert.Equal(0, task.TransferredBytes);
     }
+
+    [Fact]
+    public void CancellingStateCannotBeOverwrittenByLateTransferCallbacks()
+    {
+        var task = new SftpTransferTaskItem
+        {
+            TotalBytes = 100
+        };
+
+        task.PrepareForStart();
+        task.IsExecutionActive = true;
+        task.MarkRunning();
+        task.MarkCancelling();
+
+        task.MarkRunning();
+        task.MarkCompleted();
+        task.MarkFailed("late failure");
+
+        Assert.Equal(SftpTransferStatus.Cancelling, task.Status);
+    }
+
+    [Fact]
+    public void PrepareForResumeKeepsTheKnownPartialProgress()
+    {
+        var task = new SftpTransferTaskItem
+        {
+            TotalBytes = 100
+        };
+
+        task.PrepareForStart();
+        task.MarkRunning();
+        task.UpdateProgress(42, 100);
+        task.MarkFailed("connection lost");
+
+        task.PrepareForResume();
+
+        Assert.Equal(SftpTransferStatus.Pending, task.Status);
+        Assert.Equal(42, task.TransferredBytes);
+        Assert.Null(task.ErrorMessage);
+        Assert.False(task.IsExecutionActive);
+    }
+
+    [Fact]
+    public void RestoreInterruptedStatePreservesExplicitCancellation()
+    {
+        var task = new SftpTransferTaskItem
+        {
+            TotalBytes = 100
+        };
+
+        task.RestoreInterruptedState("cancelled by user", 25, wasCancelled: true);
+
+        Assert.Equal(SftpTransferStatus.Cancelled, task.Status);
+        Assert.True(task.CanRetry);
+        Assert.Equal(25, task.TransferredBytes);
+    }
 }
