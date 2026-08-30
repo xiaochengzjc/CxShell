@@ -8,6 +8,7 @@
              xmlns:vm="using:CxShell.ViewModels"
              xmlns:views="using:CxShell.Views"
              x:Class="CxShell.Views.MainWindow"
+             x:Name="MainWindowRoot"
              x:DataType="vm:MainWindowViewModel"
              Title="CxShell"
              Icon="/Assets/CxShellLogo.png"
@@ -296,6 +297,29 @@
                              atom:ToolTip.Tip="{Binding TunnelsToolTip}"
                              atom:ToolTip.Placement="Bottom">
                     <atom:TextBlock Text="{Binding TunnelsText}" VerticalAlignment="Center"/>
+                </atom:Button>
+                <atom:Button Click="OnAgentPanelToggleClick"
+                             ButtonType="Default"
+                             Icon="{antdicons:AntDesignIconProvider Kind=RobotOutlined}"
+                             atom:ToolTip.Tip="{Binding AgentToolTip}"
+                             atom:ToolTip.Placement="Bottom">
+                    <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                        <atom:TextBlock Text="{Binding AgentText}" VerticalAlignment="Center"/>
+                        <Border IsVisible="{Binding HasActiveAgentRuns}"
+                                Background="{atom:SharedTokenResource ColorPrimaryBg}"
+                                BorderBrush="{atom:SharedTokenResource ColorPrimary}"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="4,0"
+                                MinWidth="18"
+                                HorizontalAlignment="Center">
+                            <atom:TextBlock Text="{Binding AgentActivityCountText}"
+                                            Foreground="{atom:SharedTokenResource ColorPrimary}"
+                                            FontSize="10"
+                                            TextAlignment="Center"
+                                            VerticalAlignment="Center"/>
+                        </Border>
+                    </StackPanel>
                 </atom:Button>
                 <atom:Button Command="{Binding ToggleTabBarCommand}"
                              ButtonType="Default"
@@ -590,6 +614,8 @@
                     <ColumnDefinition Width="{Binding SftpSplitterWidth}"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="{Binding AgentSplitterWidth}"/>
+                    <ColumnDefinition Width="{Binding AgentPanelColumnWidth}"/>
                 </Grid.ColumnDefinitions>
 
                 <!-- Col 0: 左侧 SFTP 面板 -->
@@ -898,6 +924,20 @@
                                              IsPanelCloseButtonVisible="True"
                                              PanelCloseCommand="{Binding $parent[Window].DataContext.ToggleMonitorCommand, x:CompileBindings=False}"/>
                 </StackPanel>
+                <Border Grid.Column="4"
+                        x:Name="AgentSplitterHandle"
+                        IsVisible="{Binding IsAgentPanelHostVisible}"
+                        HorizontalAlignment="Stretch"
+                        Background="{atom:SharedTokenResource ColorSplit}"
+                        Cursor="SizeWestEast"
+                        PointerPressed="OnAgentSplitterPointerPressed"
+                        PointerMoved="OnAgentSplitterPointerMoved"
+                        PointerReleased="OnAgentSplitterPointerReleased"/>
+                <views:AgentPanelView Grid.Column="5"
+                                      x:Name="AgentPanelHost"
+                                      HorizontalAlignment="Stretch"
+                                      IsVisible="False"
+                                      DataContext="{Binding AgentPanel, x:CompileBindings=False}"/>
             </Grid>
 
         </Grid>

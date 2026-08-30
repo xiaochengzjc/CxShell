@@ -16,11 +16,13 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using CxShell.Models;
 using CxShell.Services;
+using CxShell.Services.Agent;
 using CxShell.Views;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -47,6 +49,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 {
     private const double DefaultSftpPanelWidth = 318;
     private const double MinimumSftpPanelWidth = 120;
+    private const double DefaultAgentPanelWidth = 360;
+    private const double MinimumAgentPanelWidth = 280;
+    private const double MaximumAgentPanelWidth = 600;
 
     private readonly SessionTreeViewModel _sessionTreeVm;
     private readonly LocalizationService _localization = LocalizationService.Shared;
@@ -54,6 +59,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private readonly ServerMonitorViewModel _emptyMonitor = new();
     private readonly AppUpdateService _appUpdateService = new();
     private readonly ConnectionAuditService _connectionAuditService = new();
+    private readonly AgentPermissionPolicy _agentPermissionPolicy;
     private UpdateProgressWindow? _updateProgressWindow;
     private UpdateProgressViewModel? _updateProgressViewModel;
     private SettingsCenterWindow? _settingsCenterWindow;
@@ -78,6 +84,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [ObservableProperty] private TabArrangementMode _tabArrangementMode = TabArrangementMode.Single;
     [ObservableProperty] private KeyboardBroadcastTarget _keyboardBroadcastTarget = KeyboardBroadcastTarget.CurrentSession;
     [ObservableProperty] private bool _isTabBarVisible;
+    [ObservableProperty] private bool _isAgentPanelVisible;
+    [ObservableProperty] private GridLength _agentPanelWidth = new(DefaultAgentPanelWidth);
     private bool _isApplicationSuspended;
 
     public ObservableCollection<TerminalTabViewModel> Tabs { get; } = new();
@@ -85,6 +93,17 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public ObservableCollection<TileTabGroupRowViewModel> TileRows { get; } = new();
     public ObservableCollection<RecentSessionItemViewModel> RecentSessions { get; } = new();
     public CommandPaletteViewModel CommandPalette { get; }
+    public IAgentSessionGateway AgentSessionGateway { get; }
+    public IAgentRunCoordinator AgentRunCoordinator { get; }
+    public IAgentRuntimeSessionAdapter AgentRuntimeSessionAdapter { get; }
+    public IAgentRuntimeHost AgentRuntimeHost { get; }
+    public AgentRuntimeJsonEndpoint AgentRuntimeJsonEndpoint { get; }
+    public IAgentRuntimeTransport AgentRuntimeTransport { get; }
+    public IAgentRuntimeClient AgentRuntimeClient { get; }
+    public AgentRuntimeSession AgentRuntimeSession { get; }
+    public IAgentRuntimeFrameEndpoint AgentRuntimeFrameEndpoint { get; }
+    public IAgentRuntimeStreamSession AgentRuntimeStreamSession { get; }
+    public AgentPanelViewModel AgentPanel { get; }
 
     [ObservableProperty] private TerminalTabViewModel? _selectedTab;
     [ObservableProperty] private TerminalTabGroupViewModel? _selectedTabGroup;
@@ -97,6 +116,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public double SftpPanelPixelWidth => SftpPanelWidth.Value;
     public GridLength SftpSplitterWidth => IsSftpPanelVisible ? new GridLength(8) : new GridLength(0);
     public bool IsMonitorPanelVisible => IsMonitorVisible && !IsTerminalFullScreen;
+    public bool IsAgentPanelHostVisible => IsAgentPanelVisible && !IsTerminalFullScreen;
+    public GridLength AgentSplitterWidth => IsAgentPanelHostVisible ? new GridLength(1) : new GridLength(0);
+    public GridLength AgentPanelColumnWidth => IsAgentPanelHostVisible
+        ? AgentPanelWidth
+        : new GridLength(0, GridUnitType.Pixel);
     public bool IsTabHeaderVisible => !IsTerminalFullScreen;
     public bool IsMainTabHeaderVisible => IsTabHeaderVisible && !IsTabArrangementEnabled;
     public bool IsQuickSessionBarVisible => IsMainChromeVisible && IsTabBarVisible;
@@ -146,6 +170,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public string HelpToolTip => _localization.Text("Toolbar.HelpTip");
     public string SettingsText => _localization.Text("Toolbar.Settings");
     public string SettingsToolTip => _localization.Text("Toolbar.SettingsTip");
+    public string AgentText => _localization.Text("Toolbar.Agent");
+    public string AgentToolTip => _localization.Text("Toolbar.AgentTip");
+    public bool HasActiveAgentRuns => AgentPanel.HasActiveRuns;
+    public string AgentActivityCountText => AgentPanel.ActiveRunCount.ToString();
     public string UpdateText => IsCheckingForUpdates
         ? UpdateProgressText ?? _localization.Text("Toolbar.UpdateChecking")
         : _localization.Text("Toolbar.Update");
@@ -199,6 +227,48 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _sftp = _emptySftp;
         _lastSftpPanelWidth = Math.Max(MinimumSftpPanelWidth, _sessionTreeVm.Settings.SftpPanelWidth);
         _isTabBarVisible = _sessionTreeVm.Settings.ShowTabBar;
+        _lastAgentPanelWidth = Math.Clamp(
+            _sessionTreeVm.Settings.AgentPanelWidth,
+            MinimumAgentPanelWidth,
+            MaximumAgentPanelWidth);
+        _agentPanelWidth = new GridLength(_lastAgentPanelWidth, GridUnitType.Pixel);
+        _agentPermissionPolicy = new AgentPermissionPolicy
+        {
+            AllowCommandExecution = _sessionTreeVm.Settings.AgentAllowCommandExecution,
+            PermissionMode = AgentPermissionPolicy.NormalizePermissionMode(
+                _sessionTreeVm.Settings.AgentPermissionMode),
+            RequireApprovalForDangerousCommands = _sessionTreeVm.Settings.AgentRequireApprovalForDangerousCommands,
+            RequireApprovalForChangeCommands = _sessionTreeVm.Settings.AgentRequireApprovalForChangeCommands,
+            ReadOnlyMode = _sessionTreeVm.Settings.AgentReadOnlyMode,
+            AllowedCommandPrefixes = _sessionTreeVm.Settings.AgentAllowedCommandPrefixes,
+            BlockedCommandPrefixes = _sessionTreeVm.Settings.AgentBlockedCommandPrefixes
+        };
+        AgentSessionGateway = new AgentSessionGateway(
+            new DelegateAgentSessionHost(BuildAgentSessionEndpoints),
+            _agentPermissionPolicy);
+        var agentModelClient = new OpenAiCompatibleAgentModelClient();
+        AgentRunCoordinator = new AgentRunCoordinator(
+            AgentSessionGateway,
+            () => _sessionTreeVm.Settings.AgentProvider,
+            agentModelClient,
+            new JsonAgentRunHistoryStore());
+        AgentRuntimeSessionAdapter = new AgentRuntimeSessionAdapter(
+            AgentSessionGateway,
+            () => _sessionTreeVm.Settings.AgentProvider,
+            agentModelClient,
+            AgentRunCoordinator);
+        AgentRuntimeHost = new AgentRuntimeHost([(IAgentRuntimeModule)AgentRuntimeSessionAdapter]);
+        AgentRuntimeJsonEndpoint = new AgentRuntimeJsonEndpoint(AgentRuntimeHost);
+        AgentRuntimeTransport = new InProcessAgentRuntimeTransport(AgentRuntimeHost);
+        var runtimeClient = new AgentRuntimeClient(AgentRuntimeTransport);
+        AgentRuntimeSession = new AgentRuntimeSession(runtimeClient);
+        AgentRuntimeClient = AgentRuntimeSession;
+        AgentRuntimeFrameEndpoint = new AgentRuntimeFrameEndpoint(AgentRuntimeHost);
+        AgentRuntimeStreamSession = new AgentRuntimeStreamSession(AgentRuntimeFrameEndpoint, AgentRuntimeHost);
+        AgentPanel = new AgentPanelViewModel(
+            AgentRuntimeClient,
+            () => _sessionTreeVm.Settings.AgentProvider);
+        AgentPanel.PropertyChanged += OnAgentPanelPropertyChanged;
         _localization.SetLanguage(_sessionTreeVm.Settings.UiLanguage);
         SshHostKeyTrustService.Shared.Configure(_sessionTreeVm.Settings);
         SessionRecordingService.Shared.Configure(_sessionTreeVm.Settings);
@@ -225,6 +295,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             ArrangeTabsHorizontalCommand.NotifyCanExecuteChanged();
             ArrangeTabsTileCommand.NotifyCanExecuteChanged();
             MergeTabGroupsCommand.NotifyCanExecuteChanged();
+            AgentPanel.RefreshSessions();
         };
 
         TabGroups.CollectionChanged += (_, _) =>
@@ -235,6 +306,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
         // Initialize theme state
         _isDarkMode = Application.Current?.GetThemeManager()?.CurrentTheme?.Appearance == ThemeAppearance.Dark;
+        AgentPanel.RefreshSessions();
         RefreshRecentSessions();
     }
 
@@ -665,6 +737,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
 
         _sessionTreeVm.SaveSettings(settings);
+        _agentPermissionPolicy.AllowCommandExecution = settings.AgentAllowCommandExecution;
+        _agentPermissionPolicy.PermissionMode = AgentPermissionPolicy.NormalizePermissionMode(
+            settings.AgentPermissionMode);
+        _agentPermissionPolicy.RequireApprovalForDangerousCommands = settings.AgentRequireApprovalForDangerousCommands;
+        _agentPermissionPolicy.RequireApprovalForChangeCommands = settings.AgentRequireApprovalForChangeCommands;
+        _agentPermissionPolicy.ReadOnlyMode = settings.AgentReadOnlyMode;
+        _agentPermissionPolicy.AllowedCommandPrefixes = settings.AgentAllowedCommandPrefixes;
+        _agentPermissionPolicy.BlockedCommandPrefixes = settings.AgentBlockedCommandPrefixes;
+        AgentPanel.RefreshProviderStatus();
         SshHostKeyTrustService.Shared.Configure(settings);
         SessionRecordingService.Shared.Configure(settings);
         foreach (var tab in Tabs.Where(item => item.IsTerminalSession))
@@ -980,6 +1061,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HelpToolTip));
         OnPropertyChanged(nameof(SettingsText));
         OnPropertyChanged(nameof(SettingsToolTip));
+        OnPropertyChanged(nameof(AgentText));
+        OnPropertyChanged(nameof(AgentToolTip));
         OnPropertyChanged(nameof(UpdateText));
         OnPropertyChanged(nameof(UpdateToolTip));
         OnPropertyChanged(nameof(AboutCxShellText));
@@ -1020,6 +1103,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(FullScreenEscBackText));
         OnPropertyChanged(nameof(ChineseLanguageText));
         OnPropertyChanged(nameof(EnglishLanguageText));
+        AgentPanel.NotifyLocalizationChanged();
     }
 
     partial void OnSelectedTabChanged(TerminalTabViewModel? value)
@@ -1097,6 +1181,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     partial void OnIsMonitorVisibleChanged(bool value)
     {
         OnPropertyChanged(nameof(IsMonitorPanelVisible));
+        OnPropertyChanged(nameof(IsAgentPanelHostVisible));
+        OnPropertyChanged(nameof(AgentSplitterWidth));
+        OnPropertyChanged(nameof(AgentPanelColumnWidth));
         if (value)
         {
             OnPropertyChanged(nameof(Monitor));
@@ -1131,6 +1218,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(IsSftpPanelVisible));
         OnPropertyChanged(nameof(SftpSplitterWidth));
         OnPropertyChanged(nameof(IsMonitorPanelVisible));
+        OnPropertyChanged(nameof(IsAgentPanelHostVisible));
+        OnPropertyChanged(nameof(AgentSplitterWidth));
         OnPropertyChanged(nameof(IsTabHeaderVisible));
         OnPropertyChanged(nameof(IsMainTabHeaderVisible));
         OnPropertyChanged(nameof(IsSingleTabContentVisible));
@@ -1141,6 +1230,20 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         else if (IsSftpVisible)
             RestoreSftpPanelWidth();
         IsFullScreenHintVisible = value;
+    }
+
+    partial void OnIsAgentPanelVisibleChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsAgentPanelHostVisible));
+        OnPropertyChanged(nameof(AgentSplitterWidth));
+        OnPropertyChanged(nameof(AgentPanelColumnWidth));
+        if (value)
+        {
+            AgentPanel.RefreshSessions();
+            AgentPanel.RefreshRunHistory();
+            AgentPanel.EnsureSessionSelection(SelectedTab?.Session.Id);
+            AgentPanel.RefreshActiveRun();
+        }
     }
 
     partial void OnSftpPanelWidthChanged(GridLength value)
@@ -1164,6 +1267,28 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
 
         _sessionTreeVm.Settings.SftpPanelWidth = width;
+        _sessionTreeVm.SaveSettings(_sessionTreeVm.Settings);
+    }
+
+    partial void OnAgentPanelWidthChanged(GridLength value)
+    {
+        if (value.GridUnitType != GridUnitType.Pixel || value.Value <= 0)
+            return;
+
+        var clamped = Math.Clamp(value.Value, MinimumAgentPanelWidth, MaximumAgentPanelWidth);
+        _lastAgentPanelWidth = clamped;
+
+        if (Math.Abs(clamped - value.Value) > 0.5)
+            AgentPanelWidth = new GridLength(clamped, GridUnitType.Pixel);
+    }
+
+    public void PersistAgentPanelWidth()
+    {
+        var width = Math.Clamp(_lastAgentPanelWidth, MinimumAgentPanelWidth, MaximumAgentPanelWidth);
+        if (Math.Abs(_sessionTreeVm.Settings.AgentPanelWidth - width) < 0.5)
+            return;
+
+        _sessionTreeVm.Settings.AgentPanelWidth = width;
         _sessionTreeVm.SaveSettings(_sessionTreeVm.Settings);
     }
 
@@ -1347,6 +1472,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     }
 
     private double _lastSftpPanelWidth = DefaultSftpPanelWidth;
+    private double _lastAgentPanelWidth = DefaultAgentPanelWidth;
 
     private void CollapseSftpPanelWidth()
     {
@@ -1560,6 +1686,27 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private void ToggleTabBar()
     {
         IsTabBarVisible = !IsTabBarVisible;
+    }
+
+    [RelayCommand]
+    private void ToggleAgentPanel()
+    {
+        ToggleAgentPanelVisibility();
+    }
+
+    private void OnAgentPanelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(AgentPanelViewModel.ActiveRunCount) or
+            nameof(AgentPanelViewModel.HasActiveRuns))
+        {
+            OnPropertyChanged(nameof(HasActiveAgentRuns));
+            OnPropertyChanged(nameof(AgentActivityCountText));
+        }
+    }
+
+    public void ToggleAgentPanelVisibility()
+    {
+        IsAgentPanelVisible = !IsAgentPanelVisible;
     }
 
     partial void OnIsTabBarVisibleChanged(bool value)
@@ -1911,6 +2058,21 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _settingsCenterWindow = new SettingsCenterWindow(viewModel);
         _settingsCenterWindow.Closed += (_, _) => _settingsCenterWindow = null;
         _settingsCenterWindow.Show(owner);
+    }
+
+    private async Task CopyTextToClipboardAsync(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text) || GetMainWindow()?.Clipboard is not { } clipboard)
+            return;
+
+        try
+        {
+            await clipboard.SetTextAsync(text).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Clipboard access is best-effort and can fail while the app is closing.
+        }
     }
 
     private void RefreshOpenTabsForSession(SessionInfo session)
@@ -2433,6 +2595,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             RecordAudit(
                 tab.Session,
                 tab.IsConnected ? ConnectionAuditEventType.Connected : ConnectionAuditEventType.Disconnected);
+            AgentPanel.RefreshSessions();
         }
 
         if (e.PropertyName == nameof(TerminalTabViewModel.IsKeyboardBroadcastEnabled))
@@ -2550,6 +2713,78 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
         _emptySftp.Dispose();
         _emptyMonitor.Dispose();
+        AgentPanel.PropertyChanged -= OnAgentPanelPropertyChanged;
+        AgentPanel.Dispose();
+        AgentRuntimeSession.Dispose();
+        (AgentRuntimeHost as IDisposable)?.Dispose();
+        (AgentRunCoordinator as IDisposable)?.Dispose();
+        (AgentSessionGateway as IDisposable)?.Dispose();
+    }
+
+    private IReadOnlyList<IAgentSessionEndpoint> BuildAgentSessionEndpoints()
+    {
+        return Tabs
+            .Where(tab => tab.IsTerminalSession)
+            .GroupBy(tab => tab.Session.Id)
+            .Select(group => CreateAgentSessionEndpoint(group.First()))
+            .ToList();
+    }
+
+    private IAgentSessionEndpoint CreateAgentSessionEndpoint(TerminalTabViewModel tab)
+    {
+        return new AgentSessionEndpoint(
+            () => AgentSessionSnapshot.FromSession(
+                tab.Session,
+                tab.IsConnected && tab.Terminal.IsConnected && !tab.IsDisposed,
+                tab.Terminal.SupportsPosixShellFeatures ? "Linux/Unix" : "Windows"),
+            async (request, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (tab.IsDisposed)
+                    throw new AgentCommandDeliveryException(
+                        AgentCommandStatus.SessionNotFound,
+                        "The requested session tab has been closed.");
+
+                if (!tab.IsTerminalSession || tab.Session.Protocol != SessionProtocol.SSH)
+                    throw new AgentCommandDeliveryException(
+                        AgentCommandStatus.UnsupportedProtocol,
+                        "Only SSH terminal sessions are supported.");
+
+                if (!tab.IsConnected || !tab.Terminal.IsConnected)
+                    throw new AgentCommandDeliveryException(
+                        AgentCommandStatus.SessionNotConnected,
+                        "The requested session is no longer connected.");
+
+                var payload = request.Command;
+                if (request.AppendLineEnding &&
+                    !payload.EndsWith('\r') &&
+                    !payload.EndsWith('\n'))
+                {
+                    payload += "\n";
+                }
+
+                payload = TerminalSessionOptions.NormalizeSendLineEndings(payload, tab.Session);
+                cancellationToken.ThrowIfCancellationRequested();
+                tab.Terminal.SendInput(payload);
+                await Task.CompletedTask;
+            },
+            async (request, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (tab.IsDisposed || !tab.IsConnected || !tab.Terminal.IsConnected)
+                    throw new AgentCommandDeliveryException(
+                        AgentCommandStatus.SessionNotConnected,
+                        "The requested session is no longer connected.");
+
+                return await tab.Terminal.RunAgentCommandAsync(
+                    request.RequestId,
+                    request.Command,
+                    request.Timeout,
+                    cancellationToken,
+                    request.DisplayCommand,
+                    request.SensitiveInput).ConfigureAwait(false);
+            });
     }
 
     [RelayCommand]

@@ -49,11 +49,19 @@ public partial class MainWindow : Window
     private double _sftpSplitterStartX;
     private double _sftpSplitterStartWidth;
     private Cursor? _sftpSplitterPreviousCursor;
+    private bool _isDraggingAgentSplitter;
+    private bool _hasAgentSplitterPreviousCursor;
+    private double _agentSplitterStartX;
+    private double _agentSplitterStartWidth;
+    private Cursor? _agentSplitterPreviousCursor;
 
     private const double MinimumSftpPanelWidth = 120;
     private const double SftpSplitterHitSlop = 0;
     private const double MinimumTerminalPanelWidth = 320;
     private const double MonitorPanelWidth = 283;
+    private const double MinimumAgentPanelWidth = 280;
+    private const double MaximumAgentPanelWidth = 600;
+    private const double AgentSplitterHitSlop = 5;
     private const double QuickSessionDragThreshold = 6;
     private const double QuickSessionDropIndicatorWidth = 2;
     private const double QuickSessionDragGhostOffsetX = -22;
@@ -89,6 +97,8 @@ public partial class MainWindow : Window
         _fullScreenHintTimer.Tick += (_, _) => HideFullScreenHintIfNeeded();
 
         var vm = new MainWindowViewModel();
+        AgentPanelHost.CloseRequested += OnAgentPanelCloseRequested;
+        ApplyAgentPanelLayout(vm);
         vm.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(MainWindowViewModel.IsTerminalFullScreen))
@@ -109,6 +119,13 @@ public partial class MainWindow : Window
             {
                 QueueApplySftpPanelWidth(vm);
             }
+
+            if (e.PropertyName is nameof(MainWindowViewModel.IsAgentPanelHostVisible) or
+                nameof(MainWindowViewModel.AgentPanelWidth) or
+                nameof(MainWindowViewModel.IsTerminalFullScreen))
+            {
+                ApplyAgentPanelLayout(vm);
+            }
         };
         DataContext = vm;
         Closed += (_, _) => vm.Dispose();
@@ -127,6 +144,9 @@ public partial class MainWindow : Window
         AddHandler(PointerMovedEvent, OnSftpSplitterPointerMoved, RoutingStrategies.Tunnel, handledEventsToo: true);
         AddHandler(PointerReleasedEvent, OnSftpSplitterPointerReleased, RoutingStrategies.Tunnel, handledEventsToo: true);
         AddHandler(PointerCaptureLostEvent, OnSftpSplitterPointerCaptureLost, RoutingStrategies.Bubble, handledEventsToo: true);
+        AddHandler(PointerMovedEvent, OnAgentSplitterPointerMoved, RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(PointerReleasedEvent, OnAgentSplitterPointerReleased, RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(PointerCaptureLostEvent, OnAgentSplitterPointerCaptureLost, RoutingStrategies.Bubble, handledEventsToo: true);
         AddHandler(KeyDownEvent, OnPreviewKeyDown, RoutingStrategies.Tunnel);
         AddHandler(PointerPressedEvent, OnPreviewPointerPressed, RoutingStrategies.Tunnel);
         QueueApplySftpPanelWidth(vm);
@@ -204,6 +224,46 @@ public partial class MainWindow : Window
             vm.CommandPalette.Close();
 
         e.Handled = true;
+    }
+
+    private void OnAgentPanelToggleClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            viewModel.ToggleAgentPanelVisibility();
+            ApplyAgentPanelLayout(viewModel);
+        }
+
+        e.Handled = true;
+    }
+
+    private void OnAgentPanelCloseRequested(object? sender, EventArgs e)
+    {
+        if (DataContext is MainWindowViewModel viewModel && viewModel.IsAgentPanelVisible)
+        {
+            viewModel.ToggleAgentPanelVisibility();
+            ApplyAgentPanelLayout(viewModel);
+        }
+    }
+
+    private void ApplyAgentPanelLayout(MainWindowViewModel viewModel)
+    {
+        AgentPanelHost.IsVisible = viewModel.IsAgentPanelHostVisible;
+        var width = viewModel.IsAgentPanelHostVisible
+            ? Math.Clamp(viewModel.AgentPanelWidth.Value, MinimumAgentPanelWidth, MaximumAgentPanelWidth)
+            : 0;
+
+        MainContentGrid.ColumnDefinitions[4].Width = viewModel.IsAgentPanelHostVisible
+            ? new Avalonia.Controls.GridLength(1)
+            : new Avalonia.Controls.GridLength(0);
+        MainContentGrid.ColumnDefinitions[5].Width = viewModel.IsAgentPanelHostVisible
+            ? new Avalonia.Controls.GridLength(width)
+            : new Avalonia.Controls.GridLength(0);
+        AgentPanelHost.Width = width;
+        AgentPanelHost.MinWidth = width > 0 ? MinimumAgentPanelWidth : 0;
+        AgentPanelHost.MaxWidth = width;
+        AgentPanelHost.InvalidateMeasure();
+        MainContentGrid.InvalidateMeasure();
     }
 
     private void OnRecentSessionsDoubleTapped(object? sender, TappedEventArgs e)
@@ -1309,23 +1369,135 @@ public partial class MainWindow : Window
 
     private void OnMainContentGridPointerPressed(object? sender, PointerPressedEventArgs e)
     {
+        if (!IsLeftButtonPress(e))
+        {
+            return;
+        }
+
+        if (DataContext is MainWindowViewModel vm && vm.IsSftpPanelVisible)
+        {
+            var position = e.GetPosition(MainContentGrid);
+            var splitterLeft = SftpPanelHost.Bounds.Right;
+            var splitterRight = splitterLeft + Math.Max(vm.SftpSplitterWidth.Value, 1);
+            if (position.X >= splitterLeft - SftpSplitterHitSlop &&
+                position.X <= splitterRight + SftpSplitterHitSlop)
+            {
+                TryStartSftpSplitterDrag(MainContentGrid, e);
+                return;
+            }
+        }
+
+        if (DataContext is not MainWindowViewModel agentVm ||
+            !agentVm.IsAgentPanelHostVisible ||
+            !AgentSplitterHandle.IsVisible)
+        {
+            return;
+        }
+
+        var agentPosition = e.GetPosition(MainContentGrid);
+        var agentSplitterLeft = AgentSplitterHandle.Bounds.Left;
+        var agentSplitterRight = agentSplitterLeft + Math.Max(agentVm.AgentSplitterWidth.Value, 1);
+        if (agentPosition.X < agentSplitterLeft - AgentSplitterHitSlop ||
+            agentPosition.X > agentSplitterRight + AgentSplitterHitSlop)
+        {
+            return;
+        }
+
+        TryStartAgentSplitterDrag(MainContentGrid, e);
+    }
+
+    private void OnAgentSplitterPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        TryStartAgentSplitterDrag(sender, e);
+    }
+
+    private void TryStartAgentSplitterDrag(object? sender, PointerPressedEventArgs e)
+    {
         if (DataContext is not MainWindowViewModel vm ||
-            !vm.IsSftpPanelVisible ||
-            !IsLeftButtonPress(e))
+            !vm.IsAgentPanelHostVisible ||
+            !IsLeftButtonPress(e) ||
+            _isDraggingAgentSplitter)
         {
             return;
         }
 
-        var position = e.GetPosition(MainContentGrid);
-        var splitterLeft = SftpPanelHost.Bounds.Right;
-        var splitterRight = splitterLeft + Math.Max(vm.SftpSplitterWidth.Value, 1);
-        if (position.X < splitterLeft - SftpSplitterHitSlop ||
-            position.X > splitterRight + SftpSplitterHitSlop)
+        _isDraggingAgentSplitter = true;
+        _agentSplitterStartX = e.GetPosition(MainContentGrid).X;
+        _agentSplitterStartWidth = Math.Clamp(
+            vm.AgentPanelWidth.Value,
+            MinimumAgentPanelWidth,
+            MaximumAgentPanelWidth);
+
+        e.Pointer.Capture(this);
+        ShowAgentSplitterCursor();
+        e.Handled = true;
+    }
+
+    private void OnAgentSplitterPointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (!_isDraggingAgentSplitter ||
+            DataContext is not MainWindowViewModel vm ||
+            !vm.IsAgentPanelHostVisible)
         {
             return;
         }
 
-        TryStartSftpSplitterDrag(MainContentGrid, e);
+        var delta = e.GetPosition(MainContentGrid).X - _agentSplitterStartX;
+        var maxWidth = GetMaximumAgentPanelWidth(vm);
+        var width = Math.Min(
+            Math.Max(MinimumAgentPanelWidth, _agentSplitterStartWidth - delta),
+            maxWidth);
+        vm.AgentPanelWidth = new Avalonia.Controls.GridLength(
+            width,
+            Avalonia.Controls.GridUnitType.Pixel);
+        ShowAgentSplitterCursor();
+        e.Handled = true;
+    }
+
+    private void OnAgentSplitterPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (!_isDraggingAgentSplitter)
+            return;
+
+        EndAgentSplitterDrag(e.Pointer);
+        e.Handled = true;
+    }
+
+    private void OnAgentSplitterPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+    {
+        if (ReferenceEquals(e.Source, this))
+            EndAgentSplitterDrag(null);
+    }
+
+    private void EndAgentSplitterDrag(IPointer? pointer)
+    {
+        _isDraggingAgentSplitter = false;
+        pointer?.Capture(null);
+        ClearAgentSplitterCursor();
+
+        if (DataContext is MainWindowViewModel vm)
+            vm.PersistAgentPanelWidth();
+    }
+
+    private void ShowAgentSplitterCursor()
+    {
+        if (!_hasAgentSplitterPreviousCursor)
+        {
+            _agentSplitterPreviousCursor = Cursor;
+            _hasAgentSplitterPreviousCursor = true;
+        }
+
+        Cursor = new Cursor(StandardCursorType.SizeWestEast);
+    }
+
+    private void ClearAgentSplitterCursor()
+    {
+        if (!_hasAgentSplitterPreviousCursor)
+            return;
+
+        Cursor = _agentSplitterPreviousCursor;
+        _agentSplitterPreviousCursor = null;
+        _hasAgentSplitterPreviousCursor = false;
     }
 
     private void TryStartSftpSplitterDrag(object? sender, PointerPressedEventArgs e)
@@ -1455,6 +1627,20 @@ public partial class MainWindow : Window
                        MinimumTerminalPanelWidth -
                        vm.SftpSplitterWidth.Value;
         return Math.Max(MinimumSftpPanelWidth, maxWidth);
+    }
+
+    private double GetMaximumAgentPanelWidth(MainWindowViewModel vm)
+    {
+        var reservedLeftWidth = vm.IsSftpPanelVisible
+            ? vm.SftpPanelPixelWidth + vm.SftpSplitterWidth.Value
+            : 0;
+        var reservedRightWidth = vm.IsMonitorPanelVisible ? MonitorPanelWidth : 0;
+        var maxWidth = MainContentGrid.Bounds.Width -
+                       reservedLeftWidth -
+                       reservedRightWidth -
+                       MinimumTerminalPanelWidth -
+                       vm.AgentSplitterWidth.Value;
+        return Math.Max(MinimumAgentPanelWidth, Math.Min(MaximumAgentPanelWidth, maxWidth));
     }
 
     private async void OnQuickSessionPropertiesClick(object? sender, RoutedEventArgs e)

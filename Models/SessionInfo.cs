@@ -214,7 +214,7 @@ public class ApplicationSettings
 {
     public const string DarkThemeMode = "Dark";
     public const string LightThemeMode = "Light";
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 4;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public string UiLanguage { get; set; } = "zh-CN";
@@ -222,6 +222,14 @@ public class ApplicationSettings
     public bool ShowSessionManagerOnStartup { get; set; } = true;
     public bool AutoCheckForUpdates { get; set; } = true;
     public bool IncludePrereleaseUpdates { get; set; }
+    public AgentProviderSettings AgentProvider { get; set; } = new();
+    public bool AgentAllowCommandExecution { get; set; } = true;
+    public string AgentPermissionMode { get; set; } = "risk";
+    public bool AgentRequireApprovalForDangerousCommands { get; set; } = true;
+    public bool AgentRequireApprovalForChangeCommands { get; set; }
+    public bool AgentReadOnlyMode { get; set; }
+    public string AgentAllowedCommandPrefixes { get; set; } = string.Empty;
+    public string AgentBlockedCommandPrefixes { get; set; } = string.Empty;
     public bool ConfirmSshHostKeyOnFirstConnection { get; set; } = true;
     public bool BlockChangedSshHostKeys { get; set; } = true;
     public bool RecordTerminalSessions { get; set; }
@@ -234,6 +242,7 @@ public class ApplicationSettings
     }
     public string BastionTokenEndpoint { get; set; } = string.Empty;
     public double SftpPanelWidth { get; set; } = 318;
+    public double AgentPanelWidth { get; set; } = 360;
     public bool ShowTabBar { get; set; }
     public bool EnableCommandSuggestions { get; set; } = true;
 }

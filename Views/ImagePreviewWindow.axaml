@@ -1,0 +1,45 @@
+<atom:Window xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:antdicons="https://atomui.net/icons/antdesign"
+             xmlns:services="using:CxShell.Services"
+             xmlns:vm="using:CxShell.ViewModels"
+             x:Class="CxShell.Views.ImagePreviewWindow"
+             x:DataType="vm:AgentAttachmentViewModel"
+             Title="{Binding [Agent.ImagePreview], Source={x:Static services:LocalizationService.Shared}}"
+             Width="860"
+             Height="640"
+             MinWidth="420"
+             MinHeight="320"
+             WindowStartupLocation="CenterOwner"
+             Background="{atom:SharedTokenResource ColorBgLayout}">
+    <Grid RowDefinitions="*,Auto">
+        <Border Grid.Row="0"
+                Background="{atom:SharedTokenResource ColorBgLayout}"
+                Padding="16"
+                ClipToBounds="True">
+            <Image Source="{Binding Preview}"
+                   Stretch="Uniform"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"/>
+        </Border>
+
+        <Border Grid.Row="1"
+                Padding="12,8"
+                Background="{atom:SharedTokenResource ColorBgContainer}"
+                BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="*,Auto">
+                <atom:TextBlock Text="{Binding DisplayText}"
+                                Foreground="{atom:SharedTokenResource ColorTextSecondary}"
+                                TextTrimming="CharacterEllipsis"
+                                VerticalAlignment="Center"/>
+                <atom:Button Grid.Column="1"
+                             Content="{Binding [Common.Close], Source={x:Static services:LocalizationService.Shared}}"
+                             Icon="{antdicons:AntDesignIconProvider Kind=CloseOutlined}"
+                             Padding="10,4"
+                             Click="OnCloseClick"/>
+            </Grid>
+        </Border>
+    </Grid>
+</atom:Window>

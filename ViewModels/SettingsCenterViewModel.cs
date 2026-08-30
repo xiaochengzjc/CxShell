@@ -12,6 +12,7 @@ namespace CxShell.ViewModels;
 public enum SettingsSection
 {
     Application,
+    Agent,
     ConnectionAudit,
     SessionRecordings,
     TrustedHosts,
@@ -43,6 +44,7 @@ public partial class SettingsCenterViewModel : ObservableObject, IDisposable
     public SessionRecordingViewModel SessionRecordings { get; }
 
     public SettingsNavigationItemViewModel ApplicationNavigation { get; }
+    public SettingsNavigationItemViewModel AgentNavigation { get; }
     public SettingsNavigationItemViewModel AuditNavigation { get; }
     public SettingsNavigationItemViewModel RecordingsNavigation { get; }
     public SettingsNavigationItemViewModel TrustedHostsNavigation { get; }
@@ -56,6 +58,8 @@ public partial class SettingsCenterViewModel : ObservableObject, IDisposable
     public string TitleText => Text("Settings.Title");
     public string ApplicationTitleText => Text("Settings.Application");
     public string ApplicationDescriptionText => Text("Settings.ApplicationDescription");
+    public string AgentTitleText => Text("Settings.Agent");
+    public string AgentDescriptionText => Text("Settings.AgentDescription");
     public string AuditTitleText => Text("Settings.ConnectionAudit");
     public string AuditDescriptionText => Text("Settings.ConnectionAuditDescription");
     public string RecordingsTitleText => Text("Settings.SessionRecordings");
@@ -77,6 +81,7 @@ public partial class SettingsCenterViewModel : ObservableObject, IDisposable
     public string CloseText => Text("ApplicationSettings.Close");
 
     public bool IsApplicationSelected => SelectedSection == SettingsSection.Application;
+    public bool IsAgentSelected => SelectedSection == SettingsSection.Agent;
     public bool IsAuditSelected => SelectedSection == SettingsSection.ConnectionAudit;
     public bool IsRecordingsSelected => SelectedSection == SettingsSection.SessionRecordings;
     public bool IsTrustedHostsSelected => SelectedSection == SettingsSection.TrustedHosts;
@@ -86,6 +91,7 @@ public partial class SettingsCenterViewModel : ObservableObject, IDisposable
     public string SelectedTitleText => SelectedSection switch
     {
         SettingsSection.ConnectionAudit => AuditTitleText,
+        SettingsSection.Agent => AgentTitleText,
         SettingsSection.SessionRecordings => RecordingsTitleText,
         SettingsSection.TrustedHosts => TrustedHostsTitleText,
         SettingsSection.About => AboutTitleText,
@@ -96,6 +102,7 @@ public partial class SettingsCenterViewModel : ObservableObject, IDisposable
     public string SelectedDescriptionText => SelectedSection switch
     {
         SettingsSection.ConnectionAudit => AuditDescriptionText,
+        SettingsSection.Agent => AgentDescriptionText,
         SettingsSection.SessionRecordings => RecordingsDescriptionText,
         SettingsSection.TrustedHosts => TrustedHostsDescriptionText,
         SettingsSection.About => AboutDescriptionText,
@@ -118,13 +125,20 @@ public partial class SettingsCenterViewModel : ObservableObject, IDisposable
         _appVersion = string.IsNullOrWhiteSpace(appVersion) ? "unknown" : appVersion;
         CheckForUpdatesCommand = checkForUpdatesCommand ?? throw new ArgumentNullException(nameof(checkForUpdatesCommand));
 
-        ApplicationSettings = new ApplicationSettingsViewModel(settings, saveSettings, applyLanguage, applyTheme);
+        ApplicationSettings = new ApplicationSettingsViewModel(
+            settings,
+            saveSettings,
+            applyLanguage,
+            applyTheme);
         ConnectionAudit = new ConnectionAuditViewModel(connectionAuditService);
         SessionRecordings = new SessionRecordingViewModel(SessionRecordingService.Shared.Store);
 
         ApplicationNavigation = new SettingsNavigationItemViewModel(
             ApplicationTitleText,
             CreateIcon(AntDesignIconKind.SettingOutlined));
+        AgentNavigation = new SettingsNavigationItemViewModel(
+            AgentTitleText,
+            CreateIcon(AntDesignIconKind.RobotOutlined));
         AuditNavigation = new SettingsNavigationItemViewModel(
             AuditTitleText,
             CreateIcon(AntDesignIconKind.FileSearchOutlined));
@@ -153,6 +167,9 @@ public partial class SettingsCenterViewModel : ObservableObject, IDisposable
     private void SelectApplication() => Select(SettingsSection.Application);
 
     [RelayCommand]
+    private void SelectAgent() => Select(SettingsSection.Agent);
+
+    [RelayCommand]
     private void SelectAudit() => Select(SettingsSection.ConnectionAudit);
 
     [RelayCommand]
@@ -177,6 +194,7 @@ public partial class SettingsCenterViewModel : ObservableObject, IDisposable
     partial void OnSelectedSectionChanged(SettingsSection value)
     {
         OnPropertyChanged(nameof(IsApplicationSelected));
+        OnPropertyChanged(nameof(IsAgentSelected));
         OnPropertyChanged(nameof(IsAuditSelected));
         OnPropertyChanged(nameof(IsRecordingsSelected));
         OnPropertyChanged(nameof(IsTrustedHostsSelected));
@@ -191,6 +209,8 @@ public partial class SettingsCenterViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(TitleText));
         OnPropertyChanged(nameof(ApplicationTitleText));
         OnPropertyChanged(nameof(ApplicationDescriptionText));
+        OnPropertyChanged(nameof(AgentTitleText));
+        OnPropertyChanged(nameof(AgentDescriptionText));
         OnPropertyChanged(nameof(AuditTitleText));
         OnPropertyChanged(nameof(AuditDescriptionText));
         OnPropertyChanged(nameof(RecordingsTitleText));

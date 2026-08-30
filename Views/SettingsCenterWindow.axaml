@@ -23,7 +23,7 @@
                     BorderBrush="{atom:SharedTokenResource ColorSplit}"
                     BorderThickness="0,0,1,0"
                     Padding="14,18">
-                <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,*">
+                <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*">
                     <StackPanel Spacing="4" Margin="8,0,8,18">
                         <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider Kind=SettingOutlined}"
                                             Width="24"
@@ -53,6 +53,21 @@
                     <Grid Grid.Row="2" Margin="0,0,0,4">
                         <Border Background="{atom:SharedTokenResource ColorPrimaryBg}"
                                 CornerRadius="4"
+                                IsVisible="{Binding IsAgentSelected}"/>
+                        <atom:Button Content="{Binding AgentNavigation.Text}"
+                                     Icon="{Binding AgentNavigation.Icon}"
+                                     Command="{Binding SelectAgentCommand}"
+                                     ButtonType="Text"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     HorizontalAlignment="Stretch"
+                                     HorizontalContentAlignment="Left"
+                                     Foreground="{atom:SharedTokenResource ColorText}"/>
+                    </Grid>
+
+                    <Grid Grid.Row="3" Margin="0,0,0,4">
+                        <Border Background="{atom:SharedTokenResource ColorPrimaryBg}"
+                                CornerRadius="4"
                                 IsVisible="{Binding IsAuditSelected}"/>
                         <atom:Button Content="{Binding AuditNavigation.Text}"
                                      Icon="{Binding AuditNavigation.Icon}"
@@ -65,7 +80,7 @@
                                      Foreground="{atom:SharedTokenResource ColorText}"/>
                     </Grid>
 
-                    <Grid Grid.Row="3" Margin="0,0,0,4">
+                    <Grid Grid.Row="4" Margin="0,0,0,4">
                         <Border Background="{atom:SharedTokenResource ColorPrimaryBg}"
                                 CornerRadius="4"
                                 IsVisible="{Binding IsRecordingsSelected}"/>
@@ -80,7 +95,7 @@
                                      Foreground="{atom:SharedTokenResource ColorText}"/>
                     </Grid>
 
-                    <Grid Grid.Row="4">
+                    <Grid Grid.Row="5">
                         <Border Background="{atom:SharedTokenResource ColorPrimaryBg}"
                                 CornerRadius="4"
                                 IsVisible="{Binding IsTrustedHostsSelected}"/>
@@ -95,7 +110,7 @@
                                       Foreground="{atom:SharedTokenResource ColorText}"/>
                     </Grid>
 
-                    <Grid Grid.Row="5" Margin="0,0,0,4">
+                    <Grid Grid.Row="6" Margin="0,0,0,4">
                         <Border Background="{atom:SharedTokenResource ColorPrimaryBg}"
                                 CornerRadius="4"
                                 IsVisible="{Binding IsAboutSelected}"/>
@@ -110,7 +125,7 @@
                                      Foreground="{atom:SharedTokenResource ColorText}"/>
                     </Grid>
 
-                    <Grid Grid.Row="6">
+                    <Grid Grid.Row="7">
                         <Border Background="{atom:SharedTokenResource ColorPrimaryBg}"
                                 CornerRadius="4"
                                 IsVisible="{Binding IsUpdateSelected}"/>
@@ -145,6 +160,9 @@
                     <views:ApplicationSettingsPage Grid.Row="1"
                                                    DataContext="{Binding ApplicationSettings}"
                                                    IsVisible="{Binding #SettingsCenter.DataContext.IsApplicationSelected, x:CompileBindings=False}"/>
+                    <views:AgentSettingsPage Grid.Row="1"
+                                             DataContext="{Binding ApplicationSettings}"
+                                             IsVisible="{Binding #SettingsCenter.DataContext.IsAgentSelected, x:CompileBindings=False}"/>
                     <views:ConnectionAuditPage Grid.Row="1"
                                                DataContext="{Binding ConnectionAudit}"
                                                IsVisible="{Binding #SettingsCenter.DataContext.IsAuditSelected, x:CompileBindings=False}"/>

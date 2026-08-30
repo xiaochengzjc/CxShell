@@ -73,7 +73,31 @@ public sealed class ApplicationSettingsStoreTests
 
         Assert.Equal(ApplicationSettings.CurrentSchemaVersion, settings.SchemaVersion);
         var json = File.ReadAllText(Path.Combine(directory.Path, "application-settings.json"));
-        Assert.Contains("\"SchemaVersion\": 1", json);
+        Assert.Contains($"\"SchemaVersion\": {ApplicationSettings.CurrentSchemaVersion}", json);
+    }
+
+    [Fact]
+    public void Load_UpgradesTheLegacyDefaultAgentTimeout()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = Path.Combine(directory.Path, "application-settings.json");
+        var legacySettings = new ApplicationSettings
+        {
+            SchemaVersion = 1,
+            AgentProvider = new AgentProviderSettings
+            {
+                RequestTimeoutSeconds = 120
+            }
+        };
+        File.WriteAllText(path, JsonSerializer.Serialize(legacySettings));
+
+        var loaded = new ApplicationSettingsStore(directory.Path).Load();
+
+        Assert.Equal(ApplicationSettings.CurrentSchemaVersion, loaded.SchemaVersion);
+        Assert.Equal(300, loaded.AgentProvider.RequestTimeoutSeconds);
+        var saved = JsonSerializer.Deserialize<ApplicationSettings>(File.ReadAllText(path));
+        Assert.NotNull(saved);
+        Assert.Equal(300, saved.AgentProvider.RequestTimeoutSeconds);
     }
 
     private sealed class TemporaryDirectory : IDisposable

@@ -1,0 +1,164 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:vm="using:CxShell.ViewModels"
+             x:Class="CxShell.Views.AgentSettingsPage"
+             x:DataType="vm:ApplicationSettingsViewModel">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="18" Margin="0,2,12,8">
+            <StackPanel Spacing="8">
+                <TextBlock Text="{Binding AgentText}"
+                           FontWeight="SemiBold"
+                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                <Border Background="{atom:SharedTokenResource ColorBgLayout}"
+                        BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                        BorderThickness="1"
+                        CornerRadius="5"
+                        Padding="12,10">
+                    <StackPanel Spacing="10">
+                        <atom:CheckBox Content="{Binding AgentEnabledText}"
+                                       IsChecked="{Binding AgentEnabled, Mode=TwoWay}"/>
+                        <atom:CheckBox Content="{Binding AgentAllowCommandExecutionText}"
+                                       IsChecked="{Binding AgentAllowCommandExecution, Mode=TwoWay}"/>
+                        <Grid ColumnDefinitions="132,*"
+                              ColumnSpacing="10"
+                              IsEnabled="{Binding AgentAllowCommandExecution}">
+                            <TextBlock Text="{Binding AgentPermissionModeText}"
+                                       VerticalAlignment="Center"
+                                       Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                            <atom:Select Grid.Column="1"
+                                         OptionsSource="{Binding AgentPermissionModeOptions}"
+                                         SelectedOption="{Binding AgentPermissionModeOption, Mode=TwoWay}"
+                                         HorizontalAlignment="Stretch"/>
+                        </Grid>
+                        <TextBlock Text="{Binding AgentPermissionModeDescriptionText}"
+                                   TextWrapping="Wrap"
+                                   FontSize="11"
+                                   Foreground="{atom:SharedTokenResource ColorTextTertiary}"
+                                   Margin="142,0,0,0"/>
+                        <atom:CheckBox Content="{Binding AgentReadOnlyModeText}"
+                                       IsChecked="{Binding AgentReadOnlyMode, Mode=TwoWay}"
+                                       IsEnabled="{Binding AgentAllowCommandExecution}"/>
+                        <TextBlock Text="{Binding AgentCommandPolicyDescriptionText}"
+                                   TextWrapping="Wrap"
+                                   FontSize="11"
+                                   Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+                        <Grid RowDefinitions="Auto,Auto"
+                              ColumnDefinitions="132,*"
+                              ColumnSpacing="10"
+                              RowSpacing="8">
+                            <TextBlock Text="{Binding AgentAllowedCommandPrefixesText}"
+                                       VerticalAlignment="Top"
+                                       Margin="0,6,0,0"
+                                       Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                            <atom:TextBox Grid.Column="1"
+                                          Text="{Binding AgentAllowedCommandPrefixes, Mode=TwoWay}"
+                                          AcceptsReturn="True"
+                                          TextWrapping="Wrap"
+                                          MinHeight="48"
+                                          PlaceholderText="pwd\nfree -m"/>
+                            <TextBlock Grid.Row="1"
+                                       Text="{Binding AgentBlockedCommandPrefixesText}"
+                                       VerticalAlignment="Top"
+                                       Margin="0,6,0,0"
+                                       Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                            <atom:TextBox Grid.Row="1"
+                                          Grid.Column="1"
+                                          Text="{Binding AgentBlockedCommandPrefixes, Mode=TwoWay}"
+                                          AcceptsReturn="True"
+                                          TextWrapping="Wrap"
+                                          MinHeight="48"
+                                          PlaceholderText="rm\nshutdown"/>
+                        </Grid>
+                        <TextBlock Text="{Binding AgentDescriptionText}"
+                                   TextWrapping="Wrap"
+                                   FontSize="11"
+                                   Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+                        <Grid ColumnDefinitions="132,*"
+                              RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+                              ColumnSpacing="10"
+                              RowSpacing="9">
+                            <TextBlock Text="{Binding AgentProviderText}"
+                                       VerticalAlignment="Center"
+                                       Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding AgentProviderTypeText}"
+                                       VerticalAlignment="Center"
+                                       Foreground="{atom:SharedTokenResource ColorText}"/>
+
+                            <TextBlock Grid.Row="1"
+                                       Text="{Binding AgentProviderNameText}"
+                                       VerticalAlignment="Center"
+                                       Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                            <atom:TextBox Grid.Row="1"
+                                          Grid.Column="1"
+                                          Text="{Binding AgentProviderName, Mode=TwoWay}"
+                                          MinWidth="220"/>
+
+                            <TextBlock Grid.Row="2"
+                                       Text="{Binding AgentBaseUrlText}"
+                                       VerticalAlignment="Center"
+                                       Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                            <atom:TextBox Grid.Row="2"
+                                          Grid.Column="1"
+                                          Text="{Binding AgentBaseUrl, Mode=TwoWay}"
+                                          MinWidth="220"/>
+
+                            <TextBlock Grid.Row="3"
+                                       Text="{Binding AgentModelText}"
+                                       VerticalAlignment="Center"
+                                       Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                            <atom:TextBox Grid.Row="3"
+                                          Grid.Column="1"
+                                          Text="{Binding AgentModel, Mode=TwoWay}"
+                                          MinWidth="220"/>
+
+                            <TextBlock Grid.Row="4"
+                                       Text="{Binding AgentPlanKeyText}"
+                                       VerticalAlignment="Center"
+                                       Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                            <atom:TextBox Grid.Row="4"
+                                          Grid.Column="1"
+                                          Text="{Binding AgentApiKey, Mode=TwoWay}"
+                                          PasswordChar="*"
+                                          IsEnableRevealButton="True"
+                                          MinWidth="220"/>
+                        </Grid>
+                        <TextBlock Text="{Binding AgentPlanKeyDescriptionText}"
+                                   TextWrapping="Wrap"
+                                   FontSize="11"
+                                   Foreground="{atom:SharedTokenResource ColorTextTertiary}"
+                                   Margin="142,0,0,0"/>
+                        <Grid ColumnDefinitions="132,Auto,Auto,*"
+                              ColumnSpacing="10">
+                            <TextBlock Text="{Binding AgentRequestTimeoutText}"
+                                       VerticalAlignment="Center"
+                                       Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                            <atom:NumericUpDown Grid.Column="1"
+                                                Width="92"
+                                                Minimum="5"
+                                                Maximum="600"
+                                                Value="{Binding AgentRequestTimeoutSeconds, Mode=TwoWay}"/>
+                            <TextBlock Grid.Column="2"
+                                       Text="{Binding AgentSecondsText}"
+                                       VerticalAlignment="Center"
+                                       Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="*,Auto"
+                              ColumnSpacing="10">
+                            <TextBlock Text="{Binding AgentStatusText}"
+                                       TextWrapping="Wrap"
+                                       FontSize="11"
+                                       VerticalAlignment="Center"
+                                       Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                            <atom:Button Grid.Column="1"
+                                         Content="{Binding AgentUseRoutinPresetText}"
+                                         ButtonType="Default"
+                                         Command="{Binding UseRoutinPresetCommand}"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

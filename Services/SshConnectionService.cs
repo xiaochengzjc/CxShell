@@ -1017,7 +1017,33 @@ public class SshConnectionService : ITerminalConnectionService
         // SSH.NET sends SSH keepalive automatically through KeepAliveInterval.
     }
 
-    public async Task<string> RunCommandAsync(string commandText, TimeSpan timeout, CancellationToken cancellationToken = default)
+    public Task<string> RunCommandAsync(
+        string commandText,
+        TimeSpan timeout,
+        CancellationToken cancellationToken = default)
+    {
+        return RunCommandCoreAsync(commandText, timeout, outputReceived: null, cancellationToken);
+    }
+
+    public Task<string> RunCommandStreamingAsync(
+        string commandText,
+        TimeSpan timeout,
+        Action<string> outputReceived,
+        CancellationToken cancellationToken = default,
+        Encoding? outputEncoding = null,
+        string? inputText = null)
+    {
+        ArgumentNullException.ThrowIfNull(outputReceived);
+        return RunCommandCoreAsync(commandText, timeout, outputReceived, cancellationToken, outputEncoding, inputText);
+    }
+
+    private async Task<string> RunCommandCoreAsync(
+        string commandText,
+        TimeSpan timeout,
+        Action<string>? outputReceived,
+        CancellationToken cancellationToken,
+        Encoding? outputEncoding = null,
+        string? inputText = null)
     {
         if (_sshClient == null || !_sshClient.IsConnected)
             throw new InvalidOperationException("SSH connection is not connected.");
@@ -1025,14 +1051,40 @@ public class SshConnectionService : ITerminalConnectionService
         await _commandGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return await Task.Run(() =>
+            return await Task.Run(async () =>
             {
                 if (_sshClient == null || !_sshClient.IsConnected)
                     throw new InvalidOperationException("SSH connection is not connected.");
 
-                using var command = _sshClient.CreateCommand(commandText);
+                var commandEncoding = outputEncoding ?? _terminalEncoding;
+                using var command = _sshClient.CreateCommand(commandText, commandEncoding);
                 command.CommandTimeout = timeout;
-                var result = command.Execute();
+                var executeTask = command.ExecuteAsync(cancellationToken);
+                Task<string>? streamedOutputTask = null;
+                if (outputReceived != null)
+                {
+                    streamedOutputTask = ReadCommandOutputAsync(
+                        command.OutputStream,
+                        commandEncoding,
+                        outputReceived,
+                        cancellationToken);
+                }
+
+                if (!string.IsNullOrEmpty(inputText))
+                {
+                    // SSH.NET documents creating the input stream after
+                    // ExecuteAsync, writing the payload, then disposing it to
+                    // signal EOF to the remote command.
+                    using var commandInput = command.CreateInputStream();
+                    var inputBytes = commandEncoding.GetBytes(inputText + "\n");
+                    commandInput.Write(inputBytes, 0, inputBytes.Length);
+                    commandInput.Flush();
+                }
+
+                await executeTask.ConfigureAwait(false);
+                var result = streamedOutputTask == null
+                    ? command.Result
+                    : await streamedOutputTask.ConfigureAwait(false);
                 if (command.ExitStatus != 0)
                 {
                     var error = string.IsNullOrWhiteSpace(command.Error)
@@ -1048,6 +1100,34 @@ public class SshConnectionService : ITerminalConnectionService
         {
             _commandGate.Release();
         }
+    }
+
+    private static async Task<string> ReadCommandOutputAsync(
+        Stream outputStream,
+        Encoding encoding,
+        Action<string> outputReceived,
+        CancellationToken cancellationToken)
+    {
+        using var reader = new StreamReader(
+            outputStream,
+            encoding,
+            detectEncodingFromByteOrderMarks: false,
+            bufferSize: 4096,
+            leaveOpen: true);
+        var output = new StringBuilder();
+        var buffer = new char[4096];
+        while (true)
+        {
+            var count = await reader.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
+            if (count == 0)
+                break;
+
+            var chunk = new string(buffer, 0, count);
+            output.Append(chunk);
+            outputReceived(chunk);
+        }
+
+        return output.ToString();
     }
 
     public void ResizeTerminal(int columns, int rows)

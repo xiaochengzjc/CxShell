@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using CxShell.Models;
+using CxShell.Services.Agent;
 
 namespace CxShell.Services;
 
@@ -94,8 +95,24 @@ public sealed class ApplicationSettingsStore
 
     private static void Normalize(ApplicationSettings settings)
     {
-        if (settings.SchemaVersion <= 0)
+        var hasLegacySchema = settings.SchemaVersion < ApplicationSettings.CurrentSchemaVersion;
+        if (settings.SchemaVersion < ApplicationSettings.CurrentSchemaVersion)
             settings.SchemaVersion = ApplicationSettings.CurrentSchemaVersion;
+
+        settings.AgentProvider ??= new AgentProviderSettings();
+        settings.AgentPermissionMode = AgentPermissionPolicy.NormalizePermissionMode(
+            settings.AgentPermissionMode);
+        if (string.IsNullOrEmpty(settings.AgentPermissionMode))
+            settings.AgentPermissionMode = AgentPermissionPolicy.RiskBasedApprovalMode;
+        if (hasLegacySchema && settings.AgentProvider.RequestTimeoutSeconds == 120)
+            settings.AgentProvider.RequestTimeoutSeconds = 300;
+        settings.AgentPanelWidth = Math.Clamp(settings.AgentPanelWidth, 280, 600);
+        if (settings.AgentProvider.BaseUrl.Contains("/plan/v1", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.AgentProvider.Type = AgentProviderType.OpenAiResponses;
+            if (string.IsNullOrWhiteSpace(settings.AgentProvider.BuiltinId))
+                settings.AgentProvider.BuiltinId = "routin-ai-plan";
+        }
     }
 
     private void TrySave(ApplicationSettings settings)

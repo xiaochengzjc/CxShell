@@ -110,6 +110,26 @@ flowchart TD
 - `RdpViewModel` 通过 `RdpBridgeClient` 调用 `CxRdpBridge`，避免 C# 直接绑定复杂 FreeRDP 结构。
 - `SessionStorageService` 使用 JSON 保存会话数据到用户配置目录，密码字段会通过 `PasswordEncryptionService` 加密后保存。
 
+### Agent 基础接口
+
+Agent 面板会显示 Runtime 的初始化状态和失败原因。Runtime 支持重试，并保留初始化次数、请求 ID、错误码和错误文本用于定位问题；会话列表刷新失败时会单独提示，不会误判为 Runtime 握手失败。
+
+CxShell 内置了一个受权限策略保护的 Agent Runtime 会话边界。当前 Agent 只能通过该边界访问已打开的 SSH Terminal，不能直接操作 Avalonia 控件或底层 SSH 连接。调用方可先调用 `initialize`，并可在 `params` 中提供 `protocol` 和 `protocolVersion` 进行握手校验；省略参数时保持兼容。成功响应会返回运行时版本、协议版本、方法和当前能力清单，不匹配时返回稳定的 `protocol_mismatch` 错误。随后可调用 `agent/runtime-info` 获取完整运行时信息；会话列表、命令发送、固定只读诊断、多会话巡检、软件包/运行时检查、磁盘清理建议、运行状态、运行事件增量读取、脱敏审计和取消/审批接口都使用 JSON 请求与响应。只读工具不会删除文件，也不接受任意路径和脚本，而是由 CxShell 根据有限参数选择固定的平台命令。Runtime 请求失败时会同时返回稳定的 `errorCode` 和用于展示的 `error` 文本。`agent/run-list` 返回正在运行和最近完成的任务，`agent/run-status` 查询单个任务的状态和结束原因；`agent/run-events` 接收 `runId`、`afterSequence` 游标和有界的 `limit`，其中 `hasGap` 用于提示更早的事件是否已经被缓存淘汰，最近完成的任务会在有限的内存保留窗口内继续可读。已经接受的后台任务也会把生命周期事件发布到 Runtime 流中，使用 `type: "event"` 帧并通过运行 ID 关联。
+
+运行摘要会记录 provider/model、简短任务预览、模型/工具调用次数、耗时和安全的错误分类。已完成摘要会保存到 `%LOCALAPPDATA%\CxShell\agent-runs.json`；不会保存命令原文、命令输出、凭据或事件负载。`agent/run-clear` 可清理已完成摘要。Provider 错误会区分网络、超时、认证、限流、服务端、请求和协议错误；可重试错误使用有限的指数退避，用户主动取消不会被误判为超时。Agent 面板会展示相同的运行记录，支持查看事件详情、清理记录，以及仅对当前进程仍保留完整 Prompt 的失败任务进行重试。网关审计还会记录命令风险、权限决策和审批结果，但仍不保存命令原文。
+
+Agent 命令超时会在 Session Gateway 边界统一规范：Agent 任务默认最长运行 30 分钟，普通远程命令默认 10 分钟；包管理器、安装器以及运行时安装/升级命令默认 20 分钟，即使模型建议更短的时间，也至少保留 10 分钟。全局 Agent 策略可以选择“修改类命令需要确认”；危险命令仍使用独立的确认规则，只读模式仍会阻止所有修改操作。
+
+运行中的任务支持通过 `agent/run-append` 排队追加一条或多条 user 指令；追加内容会在当前模型/工具操作结束后进入下一轮上下文，单个任务最多排队 32 条。`agent/run-stop` 用于优雅停止，会等待当前模型或 SSH 工具操作结束后再收口；原有的 `agent/cancel` 仍用于立即取消。
+
+OpenAI 兼容 Provider 支持 SSE 流式响应。模型文本会按增量事件即时进入 Agent 面板；Chat Completions 和 Responses API 的工具调用参数会在本地聚合、校验完整后才交给 Session Gateway 执行。流式响应已经产生内容后发生网络错误，不会自动重试，避免重复执行或重复展示。
+
+当前接口是进程内实现。`AgentRuntimeHost` 负责方法路由、模块注册、请求生命周期跟踪，并支持通过 `requestId` 取消请求；`IAgentRuntimeModule` 会收到请求级的取消和事件上下文，长生命周期模块还可以实现 `IAgentRuntimeEventSource`，由 Host 管理订阅并在原请求返回后继续转发事件，活动请求使用重复 ID 时会被拒绝。`AgentRuntimeJsonEndpoint` 负责把单条 JSON 请求转换为 Host 调用并返回单条 JSON 响应，标准字段使用 `params`，同时兼容现有的 `parameters` 别名。`AgentRuntimeClient` 在 `IAgentRuntimeTransport` 之上提供请求 ID 生成、响应关联、类型化结果反序列化、稳定的协议异常和可选的事件订阅；其中 `InitializeAsync`、`GetRuntimeInfoAsync` 和 `CheckCapabilityAsync` 提供类型安全的协议发现与能力检查。`AgentRuntimeSession` 在此之上提供一次协商的客户端生命周期：首次调用自动执行 `initialize`，并发首次调用共享同一次握手；后续调用会先检查对端公布的方法，握手失败后允许重试。不同内部传输下的事件负载都统一为 JSON 值。`InProcessAgentRuntimeTransport` 是 CxShell Agent 面板使用的传输实现，`AgentRuntimeStreamTransport`、`AgentRuntimeFrameCodec`、`AgentRuntimeFrameEndpoint` 和 `AgentRuntimeStreamSession` 提供可测试的内部帧和流抽象。事件帧使用 `type: "event"`，携带模块、请求 ID、方法、事件名和负载，并与响应共用同一条流；正常输入 EOF 时会先排空已经完成的响应，再取消未完成请求。Agent 面板会保留后台运行任务数量，并支持按全部、当前会话和运行中筛选历史记录，详情、重试和继续仍然使用同一套运行记录。Session Gateway 仍然是访问会话的唯一入口，Agent 不能绕过 CxShell 的权限策略，也不能直接访问 Avalonia 控件或底层 SSH 连接。
+
+`runtime/cancel` 方法允许 Runtime 调用方根据 `requestId` 取消活动请求，并返回目标请求当时是否仍处于活动状态；typed `AgentRuntimeClient.CancelRequestAsync` 辅助方法封装了这一调用。当调用方通过 `AgentRuntimeStreamTransport` 取消请求时，传输层会尽力发送该协议取消请求，让远端 Host 也能停止对应工作。
+
+OpenCowork 仅作为架构研究参考。CxShell 不启动、不嵌入，也不与 OpenCowork 应用通信；Agent Runtime、工具注册、权限策略、任务编排和 Session Gateway 都由 CxShell 自己实现和维护。只读的 `agent/tool-catalog` 方法会返回 CxShell 自有 Agent 面板使用的工具名称、说明、JSON Schema 以及当前网关可用性。
+
 ## 环境要求
 
 ### 基础应用

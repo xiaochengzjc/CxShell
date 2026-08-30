@@ -14,6 +14,7 @@ using Avalonia.Threading;
 using Avalonia.Media;
 using CxShell.Models;
 using CxShell.Services;
+using CxShell.Services.Agent;
 using CxShell.Terminal;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -68,6 +69,8 @@ public partial class TerminalViewModel : ObservableObject
     private readonly List<byte[]> _xymodemPendingBytes = new();
     private readonly StringBuilder _outgoingCommandLine = new();
     private readonly TerminalCommandHistory _commandHistory = new();
+    private readonly SemaphoreSlim _agentCommandGate = new(1, 1);
+    private bool _agentTranscriptAtLineStart = true;
     private Decoder _terminalByteDecoder = Encoding.UTF8.GetDecoder();
     private ZmodemTransfer? _zmodemTransfer;
     private bool _zmodemStarting;
@@ -323,6 +326,217 @@ public partial class TerminalViewModel : ObservableObject
             throw new InvalidOperationException("Current terminal connection does not support remote commands.");
 
         return connection.RunCommandAsync(commandText, timeout, cancellationToken);
+    }
+
+    /// <summary>
+    /// Executes an Agent command through the SSH exec channel and mirrors its
+    /// lifecycle into this terminal. The command is serialized per terminal
+    /// so an Agent run cannot interleave its output with another Agent run.
+    /// </summary>
+    public async Task<string> RunAgentCommandAsync(
+        Guid requestId,
+        string commandText,
+        TimeSpan timeout,
+        CancellationToken cancellationToken = default,
+        string? displayCommand = null,
+        string? sensitiveInput = null)
+    {
+        await _agentCommandGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var connection = _connection as SshConnectionService;
+            if (connection == null || !connection.IsConnected)
+                throw new InvalidOperationException("Current terminal connection does not support remote commands.");
+
+            var generation = _connectionGeneration;
+            AppendAgentCommandStarted(generation, displayCommand ?? commandText);
+            try
+            {
+                var executionCommand = connection.SupportsPosixShellFeatures
+                    ? commandText
+                    : AgentPowerShellCommandBuilder.BuildWindowsAgentCommand(commandText);
+                var output = await connection.RunCommandStreamingAsync(
+                    executionCommand,
+                    timeout,
+                    chunk => AppendAgentCommandOutput(generation, chunk),
+                    cancellationToken,
+                    connection.SupportsPosixShellFeatures ? null : Encoding.UTF8,
+                    sensitiveInput).ConfigureAwait(false);
+                AppendAgentCommandFinished(generation, succeeded: true, null);
+                return output;
+            }
+            catch (OperationCanceledException)
+            {
+                AppendAgentCommandFinished(generation, succeeded: false, "cancelled");
+                throw;
+            }
+            catch (Exception ex)
+            {
+                AppendAgentCommandFinished(generation, succeeded: false, ex.Message);
+                throw;
+            }
+        }
+        finally
+        {
+            _agentCommandGate.Release();
+        }
+    }
+
+    private void AppendAgentCommandStarted(int generation, string commandText)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => AppendAgentCommandStarted(generation, commandText));
+            return;
+        }
+
+        if (generation != _connectionGeneration ||
+            _session == null ||
+            string.IsNullOrWhiteSpace(commandText))
+            return;
+
+        AppendAgentTranscriptLine(
+            $"$ {SanitizeAgentTranscriptText(commandText.Trim())}",
+            "36");
+    }
+
+    private void AppendAgentCommandOutput(int generation, string output)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => AppendAgentCommandOutput(generation, output));
+            return;
+        }
+
+        if (generation != _connectionGeneration || _session == null || string.IsNullOrEmpty(output))
+            return;
+
+        var normalized = NormalizeAgentOutput(output);
+        if (normalized.Length == 0)
+            return;
+
+        var transcript = new StringBuilder(normalized.Length + 16);
+        foreach (var character in normalized)
+        {
+            if (_agentTranscriptAtLineStart && character != '\n')
+            {
+                transcript.Append("[Agent] ");
+                _agentTranscriptAtLineStart = false;
+            }
+
+            if (character == '\n')
+            {
+                transcript.Append("\r\n");
+                _agentTranscriptAtLineStart = true;
+            }
+            else
+            {
+                transcript.Append(character);
+            }
+        }
+
+        AppendAgentTerminalText(transcript.ToString());
+    }
+
+    private void AppendAgentCommandFinished(int generation, bool succeeded, string? detail)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => AppendAgentCommandFinished(generation, succeeded, detail));
+            return;
+        }
+
+        if (generation != _connectionGeneration || _session == null)
+            return;
+
+        var message = succeeded
+            ? "completed"
+            : $"failed: {SanitizeAgentTranscriptText(detail ?? "command failed")}";
+        AppendAgentTranscriptLine(message, succeeded ? "32" : "31");
+    }
+
+    private void AppendAgentTranscriptLine(string message, string colorCode)
+    {
+        if (!_agentTranscriptAtLineStart)
+            AppendAgentTranscriptText("\n");
+
+        AppendAgentTerminalText(
+            $"\x1B[{colorCode}m[Agent] {message}\x1B[0m\r\n");
+        _agentTranscriptAtLineStart = true;
+    }
+
+    private void AppendAgentTranscriptText(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        AppendAgentTerminalText(text);
+    }
+
+    private static string NormalizeAgentOutput(string output)
+    {
+        var normalized = output.Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n');
+        return SanitizeAgentTranscriptText(normalized);
+    }
+
+    private static string SanitizeAgentTranscriptText(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return string.Empty;
+
+        text = AgentAnsiEscapeRegex.Replace(text, string.Empty);
+        var sanitized = new StringBuilder(text.Length);
+        foreach (var character in text)
+        {
+            if (character == '\u001b' || character == '\a' || character == '\b')
+                continue;
+
+            if (character is '\t' or '\n' || !char.IsControl(character))
+                sanitized.Append(character);
+        }
+
+        return sanitized.ToString();
+    }
+
+    private static readonly Regex AgentAnsiEscapeRegex = new(
+        @"\x1B(?:\[[0-?]*[ -/]*[@-~]|\][^\a]*(?:\a|\x1B\\))",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private void AppendAgentTerminalText(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        LogTerminalData(text);
+        Parser.Process(text);
+        Buffer.MarkAllDirty();
+        BufferChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Shows the result of a command executed through the SSH exec channel in
+    /// the terminal transcript. The exec channel is intentionally separate
+    /// from the interactive shell, so this is an explicit local presentation
+    /// step rather than another remote write.
+    /// </summary>
+    public void AppendAgentCommandResult(string commandText, string? output)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => AppendAgentCommandResult(commandText, output));
+            return;
+        }
+
+        var command = commandText?.TrimEnd('\r', '\n') ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(command))
+            return;
+
+        var transcript = $"[Agent] {command}";
+        if (!string.IsNullOrEmpty(output))
+            transcript += $"\r\n{output.TrimEnd('\r', '\n')}";
+
+        AppendPlainStatusMessage(transcript);
     }
 
     public IReadOnlyList<SshTunnelRuntimeSnapshot> GetSshTunnelRuntimeSnapshot()
