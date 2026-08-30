@@ -6,6 +6,12 @@ CxShell 是一个使用 .NET、Avalonia 和 AtomUI 构建的跨平台远程会�
 
 当前项目仍在快速迭代中。Windows 是主要开发目标，macOS 已提供本地脚本和 GitHub Actions 打包流程，Linux 也可以按普通 Avalonia 桌面应用方式编译运行。RDP 功能依赖对应平台的原生 `CxRdpBridge` 桥接库。
 
+## 最新版本
+
+当前最新版本为 [CxShell v0.1.43](https://github.com/xiaochengzjc/CxShell/releases/tag/v0.1.43)。本版本包含 Agent Runtime 与 SSH 会话网关、权限和审批控制、运行历史与取消、兼容 OpenAI 接口的流式 Provider、图片和文档附件、Markdown 渲染，以及最新的终端和远程会话体验改进。
+
+发布页提供 Windows x64、macOS x64/arm64 和 Linux x64/arm64 安装包。Windows 和 macOS 提供安装包或便携包，Linux 提供 AppImage 和 tar.gz 压缩包。
+
 ## 界面展示
 
 ### SSH 工作区、SFTP 与服务器监控
@@ -186,10 +192,11 @@ dotnet run --project CxShell.csproj
 dotnet format CxShell.csproj
 ```
 
-当前仓库还没有独立自动化测试项目。提交前至少执行：
+仓库包含 `CxShell.Tests` 自动化测试项目。提交前执行：
 
 ```powershell
 dotnet build CxShell.csproj
+dotnet test CxShell.Tests/CxShell.Tests.csproj
 ```
 
 如果改动涉及 SSH、SFTP、终端、RDP、VNC 或监控功能，请再手动连接一次对应协议验证。

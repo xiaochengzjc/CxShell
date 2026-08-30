@@ -6,6 +6,12 @@ CxShell is a cross-platform desktop remote session client built with .NET, Avalo
 
 The project is still moving quickly. Windows is currently the primary development target, macOS packaging is available through local scripts and GitHub Actions, and Linux can be built as a standard Avalonia desktop application. RDP support depends on the platform-specific native `CxRdpBridge` library.
 
+## Latest Release
+
+The latest release is [CxShell v0.1.43](https://github.com/xiaochengzjc/CxShell/releases/tag/v0.1.43). It includes the Agent Runtime and SSH session gateway, permission and approval controls, run history and cancellation, OpenAI-compatible streaming providers, image and document attachments, Markdown rendering, and the latest terminal and remote-session improvements.
+
+Packages are available for Windows x64, macOS x64/arm64, and Linux x64/arm64. The release page provides Windows and macOS installers or portable archives, plus Linux AppImage and tar.gz packages.
+
 ## Screenshots
 
 ### SSH Workspace, SFTP, and Server Monitoring
@@ -186,10 +192,11 @@ dotnet run --project CxShell.csproj
 dotnet format CxShell.csproj
 ```
 
-There is no dedicated automated test project yet. Before submitting changes, run at least:
+The repository includes the `CxShell.Tests` automated test project. Before submitting changes, run:
 
 ```powershell
 dotnet build CxShell.csproj
+dotnet test CxShell.Tests/CxShell.Tests.csproj
 ```
 
 For changes touching SSH, SFTP, terminal behavior, RDP, VNC, or monitoring, manually connect to the affected protocol once and verify the workflow.
