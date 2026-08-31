@@ -774,7 +774,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (IsCheckingForUpdates)
             return;
 
-        var owner = GetMainWindow();
+        var owner = GetActiveWindow();
         IsCheckingForUpdates = true;
         UpdateProgressText = _localization.Text("Toolbar.UpdateChecking");
 
@@ -861,7 +861,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private async Task PromptDownloadUpdateAsync(AppUpdateHandle update, string[] restartArgs)
     {
-        var owner = GetMainWindow();
+        var owner = GetActiveWindow();
         if (owner == null)
             return;
 
@@ -970,7 +970,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private async Task PromptRestartForUpdateAsync(AppUpdateHandle update, string[] restartArgs)
     {
-        var owner = GetMainWindow();
+        var owner = GetActiveWindow();
         if (owner == null)
             return;
 
@@ -3116,6 +3116,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         var lifetime = Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
         return lifetime?.MainWindow as AtomUI.Desktop.Controls.Window;
+    }
+
+    private static Avalonia.Controls.Window? GetActiveWindow()
+    {
+        var lifetime = Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime;
+        return lifetime?.Windows.FirstOrDefault(window => window.IsActive) ?? lifetime?.MainWindow;
     }
 
     private sealed record PrivateKeyPassphrasePromptResult(string Passphrase, bool Save);

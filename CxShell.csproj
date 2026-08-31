@@ -48,6 +48,8 @@
         <EmbeddedResource Remove="VelaShell/**" />
         <Content Remove="CxShell.Tests/**" />
         <AvaloniaResource Include="Assets/**" />
+        <AvaloniaResource Include="docs/images/alipay-donation.jpg" />
+        <AvaloniaResource Include="docs/images/wechat-pay-donation.jpg" />
     </ItemGroup>
 
     <ItemGroup>

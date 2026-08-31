@@ -1,0 +1,142 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:antdicons="https://atomui.net/icons/antdesign"
+             xmlns:vm="using:CxShell.ViewModels"
+             x:Class="CxShell.Views.DonationPage"
+             x:DataType="vm:SettingsCenterViewModel">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="22"
+                    Margin="0,2,12,18">
+            <TextBlock Text="{Binding DonationIntroText}"
+                       FontSize="14"
+                       TextWrapping="Wrap"
+                       Foreground="{atom:SharedTokenResource ColorText}"/>
+
+            <Border Background="{atom:SharedTokenResource ColorPrimaryBg}"
+                    CornerRadius="5"
+                    Padding="16,13">
+                <StackPanel Spacing="7">
+                    <TextBlock Text="{Binding DonationContributionTitleText}"
+                               FontSize="15"
+                               FontWeight="SemiBold"
+                               Foreground="{atom:SharedTokenResource ColorPrimary}"/>
+                    <TextBlock Text="{Binding DonationContributionDescriptionText}"
+                               TextWrapping="Wrap"
+                               Foreground="{atom:SharedTokenResource ColorText}"/>
+                </StackPanel>
+            </Border>
+
+            <Border Background="{atom:SharedTokenResource ColorSplit}"
+                    Height="1"/>
+
+            <StackPanel Spacing="8">
+                <TextBlock Text="{Binding DonationDomesticTitleText}"
+                           FontSize="16"
+                           FontWeight="SemiBold"
+                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                <TextBlock Text="{Binding DonationDomesticDescriptionText}"
+                           TextWrapping="Wrap"
+                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                <Grid ColumnDefinitions="*,*"
+                      ColumnSpacing="16"
+                      Margin="0,3,0,0">
+                    <Border Grid.Column="0"
+                            Background="{atom:SharedTokenResource ColorBgLayout}"
+                            BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                            BorderThickness="1"
+                            CornerRadius="5"
+                            Padding="12,12,12,10">
+                        <StackPanel Spacing="10">
+                            <Image Source="/docs/images/alipay-donation.jpg"
+                                   Width="220"
+                                   HorizontalAlignment="Center"
+                                   Stretch="Uniform"/>
+                            <TextBlock Text="{Binding DonationAlipayText}"
+                                       HorizontalAlignment="Center"
+                                       FontWeight="SemiBold"
+                                       Foreground="{atom:SharedTokenResource ColorText}"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="1"
+                            Background="{atom:SharedTokenResource ColorBgLayout}"
+                            BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                            BorderThickness="1"
+                            CornerRadius="5"
+                            Padding="12,12,12,10">
+                        <StackPanel Spacing="10">
+                            <Image Source="/docs/images/wechat-pay-donation.jpg"
+                                   Width="220"
+                                   HorizontalAlignment="Center"
+                                   Stretch="Uniform"/>
+                            <TextBlock Text="{Binding DonationWeChatPayText}"
+                                       HorizontalAlignment="Center"
+                                       FontWeight="SemiBold"
+                                       Foreground="{atom:SharedTokenResource ColorText}"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+                <TextBlock Text="WeChat ID: ruochujiangzi"
+                           FontSize="12"
+                           Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+            </StackPanel>
+
+            <Border Background="{atom:SharedTokenResource ColorSplit}"
+                    Height="1"/>
+
+            <StackPanel Spacing="8">
+                <TextBlock Text="{Binding DonationInternationalTitleText}"
+                           FontSize="16"
+                           FontWeight="SemiBold"
+                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                <TextBlock Text="{Binding DonationInternationalDescriptionText}"
+                           TextWrapping="Wrap"
+                           Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                <Border Background="{atom:SharedTokenResource ColorBgLayout}"
+                        BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                        BorderThickness="1"
+                        CornerRadius="5"
+                        Padding="16,14">
+                    <Grid ColumnDefinitions="Auto,*"
+                          ColumnSpacing="16">
+                        <Border Width="44"
+                                Height="44"
+                                Background="{atom:SharedTokenResource ColorPrimaryBg}"
+                                CornerRadius="22"
+                                VerticalAlignment="Top">
+                            <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider Kind=HeartOutlined}"
+                                                Width="22"
+                                                Height="22"
+                                                IconBrush="{atom:SharedTokenResource ColorPrimary}"
+                                                HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"/>
+                        </Border>
+                        <StackPanel Grid.Column="1"
+                                    Spacing="8">
+                            <TextBlock Text="{Binding DonationKoFiUrlText}"
+                                       FontFamily="Cascadia Mono,Consolas,monospace"
+                                       FontSize="12"
+                                       TextWrapping="Wrap"
+                                       Foreground="{atom:SharedTokenResource ColorPrimary}"/>
+                            <StackPanel Orientation="Horizontal"
+                                        Spacing="9">
+                                <atom:Button Content="{Binding DonationOpenKoFiText}"
+                                             Icon="{antdicons:AntDesignIconProvider Kind=HeartOutlined}"
+                                             ButtonType="Primary"
+                                             Click="OnKoFiClick"/>
+                                <atom:Button Content="{Binding DonationOpenGitHubText}"
+                                             Icon="{antdicons:AntDesignIconProvider Kind=GithubOutlined}"
+                                             ButtonType="Default"
+                                             Click="OnGitHubClick"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </StackPanel>
+
+            <TextBlock Text="{Binding DonationThanksText}"
+                       TextWrapping="Wrap"
+                       Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

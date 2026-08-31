@@ -128,10 +128,10 @@
                     <Grid Grid.Row="7">
                         <Border Background="{atom:SharedTokenResource ColorPrimaryBg}"
                                 CornerRadius="4"
-                                IsVisible="{Binding IsUpdateSelected}"/>
-                        <atom:Button Content="{Binding UpdateNavigation.Text}"
-                                     Icon="{Binding UpdateNavigation.Icon}"
-                                     Command="{Binding SelectUpdateCommand}"
+                                IsVisible="{Binding IsSupportDonateSelected}"/>
+                        <atom:Button Content="{Binding SupportDonateNavigation.Text}"
+                                     Icon="{Binding SupportDonateNavigation.Icon}"
+                                     Command="{Binding SelectSupportDonateCommand}"
                                      ButtonType="Text"
                                      Background="Transparent"
                                      BorderThickness="0"
@@ -139,6 +139,7 @@
                                      HorizontalContentAlignment="Left"
                                      Foreground="{atom:SharedTokenResource ColorText}"/>
                     </Grid>
+
                 </Grid>
             </Border>
 
@@ -175,9 +176,9 @@
                     <views:AboutPage Grid.Row="1"
                                      DataContext="{Binding #SettingsCenter.DataContext, x:CompileBindings=False}"
                                      IsVisible="{Binding #SettingsCenter.DataContext.IsAboutSelected, x:CompileBindings=False}"/>
-                    <views:UpdatePage Grid.Row="1"
-                                      DataContext="{Binding #SettingsCenter.DataContext, x:CompileBindings=False}"
-                                      IsVisible="{Binding #SettingsCenter.DataContext.IsUpdateSelected, x:CompileBindings=False}"/>
+                    <views:DonationPage Grid.Row="1"
+                                        DataContext="{Binding #SettingsCenter.DataContext, x:CompileBindings=False}"
+                                        IsVisible="{Binding #SettingsCenter.DataContext.IsSupportDonateSelected, x:CompileBindings=False}"/>
                 </Grid>
             </Border>
         </Grid>

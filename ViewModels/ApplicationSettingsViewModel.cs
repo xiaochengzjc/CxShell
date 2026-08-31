@@ -131,6 +131,10 @@ public partial class ApplicationSettingsViewModel : ObservableObject
     public string AgentModelText => Text("ApplicationSettings.AgentModel");
     public string AgentPlanKeyText => Text("ApplicationSettings.AgentPlanKey");
     public string AgentPlanKeyDescriptionText => Text("ApplicationSettings.AgentPlanKeyDescription");
+    public string AgentRoutinRegistrationText => Text("ApplicationSettings.AgentRoutinRegistration");
+    public string AgentRoutinRegistrationDescriptionText => Text("ApplicationSettings.AgentRoutinRegistrationDescription");
+    public string AgentRoutinRegistrationUrlText => "https://routin.ai/register?planInviteCode=PE32VR2X";
+    public string AgentOpenRoutinRegistrationText => Text("ApplicationSettings.AgentOpenRoutinRegistration");
     public string AgentRequestTimeoutText => Text("ApplicationSettings.AgentRequestTimeout");
     public string AgentSecondsText => Text("ApplicationSettings.Seconds");
     public string AgentReadyText => Text("ApplicationSettings.AgentReady");
@@ -553,6 +557,9 @@ public partial class ApplicationSettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(AgentModelText));
         OnPropertyChanged(nameof(AgentPlanKeyText));
         OnPropertyChanged(nameof(AgentPlanKeyDescriptionText));
+        OnPropertyChanged(nameof(AgentRoutinRegistrationText));
+        OnPropertyChanged(nameof(AgentRoutinRegistrationDescriptionText));
+        OnPropertyChanged(nameof(AgentOpenRoutinRegistrationText));
         OnPropertyChanged(nameof(AgentRequestTimeoutText));
         OnPropertyChanged(nameof(AgentSecondsText));
         OnPropertyChanged(nameof(AgentReadyText));

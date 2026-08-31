@@ -4,12 +4,12 @@ using Avalonia.Interactivity;
 
 namespace CxShell.Views;
 
-public partial class AboutPage : UserControl
+public partial class DonationPage : UserControl
 {
     private const string GitHubUrl = "https://github.com/xiaochengzjc/CxShell";
     private const string KoFiUrl = "https://ko-fi.com/xiaochengzjc";
 
-    public AboutPage()
+    public DonationPage()
     {
         InitializeComponent();
     }

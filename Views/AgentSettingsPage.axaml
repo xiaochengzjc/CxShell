@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:atom="https://atomui.net"
+             xmlns:antdicons="https://atomui.net/icons/antdesign"
              xmlns:vm="using:CxShell.ViewModels"
              x:Class="CxShell.Views.AgentSettingsPage"
              x:DataType="vm:ApplicationSettingsViewModel">
@@ -129,6 +130,30 @@
                                    FontSize="11"
                                    Foreground="{atom:SharedTokenResource ColorTextTertiary}"
                                    Margin="142,0,0,0"/>
+                        <Grid ColumnDefinitions="132,*"
+                              ColumnSpacing="10">
+                            <TextBlock Text="{Binding AgentRoutinRegistrationText}"
+                                       VerticalAlignment="Top"
+                                       Margin="0,6,0,0"
+                                       Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                            <StackPanel Grid.Column="1"
+                                        Spacing="5">
+                                <TextBlock Text="{Binding AgentRoutinRegistrationDescriptionText}"
+                                           TextWrapping="Wrap"
+                                           FontSize="11"
+                                           Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+                                <TextBlock Text="{Binding AgentRoutinRegistrationUrlText}"
+                                           FontFamily="Cascadia Mono,Consolas,monospace"
+                                           FontSize="11"
+                                           TextWrapping="Wrap"
+                                           Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+                                <atom:Button Content="{Binding AgentOpenRoutinRegistrationText}"
+                                             Icon="{antdicons:AntDesignIconProvider Kind=LinkOutlined}"
+                                             ButtonType="Default"
+                                             HorizontalAlignment="Left"
+                                             Click="OnRoutinRegistrationClick"/>
+                            </StackPanel>
+                        </Grid>
                         <Grid ColumnDefinitions="132,Auto,Auto,*"
                               ColumnSpacing="10">
                             <TextBlock Text="{Binding AgentRequestTimeoutText}"

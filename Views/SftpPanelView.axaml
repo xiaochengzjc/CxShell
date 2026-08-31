@@ -11,6 +11,7 @@
         <Style Selector="atom|DataGrid.sftp-file-grid atom|DataGridCell">
             <Setter Property="Padding" Value="6,0"/>
             <Setter Property="FontSize" Value="12"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
         <Style Selector="atom|DataGrid.sftp-file-grid atom|DataGridColumnHeader /template/ Border#PART_ContentFrame">
             <Setter Property="Padding" Value="6,5"/>
