@@ -47,6 +47,9 @@ public sealed class OpenCoworkRuntimeContextCompactor
                EstimateCharacters(conversation) > _characterLimit;
     }
 
+    public AgentContextEstimate Estimate(IReadOnlyList<AgentChatMessage> conversation)
+        => AgentContextEstimator.Estimate(conversation);
+
     public async Task<OpenCoworkRuntimeContextCompressionResult> CompressIfNeededAsync(
         IReadOnlyList<AgentChatMessage> conversation,
         Func<IReadOnlyList<AgentChatMessage>, CancellationToken, Task<string?>>? summarizeAsync = null,
@@ -169,13 +172,7 @@ public sealed class OpenCoworkRuntimeContextCompactor
     }
 
     private static int EstimateCharacters(IReadOnlyList<AgentChatMessage> conversation)
-        => conversation.Sum(message =>
-            message.Content.Length +
-            (message.ToolCallId?.Length ?? 0) +
-            (message.ToolName?.Length ?? 0) +
-            (message.ToolArguments?.Length ?? 0) +
-            (message.ToolCalls?.Sum(call => call.Id.Length + call.Name.Length + call.Arguments.Length) ?? 0) +
-            32);
+        => AgentContextEstimator.Estimate(conversation).CharacterCount;
 
     private static string BuildBoundaryMessage(int compressedCount, int preservedCount)
         => $"[Context Memory Boundary]\n{compressedCount} earlier messages were compressed " +
@@ -263,7 +260,7 @@ public sealed class OpenCoworkRuntimeContextCompactor
 
     private static string LimitExcerpt(string? value, int limit)
     {
-        var text = value?.Trim() ?? string.Empty;
+        var text = AgentSensitiveDataRedactor.Redact(value?.Trim() ?? string.Empty);
         if (text.Length <= limit)
             return text;
 

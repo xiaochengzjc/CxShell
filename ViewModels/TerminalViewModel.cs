@@ -333,14 +333,16 @@ public partial class TerminalViewModel : ObservableObject
     /// lifecycle into this terminal. The command is serialized per terminal
     /// so an Agent run cannot interleave its output with another Agent run.
     /// </summary>
-    public async Task<string> RunAgentCommandAsync(
+    public async Task<AgentCommandExecutionResult> RunAgentCommandAsync(
         Guid requestId,
         string commandText,
         TimeSpan timeout,
         CancellationToken cancellationToken = default,
         string? displayCommand = null,
-        string? sensitiveInput = null)
+        string? sensitiveInput = null,
+        Action<AgentCommandProgress>? progressReceived = null)
     {
+        var startedAt = DateTimeOffset.UtcNow;
         await _agentCommandGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -355,15 +357,45 @@ public partial class TerminalViewModel : ObservableObject
                 var executionCommand = connection.SupportsPosixShellFeatures
                     ? commandText
                     : AgentPowerShellCommandBuilder.BuildWindowsAgentCommand(commandText);
-                var output = await connection.RunCommandStreamingAsync(
+                var execution = await connection.RunCommandStreamingResultAsync(
                     executionCommand,
                     timeout,
-                    chunk => AppendAgentCommandOutput(generation, chunk),
+                    chunk =>
+                    {
+                        AppendAgentCommandOutput(generation, chunk);
+                        progressReceived?.Invoke(new AgentCommandProgress(
+                            requestId,
+                            _session?.Id ?? Guid.Empty,
+                            chunk,
+                            IsError: false,
+                            ElapsedMs: ElapsedMilliseconds()));
+                    },
+                    error =>
+                    {
+                        AppendAgentCommandOutput(generation, error);
+                        progressReceived?.Invoke(new AgentCommandProgress(
+                            requestId,
+                            _session?.Id ?? Guid.Empty,
+                            error,
+                            IsError: true,
+                            ElapsedMs: ElapsedMilliseconds()));
+                    },
                     cancellationToken,
                     connection.SupportsPosixShellFeatures ? null : Encoding.UTF8,
                     sensitiveInput).ConfigureAwait(false);
-                AppendAgentCommandFinished(generation, succeeded: true, null);
-                return output;
+                AppendAgentCommandFinished(
+                    generation,
+                    execution.Succeeded,
+                    execution.Succeeded
+                        ? null
+                        : execution.Error is { Length: > 0 }
+                            ? execution.Error
+                            : $"exit code {execution.ExitStatus?.ToString() ?? "unknown"}");
+                return new AgentCommandExecutionResult(
+                    execution.Completed,
+                    execution.Output,
+                    execution.Error,
+                    execution.ExitStatus);
             }
             catch (OperationCanceledException)
             {
@@ -380,6 +412,9 @@ public partial class TerminalViewModel : ObservableObject
         {
             _agentCommandGate.Release();
         }
+
+        long ElapsedMilliseconds()
+            => Math.Max(0, (long)(DateTimeOffset.UtcNow - startedAt).TotalMilliseconds);
     }
 
     private void AppendAgentCommandStarted(int generation, string commandText)

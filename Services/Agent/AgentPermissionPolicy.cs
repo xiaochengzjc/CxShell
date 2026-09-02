@@ -195,7 +195,9 @@ public sealed class AgentPermissionPolicy
         if (DangerousCommandPattern.IsMatch(normalizedCommand))
             return AgentCommandRisk.Dangerous;
 
-        return ChangeCommandPattern.IsMatch(normalizedCommand)
+        return ChangeCommandPattern.IsMatch(normalizedCommand) ||
+               OutputFileRedirectionPattern.IsMatch(normalizedCommand) ||
+               TeeCommandPattern.IsMatch(normalizedCommand)
             ? AgentCommandRisk.Change
             : AgentCommandRisk.ReadOnly;
     }
@@ -204,7 +206,15 @@ public sealed class AgentPermissionPolicy
         => SudoOptionPrefixPattern.Replace(command, "${prefix}");
 
     private static readonly Regex ChangeCommandPattern = new(
-        @"(^|[;&|]\s*)(sudo\s+)?(apt(-get)?\s+(install|remove|purge|update|upgrade)|dnf\s+(install|remove|upgrade)|yum\s+(install|remove|update|upgrade)|pacman\s+-S|systemctl\s+(start|stop|restart|enable|disable)|service\s+[^\r\n;&|]+\s+(start|stop|restart)|mkdir\b|touch\b|cp\b|mv\b|ln\b|chmod\b|chown\b|kill\b|user(add|del|mod)\b|powershell(?:\.exe)?\s+.*\b(Set|New|Remove|Start|Stop|Restart|Enable|Disable)-|net\s+(start|stop)|sc\s+(create|config|delete)|reg\s+(add|delete)|(^|\s)[^\r\n]*\s(>|>>|\|\s*tee)\s*)",
+        @"(^|[;&|]\s*)(sudo\s+)?(apt(-get)?\s+(install|remove|purge|update|upgrade)|dnf\s+(install|remove|upgrade)|yum\s+(install|remove|update|upgrade)|pacman\s+-S|systemctl\s+(start|stop|restart|enable|disable)|service\s+[^\r\n;&|]+\s+(start|stop|restart)|mkdir\b|touch\b|cp\b|mv\b|ln\b|chmod\b|chown\b|kill\b|user(add|del|mod)\b|powershell(?:\.exe)?\s+.*\b(Set|New|Remove|Start|Stop|Restart|Enable|Disable)-|net\s+(start|stop)|sc\s+(create|config|delete)|reg\s+(add|delete))",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static readonly Regex OutputFileRedirectionPattern = new(
+        @"(?<![A-Za-z0-9_])(?:[0-9]+)?>{1,2}(?!\s*&)(?!\s*/dev/null(?=\s|$|[;&|(){}\[\]""']))",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static readonly Regex TeeCommandPattern = new(
+        @"(^|[;&|]\s*)(?:sudo\s+)?tee\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     private static bool MatchesAnyPrefix(string command, string configuredPrefixes)

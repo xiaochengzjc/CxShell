@@ -98,6 +98,68 @@ public sealed class AgentPermissionPolicyTests
     }
 
     [Fact]
+    public void RiskModeTreatsErrorStreamRedirectionAsReadOnly()
+    {
+        var policy = new AgentPermissionPolicy
+        {
+            PermissionMode = AgentPermissionPolicy.RiskBasedApprovalMode
+        };
+
+        var result = policy.Evaluate(
+            CreateSession(),
+            "if command -v dpkg-query >/dev/null 2>&1; then dpkg-query -W php 2>/dev/null || true; fi");
+
+        Assert.Equal(AgentCommandRisk.ReadOnly, result.Risk);
+        Assert.Equal(AgentPermissionDecision.Allowed, result.Decision);
+        Assert.False(result.ApprovalRequired);
+    }
+
+    [Fact]
+    public void RiskModeTreatsDevNullInsideCommandSubstitutionAsReadOnly()
+    {
+        var policy = new AgentPermissionPolicy
+        {
+            PermissionMode = AgentPermissionPolicy.RiskBasedApprovalMode
+        };
+
+        var result = policy.Evaluate(CreateSession(), "printf '%s\\n' \"$(hostname 2>/dev/null)\"");
+
+        Assert.Equal(AgentCommandRisk.ReadOnly, result.Risk);
+        Assert.Equal(AgentPermissionDecision.Allowed, result.Decision);
+        Assert.False(result.ApprovalRequired);
+    }
+
+    [Fact]
+    public void RiskModeStillRequiresApprovalForOutputFileRedirection()
+    {
+        var policy = new AgentPermissionPolicy
+        {
+            PermissionMode = AgentPermissionPolicy.RiskBasedApprovalMode
+        };
+
+        var result = policy.Evaluate(CreateSession(), "printf ready > /tmp/status.txt");
+
+        Assert.Equal(AgentCommandRisk.Change, result.Risk);
+        Assert.Equal(AgentPermissionDecision.ChangeCommandApprovalRequired, result.Decision);
+        Assert.True(result.ApprovalRequired);
+    }
+
+    [Fact]
+    public void RiskModeRequiresApprovalWhenErrorOutputIsWrittenToAFile()
+    {
+        var policy = new AgentPermissionPolicy
+        {
+            PermissionMode = AgentPermissionPolicy.RiskBasedApprovalMode
+        };
+
+        var result = policy.Evaluate(CreateSession(), "package-query 2>/tmp/package-query.log");
+
+        Assert.Equal(AgentCommandRisk.Change, result.Risk);
+        Assert.Equal(AgentPermissionDecision.ChangeCommandApprovalRequired, result.Decision);
+        Assert.True(result.ApprovalRequired);
+    }
+
+    [Fact]
     public void FullAccessModeAllowsDangerousCommand()
     {
         var policy = new AgentPermissionPolicy

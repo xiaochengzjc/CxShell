@@ -75,6 +75,48 @@ public sealed class AgentRuntimeProviderTests
         Assert.Contains("disabled", response.Error, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task ProviderTestReturnsReachabilityAndDurationWithoutTheKey()
+    {
+        var settings = AgentProviderPresets.CreateRoutinPlan();
+        AgentProviderConfiguration.SetApiKey(settings, "plan-secret-key");
+        settings.Enabled = true;
+        using var gateway = CreateGateway();
+        var adapter = new AgentRuntimeSessionAdapter(
+            gateway,
+            () => settings,
+            new StubAgentModelClient());
+
+        var response = await Dispatch(adapter, "provider-test-1", AgentRuntimeMethodNames.ProviderTest);
+
+        Assert.True(response.Ok);
+        var result = response.Result!.Value;
+        Assert.True(result.GetProperty("reachable").GetBoolean());
+        Assert.Equal(settings.Model, result.GetProperty("model").GetString());
+        Assert.True(result.GetProperty("durationMs").GetInt64() >= 0);
+        Assert.DoesNotContain("plan-secret-key", response.Result.Value.GetRawText(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ProviderTestReturnsStructuredFailureWhenConfigurationIsInvalid()
+    {
+        using var gateway = CreateGateway();
+        var settings = AgentProviderPresets.CreateRoutinPlan();
+        var adapter = new AgentRuntimeSessionAdapter(
+            gateway,
+            () => settings,
+            new StubAgentModelClient());
+
+        var response = await Dispatch(adapter, "provider-test-2", AgentRuntimeMethodNames.ProviderTest);
+
+        Assert.True(response.Ok);
+        Assert.False(response.Result!.Value.GetProperty("reachable").GetBoolean());
+        Assert.False(string.IsNullOrWhiteSpace(response.Result.Value.GetProperty("message").GetString()));
+        Assert.Equal(
+            AgentProviderValidationStatus.Disabled.ToString(),
+            response.Result.Value.GetProperty("errorType").GetString());
+    }
+
     private static Task<AgentRuntimeResponse> Dispatch(
         IAgentRuntimeSessionAdapter adapter,
         string requestId,

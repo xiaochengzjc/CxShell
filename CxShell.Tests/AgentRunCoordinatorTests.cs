@@ -44,18 +44,18 @@ public sealed class AgentRunCoordinatorTests
             captured = events.ToArray();
 
         Assert.Equal(
-            ["run_start", "text_delta", "loop_end"],
+            ["run_start", "run_phase", "run_phase", "run_checkpoint", "text_delta", "run_phase", "loop_end"],
             captured.SelectMany(envelope => envelope.Events).Select(@event => @event.Type));
-        Assert.Equal([1L, 2L, 3L], captured.Select(envelope => envelope.Sequence));
-        Assert.Equal("server is healthy", captured[1].Events[0].Text);
-        Assert.Equal("completed", captured[2].Events[0].Reason);
+        Assert.Equal([1L, 2L, 3L, 4L, 5L, 6L, 7L], captured.Select(envelope => envelope.Sequence));
+        Assert.Equal("server is healthy", captured[4].Events[0].Text);
+        Assert.Equal("completed", captured[6].Events[0].Reason);
         Assert.Empty(coordinator.GetActiveRuns());
 
         var summary = Assert.Single(coordinator.GetRecentRuns());
         Assert.Equal("completed", summary.Status);
         Assert.Equal("completed", summary.EndReason);
         Assert.NotNull(summary.CompletedAtUtc);
-        Assert.Equal(3L, summary.EventCount);
+        Assert.Equal(7L, summary.EventCount);
         Assert.Equal(summary, coordinator.GetRun(start.RunId));
     }
 
@@ -170,13 +170,13 @@ public sealed class AgentRunCoordinatorTests
         Assert.True(first.HasMore);
         Assert.Equal(1L, first.NextSequence);
         Assert.Equal(1L, first.OldestSequence);
-        Assert.Equal(3L, first.LatestSequence);
+        Assert.Equal(7L, first.LatestSequence);
 
         var rest = coordinator.ReadEvents(start.RunId, first.NextSequence, limit: 100);
         Assert.NotNull(rest);
-        Assert.Equal([2L, 3L], rest.Events.Select(envelope => envelope.Sequence));
+        Assert.Equal([2L, 3L, 4L, 5L, 6L, 7L], rest.Events.Select(envelope => envelope.Sequence));
         Assert.False(rest.HasMore);
-        Assert.Equal(3L, rest.NextSequence);
+        Assert.Equal(7L, rest.NextSequence);
         Assert.Null(coordinator.ReadEvents("missing-run"));
     }
 
@@ -443,9 +443,11 @@ public sealed class AgentRunCoordinatorTests
         lock (events)
             captured = events.ToArray();
 
-        Assert.Equal(["run_start", "error", "loop_end"], captured.Select(@event => @event.Type));
-        Assert.Equal("Timeout", captured[1].ErrorType);
-        Assert.Equal("timeout", captured[2].Reason);
+        Assert.Equal(
+            ["run_start", "run_phase", "run_phase", "run_checkpoint", "error", "run_phase", "loop_end"],
+            captured.Select(@event => @event.Type));
+        Assert.Equal("Timeout", captured[4].ErrorType);
+        Assert.Equal("timeout", captured[6].Reason);
     }
 
     [Fact]
@@ -513,6 +515,170 @@ public sealed class AgentRunCoordinatorTests
     }
 
     [Fact]
+    public async Task LifecycleEventsExposeProgressCheckpoints()
+    {
+        var snapshot = CreateSnapshot(isConnected: true);
+        using var gateway = new AgentSessionGateway(
+            new DelegateAgentSessionHost(() =>
+            [
+                new AgentSessionEndpoint(
+                    () => snapshot,
+                    (_, _) => Task.CompletedTask,
+                    (_, _) => Task.FromResult("ready"))
+            ]));
+        var provider = CreateProvider();
+        var modelCalls = 0;
+        var events = new List<AgentRuntimeStreamEvent>();
+        using var coordinator = new AgentRunCoordinator(
+            gateway,
+            () => provider,
+            new StubAgentModelClient((_, _, _) =>
+            {
+                if (Interlocked.Increment(ref modelCalls) == 1)
+                {
+                    return Task.FromResult(new AgentModelResponse(
+                        string.Empty,
+                        provider.Model,
+                        provider.BuiltinId,
+                        ToolCalls:
+                        [
+                            new AgentToolCall(
+                                "checkpoint-tool",
+                                AgentRunCoordinator.SessionCommandToolName,
+                                "{\"command\":\"printf ready\"}")
+                        ]));
+                }
+
+                return Task.FromResult(new AgentModelResponse(
+                    "The command completed.",
+                    provider.Model,
+                    provider.BuiltinId));
+            }));
+        var completed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var subscription = coordinator.Subscribe(envelope =>
+        {
+            lock (events)
+                events.AddRange(envelope.Events);
+            if (envelope.Events.Any(@event => @event.Type == "loop_end"))
+                completed.TrySetResult(true);
+        });
+
+        var start = coordinator.Start(CreateRequest(snapshot, "checkpoint-run"));
+        Assert.True(start.Started);
+        await completed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        AgentRuntimeStreamEvent[] captured;
+        lock (events)
+            captured = events.ToArray();
+
+        var runStart = Assert.Single(captured, @event => @event.Type == "run_start");
+        var toolStart = Assert.Single(captured, @event => @event.Type == "tool_call_update");
+        var toolResult = Assert.Single(captured, @event => @event.Type == "tool_call_result");
+        var loopEnd = Assert.Single(captured, @event => @event.Type == "loop_end");
+        var modelRequest = Assert.Single(captured, @event =>
+            @event.Type == "run_checkpoint" &&
+            @event.Checkpoint?.Phase == "model_request" &&
+            @event.Checkpoint.ModelRequestCount == 2);
+        Assert.Equal("running", runStart.Checkpoint?.Status);
+        Assert.Equal("tool_call", toolStart.Checkpoint?.Phase);
+        Assert.Equal("running", toolStart.Checkpoint?.Status);
+        Assert.Equal("completed", toolResult.Checkpoint?.Status);
+        Assert.Equal("completed", loopEnd.Checkpoint?.Status);
+        Assert.Equal(2, loopEnd.Checkpoint?.ModelRequestCount);
+        Assert.Equal(1, loopEnd.Checkpoint?.ToolCallCount);
+        Assert.Equal(AgentRunCoordinator.SessionCommandToolName, modelRequest.Checkpoint?.ToolName);
+        Assert.Equal(loopEnd.Checkpoint, coordinator.GetRun(start.RunId)?.Checkpoint);
+    }
+
+    [Fact]
+    public async Task CommandProgressPublishesSeparateStreamsAndTruncatesLiveOutput()
+    {
+        var snapshot = CreateSnapshot(isConnected: true);
+        var provider = CreateProvider();
+        var events = new List<AgentRuntimeStreamEvent>();
+        var completed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var endpoint = new AgentSessionEndpoint(
+            () => snapshot,
+            (_, _) => Task.CompletedTask,
+            runCommand: null,
+            runCommandResult: null,
+            runCommandProgressResult: (_, _, progressReceived) =>
+            {
+                progressReceived?.Invoke(new AgentCommandProgress(
+                    Guid.NewGuid(),
+                    snapshot.SessionId,
+                    "standard output",
+                    ElapsedMs: 10));
+                progressReceived?.Invoke(new AgentCommandProgress(
+                    Guid.NewGuid(),
+                    snapshot.SessionId,
+                    "standard error",
+                    IsError: true,
+                    ElapsedMs: 11));
+                progressReceived?.Invoke(new AgentCommandProgress(
+                    Guid.NewGuid(),
+                    snapshot.SessionId,
+                    new string('x', AgentRunCoordinator.MaximumCommandOutputCharactersPerTool + 1),
+                    ElapsedMs: 12));
+                return Task.FromResult(new AgentCommandExecutionResult(true, "completed"));
+            });
+        using var gateway = new AgentSessionGateway(
+            new DelegateAgentSessionHost(() => [endpoint]));
+        var modelCalls = 0;
+        using var coordinator = new AgentRunCoordinator(
+            gateway,
+            () => provider,
+            new StubAgentModelClient((_, _, _) =>
+            {
+                if (Interlocked.Increment(ref modelCalls) == 1)
+                {
+                    return Task.FromResult(new AgentModelResponse(
+                        string.Empty,
+                        provider.Model,
+                        provider.BuiltinId,
+                        ToolCalls:
+                        [
+                            new AgentToolCall(
+                                "progress-tool",
+                                AgentRunCoordinator.SessionCommandToolName,
+                                "{\"command\":\"printf output\"}")
+                        ]));
+                }
+
+                return Task.FromResult(new AgentModelResponse(
+                    "The command completed.",
+                    provider.Model,
+                    provider.BuiltinId));
+            }));
+        using var subscription = coordinator.Subscribe(envelope =>
+        {
+            lock (events)
+                events.AddRange(envelope.Events);
+            if (envelope.Events.Any(@event => @event.Type == "loop_end"))
+                completed.TrySetResult(true);
+        });
+
+        var start = coordinator.Start(CreateRequest(snapshot, "command-progress"));
+        Assert.True(start.Started);
+        await completed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        AgentRuntimeStreamEvent[] captured;
+        lock (events)
+            captured = events.ToArray();
+
+        var output = captured.Where(@event => @event.Type == "command_output_delta").ToArray();
+        Assert.Contains(output, @event => @event.Stream == "stdout" && @event.Text == "standard output");
+        Assert.Contains(output, @event => @event.Stream == "stderr" && @event.Text == "standard error");
+        Assert.Contains(captured, @event => @event.Type == "command_output_truncated");
+        Assert.All(
+            coordinator.GetRun(start.RunId)!.Steps,
+            step => Assert.True(AgentRunStepStatuses.IsTerminal(step.Status)));
+        Assert.Contains(
+            coordinator.GetRun(start.RunId)!.Steps,
+            step => step.Id == "summary" && step.Status == AgentRunStepStatuses.Completed);
+    }
+
+    [Fact]
     public async Task PasswordRequiredCommandPausesUntilCredentialIsProvidedWithoutPublishingIt()
     {
         var snapshot = CreateSnapshot(isConnected: true);
@@ -526,17 +692,23 @@ public sealed class AgentRunCoordinatorTests
                 new AgentSessionEndpoint(
                     () => snapshot,
                     (_, _) => Task.CompletedTask,
-                    (request, _) =>
+                    runCommand: null,
+                    runCommandResult: (request, _) =>
                     {
                         if (retriedRequest == null)
                         {
                             retriedRequest = request;
-                            return Task.FromException<string>(
-                                new InvalidOperationException("sudo: a password is required"));
+                            return Task.FromResult(new AgentCommandExecutionResult(
+                                RemoteCompletionConfirmed: true,
+                                Error: "sudo: a password is required",
+                                ExitCode: 1));
                         }
 
                         retriedRequest = request;
-                        return Task.FromResult("installed successfully");
+                        return Task.FromResult(new AgentCommandExecutionResult(
+                            RemoteCompletionConfirmed: true,
+                            Output: "installed successfully",
+                            ExitCode: 0));
                     })
             ]));
         var provider = CreateProvider();
@@ -1421,19 +1593,33 @@ public sealed class AgentRunCoordinatorTests
                         "interrupted",
                         Model: "test-model",
                         EndReason: "application_restart",
-                        CanResume: true),
+                        CanResume: true,
+                        Checkpoint: new AgentRunCheckpoint(
+                            3,
+                            "credential",
+                            "waiting_for_input",
+                            ToolCallId: "tool-3",
+                            ToolName: "session_command",
+                            ModelRequestCount: 2,
+                            ToolCallCount: 1,
+                            Detail: "Waiting for input.")),
                     [new AgentChatMessage("user", "check the host")])
             ]);
 
             using var gateway = CreateGateway(snapshot);
             var provider = CreateProvider();
+            AgentModelRequest? resumedRequest = null;
             using var coordinator = new AgentRunCoordinator(
                 gateway,
                 () => provider,
-                new StubAgentModelClient(_ => Task.FromResult(new AgentModelResponse(
-                    "the host is healthy",
-                    provider.Model,
-                    provider.BuiltinId))),
+                new StubAgentModelClient((_, request, _) =>
+                {
+                    resumedRequest = request;
+                    return Task.FromResult(new AgentModelResponse(
+                        "the host is healthy",
+                        provider.Model,
+                        provider.BuiltinId));
+                }),
                 store);
             var completed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             using var subscription = coordinator.Subscribe(envelope =>
@@ -1449,6 +1635,59 @@ public sealed class AgentRunCoordinatorTests
             await completed.Task.WaitAsync(TimeSpan.FromSeconds(2));
             Assert.False(coordinator.GetRun(previousRunId)!.CanResume);
             Assert.Equal("completed", coordinator.GetRun(resumed.RunId)!.Status);
+            Assert.Contains(
+                resumedRequest!.Messages,
+                message => message.Role == "system" &&
+                           message.Content.Contains("waiting_for_input", StringComparison.Ordinal) &&
+                           message.Content.Contains("Do not blindly repeat", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+            var recoveryPath = path + ".recovery";
+            if (File.Exists(recoveryPath))
+                File.Delete(recoveryPath);
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DisposingAnActiveRunPersistsAnInterruptedCheckpoint()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "CxShellTests", Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(directory, "agent-runs.json");
+        try
+        {
+            var snapshot = CreateSnapshot(isConnected: true);
+            var store = new JsonAgentRunHistoryStore(path);
+            var provider = CreateProvider();
+            var modelStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            using var gateway = CreateGateway(snapshot);
+            using var coordinator = new AgentRunCoordinator(
+                gateway,
+                () => provider,
+                new StubAgentModelClient(async cancellationToken =>
+                {
+                    modelStarted.TrySetResult(true);
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                    return new AgentModelResponse("never", provider.Model, provider.BuiltinId);
+                }),
+                store);
+
+            var start = coordinator.Start(CreateRequest(snapshot, "interrupted-checkpoint"));
+            Assert.True(start.Started);
+            await modelStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+            coordinator.Dispose();
+
+            var recovery = Assert.Single(store.LoadRecoverable());
+            Assert.Equal(start.RunId, recovery.Snapshot.RunId);
+            Assert.Equal("interrupted", recovery.Snapshot.Status);
+            Assert.True(recovery.Snapshot.CanResume);
+            Assert.Equal("interrupted", recovery.Checkpoint?.Status);
+            Assert.Equal(1, recovery.Checkpoint?.ModelRequestCount);
         }
         finally
         {

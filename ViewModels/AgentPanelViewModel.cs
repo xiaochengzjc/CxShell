@@ -65,6 +65,8 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     private readonly Dictionary<string, string> _runPrompts = new(StringComparer.Ordinal);
     private readonly HashSet<string> _activeRunIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _endedRunIds = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _backgroundRunControls = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, AgentPanelStepViewModel> _activeRunStepMap = new(StringComparer.Ordinal);
     private DispatcherTimer? _runElapsedTimer;
     private DateTimeOffset? _runStartedAtUtc;
     private string _activeRunSessionName = string.Empty;
@@ -75,9 +77,14 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     [ObservableProperty] private ISelectOption? _selectedSessionOption;
     [ObservableProperty] private string _prompt = string.Empty;
     [ObservableProperty] private bool _isRunning;
+    [ObservableProperty] private bool _isStopping;
+    [ObservableProperty] private bool _isCanceling;
+    [ObservableProperty] private bool _isAppending;
     [ObservableProperty] private string _statusText = string.Empty;
     [ObservableProperty] private string _providerStatusText = string.Empty;
     [ObservableProperty] private bool _isProviderReady;
+    [ObservableProperty] private bool _isTestingProvider;
+    [ObservableProperty] private string _providerTestStatusText = string.Empty;
     [ObservableProperty] private string _runtimeStatusText = string.Empty;
     [ObservableProperty] private string _runtimeStatusDetails = string.Empty;
     [ObservableProperty] private bool _isRuntimeReady;
@@ -85,9 +92,14 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _runtimeErrorText = string.Empty;
     [ObservableProperty] private bool _isHistoryVisible;
     [ObservableProperty] private AgentPanelRunViewModel? _selectedRun;
+    [ObservableProperty] private string _runHistorySearch = string.Empty;
     [ObservableProperty] private ISelectOption? _selectedRunHistoryFilterOption;
     [ObservableProperty] private int _activeRunCount;
     [ObservableProperty] private string _runElapsedText = string.Empty;
+    [ObservableProperty] private AgentRunCheckpoint? _activeRunCheckpoint;
+    [ObservableProperty] private string _activeRunPhaseText = string.Empty;
+    [ObservableProperty] private string _activeRunCheckpointText = string.Empty;
+    [ObservableProperty] private bool _hasActiveRunCheckpoint;
 
     public ObservableCollection<ISelectOption> SessionOptions { get; } = new();
     public ObservableCollection<AgentPanelMessageViewModel> Messages { get; } = new();
@@ -95,6 +107,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     public ObservableCollection<AgentPanelRunViewModel> RunHistory { get; } = new();
     public ObservableCollection<AgentPanelRunViewModel> FilteredRunHistory { get; } = new();
     public ObservableCollection<ISelectOption> RunHistoryFilterOptions { get; } = new();
+    public ObservableCollection<AgentPanelStepViewModel> ActiveRunSteps { get; } = new();
 
     public AgentPanelViewModel(
         IAgentRuntimeClient runtimeClient,
@@ -136,7 +149,13 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     public string AttachFileTipText => Text("Agent.AttachFileTip");
     public string RemoveAttachmentText => Text("Agent.RemoveAttachment");
     public string RunText => Text("Agent.Run");
+    public string AppendText => Text("Agent.Append");
+    public string StopText => Text("Agent.Stop");
     public string CancelText => Text("Agent.Cancel");
+    public string StoppingText => Text("Agent.Stopping");
+    public string CancellingText => Text("Agent.Cancelling");
+    public string FollowUpQueuedText => Text("Agent.FollowUpQueued");
+    public string StoppedText => Text("Agent.Stopped");
     public string RefreshText => Text("Agent.Refresh");
     public string CloseText => Text("Agent.Close");
     public string EmptySessionsText => Text("Agent.EmptySessions");
@@ -145,6 +164,10 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     public string DisconnectedText => Text("Agent.Disconnected");
     public string ProviderReadyText => Text("Agent.ProviderReady");
     public string ProviderUnavailableText => Text("Agent.ProviderUnavailable");
+    public string ProviderTestText => Text("Agent.ProviderTest");
+    public string ProviderTestingText => Text("Agent.ProviderTesting");
+    public string ProviderTestSucceededText => Text("Agent.ProviderTestSucceeded");
+    public string ProviderTestFailedText => Text("Agent.ProviderTestFailed");
     public string RuntimeReadyText => Text("Agent.RuntimeReady");
     public string RuntimeUnavailableText => Text("Agent.RuntimeUnavailable");
     public string RuntimeNotInitializedText => Text("Agent.RuntimeNotInitialized");
@@ -179,9 +202,18 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     public string HistoryFilterAllText => Text("Agent.HistoryFilterAll");
     public string HistoryFilterCurrentSessionText => Text("Agent.HistoryFilterCurrentSession");
     public string HistoryFilterRunningText => Text("Agent.HistoryFilterRunning");
+    public string HistoryFilterWaitingText => Text("Agent.HistoryFilterWaiting");
+    public string HistoryFilterCompletedText => Text("Agent.HistoryFilterCompleted");
+    public string HistoryFilterFailedText => Text("Agent.HistoryFilterFailed");
+    public string HistorySearchText => Text("Agent.HistorySearch");
     public string HistoryFilterEmptyText => Text("Agent.HistoryFilterEmpty");
+    public string HistoryFocusText => Text("Agent.HistoryFocus");
+    public string HistoryStopText => Text("Agent.HistoryStop");
+    public string HistoryCancelText => Text("Agent.HistoryCancel");
     public string ActiveRunsText => Text("Agent.ActiveRuns");
     public string NoActiveRunsText => Text("Agent.NoActiveRuns");
+    public string WaitingForInputText => Text("Agent.WaitingForInput");
+    public string PendingApprovalText => Text("Agent.PendingApproval");
     public string RunElapsedLabelText => Text("Agent.RunElapsed");
     public string ScrollToLatestText => Text("Agent.ScrollToLatest");
     public string HistoryEmptyDisplayText => HasRunHistory
@@ -194,6 +226,8 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     public bool HasRunHistory => RunHistory.Count > 0;
     public bool HasFilteredRunHistory => FilteredRunHistory.Count > 0;
     public bool HasActiveRuns => ActiveRunCount > 0;
+    public bool HasActiveRunSteps => ActiveRunSteps.Count > 0;
+    public bool HasProviderTestStatus => !string.IsNullOrWhiteSpace(ProviderTestStatusText);
     public bool IsRunElapsedVisible => IsRunning && _runStartedAtUtc.HasValue;
     public string ActivityStatusText => HasActiveRuns
         ? string.Format(ActiveRunsText, ActiveRunCount)
@@ -202,6 +236,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     public bool IsSelectedSessionConnected => SelectedSession?.IsConnected == true;
     public bool IsSessionSelectionEnabled => HasSessions && !IsRunning;
     public bool IsRuntimeRetryVisible => RuntimeState == AgentRuntimeSessionState.Failed && !IsRunning;
+    public bool IsPromptInputEnabled => !IsStopping && !IsCanceling;
     public string SelectedSessionStatusText => SelectedSession switch
     {
         { IsConnected: true } => ConnectedText,
@@ -216,10 +251,52 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
            IsSelectedSessionConnected &&
            (!string.IsNullOrWhiteSpace(Prompt) || HasPendingAttachments);
 
-    public bool CanCancel() => IsRunning && !string.IsNullOrWhiteSpace(_activeRunId);
+    public bool CanAppend()
+        => IsRunning &&
+           !IsStopping &&
+           !IsCanceling &&
+           !IsAppending &&
+           !string.IsNullOrWhiteSpace(_activeRunId) &&
+           (!string.IsNullOrWhiteSpace(Prompt) || HasPendingAttachments);
+
+    public bool CanStop()
+        => IsRunning &&
+           !IsStopping &&
+           !IsCanceling &&
+           !string.IsNullOrWhiteSpace(_activeRunId);
+
+    public bool CanCancel()
+        => IsRunning &&
+           !IsCanceling &&
+           !string.IsNullOrWhiteSpace(_activeRunId);
 
     public bool CanRetryRuntime()
         => RuntimeState == AgentRuntimeSessionState.Failed && !IsRunning;
+
+    public bool CanTestProvider()
+        => IsRuntimeReady && !IsTestingProvider;
+
+    private void NotifyRunCommands()
+    {
+        RunCommand.NotifyCanExecuteChanged();
+        AppendCommand.NotifyCanExecuteChanged();
+        StopCommand.NotifyCanExecuteChanged();
+        CancelCommand.NotifyCanExecuteChanged();
+        FocusRunCommand.NotifyCanExecuteChanged();
+        StopBackgroundRunCommand.NotifyCanExecuteChanged();
+        CancelBackgroundRunCommand.NotifyCanExecuteChanged();
+        TestProviderCommand.NotifyCanExecuteChanged();
+    }
+
+    public bool CanFocusRun(AgentPanelRunViewModel? run)
+        => run?.IsActive == true &&
+           !IsRunning &&
+           !_backgroundRunControls.Contains(run.RunId);
+
+    public bool CanManageBackgroundRun(AgentPanelRunViewModel? run)
+        => run?.IsActive == true &&
+           !IsRunning &&
+           !_backgroundRunControls.Contains(run.RunId);
 
     private void BeginRuntimeRefresh()
     {
@@ -245,7 +322,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         }
 
         ApplyRuntimeStatus(status);
-        RunCommand.NotifyCanExecuteChanged();
+        NotifyRunCommands();
         RetryRuntimeCommand.NotifyCanExecuteChanged();
     }
 
@@ -359,7 +436,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
                 }
 
                 ApplySessionRefreshFailure(exception);
-                RunCommand.NotifyCanExecuteChanged();
+                NotifyRunCommands();
                 RetryRuntimeCommand.NotifyCanExecuteChanged();
             });
             return;
@@ -423,7 +500,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(IsSelectedSessionConnected));
         OnPropertyChanged(nameof(SelectedSessionStatusText));
         OnPropertyChanged(nameof(IsSessionSelectionEnabled));
-        RunCommand.NotifyCanExecuteChanged();
+        NotifyRunCommands();
     }
 
     public void EnsureSessionSelection(Guid? preferredSessionId = null)
@@ -466,7 +543,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         var validation = AgentProviderConfiguration.Validate(_providerSettings());
         IsProviderReady = validation.IsValid;
         ProviderStatusText = validation.IsValid ? ProviderReadyText : ProviderUnavailableText;
-        RunCommand.NotifyCanExecuteChanged();
+        NotifyRunCommands();
     }
 
     public void RefreshActiveRun()
@@ -544,7 +621,8 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
                 var run = new AgentPanelRunViewModel(
                     snapshot,
                     _runPrompts.ContainsKey(snapshot.RunId),
-                    snapshot.CanResume);
+                    snapshot.CanResume,
+                    GetRunSessionLabel(snapshot.SessionId));
                 run.IsExpanded = expandedRunIds.Contains(run.RunId);
                 RunHistory.Add(run);
             }
@@ -567,6 +645,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
                 _endedRunIds.Remove(runId);
             ActiveRunCount = _activeRunIds.Count;
             RefreshFilteredRunHistory();
+            NotifyRunCommands();
 
             SelectedRun = SelectedRun == null
                 ? null
@@ -585,8 +664,14 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         {
             // The panel may have missed the terminal event while it was hidden.
             // Replay the retained tail and let loop_end settle the state.
-            if (runs.Any(run => string.Equals(run.RunId, _activeRunId, StringComparison.Ordinal)))
+            var currentRun = runs.FirstOrDefault(run =>
+                string.Equals(run.RunId, _activeRunId, StringComparison.Ordinal));
+            if (currentRun != null)
+            {
+                ApplyRunCheckpoint(currentRun.Checkpoint);
+                RestoreRunSteps(currentRun.Steps);
                 StartRunRecovery(_activeRunId, _lastRunSequence);
+            }
             return;
         }
 
@@ -598,21 +683,33 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         if (activeRun == null)
             return;
 
+        AttachActiveRun(activeRun);
+    }
+
+    private void AttachActiveRun(AgentRuntimeRunSnapshot activeRun)
+    {
+        if (IsRunning || !AgentRunStates.IsActive(activeRun.Status))
+            return;
+
         _activeRunId = activeRun.RunId;
         _lastRunSequence = 0;
         _isRecoveringRun = false;
         _runRecoveryRequested = false;
         _currentAssistantMessage = null;
         _toolMessages.Clear();
+        RestoreRunSteps(activeRun.Steps);
+        IsStopping = false;
+        IsCanceling = false;
+        IsAppending = false;
         IsRunning = true;
         StatusText = RunningText;
+        ApplyRunCheckpoint(activeRun.Checkpoint);
         StartRunTracking(
             activeRun.StartedAtUtc,
             activeRun.ModelRequestCount,
             activeRun.ToolCallCount,
             SelectedSession?.Name ?? string.Empty);
-        RunCommand.NotifyCanExecuteChanged();
-        CancelCommand.NotifyCanExecuteChanged();
+        NotifyRunCommands();
         StartRunRecovery(activeRun.RunId, 0);
     }
 
@@ -635,6 +732,21 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
             Header = HistoryFilterRunningText,
             Content = "running"
         });
+        RunHistoryFilterOptions.Add(new SelectOption
+        {
+            Header = HistoryFilterWaitingText,
+            Content = "waiting"
+        });
+        RunHistoryFilterOptions.Add(new SelectOption
+        {
+            Header = HistoryFilterCompletedText,
+            Content = "completed"
+        });
+        RunHistoryFilterOptions.Add(new SelectOption
+        {
+            Header = HistoryFilterFailedText,
+            Content = "failed"
+        });
         SelectedRunHistoryFilterOption = RunHistoryFilterOptions.FirstOrDefault(option =>
             string.Equals(option.Content?.ToString(), selectedValue, StringComparison.Ordinal))
             ?? RunHistoryFilterOptions[0];
@@ -644,19 +756,27 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     {
         var filter = SelectedRunHistoryFilterOption?.Content?.ToString() ?? "all";
         var selectedSessionId = SelectedSessionId;
-        var filtered = RunHistory.Where(run => filter switch
-        {
-            "current" => selectedSessionId is { } sessionId &&
-                          string.Equals(run.SessionId, sessionId.ToString("D"), StringComparison.OrdinalIgnoreCase),
-            "running" => run.IsActive,
-            _ => true
-        }).ToArray();
+        var search = RunHistorySearch.Trim();
+        var filtered = RunHistory
+            .Where(run => filter switch
+            {
+                "current" => selectedSessionId is { } sessionId &&
+                              string.Equals(run.SessionId, sessionId.ToString("D"), StringComparison.OrdinalIgnoreCase),
+                "running" => run.IsActive && !run.IsWaiting,
+                "waiting" => run.IsWaiting,
+                "completed" => string.Equals(run.Status, AgentRunStates.Completed, StringComparison.OrdinalIgnoreCase),
+                "failed" => run.IsFailure,
+                _ => true
+            })
+            .Where(run => run.MatchesSearch(search))
+            .ToArray();
 
         FilteredRunHistory.Clear();
         foreach (var run in filtered)
             FilteredRunHistory.Add(run);
         OnPropertyChanged(nameof(HasFilteredRunHistory));
         OnPropertyChanged(nameof(HistoryEmptyDisplayText));
+        NotifyRunCommands();
     }
 
     private void UpdateRunActivity(AgentRuntimeStreamEnvelope envelope)
@@ -670,16 +790,21 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
             _endedRunIds.Remove(envelope.RunId);
         if (!_endedRunIds.Contains(envelope.RunId))
             _activeRunIds.Add(envelope.RunId);
+        var runEnded = false;
         foreach (var @event in envelope.Events)
         {
             if (string.Equals(@event.Type, "loop_end", StringComparison.Ordinal))
             {
                 _activeRunIds.Remove(envelope.RunId);
                 _endedRunIds.Add(envelope.RunId);
+                runEnded = true;
             }
         }
 
         ActiveRunCount = _activeRunIds.Count;
+        NotifyRunCommands();
+        if (runEnded && !string.Equals(_activeRunId, envelope.RunId, StringComparison.Ordinal))
+            RefreshRunHistory();
     }
 
     private void ApplyRunSnapshotsToSummaries(IReadOnlyList<AgentRuntimeRunSnapshot> snapshots)
@@ -691,6 +816,27 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
             if (snapshot != null)
                 summary.UpdateSummaryMetrics(snapshot);
         }
+    }
+
+    private void ApplyRunCheckpoint(AgentRunCheckpoint? checkpoint)
+    {
+        ActiveRunCheckpoint = checkpoint;
+        HasActiveRunCheckpoint = checkpoint != null;
+        if (checkpoint != null)
+        {
+            _activeRunModelRequestCount = Math.Max(
+                _activeRunModelRequestCount,
+                checkpoint.ModelRequestCount);
+            _activeRunToolCallCount = Math.Max(
+                _activeRunToolCallCount,
+                checkpoint.ToolCallCount);
+        }
+        ActiveRunPhaseText = checkpoint == null
+            ? string.Empty
+            : AgentCheckpointDisplay.PhaseText(checkpoint);
+        ActiveRunCheckpointText = checkpoint == null
+            ? string.Empty
+            : AgentCheckpointDisplay.ProgressText(checkpoint);
     }
 
     private void StartRunTracking(
@@ -750,7 +896,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     }
 
     private static bool IsActiveRun(AgentRuntimeRunSnapshot run)
-        => run.Status is "starting" or "running";
+        => AgentRunStates.IsActive(run.Status);
 
     internal static AgentRuntimeRunSnapshot? FindActiveRun(
         IReadOnlyList<AgentRuntimeRunSnapshot> runs,
@@ -758,7 +904,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         => runs
             .Where(run =>
                 string.Equals(run.SessionId, sessionId.ToString("D"), StringComparison.OrdinalIgnoreCase) &&
-                run.Status is "starting" or "running")
+                AgentRunStates.IsActive(run.Status))
             .OrderByDescending(run => run.StartedAtUtc)
             .FirstOrDefault();
 
@@ -770,7 +916,13 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(PromptText));
         OnPropertyChanged(nameof(PromptPlaceholderText));
         OnPropertyChanged(nameof(RunText));
+        OnPropertyChanged(nameof(AppendText));
+        OnPropertyChanged(nameof(StopText));
         OnPropertyChanged(nameof(CancelText));
+        OnPropertyChanged(nameof(StoppingText));
+        OnPropertyChanged(nameof(CancellingText));
+        OnPropertyChanged(nameof(FollowUpQueuedText));
+        OnPropertyChanged(nameof(StoppedText));
         OnPropertyChanged(nameof(RefreshText));
         OnPropertyChanged(nameof(CloseText));
         OnPropertyChanged(nameof(EmptySessionsText));
@@ -779,6 +931,10 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(DisconnectedText));
         OnPropertyChanged(nameof(ProviderReadyText));
         OnPropertyChanged(nameof(ProviderUnavailableText));
+        OnPropertyChanged(nameof(ProviderTestText));
+        OnPropertyChanged(nameof(ProviderTestingText));
+        OnPropertyChanged(nameof(ProviderTestSucceededText));
+        OnPropertyChanged(nameof(ProviderTestFailedText));
         OnPropertyChanged(nameof(RuntimeReadyText));
         OnPropertyChanged(nameof(RuntimeUnavailableText));
         OnPropertyChanged(nameof(RuntimeStatusDetails));
@@ -810,14 +966,24 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HistoryFilterAllText));
         OnPropertyChanged(nameof(HistoryFilterCurrentSessionText));
         OnPropertyChanged(nameof(HistoryFilterRunningText));
+        OnPropertyChanged(nameof(HistoryFilterWaitingText));
+        OnPropertyChanged(nameof(HistoryFilterCompletedText));
+        OnPropertyChanged(nameof(HistoryFilterFailedText));
+        OnPropertyChanged(nameof(HistorySearchText));
         OnPropertyChanged(nameof(HistoryFilterEmptyText));
+        OnPropertyChanged(nameof(HistoryFocusText));
+        OnPropertyChanged(nameof(HistoryStopText));
+        OnPropertyChanged(nameof(HistoryCancelText));
         OnPropertyChanged(nameof(ActiveRunsText));
         OnPropertyChanged(nameof(NoActiveRunsText));
+        OnPropertyChanged(nameof(WaitingForInputText));
+        OnPropertyChanged(nameof(PendingApprovalText));
         OnPropertyChanged(nameof(RunElapsedLabelText));
         OnPropertyChanged(nameof(RunElapsedText));
         OnPropertyChanged(nameof(ScrollToLatestText));
         OnPropertyChanged(nameof(IsRunElapsedVisible));
         OnPropertyChanged(nameof(ActivityStatusText));
+        ApplyRunCheckpoint(ActiveRunCheckpoint);
         OnPropertyChanged(nameof(HistoryEmptyDisplayText));
         RebuildRunHistoryFilterOptions();
         RefreshFilteredRunHistory();
@@ -836,6 +1002,37 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         RefreshProviderStatus();
         RefreshActiveRun();
         RefreshRunHistory();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanTestProvider))]
+    private async Task TestProvider()
+    {
+        if (!CanTestProvider())
+            return;
+
+        IsTestingProvider = true;
+        ProviderTestStatusText = ProviderTestingText;
+        NotifyRunCommands();
+        try
+        {
+            var result = await _runtimeClient.SendResultAsync<AgentRuntimeProviderTestResult>(
+                    AgentRuntimeMethodNames.ProviderTest,
+                    requestId: $"agent-panel-provider-test-{Guid.NewGuid():N}")
+                .ConfigureAwait(true);
+
+            ProviderTestStatusText = result.Reachable
+                ? $"{ProviderTestSucceededText} ({result.DurationMs} ms)"
+                : $"{ProviderTestFailedText}: {result.Message}";
+        }
+        catch (Exception exception)
+        {
+            ProviderTestStatusText = $"{ProviderTestFailedText}: {exception.Message}";
+        }
+        finally
+        {
+            IsTestingProvider = false;
+            NotifyRunCommands();
+        }
     }
 
     [RelayCommand]
@@ -978,8 +1175,12 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
             _runRecoveryRequested = false;
             _currentAssistantMessage = null;
             _toolMessages.Clear();
+            IsStopping = false;
+            IsCanceling = false;
+            IsAppending = false;
             IsRunning = true;
             StatusText = RunningText;
+            ApplyRunCheckpoint(null);
             StartRunTracking(
                 DateTimeOffset.UtcNow,
                 modelRequestCount: 1,
@@ -1020,7 +1221,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
 
             PendingAttachments.Add(attachment);
             OnPropertyChanged(nameof(HasPendingAttachments));
-            RunCommand.NotifyCanExecuteChanged();
+            NotifyRunCommands();
             return true;
         }
         catch (NotSupportedException)
@@ -1055,7 +1256,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
                 pngBytes);
             PendingAttachments.Add(attachment);
             OnPropertyChanged(nameof(HasPendingAttachments));
-            RunCommand.NotifyCanExecuteChanged();
+            NotifyRunCommands();
             return true;
         }
         catch (InvalidDataException)
@@ -1072,7 +1273,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
             return;
 
         OnPropertyChanged(nameof(HasPendingAttachments));
-        RunCommand.NotifyCanExecuteChanged();
+        NotifyRunCommands();
     }
 
     [RelayCommand(CanExecute = nameof(CanRun))]
@@ -1113,6 +1314,11 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         _runRecoveryRequested = false;
         _currentAssistantMessage = null;
         _toolMessages.Clear();
+        RestoreRunSteps(null);
+        IsStopping = false;
+        IsCanceling = false;
+        IsAppending = false;
+        ApplyRunCheckpoint(null);
         IsRunning = true;
         StatusText = RunningText;
         StartRunTracking(
@@ -1154,25 +1360,272 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         }
     }
 
-    [RelayCommand(CanExecute = nameof(CanCancel))]
-    private async Task Cancel()
+    [RelayCommand(CanExecute = nameof(CanAppend))]
+    private async Task Append()
     {
-        if (string.IsNullOrWhiteSpace(_activeRunId))
+        var runId = _activeRunId;
+        var promptText = Prompt.Trim();
+        if (string.IsNullOrWhiteSpace(runId) ||
+            (promptText.Length == 0 && !HasPendingAttachments))
+        {
             return;
+        }
 
+        if (promptText.Length > MaximumPromptCharacters)
+            promptText = promptText[..MaximumPromptCharacters];
+
+        var pendingAttachments = PendingAttachments.ToArray();
+        var modelPrompt = promptText.Length == 0
+            ? Text("Agent.AttachmentOnlyPrompt")
+            : promptText;
+        var userMessage = new AgentChatMessage(
+            "user",
+            modelPrompt,
+            ContentParts: pendingAttachments.Select(item => item.ContentPart).ToArray());
+
+        IsAppending = true;
         try
         {
-            var result = await _runtimeClient.SendResultAsync<AgentRuntimeCancelResult>(
-                    AgentRuntimeMethodNames.Cancel,
-                    new { runId = _activeRunId },
-                    requestId: $"agent-panel-cancel-{Guid.NewGuid():N}");
-            StatusText = result.Cancelled ? CancelledText : result.Error ?? ErrorText;
+            var result = await _runtimeClient.SendResultAsync<AgentRuntimeRunAppendResult>(
+                    AgentRuntimeMethodNames.RunAppend,
+                    new
+                    {
+                        runId,
+                        messages = new[] { userMessage }
+                    },
+                    requestId: $"agent-panel-append-{Guid.NewGuid():N}");
+
+            if (!string.Equals(_activeRunId, runId, StringComparison.Ordinal))
+                return;
+
+            if (!result.Appended)
+            {
+                StatusText = result.Error ?? ErrorText;
+                return;
+            }
+
+            _conversation.Add(userMessage);
+            TrimConversation();
+            AddMessage(AgentPanelMessageViewModel.User(modelPrompt, pendingAttachments));
+            Prompt = string.Empty;
+            PendingAttachments.Clear();
+            OnPropertyChanged(nameof(HasPendingAttachments));
+            StatusText = FollowUpQueuedText;
+        }
+        catch (Exception exception)
+        {
+            if (string.Equals(_activeRunId, runId, StringComparison.Ordinal))
+                StatusText = exception.Message;
+        }
+        finally
+        {
+            if (string.Equals(_activeRunId, runId, StringComparison.Ordinal))
+            {
+                IsAppending = false;
+                NotifyRunCommands();
+            }
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanFocusRun))]
+    private async Task FocusRun(AgentPanelRunViewModel? run)
+    {
+        if (run == null || !CanFocusRun(run))
+            return;
+
+        var runId = run.RunId;
+        _backgroundRunControls.Add(runId);
+        NotifyRunCommands();
+        try
+        {
+            var result = await _runtimeClient.SendResultAsync<AgentRuntimeRunStatusResult>(
+                    AgentRuntimeMethodNames.RunStatus,
+                    new { runId },
+                    requestId: $"agent-panel-focus-{Guid.NewGuid():N}");
+
+            if (!result.Found || result.Run == null || !IsActiveRun(result.Run))
+            {
+                StatusText = Text("Agent.HistoryRunUnavailable");
+                RefreshRunHistory();
+                return;
+            }
+
+            var option = SessionOptions.FirstOrDefault(item =>
+                string.Equals(
+                    item.Content?.ToString(),
+                    result.Run.SessionId,
+                    StringComparison.OrdinalIgnoreCase));
+            if (option == null)
+            {
+                StatusText = DisconnectedText;
+                return;
+            }
+
+            if (IsRunning || _activeRunId != null)
+                return;
+
+            SelectedSessionOption = option;
+            AttachActiveRun(result.Run);
+            SelectedRun = run;
+            RefreshRunHistory();
         }
         catch (Exception exception)
         {
             StatusText = exception.Message;
         }
-        CancelCommand.NotifyCanExecuteChanged();
+        finally
+        {
+            _backgroundRunControls.Remove(runId);
+            NotifyRunCommands();
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanManageBackgroundRun))]
+    private async Task StopBackgroundRun(AgentPanelRunViewModel? run)
+    {
+        if (run == null || !CanManageBackgroundRun(run))
+            return;
+
+        var runId = run.RunId;
+        _backgroundRunControls.Add(runId);
+        StatusText = StoppingText;
+        NotifyRunCommands();
+        try
+        {
+            var result = await _runtimeClient.SendResultAsync<AgentRuntimeRunStopResult>(
+                    AgentRuntimeMethodNames.RunStop,
+                    new { runId },
+                    requestId: $"agent-panel-background-stop-{Guid.NewGuid():N}");
+            StatusText = result.Requested ? StoppingText : result.Error ?? ErrorText;
+        }
+        catch (Exception exception)
+        {
+            StatusText = exception.Message;
+        }
+        finally
+        {
+            _backgroundRunControls.Remove(runId);
+            NotifyRunCommands();
+            RefreshRunHistory();
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanManageBackgroundRun))]
+    private async Task CancelBackgroundRun(AgentPanelRunViewModel? run)
+    {
+        if (run == null || !CanManageBackgroundRun(run))
+            return;
+
+        var runId = run.RunId;
+        _backgroundRunControls.Add(runId);
+        StatusText = CancellingText;
+        NotifyRunCommands();
+        try
+        {
+            var result = await _runtimeClient.SendResultAsync<AgentRuntimeCancelResult>(
+                    AgentRuntimeMethodNames.Cancel,
+                    new { runId },
+                    requestId: $"agent-panel-background-cancel-{Guid.NewGuid():N}");
+            StatusText = result.Cancelled ? CancellingText : result.Error ?? ErrorText;
+        }
+        catch (Exception exception)
+        {
+            StatusText = exception.Message;
+        }
+        finally
+        {
+            _backgroundRunControls.Remove(runId);
+            NotifyRunCommands();
+            RefreshRunHistory();
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanStop))]
+    private async Task Stop()
+    {
+        var runId = _activeRunId;
+        if (string.IsNullOrWhiteSpace(runId))
+            return;
+
+        IsStopping = true;
+        StatusText = StoppingText;
+        try
+        {
+            var result = await _runtimeClient.SendResultAsync<AgentRuntimeRunStopResult>(
+                    AgentRuntimeMethodNames.RunStop,
+                    new { runId },
+                    requestId: $"agent-panel-stop-{Guid.NewGuid():N}");
+
+            if (!string.Equals(_activeRunId, runId, StringComparison.Ordinal))
+                return;
+
+            if (!result.Requested)
+            {
+                IsStopping = false;
+                StatusText = result.Error ?? ErrorText;
+            }
+            else
+            {
+                StatusText = StoppingText;
+            }
+        }
+        catch (Exception exception)
+        {
+            if (string.Equals(_activeRunId, runId, StringComparison.Ordinal))
+            {
+                IsStopping = false;
+                StatusText = exception.Message;
+            }
+        }
+        finally
+        {
+            if (string.Equals(_activeRunId, runId, StringComparison.Ordinal))
+                NotifyRunCommands();
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanCancel))]
+    private async Task Cancel()
+    {
+        var runId = _activeRunId;
+        if (string.IsNullOrWhiteSpace(runId))
+            return;
+
+        IsCanceling = true;
+        StatusText = CancellingText;
+        try
+        {
+            var result = await _runtimeClient.SendResultAsync<AgentRuntimeCancelResult>(
+                    AgentRuntimeMethodNames.Cancel,
+                    new { runId },
+                    requestId: $"agent-panel-cancel-{Guid.NewGuid():N}");
+
+            if (!string.Equals(_activeRunId, runId, StringComparison.Ordinal))
+                return;
+
+            if (!result.Cancelled)
+            {
+                IsCanceling = false;
+                StatusText = result.Error ?? ErrorText;
+            }
+            else
+            {
+                StatusText = CancellingText;
+            }
+        }
+        catch (Exception exception)
+        {
+            if (string.Equals(_activeRunId, runId, StringComparison.Ordinal))
+            {
+                IsCanceling = false;
+                StatusText = exception.Message;
+            }
+        }
+        finally
+        {
+            if (string.Equals(_activeRunId, runId, StringComparison.Ordinal))
+                NotifyRunCommands();
+        }
     }
 
     private void OnRuntimeEvent(AgentRuntimeEventEnvelope envelope)
@@ -1236,10 +1689,25 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     {
         foreach (var @event in envelope.Events)
         {
+            if (@event.Checkpoint != null)
+                ApplyRunCheckpoint(@event.Checkpoint);
+            if (@event.Step != null)
+                UpdateRunStep(@event);
+
             switch (@event.Type)
             {
                 case "run_start":
-                    StatusText = RunningText;
+                    StatusText = IsCanceling
+                        ? CancellingText
+                        : IsStopping
+                            ? StoppingText
+                            : RunningText;
+                    break;
+                case "run_message_appended":
+                    StatusText = FollowUpQueuedText;
+                    break;
+                case "run_step":
+                    UpdateRunStep(@event);
                     break;
                 case "text_delta":
                     AppendAssistantText(@event.Text);
@@ -1247,14 +1715,38 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
                 case "tool_call_update":
                     UpdateToolCall(@event);
                     break;
+                case "command_progress":
+                    UpdateToolProgress(@event);
+                    break;
+                case "command_output_delta":
+                    UpdateToolOutput(@event);
+                    break;
+                case "command_output_truncated":
+                    UpdateToolOutput(@event with
+                    {
+                        Text = string.IsNullOrWhiteSpace(@event.Message)
+                            ? "[command output truncated]"
+                            : $"[{@event.Message}]"
+                    });
+                    break;
                 case "tool_call_approval_required":
+                    ApplyRunPhase(@event);
                     UpdateToolCall(@event);
+                    StatusText = PendingApprovalText;
                     break;
                 case "credential_required":
+                    ApplyRunPhase(@event);
                     UpdateCredentialRequest(@event);
+                    StatusText = WaitingForInputText;
                     break;
                 case "tool_call_result":
                     UpdateToolResult(@event);
+                    break;
+                case "tool_verification":
+                    UpdateToolVerification(@event);
+                    break;
+                case "run_phase":
+                    ApplyRunPhase(@event);
                     break;
                 case "error":
                     AddMessage(AgentPanelMessageViewModel.Error(
@@ -1367,10 +1859,27 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         _currentAssistantMessage.AppendText(text, MaximumTranscriptCharacters);
     }
 
+    private void ApplyRunPhase(AgentRuntimeStreamEvent @event)
+    {
+        if (!string.IsNullOrWhiteSpace(@event.Phase))
+            ActiveRunPhaseText = AgentCheckpointDisplay.PhaseText(@event.Phase, @event.Status);
+
+        var detail = @event.RequiresUserAction
+            ? @event.PauseReason ?? @event.Message
+            : @event.Message;
+        if (!string.IsNullOrWhiteSpace(detail))
+        {
+            ActiveRunCheckpointText = detail;
+            HasActiveRunCheckpoint = true;
+        }
+    }
+
     private static string BuildRunDetails(AgentRuntimeRunEventsResult result)
     {
         if (result.Events.Count == 0)
-            return "No event details were retained for this run.";
+            return result.HasGap
+                ? Text("Agent.HistoryEventsGap")
+                : "No event details were retained for this run.";
 
         var lines = new List<string>();
         foreach (var envelope in result.Events.OrderBy(item => item.Sequence))
@@ -1382,6 +1891,12 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
                     "tool_call_update" => $"tool: {@event.ToolName ?? "unknown"} ({@event.Status ?? "running"})",
                     "tool_call_approval_required" => $"approval: {@event.ToolName ?? "unknown"} (pending)",
                     "tool_call_result" => $"tool result: {@event.ToolName ?? "unknown"} ({@event.Status ?? "completed"}, {@event.DurationMs ?? 0} ms)",
+                    "tool_verification" => $"verification: {FormatVerificationStatus(@event.Status)} - {@event.Message ?? "unknown"}",
+                    "run_phase" => $"phase: {AgentCheckpointDisplay.PhaseText(@event.Phase, @event.Status)} - {@event.Message ?? ""}".TrimEnd(' ', '-'),
+                    "credential_required" => $"credential: {@event.CredentialKind ?? "input"} (pending)",
+                    "run_checkpoint" => @event.Checkpoint is { } checkpoint
+                        ? $"checkpoint: {AgentCheckpointDisplay.PhaseText(checkpoint)} ({AgentCheckpointDisplay.ProgressText(checkpoint)})"
+                        : "checkpoint",
                     "request_retry" => $"provider retry: {@event.ErrorType ?? "temporary"} (attempt {@event.Attempt ?? 0}/{@event.MaxAttempts ?? 0})",
                     "error" => $"error: {@event.ErrorType ?? "unknown"} - {@event.Message ?? "unknown error"}",
                     "loop_end" => $"finished: {@event.Reason ?? "completed"}",
@@ -1391,8 +1906,19 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
             }
         }
 
+        if (result.HasGap)
+            lines.Insert(0, Text("Agent.HistoryEventsGap"));
+
         return string.Join(Environment.NewLine, lines);
     }
+
+    private static string FormatVerificationStatus(string? status)
+        => status?.Trim().ToLowerInvariant() switch
+        {
+            "verified" => Text("Agent.VerificationVerified"),
+            "failed" => Text("Agent.VerificationFailed"),
+            _ => Text("Agent.VerificationUnknown")
+        };
 
     private void UpdateToolCall(AgentRuntimeStreamEvent @event)
     {
@@ -1441,6 +1967,57 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
             : string.Empty;
         message.StatusText = @event.Status ?? CompletedText;
         _activeRunToolCallCount = Math.Max(_activeRunToolCallCount, _toolMessages.Count);
+    }
+
+    private void UpdateToolVerification(AgentRuntimeStreamEvent @event)
+    {
+        var toolCallId = @event.ToolCallId ?? string.Empty;
+        if (!_toolMessages.TryGetValue(toolCallId, out var message))
+        {
+            message = AgentPanelMessageViewModel.Tool(string.Empty);
+            message.ToolCallId = toolCallId;
+            _toolMessages[toolCallId] = AddMessage(message);
+        }
+
+        message.VerificationStatus = @event.Status ?? "unknown";
+        var statusText = FormatVerificationStatus(@event.Status);
+        message.VerificationText = string.IsNullOrWhiteSpace(@event.Message)
+            ? statusText
+            : $"{statusText}: {@event.Message}";
+    }
+
+    private void UpdateToolProgress(AgentRuntimeStreamEvent @event)
+    {
+        var toolCallId = @event.ToolCallId ?? string.Empty;
+        if (!_toolMessages.TryGetValue(toolCallId, out var message))
+            return;
+
+        message.StatusText = @event.Status ?? RunningText;
+        if (@event.ElapsedMs is { } elapsedMs)
+        {
+            message.DurationText = AgentPanelViewModel.FormatDuration(
+                TimeSpan.FromMilliseconds(Math.Max(0, elapsedMs)));
+        }
+    }
+
+    private void UpdateToolOutput(AgentRuntimeStreamEvent @event)
+    {
+        var toolCallId = @event.ToolCallId ?? string.Empty;
+        if (!_toolMessages.TryGetValue(toolCallId, out var message))
+        {
+            message = AgentPanelMessageViewModel.Tool(string.Empty);
+            message.ToolCallId = toolCallId;
+            message.ToolName = @event.ToolName ?? string.Empty;
+            _toolMessages[toolCallId] = AddMessage(message);
+        }
+
+        message.AppendToolOutput(@event.Text ?? @event.Message ?? string.Empty, MaximumTranscriptCharacters);
+        message.StatusText = @event.Stream == "stderr" ? "stderr" : RunningText;
+        if (@event.ElapsedMs is { } elapsedMs)
+        {
+            message.DurationText = AgentPanelViewModel.FormatDuration(
+                TimeSpan.FromMilliseconds(Math.Max(0, elapsedMs)));
+        }
     }
 
     private void UpdateCredentialRequest(AgentRuntimeStreamEvent @event)
@@ -1683,11 +2260,11 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         _lastRunSequence = 0;
         _isRecoveringRun = false;
         _runRecoveryRequested = false;
+        ApplyRunCheckpoint(null);
         IsRunning = false;
         StatusText = string.IsNullOrWhiteSpace(message) ? ErrorText : message;
         AddMessage(AgentPanelMessageViewModel.Error(StatusText));
-        RunCommand.NotifyCanExecuteChanged();
-        CancelCommand.NotifyCanExecuteChanged();
+        NotifyRunCommands();
         RefreshRunHistory();
     }
 
@@ -1703,6 +2280,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         StatusText = reason switch
         {
             "completed" => CompletedText,
+            "stopped" => StoppedText,
             "aborted" => CancelledText,
             "timeout" => Text("Agent.TimedOut"),
             "provider_error" or "session_unavailable" or "error" or "limits" or "max_iterations" => ErrorText,
@@ -1730,13 +2308,13 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         _runRecoveryRequested = false;
         _currentAssistantMessage = null;
         _toolMessages.Clear();
+        ApplyRunCheckpoint(null);
         foreach (var message in Messages.Where(message => message.IsCredentialPending))
         {
             message.ClearCredentialValue();
             message.IsCredentialPending = false;
         }
-        RunCommand.NotifyCanExecuteChanged();
-        CancelCommand.NotifyCanExecuteChanged();
+        NotifyRunCommands();
         RefreshRunHistory();
     }
 
@@ -1767,6 +2345,12 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         return $"{name} · {endpoint}";
     }
 
+    private string GetRunSessionLabel(string sessionId)
+        => Guid.TryParse(sessionId, out var id) &&
+           _sessionsById.TryGetValue(id, out var session)
+            ? BuildSessionHeader(session)
+            : sessionId;
+
     private static string Text(string key) => LocalizationService.Shared.Text(key);
 
     partial void OnSelectedSessionOptionChanged(ISelectOption? value)
@@ -1796,11 +2380,23 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(SelectedSessionStatusText));
         OnPropertyChanged(nameof(IsSessionSelectionEnabled));
         RefreshFilteredRunHistory();
-        RunCommand.NotifyCanExecuteChanged();
+        NotifyRunCommands();
     }
 
     partial void OnSelectedRunHistoryFilterOptionChanged(ISelectOption? value)
         => RefreshFilteredRunHistory();
+
+    partial void OnRunHistorySearchChanged(string value)
+        => RefreshFilteredRunHistory();
+
+    partial void OnProviderTestStatusTextChanged(string value)
+        => OnPropertyChanged(nameof(HasProviderTestStatus));
+
+    partial void OnIsTestingProviderChanged(bool value)
+    {
+        TestProviderCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(HasProviderTestStatus));
+    }
 
     partial void OnActiveRunCountChanged(int value)
     {
@@ -1809,16 +2405,40 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     }
 
     partial void OnPromptChanged(string value)
-        => RunCommand.NotifyCanExecuteChanged();
+        => NotifyRunCommands();
 
     partial void OnIsRunningChanged(bool value)
     {
         OnPropertyChanged(nameof(IsSessionSelectionEnabled));
         OnPropertyChanged(nameof(IsRuntimeRetryVisible));
         OnPropertyChanged(nameof(IsRunElapsedVisible));
-        RunCommand.NotifyCanExecuteChanged();
-        CancelCommand.NotifyCanExecuteChanged();
+        if (!value)
+        {
+            IsStopping = false;
+            IsCanceling = false;
+            IsAppending = false;
+        }
+
+        NotifyRunCommands();
     }
+
+    partial void OnIsStoppingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsPromptInputEnabled));
+        StopCommand.NotifyCanExecuteChanged();
+        AppendCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnIsCancelingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsPromptInputEnabled));
+        CancelCommand.NotifyCanExecuteChanged();
+        StopCommand.NotifyCanExecuteChanged();
+        AppendCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnIsAppendingChanged(bool value)
+        => AppendCommand.NotifyCanExecuteChanged();
 
     partial void OnRuntimeStateChanged(AgentRuntimeSessionState value)
     {
@@ -1863,6 +2483,40 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasMessages));
     }
 
+    private void UpdateRunStep(AgentRuntimeStreamEvent @event)
+    {
+        var step = @event.Step;
+        if (step == null || string.IsNullOrWhiteSpace(step.Id))
+            return;
+
+        if (!_activeRunStepMap.TryGetValue(step.Id, out var viewModel))
+        {
+            viewModel = new AgentPanelStepViewModel(step);
+            _activeRunStepMap[step.Id] = viewModel;
+            ActiveRunSteps.Add(viewModel);
+        }
+        else
+        {
+            viewModel.Update(step);
+        }
+
+        OnPropertyChanged(nameof(HasActiveRunSteps));
+    }
+
+    private void RestoreRunSteps(IReadOnlyList<AgentRunStep>? steps)
+    {
+        _activeRunStepMap.Clear();
+        ActiveRunSteps.Clear();
+        foreach (var step in steps ?? [])
+        {
+            var viewModel = new AgentPanelStepViewModel(step);
+            _activeRunStepMap[step.Id] = viewModel;
+            ActiveRunSteps.Add(viewModel);
+        }
+
+        OnPropertyChanged(nameof(HasActiveRunSteps));
+    }
+
     private SessionAgentState GetOrCreateSessionState(Guid sessionId)
     {
         if (!_sessionStates.TryGetValue(sessionId, out var state))
@@ -1894,6 +2548,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         _lastRunSequence = 0;
         _isRecoveringRun = false;
         _runRecoveryRequested = false;
+        ApplyRunCheckpoint(null);
         _activeRunIds.Clear();
         _endedRunIds.Clear();
     }
@@ -1903,6 +2558,56 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         public List<AgentChatMessage> Conversation { get; } = [];
         public List<AgentPanelMessageViewModel> Messages { get; } = [];
     }
+}
+
+internal static class AgentCheckpointDisplay
+{
+    public static string PhaseText(AgentRunCheckpoint checkpoint)
+        => $"{Text(GetPhaseKey(checkpoint.Phase))} · {Text(GetStatusKey(checkpoint.Status))}";
+
+    public static string PhaseText(string? phase, string? status)
+        => $"{Text(GetPhaseKey(phase))} · {Text(GetStatusKey(status))}";
+
+    public static string ProgressText(AgentRunCheckpoint checkpoint)
+    {
+        var lastTool = string.IsNullOrWhiteSpace(checkpoint.ToolName)
+            ? "-"
+            : checkpoint.ToolName;
+        return $"{Text("Agent.CheckpointStep")} {checkpoint.Step} · " +
+               $"{Text("Agent.CheckpointLastTool")}: {lastTool} · " +
+               $"{Text("Agent.CheckpointRequests")}: {checkpoint.ModelRequestCount} · " +
+               $"{Text("Agent.CheckpointTools")}: {checkpoint.ToolCallCount}";
+    }
+
+    private static string GetPhaseKey(string? phase)
+        => phase?.Trim().ToLowerInvariant() switch
+        {
+            "run" => "Agent.CheckpointPhaseRun",
+            "analysis" => "Agent.CheckpointPhaseAnalysis",
+            "execution" => "Agent.CheckpointPhaseExecution",
+            "model_request" => "Agent.CheckpointPhaseModelRequest",
+            "tool_call" => "Agent.CheckpointPhaseToolCall",
+            "verification" => "Agent.CheckpointPhaseVerification",
+            "summary" => "Agent.CheckpointPhaseSummary",
+            "credential" => "Agent.CheckpointPhaseCredential",
+            _ => "Agent.CheckpointPhaseUnknown"
+        };
+
+    private static string GetStatusKey(string? status)
+        => status?.Trim().ToLowerInvariant() switch
+        {
+            "running" => "Agent.CheckpointStatusRunning",
+            "waiting_for_input" or "waiting" or "pending_approval" or "pending_credential" => "Agent.CheckpointStatusWaiting",
+            "completed" => "Agent.CheckpointStatusCompleted",
+            "failed" => "Agent.CheckpointStatusFailed",
+            "interrupted" => "Agent.CheckpointStatusInterrupted",
+            "cancelled" => "Agent.CheckpointStatusCancelled",
+            "stopped" => "Agent.CheckpointStatusStopped",
+            "timed_out" => "Agent.CheckpointStatusTimedOut",
+            _ => "Agent.CheckpointStatusUnknown"
+        };
+
+    private static string Text(string key) => LocalizationService.Shared.Text(key);
 }
 
 public enum AgentPanelMessageKind
@@ -1940,6 +2645,8 @@ public sealed partial class AgentPanelMessageViewModel : ObservableObject
     [ObservableProperty] private int _summaryToolCallCount;
     [ObservableProperty] private int _summaryModelRequestCount;
     [ObservableProperty] private string _summaryResultText = string.Empty;
+    [ObservableProperty] private string _verificationStatus = string.Empty;
+    [ObservableProperty] private string _verificationText = string.Empty;
 
     private AgentPanelMessageViewModel(
         AgentPanelMessageKind kind,
@@ -1989,6 +2696,16 @@ public sealed partial class AgentPanelMessageViewModel : ObservableObject
     public string ToolDetailsButtonText => IsToolDetailsExpanded
         ? Text("Agent.ToolHideDetails")
         : Text("Agent.ToolShowDetails");
+    public bool HasVerification => !string.IsNullOrWhiteSpace(VerificationText);
+    public bool IsVerificationVerified => string.Equals(
+        VerificationStatus,
+        "verified",
+        StringComparison.OrdinalIgnoreCase);
+    public bool IsVerificationFailed => string.Equals(
+        VerificationStatus,
+        "failed",
+        StringComparison.OrdinalIgnoreCase);
+    public bool IsVerificationUnknown => !IsVerificationVerified && !IsVerificationFailed;
     public string ToolSummaryText
     {
         get
@@ -2073,6 +2790,15 @@ public sealed partial class AgentPanelMessageViewModel : ObservableObject
         MarkdownBuilder?.Append(appendedText);
     }
 
+    public void AppendToolOutput(string text, int maximumLength)
+    {
+        if (string.IsNullOrEmpty(text) || Content.Length >= maximumLength)
+            return;
+
+        var remaining = maximumLength - Content.Length;
+        Content += text.Length <= remaining ? text : text[..remaining] + "\n[...]";
+    }
+
     public void NotifyLocalizationChanged()
     {
         OnPropertyChanged(nameof(Label));
@@ -2087,6 +2813,10 @@ public sealed partial class AgentPanelMessageViewModel : ObservableObject
         OnPropertyChanged(nameof(SubmitCredentialText));
         OnPropertyChanged(nameof(ApproveText));
         OnPropertyChanged(nameof(DenyText));
+        OnPropertyChanged(nameof(HasVerification));
+        OnPropertyChanged(nameof(IsVerificationVerified));
+        OnPropertyChanged(nameof(IsVerificationFailed));
+        OnPropertyChanged(nameof(IsVerificationUnknown));
         OnPropertyChanged(nameof(SummaryTitleText));
         OnPropertyChanged(nameof(SummaryTargetText));
         OnPropertyChanged(nameof(SummaryMetricsText));
@@ -2102,6 +2832,16 @@ public sealed partial class AgentPanelMessageViewModel : ObservableObject
 
     partial void OnStatusTextChanged(string value)
         => OnPropertyChanged(nameof(ToolSummaryText));
+
+    partial void OnVerificationStatusChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsVerificationVerified));
+        OnPropertyChanged(nameof(IsVerificationFailed));
+        OnPropertyChanged(nameof(IsVerificationUnknown));
+    }
+
+    partial void OnVerificationTextChanged(string value)
+        => OnPropertyChanged(nameof(HasVerification));
 
     partial void OnCredentialKindChanged(string value)
     {
@@ -2150,14 +2890,20 @@ public sealed partial class AgentPanelRunViewModel : ObservableObject
     public AgentPanelRunViewModel(
         AgentRuntimeRunSnapshot snapshot,
         bool canRetry,
-        bool canContinue = false)
+        bool canContinue = false,
+        string? sessionLabel = null)
     {
         _snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
-        CanRetry = canRetry && string.Equals(snapshot.Status, "failed", StringComparison.OrdinalIgnoreCase);
+        _sessionLabel = string.IsNullOrWhiteSpace(sessionLabel)
+            ? snapshot.SessionId
+            : sessionLabel;
+        CanRetry = canRetry && AgentRunStates.IsFailure(snapshot.Status);
         CanContinue = canContinue &&
                       snapshot.CanResume &&
                       string.Equals(snapshot.Status, "interrupted", StringComparison.OrdinalIgnoreCase);
     }
+
+    private readonly string _sessionLabel;
 
     public string RunId => _snapshot.RunId;
     public string SessionId => _snapshot.SessionId;
@@ -2166,13 +2912,22 @@ public sealed partial class AgentPanelRunViewModel : ObservableObject
     public string PromptPreview => string.IsNullOrWhiteSpace(_snapshot.PromptPreview)
         ? Text("Agent.HistoryNoPrompt")
         : _snapshot.PromptPreview!;
+    public string TargetText => $"{Text("Agent.HistoryTarget")}: {_sessionLabel} · {Provider}/{Model}";
     public string Status => _snapshot.Status;
-    public bool IsActive => _snapshot.Status is "starting" or "running";
+    public bool IsActive => AgentRunStates.IsActive(_snapshot.Status);
+    public bool IsWaiting => AgentRunStates.IsWaiting(_snapshot.Status) ||
+                             (_snapshot.RequiresUserAction && IsActive);
+    public bool IsFailure => AgentRunStates.IsFailure(_snapshot.Status);
     public bool IsFinished => !IsActive;
     public string StatusDisplay => _snapshot.Status switch
     {
+        "starting" => Text("Agent.Starting"),
+        "waiting_for_input" => Text("Agent.WaitingForInput"),
+        "pending_approval" => Text("Agent.PendingApproval"),
+        "stopping" => Text("Agent.StoppingShort"),
         "completed" => Text("Agent.Completed"),
         "cancelled" => Text("Agent.Cancelled"),
+        "stopped" => Text("Agent.Stopped"),
         "timed_out" => Text("Agent.TimedOut"),
         "interrupted" => Text("Agent.Interrupted"),
         "failed" => Text("Agent.Error"),
@@ -2183,6 +2938,30 @@ public sealed partial class AgentPanelRunViewModel : ObservableObject
     public string DurationText => _snapshot.DurationMs is { } duration
         ? $"{duration} ms"
         : "-";
+    public bool HasCheckpoint => _snapshot.Checkpoint != null;
+    public string CheckpointText => _snapshot.Checkpoint is { } checkpoint
+        ? AgentCheckpointDisplay.PhaseText(checkpoint) + " · " + AgentCheckpointDisplay.ProgressText(checkpoint)
+        : string.Empty;
+    public bool HasPhase => !string.IsNullOrWhiteSpace(_snapshot.Phase);
+    public string PhaseText => AgentCheckpointDisplay.PhaseText(_snapshot.Phase, _snapshot.Status);
+    public bool HasPauseReason => _snapshot.RequiresUserAction &&
+                                  !string.IsNullOrWhiteSpace(_snapshot.PauseReason);
+    public string PauseReasonText => _snapshot.PauseReason ?? string.Empty;
+    public bool MatchesSearch(string search)
+    {
+        if (string.IsNullOrWhiteSpace(search))
+            return true;
+
+        return PromptPreview.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+               _sessionLabel.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+               Provider.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+               Model.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+               Status.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+               StatusDisplay.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+               PhaseText.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+               PauseReasonText.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+               ErrorText.Contains(search, StringComparison.OrdinalIgnoreCase);
+    }
     public string MetricsText
         => $"{Text("Agent.HistoryTools")}: {_snapshot.ToolCallCount}  " +
            $"{Text("Agent.HistoryRequests")}: {_snapshot.ModelRequestCount}  " +
@@ -2205,16 +2984,75 @@ public sealed partial class AgentPanelRunViewModel : ObservableObject
     public void NotifyLocalizationChanged()
     {
         OnPropertyChanged(nameof(PromptPreview));
+        OnPropertyChanged(nameof(TargetText));
         OnPropertyChanged(nameof(StatusDisplay));
         OnPropertyChanged(nameof(MetricsText));
+        OnPropertyChanged(nameof(HasCheckpoint));
+        OnPropertyChanged(nameof(CheckpointText));
         OnPropertyChanged(nameof(ErrorText));
         OnPropertyChanged(nameof(HasError));
         OnPropertyChanged(nameof(RetryText));
         OnPropertyChanged(nameof(ContinueText));
         OnPropertyChanged(nameof(DetailsButtonText));
         OnPropertyChanged(nameof(IsActive));
+        OnPropertyChanged(nameof(IsWaiting));
+        OnPropertyChanged(nameof(IsFailure));
         OnPropertyChanged(nameof(IsFinished));
+        OnPropertyChanged(nameof(PhaseText));
+        OnPropertyChanged(nameof(HasPhase));
+        OnPropertyChanged(nameof(HasPauseReason));
+        OnPropertyChanged(nameof(PauseReasonText));
     }
+
+    private static string Text(string key) => LocalizationService.Shared.Text(key);
+}
+
+public sealed partial class AgentPanelStepViewModel : ObservableObject
+{
+    [ObservableProperty] private string _title;
+    [ObservableProperty] private string _phase;
+    [ObservableProperty] private string _status;
+    [ObservableProperty] private string _detail;
+    [ObservableProperty] private string _durationText;
+
+    public AgentPanelStepViewModel(AgentRunStep step)
+    {
+        _title = step.Title;
+        _phase = step.Phase;
+        _status = step.Status;
+        _detail = step.Detail ?? string.Empty;
+        _durationText = FormatDuration(step.DurationMs);
+    }
+
+    public string StatusDisplay => Status switch
+    {
+        AgentRunStepStatuses.Running => Text("Agent.StepRunning"),
+        AgentRunStepStatuses.Completed => Text("Agent.StepCompleted"),
+        AgentRunStepStatuses.Failed => Text("Agent.StepFailed"),
+        AgentRunStepStatuses.Waiting => Text("Agent.StepWaiting"),
+        AgentRunStepStatuses.Cancelled => Text("Agent.StepCancelled"),
+        _ => Text("Agent.StepPending")
+    };
+
+    public bool HasDetail => !string.IsNullOrWhiteSpace(Detail);
+
+    public void Update(AgentRunStep step)
+    {
+        Title = step.Title;
+        Phase = step.Phase;
+        Status = step.Status;
+        Detail = step.Detail ?? string.Empty;
+        DurationText = FormatDuration(step.DurationMs);
+        OnPropertyChanged(nameof(StatusDisplay));
+        OnPropertyChanged(nameof(HasDetail));
+    }
+
+    private static string FormatDuration(long? durationMs)
+        => durationMs is not { } value
+            ? string.Empty
+            : value < 1000
+                ? $"{Math.Max(0, value)} ms"
+                : TimeSpan.FromMilliseconds(Math.Max(0, value)).ToString("mm\\:ss");
 
     private static string Text(string key) => LocalizationService.Shared.Text(key);
 }

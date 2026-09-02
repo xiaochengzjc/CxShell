@@ -67,7 +67,8 @@ public sealed class AgentSessionGateway : IAgentSessionGateway, IDisposable
 
     public async Task<AgentCommandResult> ExecuteCommandAsync(
         AgentCommandRequest request,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action<AgentCommandProgress>? progressReceived = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         ThrowIfDisposed();
@@ -154,14 +155,22 @@ public sealed class AgentSessionGateway : IAgentSessionGateway, IDisposable
                 : request with { Timeout = effectiveTimeout };
             var execution = await endpoint.ExecuteCommandAsync(
                     requestToExecute,
-                    linkedCancellation.Token)
+                    linkedCancellation.Token,
+                    progressReceived)
                 .ConfigureAwait(false);
+            var executionFailed = execution.RemoteCompletionConfirmed && !execution.Succeeded;
+            var executionStatus = executionFailed
+                ? AgentCommandStatus.Failed
+                : AgentCommandStatus.Sent;
+            var executionMessage = executionFailed
+                ? BuildExecutionFailureMessage(execution)
+                : execution.RemoteCompletionConfirmed
+                    ? "Remote command completed successfully."
+                    : "Command sent to the terminal input queue.";
             result = Complete(
                 request,
-                AgentCommandStatus.Sent,
-                execution.RemoteCompletionConfirmed
-                    ? "Remote command completed successfully."
-                    : "Command sent to the terminal input queue.",
+                executionStatus,
+                executionMessage,
                 startedAt,
                 execution,
                 permission: permission,
@@ -419,6 +428,8 @@ public sealed class AgentSessionGateway : IAgentSessionGateway, IDisposable
             AgentCommandStatus.Denied => AgentCommandExecutionState.Denied,
             AgentCommandStatus.Cancelled => AgentCommandExecutionState.Cancelled,
             AgentCommandStatus.TimedOut => AgentCommandExecutionState.Unknown,
+            AgentCommandStatus.Failed when execution?.RemoteCompletionConfirmed == true
+                => AgentCommandExecutionState.Failed,
             AgentCommandStatus.Failed => AgentCommandExecutionState.Unknown,
             _ => AgentCommandExecutionState.Failed
         };
@@ -434,7 +445,9 @@ public sealed class AgentSessionGateway : IAgentSessionGateway, IDisposable
             CompletedAtUtc = DateTimeOffset.UtcNow,
             RemoteCompletionConfirmed = execution?.RemoteCompletionConfirmed == true,
             ApprovalRequired = approvalRequired,
-            Output = LimitCapturedOutput(execution?.Output)
+            Output = LimitCapturedOutput(execution?.Output),
+            Error = LimitCapturedOutput(execution?.Error),
+            ExitCode = execution?.ExitCode
         };
         _auditLog.Record(request, result, permission: permission, approvalGranted: approvalGranted);
         return result;
@@ -509,6 +522,21 @@ public sealed class AgentSessionGateway : IAgentSessionGateway, IDisposable
             return output;
 
         return output[..MaximumCapturedOutputLength] + "\n[output truncated by CxShell]";
+    }
+
+    private static string BuildExecutionFailureMessage(AgentCommandExecutionResult execution)
+    {
+        var exitCode = execution.ExitCode?.ToString() ?? "unknown";
+        if (string.IsNullOrWhiteSpace(execution.Error))
+            return $"Remote command failed with exit code {exitCode}.";
+
+        return $"Remote command failed with exit code {exitCode}: {TrimMessage(execution.Error)}";
+    }
+
+    private static string TrimMessage(string value)
+    {
+        var normalized = value.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        return normalized.Length <= 2 * 1024 ? normalized : normalized[..(2 * 1024)] + "...";
     }
 
     private static bool TryCancel(CancellationTokenSource cancellation)

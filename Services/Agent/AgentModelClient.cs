@@ -81,6 +81,7 @@ public sealed class AgentProviderException : InvalidOperationException
         string safeMessage,
         bool retryable,
         int? statusCode = null,
+        TimeSpan? retryAfter = null,
         Exception? innerException = null)
         : base(safeMessage, innerException)
     {
@@ -88,16 +89,19 @@ public sealed class AgentProviderException : InvalidOperationException
         SafeMessage = safeMessage;
         Retryable = retryable;
         StatusCode = statusCode;
+        RetryAfter = retryAfter;
     }
 
     public AgentProviderErrorKind Kind { get; }
     public string SafeMessage { get; }
     public bool Retryable { get; }
     public int? StatusCode { get; }
+    public TimeSpan? RetryAfter { get; }
 
     public static AgentProviderException FromStatusCode(
         int statusCode,
-        string? endpoint = null)
+        string? endpoint = null,
+        TimeSpan? retryAfter = null)
     {
         var endpointText = string.IsNullOrWhiteSpace(endpoint)
             ? "Provider request"
@@ -115,7 +119,8 @@ public sealed class AgentProviderException : InvalidOperationException
             kind,
             $"{endpointText} {reason} (HTTP {statusCode}).",
             retryable,
-            statusCode);
+            statusCode,
+            retryAfter: retryAfter);
     }
 
     public static AgentProviderException Network(Exception exception, string? endpoint = null)

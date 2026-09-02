@@ -10,6 +10,7 @@ public static class AgentRuntimeMethodNames
     public const string RequestCancel = "runtime/cancel";
     public const string CapabilitiesCheck = "capabilities/check";
     public const string ProviderStatus = "agent/provider-status";
+    public const string ProviderTest = "agent/provider-test";
     public const string ModelRequest = "agent/model-request";
     public const string ToolCatalog = "agent/tool-catalog";
     public const string SessionList = "agent/session-list";
@@ -71,6 +72,7 @@ public static class AgentRuntimeContract
         AgentRuntimeMethodNames.RequestCancel,
         AgentRuntimeMethodNames.CapabilitiesCheck,
         AgentRuntimeMethodNames.ProviderStatus,
+        AgentRuntimeMethodNames.ProviderTest,
         AgentRuntimeMethodNames.ModelRequest,
         AgentRuntimeMethodNames.ToolCatalog,
         AgentRuntimeMethodNames.SessionList,
@@ -118,6 +120,14 @@ public static class AgentRuntimeContract
         "agent.session.command.approval",
         "runtime.request.cancel",
         "agent.provider.status",
+        "agent.provider.test",
+        "agent.provider.tools",
+        "agent.provider.streaming",
+        "agent.provider.vision",
+        "agent.provider.documents",
+        "agent.provider.responses",
+        "agent.provider.usage",
+        "agent.provider.reasoning",
         "agent.model.request",
         "agent.tool.catalog",
         "agent.run",
@@ -188,6 +198,18 @@ public sealed record AgentRuntimeProviderStatusResult(
     [property: JsonPropertyName("provider")] AgentProviderSnapshot Provider,
     [property: JsonPropertyName("validationStatus")] AgentProviderValidationStatus ValidationStatus,
     [property: JsonPropertyName("message")] string Message);
+
+public sealed record AgentRuntimeProviderTestResult(
+    [property: JsonPropertyName("reachable")] bool Reachable,
+    [property: JsonPropertyName("provider")] string Provider,
+    [property: JsonPropertyName("model")] string Model,
+    [property: JsonPropertyName("durationMs")] long DurationMs,
+    [property: JsonPropertyName("message")] string Message,
+    [property: JsonPropertyName("errorType")] string? ErrorType = null)
+{
+    [JsonPropertyName("capabilities")]
+    public AgentProviderCapabilities Capabilities { get; init; } = new();
+}
 
 public sealed record AgentRuntimeModelRequestResult(
     [property: JsonPropertyName("response")] AgentModelResponse Response);

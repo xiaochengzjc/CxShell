@@ -98,13 +98,24 @@ public sealed class AgentRunHistoryStoreTests
         try
         {
             var sessionId = Guid.NewGuid();
+            var checkpoint = new AgentRunCheckpoint(
+                2,
+                "tool_call",
+                "waiting_for_input",
+                ToolCallId: "tool-1",
+                ToolName: "session_command",
+                ModelRequestCount: 2,
+                ToolCallCount: 1,
+                UpdatedAtUtc: DateTimeOffset.UtcNow,
+                Detail: "Waiting for user input.");
             var snapshot = new AgentRuntimeRunSnapshot(
                 "interrupted-run",
                 sessionId.ToString("D"),
                 DateTimeOffset.UtcNow,
                 "interrupted",
                 EndReason: "application_restart",
-                CanResume: true);
+                CanResume: true,
+                Checkpoint: checkpoint);
             var store = new JsonAgentRunHistoryStore(path);
             store.SaveRecoverable(
             [
@@ -114,7 +125,8 @@ public sealed class AgentRunHistoryStoreTests
                         new AgentChatMessage("system", "system prompt"),
                         new AgentChatMessage("user", "inspect the host")
                     ],
-                    TimeoutMs: 600_000)
+                    TimeoutMs: 600_000,
+                    Checkpoint: checkpoint)
             ]);
 
             var loaded = Assert.Single(store.LoadRecoverable());
@@ -122,6 +134,8 @@ public sealed class AgentRunHistoryStoreTests
             Assert.Equal("inspect the host", loaded.Messages[^1].Content);
             Assert.Empty(store.Load());
             Assert.True(loaded.ExpiresAtUtc > DateTimeOffset.UtcNow);
+            Assert.Equal(checkpoint, loaded.Checkpoint);
+            Assert.Equal(checkpoint, loaded.Snapshot.Checkpoint);
             Assert.DoesNotContain("inspect the host", File.ReadAllText(path + ".recovery"));
         }
         finally

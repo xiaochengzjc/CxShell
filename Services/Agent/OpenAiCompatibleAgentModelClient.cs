@@ -75,7 +75,8 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
             if (!response.IsSuccessStatusCode)
                 throw AgentProviderException.FromStatusCode(
                     (int)response.StatusCode,
-                    httpRequest.RequestUri?.ToString());
+                    httpRequest.RequestUri?.ToString(),
+                    GetRetryAfter(response));
 
             return ParseChatResponse(responseText, provider);
         }
@@ -151,7 +152,8 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
                 _ = await ReadResponseTextAsync(response, timeout.Token).ConfigureAwait(false);
                 throw AgentProviderException.FromStatusCode(
                     (int)response.StatusCode,
-                    httpRequest.RequestUri?.ToString());
+                    httpRequest.RequestUri?.ToString(),
+                    GetRetryAfter(response));
             }
 
             return await ReadChatStreamAsync(
@@ -229,7 +231,8 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
                 _ = await ReadResponseTextAsync(response, timeout.Token).ConfigureAwait(false);
                 throw AgentProviderException.FromStatusCode(
                     (int)response.StatusCode,
-                    httpRequest.RequestUri?.ToString());
+                    httpRequest.RequestUri?.ToString(),
+                    GetRetryAfter(response));
             }
 
             return await ReadResponsesStreamAsync(
@@ -737,7 +740,8 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
             {
                 throw AgentProviderException.FromStatusCode(
                     (int)response.StatusCode,
-                    httpRequest.RequestUri?.ToString());
+                    httpRequest.RequestUri?.ToString(),
+                    GetRetryAfter(response));
             }
 
             try
@@ -798,6 +802,21 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
                 "Provider returned an invalid Chat Completions response.",
                 exception);
         }
+    }
+
+    private static TimeSpan? GetRetryAfter(HttpResponseMessage response)
+    {
+        var retryAfter = response.Headers.RetryAfter;
+        if (retryAfter?.Delta is { } delta)
+            return delta;
+
+        if (retryAfter?.Date is { } date)
+        {
+            var remaining = date - DateTimeOffset.UtcNow;
+            return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+        }
+
+        return null;
     }
 
     private static AgentModelResponse ParseResponse(string responseText, AgentProviderSettings provider)
@@ -1336,6 +1355,22 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
                  string.IsNullOrWhiteSpace(message.ToolCallId))))
         {
             throw new ArgumentException("Chat messages contain an invalid role or are too large.", nameof(request));
+        }
+
+        var capabilities = AgentProviderConfiguration.GetCapabilities(provider);
+        if (request.Tools is { Count: > 0 } && !capabilities.SupportsTools)
+        {
+            throw AgentProviderException.Protocol(
+                "The configured provider does not support Agent tool calls.");
+        }
+
+        if (request.Messages.Any(message =>
+                message.ContentParts?.Any(part =>
+                    string.Equals(part.Type, "image", StringComparison.OrdinalIgnoreCase)) == true) &&
+            !capabilities.SupportsVision)
+        {
+            throw AgentProviderException.Protocol(
+                "The configured provider does not support image input.");
         }
     }
 

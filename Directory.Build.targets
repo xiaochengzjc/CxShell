@@ -1,0 +1,9 @@
+<Project>
+    <!-- AtomUI's reference source is kept in the repository for research, but
+         it must not be treated as CxShell application localization input. -->
+    <ItemGroup Condition="'$(MSBuildProjectName)' == 'CxShell'">
+        <AtomUILanguage Remove="$(MSBuildProjectDirectory)/AtomUI/**/*.xlf" />
+        <AtomUILanguageOverride Remove="$(MSBuildProjectDirectory)/AtomUI/**/*.xlf" />
+        <AdditionalFiles Remove="$(MSBuildProjectDirectory)/AtomUI/**/*.xlf" />
+    </ItemGroup>
+</Project>

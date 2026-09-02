@@ -162,18 +162,21 @@ public sealed class JsonAgentRunHistoryStore : IAgentRunHistoryStore
            !string.IsNullOrWhiteSpace(run.RunId) &&
            Guid.TryParse(run.SessionId, out var sessionId) &&
            sessionId != Guid.Empty &&
-           run.Status is not ("starting" or "running");
+           !AgentRunStates.IsActive(run.Status);
 
     private static AgentRunRecoveryState NormalizeRecovery(AgentRunRecoveryState recovery)
     {
-        if (recovery.ExpiresAtUtc.HasValue)
+        var checkpoint = recovery.Checkpoint ?? recovery.Snapshot.Checkpoint;
+        if (recovery.ExpiresAtUtc.HasValue && checkpoint == recovery.Checkpoint)
             return recovery;
 
         // Older recovery files did not carry an expiry. Give those records the
         // same bounded lifetime and migrate them when the coordinator saves.
         return recovery with
         {
-            ExpiresAtUtc = recovery.Snapshot.StartedAtUtc + AgentRunCoordinator.RecoveryLifetime
+            ExpiresAtUtc = recovery.ExpiresAtUtc ??
+                           recovery.Snapshot.StartedAtUtc + AgentRunCoordinator.RecoveryLifetime,
+            Checkpoint = checkpoint
         };
     }
 

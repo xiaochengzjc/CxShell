@@ -8,7 +8,7 @@ The project is still moving quickly. Windows is currently the primary developmen
 
 ## Latest Release
 
-The latest release is [CxShell v0.1.44](https://github.com/xiaochengzjc/CxShell/releases/tag/v0.1.44). It includes the Agent Runtime and SSH session gateway, permission and approval controls, run history and cancellation, OpenAI-compatible streaming providers, image and document attachments, Markdown rendering, Routin.ai provider onboarding, and the latest terminal and remote-session improvements.
+The latest release is [CxShell v0.1.45](https://github.com/xiaochengzjc/CxShell/releases/tag/v0.1.45). It includes Agent Runtime reliability improvements, command verification and redaction, longer-running task handling, the AtomUI 6.1.7 upgrade, updated workspace screenshots, image and document attachments, Markdown rendering, and the latest terminal and remote-session improvements.
 
 Packages are available for Windows x64, macOS x64/arm64, and Linux x64/arm64. The release page provides Windows and macOS installers or portable archives, plus Linux AppImage and tar.gz packages.
 

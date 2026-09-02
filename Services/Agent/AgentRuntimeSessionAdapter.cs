@@ -104,6 +104,9 @@ public sealed class AgentRuntimeSessionAdapter :
                 AgentRuntimeMethodNames.RuntimeInfo => RuntimeInfo(normalizedRequestId),
                 AgentRuntimeMethodNames.CapabilitiesCheck => CheckCapability(normalizedRequestId, parameters),
                 AgentRuntimeMethodNames.ProviderStatus => ProviderStatus(normalizedRequestId),
+                AgentRuntimeMethodNames.ProviderTest => await TestProviderAsync(
+                    normalizedRequestId,
+                    cancellationToken).ConfigureAwait(false),
                 AgentRuntimeMethodNames.ToolCatalog => ToolCatalog(normalizedRequestId),
                 AgentRuntimeMethodNames.SessionList => ListSessions(normalizedRequestId),
                 AgentRuntimeMethodNames.SessionGet => GetSession(normalizedRequestId, parameters),
@@ -259,7 +262,15 @@ public sealed class AgentRuntimeSessionAdapter :
                                                  _gateway.Capabilities.RequiresApprovalForChangeCommands,
             "agent.session.command.change-approval" => _gateway.Capabilities.RequiresApprovalForChangeCommands,
             "runtime.request.cancel" => true,
-            "agent.provider.status" => true,
+             "agent.provider.status" => true,
+             "agent.provider.test" => true,
+            "agent.provider.tools" => GetProviderCapabilities().SupportsTools,
+            "agent.provider.streaming" => GetProviderCapabilities().SupportsStreaming,
+            "agent.provider.vision" => GetProviderCapabilities().SupportsVision,
+            "agent.provider.documents" => GetProviderCapabilities().SupportsDocumentInput,
+            "agent.provider.responses" => GetProviderCapabilities().SupportsResponsesApi,
+            "agent.provider.usage" => GetProviderCapabilities().SupportsTokenUsage,
+            "agent.provider.reasoning" => GetProviderCapabilities().SupportsReasoning,
             "agent.model.request" => true,
             "agent.tool.catalog" => true,
             "agent.run" => true,
@@ -269,6 +280,9 @@ public sealed class AgentRuntimeSessionAdapter :
             "agent.run.approval" => true,
             _ => false
         };
+
+    private AgentProviderCapabilities GetProviderCapabilities()
+        => AgentProviderConfiguration.GetCapabilities(_providerSettings());
 
     private AgentRuntimeResponse ListSessions(string requestId)
         => Success(
@@ -366,6 +380,105 @@ public sealed class AgentRuntimeSessionAdapter :
                 validation.Status,
                 validation.Message));
     }
+
+    private async Task<AgentRuntimeResponse> TestProviderAsync(
+        string requestId,
+        CancellationToken cancellationToken)
+    {
+        var provider = _providerSettings();
+        var validation = AgentProviderConfiguration.Validate(provider);
+        if (!validation.IsValid || provider == null)
+        {
+            return Success(
+                requestId,
+                new AgentRuntimeProviderTestResult(
+                    false,
+                    provider?.BuiltinId ?? string.Empty,
+                    provider?.Model ?? string.Empty,
+                    0,
+                    validation.Message,
+                    validation.Status.ToString())
+                {
+                    Capabilities = AgentProviderConfiguration.GetCapabilities(provider)
+                });
+        }
+
+        var startedAt = DateTimeOffset.UtcNow;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(20));
+        try
+        {
+            var response = await _modelClient.CompleteAsync(
+                    provider,
+                    new AgentModelRequest(
+                        [new AgentChatMessage(
+                            "user",
+                            "Connectivity test. Reply with OK only.")],
+                        Model: provider.Model,
+                        MaxTokens: 16),
+                    timeout.Token)
+                .ConfigureAwait(false);
+            return Success(
+                requestId,
+                new AgentRuntimeProviderTestResult(
+                    true,
+                    response.Provider,
+                    response.Model,
+                    ElapsedMilliseconds(startedAt),
+                    "The provider responded successfully.")
+                {
+                    Capabilities = AgentProviderConfiguration.GetCapabilities(provider)
+                });
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        {
+            return Success(
+                requestId,
+                new AgentRuntimeProviderTestResult(
+                    false,
+                    provider.BuiltinId,
+                    provider.Model,
+                    ElapsedMilliseconds(startedAt),
+                    "The provider connectivity test timed out.",
+                    AgentProviderErrorKind.Timeout.ToString())
+                {
+                    Capabilities = AgentProviderConfiguration.GetCapabilities(provider)
+                });
+        }
+        catch (AgentProviderException exception)
+        {
+            return Success(
+                requestId,
+                new AgentRuntimeProviderTestResult(
+                    false,
+                    provider.BuiltinId,
+                    provider.Model,
+                    ElapsedMilliseconds(startedAt),
+                    exception.SafeMessage,
+                    exception.Kind.ToString())
+                {
+                    Capabilities = AgentProviderConfiguration.GetCapabilities(provider)
+                });
+        }
+        catch (Exception exception)
+        {
+            return Success(
+                requestId,
+                new AgentRuntimeProviderTestResult(
+                    false,
+                    provider.BuiltinId,
+                    provider.Model,
+                    ElapsedMilliseconds(startedAt),
+                    TrimException(exception),
+                    exception.GetType().Name)
+                {
+                    Capabilities = AgentProviderConfiguration.GetCapabilities(provider)
+                });
+        }
+    }
+
+    private static long ElapsedMilliseconds(DateTimeOffset startedAt)
+        => Math.Max(0, (long)(DateTimeOffset.UtcNow - startedAt).TotalMilliseconds);
 
     private AgentRuntimeResponse ToolCatalog(string requestId)
     {

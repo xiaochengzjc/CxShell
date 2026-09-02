@@ -57,4 +57,38 @@ public sealed class AgentDiagnosticCatalogTests
             out error));
         Assert.Contains("scope", error, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Theory]
+    [InlineData("Linux/Unix")]
+    [InlineData("Windows")]
+    public void DiagnosticPlansAreReadOnlyInRiskMode(string platform)
+    {
+        var session = new AgentSessionSnapshot
+        {
+            SessionId = Guid.NewGuid(),
+            Protocol = CxShell.Models.SessionProtocol.SSH,
+            IsConnected = true,
+            Platform = platform
+        };
+        var policy = new AgentPermissionPolicy
+        {
+            PermissionMode = AgentPermissionPolicy.RiskBasedApprovalMode
+        };
+
+        foreach (var scope in AgentDiagnosticCatalog.Scopes)
+        {
+            Assert.True(
+                AgentDiagnosticCatalog.TryCreatePlan(session, scope, out var plan, out var error),
+                $"Could not create {platform} {scope} plan: {error}");
+
+            var result = policy.Evaluate(session, plan.Command);
+
+            Assert.True(
+                result.Risk == AgentCommandRisk.ReadOnly,
+                $"{platform} {scope} was classified as {result.Risk}: {plan.Command}");
+            Assert.True(
+                result.Decision == AgentPermissionDecision.Allowed,
+                $"{platform} {scope} was classified as {result.Decision}: {plan.Command}");
+        }
+    }
 }

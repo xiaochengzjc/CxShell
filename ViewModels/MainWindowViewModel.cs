@@ -2769,7 +2769,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 tab.Terminal.SendInput(payload);
                 await Task.CompletedTask;
             },
-            async (request, cancellationToken) =>
+            runCommand: null,
+            runCommandResult: async (request, cancellationToken) =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (tab.IsDisposed || !tab.IsConnected || !tab.Terminal.IsConnected)
@@ -2784,6 +2785,23 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                     cancellationToken,
                     request.DisplayCommand,
                     request.SensitiveInput).ConfigureAwait(false);
+            },
+            runCommandProgressResult: async (request, cancellationToken, progressReceived) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (tab.IsDisposed || !tab.IsConnected || !tab.Terminal.IsConnected)
+                    throw new AgentCommandDeliveryException(
+                        AgentCommandStatus.SessionNotConnected,
+                        "The requested session is no longer connected.");
+
+                return await tab.Terminal.RunAgentCommandAsync(
+                    request.RequestId,
+                    request.Command,
+                    request.Timeout,
+                    cancellationToken,
+                    request.DisplayCommand,
+                    request.SensitiveInput,
+                    progressReceived).ConfigureAwait(false);
             });
     }
 

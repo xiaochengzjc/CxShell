@@ -76,6 +76,39 @@ public sealed class AgentSessionGatewayTests
     }
 
     [Fact]
+    public async Task CapturedRemoteFailurePreservesExitCodeStdoutAndStderr()
+    {
+        var snapshot = CreateSnapshot(SessionProtocol.SSH, isConnected: true);
+        var endpoint = new AgentSessionEndpoint(
+            () => snapshot,
+            (_, _) => Task.CompletedTask,
+            runCommand: null,
+            runCommandResult: (_, _) => Task.FromResult(
+                new AgentCommandExecutionResult(
+                    RemoteCompletionConfirmed: true,
+                    Output: "partial output",
+                    Error: "permission denied",
+                    ExitCode: 13)));
+        using var gateway = new AgentSessionGateway(
+            new DelegateAgentSessionHost(() => [endpoint]));
+
+        var result = await gateway.ExecuteCommandAsync(new AgentCommandRequest
+        {
+            SessionId = snapshot.SessionId,
+            Command = "apt-get install nginx"
+        });
+
+        Assert.Equal(AgentCommandStatus.Failed, result.Status);
+        Assert.Equal(AgentCommandExecutionState.Failed, result.ExecutionState);
+        Assert.True(result.RemoteCompletionConfirmed);
+        Assert.Equal(13, result.ExitCode);
+        Assert.Equal("partial output", result.Output);
+        Assert.Equal("permission denied", result.Error);
+        Assert.Contains("exit code 13", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(result.IsOutcomeCertain);
+    }
+
+    [Fact]
     public async Task ReusingACompletedRequestIdReturnsTheCachedResultWithoutDispatchingAgain()
     {
         var snapshot = CreateSnapshot(SessionProtocol.SSH, isConnected: true);

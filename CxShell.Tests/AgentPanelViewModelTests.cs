@@ -74,6 +74,93 @@ public sealed class AgentPanelViewModelTests
     }
 
     [Fact]
+    public void RunHistoryExposesCheckpointProgressWithoutCommandDetails()
+    {
+        var checkpoint = new AgentRunCheckpoint(
+            3,
+            "tool_call",
+            "running",
+            ToolName: "session_command",
+            ModelRequestCount: 2,
+            ToolCallCount: 3);
+        var run = new AgentPanelRunViewModel(
+            new AgentRuntimeRunSnapshot(
+                "run-checkpoint",
+                Guid.NewGuid().ToString("D"),
+                DateTimeOffset.UtcNow,
+                "running",
+                ToolCallCount: 3,
+                ModelRequestCount: 2,
+                Checkpoint: checkpoint),
+            canRetry: false);
+
+        Assert.True(run.HasCheckpoint);
+        Assert.Contains("session_command", run.CheckpointText, StringComparison.Ordinal);
+        Assert.Contains("3", run.CheckpointText, StringComparison.Ordinal);
+        Assert.Contains("2", run.CheckpointText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RunHistoryKeepsCheckpointRowHiddenForLegacySnapshots()
+    {
+        var run = new AgentPanelRunViewModel(
+            new AgentRuntimeRunSnapshot(
+                "legacy-run",
+                Guid.NewGuid().ToString("D"),
+                DateTimeOffset.UtcNow,
+                "completed"),
+            canRetry: false);
+
+        Assert.False(run.HasCheckpoint);
+        Assert.Equal(string.Empty, run.CheckpointText);
+    }
+
+    [Fact]
+    public void RunHistoryShowsTargetAndStoppedStatus()
+    {
+        var run = new AgentPanelRunViewModel(
+            new AgentRuntimeRunSnapshot(
+                "stopped-run",
+                Guid.NewGuid().ToString("D"),
+                DateTimeOffset.UtcNow,
+                "stopped"),
+            canRetry: false,
+            sessionLabel: "production-server");
+
+        Assert.Contains("production-server", run.TargetText, StringComparison.Ordinal);
+        Assert.Equal("stopped", run.Status);
+        Assert.False(run.IsActive);
+        Assert.Equal(
+            CxShell.Services.LocalizationService.Shared.Text("Agent.Stopped"),
+            run.StatusDisplay);
+    }
+
+    [Fact]
+    public void WaitingRunIsActiveAndSearchIncludesProviderAndModel()
+    {
+        var run = new AgentPanelRunViewModel(
+            new AgentRuntimeRunSnapshot(
+                "waiting-run",
+                Guid.NewGuid().ToString("D"),
+                DateTimeOffset.UtcNow,
+                AgentRunStates.WaitingForInput,
+                Provider: "routin-ai-plan",
+                Model: "gpt-5",
+                PromptPreview: "install nginx",
+                RequiresUserAction: true,
+                PauseReason: "sudo password required"),
+            canRetry: false,
+            sessionLabel: "production-server");
+
+        Assert.True(run.IsActive);
+        Assert.True(run.IsWaiting);
+        Assert.True(run.MatchesSearch("routin-ai-plan"));
+        Assert.True(run.MatchesSearch("gpt-5"));
+        Assert.True(run.MatchesSearch("password"));
+        Assert.False(run.MatchesSearch("unrelated"));
+    }
+
+    [Fact]
     public void FleetToolResultIsFormattedAsCompactSummary()
     {
         var value = """

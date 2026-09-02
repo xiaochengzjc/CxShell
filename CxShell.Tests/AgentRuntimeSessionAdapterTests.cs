@@ -547,7 +547,7 @@ public sealed class AgentRuntimeSessionAdapterTests
             "completed",
             status.Result.Value.GetProperty("run").GetProperty("endReason").GetString());
         Assert.Equal(
-            3,
+            7,
             status.Result.Value.GetProperty("run").GetProperty("eventCount").GetInt64());
 
         var rest = await Dispatch(
@@ -556,7 +556,7 @@ public sealed class AgentRuntimeSessionAdapterTests
             AgentRuntimeMethodNames.RunEvents,
             new { runId = "runtime-events-run", afterSequence = 1, limit = 9999 });
         Assert.True(rest.Ok);
-        Assert.Equal(2, rest.Result!.Value.GetProperty("events").GetArrayLength());
+        Assert.Equal(6, rest.Result!.Value.GetProperty("events").GetArrayLength());
         Assert.False(rest.Result.Value.GetProperty("hasMore").GetBoolean());
         Assert.False(rest.Result.Value.GetProperty("hasGap").GetBoolean());
 

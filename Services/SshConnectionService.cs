@@ -12,6 +12,15 @@ using Renci.SshNet.Common;
 
 namespace CxShell.Services;
 
+public sealed record SshCommandExecutionResult(
+    string Output,
+    string Error,
+    int? ExitStatus,
+    bool Completed)
+{
+    public bool Succeeded => Completed && (ExitStatus is null or 0);
+}
+
 public class SshConnectionService : ITerminalConnectionService
 {
     private SshClient? _sshClient;
@@ -1022,7 +1031,10 @@ public class SshConnectionService : ITerminalConnectionService
         TimeSpan timeout,
         CancellationToken cancellationToken = default)
     {
-        return RunCommandCoreAsync(commandText, timeout, outputReceived: null, cancellationToken);
+        return RunCommandAndThrowOnFailureAsync(
+            commandText,
+            timeout,
+            cancellationToken: cancellationToken);
     }
 
     public Task<string> RunCommandStreamingAsync(
@@ -1034,13 +1046,60 @@ public class SshConnectionService : ITerminalConnectionService
         string? inputText = null)
     {
         ArgumentNullException.ThrowIfNull(outputReceived);
-        return RunCommandCoreAsync(commandText, timeout, outputReceived, cancellationToken, outputEncoding, inputText);
+        return RunCommandAndThrowOnFailureAsync(
+            commandText,
+            timeout,
+            outputReceived,
+            cancellationToken,
+            outputEncoding,
+            inputText);
     }
 
-    private async Task<string> RunCommandCoreAsync(
+    public Task<SshCommandExecutionResult> RunCommandStreamingResultAsync(
+        string commandText,
+        TimeSpan timeout,
+        Action<string>? outputReceived = null,
+        Action<string>? errorReceived = null,
+        CancellationToken cancellationToken = default,
+        Encoding? outputEncoding = null,
+        string? inputText = null)
+    {
+        return RunCommandCoreAsync(
+            commandText,
+            timeout,
+            outputReceived,
+            errorReceived,
+            cancellationToken,
+            outputEncoding,
+            inputText);
+    }
+
+    private async Task<string> RunCommandAndThrowOnFailureAsync(
+        string commandText,
+        TimeSpan timeout,
+        Action<string>? outputReceived = null,
+        CancellationToken cancellationToken = default,
+        Encoding? outputEncoding = null,
+        string? inputText = null)
+    {
+        var result = await RunCommandCoreAsync(
+                commandText,
+                timeout,
+                outputReceived,
+                errorReceived: null,
+                cancellationToken: cancellationToken,
+                outputEncoding: outputEncoding,
+                inputText: inputText)
+            .ConfigureAwait(false);
+        ThrowIfCommandFailed(result);
+        return result.Output;
+    }
+
+    private async Task<SshCommandExecutionResult> RunCommandCoreAsync(
         string commandText,
         TimeSpan timeout,
         Action<string>? outputReceived,
+        Action<string>? errorReceived,
         CancellationToken cancellationToken,
         Encoding? outputEncoding = null,
         string? inputText = null)
@@ -1060,15 +1119,16 @@ public class SshConnectionService : ITerminalConnectionService
                 using var command = _sshClient.CreateCommand(commandText, commandEncoding);
                 command.CommandTimeout = timeout;
                 var executeTask = command.ExecuteAsync(cancellationToken);
-                Task<string>? streamedOutputTask = null;
-                if (outputReceived != null)
-                {
-                    streamedOutputTask = ReadCommandOutputAsync(
-                        command.OutputStream,
-                        commandEncoding,
-                        outputReceived,
-                        cancellationToken);
-                }
+                var streamedOutputTask = ReadCommandOutputAsync(
+                    command.OutputStream,
+                    commandEncoding,
+                    outputReceived ?? IgnoreOutput,
+                    cancellationToken);
+                var streamedErrorTask = ReadCommandOutputAsync(
+                    command.ExtendedOutputStream,
+                    commandEncoding,
+                    errorReceived ?? IgnoreOutput,
+                    cancellationToken);
 
                 if (!string.IsNullOrEmpty(inputText))
                 {
@@ -1082,24 +1142,34 @@ public class SshConnectionService : ITerminalConnectionService
                 }
 
                 await executeTask.ConfigureAwait(false);
-                var result = streamedOutputTask == null
-                    ? command.Result
-                    : await streamedOutputTask.ConfigureAwait(false);
-                if (command.ExitStatus != 0)
-                {
-                    var error = string.IsNullOrWhiteSpace(command.Error)
-                        ? $"Remote command exited with code {command.ExitStatus}."
-                        : command.Error.Trim();
-                    throw new InvalidOperationException(error);
-                }
-
-                return result;
+                var output = await streamedOutputTask.ConfigureAwait(false);
+                var error = await streamedErrorTask.ConfigureAwait(false);
+                return new SshCommandExecutionResult(
+                    output,
+                    error,
+                    command.ExitStatus,
+                    Completed: true);
             }, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             _commandGate.Release();
         }
+    }
+
+    private static void ThrowIfCommandFailed(SshCommandExecutionResult result)
+    {
+        if (result.Succeeded)
+            return;
+
+        var detail = string.IsNullOrWhiteSpace(result.Error)
+            ? $"Remote command exited with code {result.ExitStatus?.ToString() ?? "unknown"}."
+            : result.Error.Trim();
+        throw new InvalidOperationException(detail);
+    }
+
+    private static void IgnoreOutput(string _)
+    {
     }
 
     private static async Task<string> ReadCommandOutputAsync(

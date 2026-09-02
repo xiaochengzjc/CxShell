@@ -33,6 +33,18 @@ public sealed record AgentProviderSnapshot
     public bool HasApiKey { get; init; }
     public bool AllowInsecureTls { get; init; }
     public int RequestTimeoutSeconds { get; init; }
+    public AgentProviderCapabilities Capabilities { get; init; } = new();
+}
+
+public sealed record AgentProviderCapabilities
+{
+    public bool SupportsTools { get; init; }
+    public bool SupportsStreaming { get; init; }
+    public bool SupportsVision { get; init; }
+    public bool SupportsDocumentInput { get; init; }
+    public bool SupportsResponsesApi { get; init; }
+    public bool SupportsTokenUsage { get; init; }
+    public bool SupportsReasoning { get; init; }
 }
 
 public static class AgentProviderConfiguration
@@ -81,7 +93,28 @@ public static class AgentProviderConfiguration
             RequiresApiKey = settings.RequiresApiKey,
             HasApiKey = !string.IsNullOrWhiteSpace(GetApiKey(settings)),
             AllowInsecureTls = settings.AllowInsecureTls,
-            RequestTimeoutSeconds = settings.RequestTimeoutSeconds
+            RequestTimeoutSeconds = settings.RequestTimeoutSeconds,
+            Capabilities = GetCapabilities(settings)
+        };
+    }
+
+    public static AgentProviderCapabilities GetCapabilities(AgentProviderSettings? settings)
+    {
+        if (settings == null || !settings.Enabled ||
+            settings.Type is not (AgentProviderType.OpenAiChatCompatible or AgentProviderType.OpenAiResponses))
+            return new();
+
+        return new AgentProviderCapabilities
+        {
+            SupportsTools = true,
+            SupportsStreaming = true,
+            // Both supported wire formats can carry OpenAI-compatible image
+            // input. Document attachments are extracted to text by CxShell.
+            SupportsVision = true,
+            SupportsDocumentInput = true,
+            SupportsResponsesApi = settings.Type == AgentProviderType.OpenAiResponses,
+            SupportsTokenUsage = true,
+            SupportsReasoning = settings.Type == AgentProviderType.OpenAiResponses
         };
     }
 

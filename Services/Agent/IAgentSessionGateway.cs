@@ -23,7 +23,8 @@ public interface IAgentSessionGateway
     AgentSessionSnapshot? GetSession(Guid sessionId);
     Task<AgentCommandResult> ExecuteCommandAsync(
         AgentCommandRequest request,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        Action<AgentCommandProgress>? progressReceived = null);
     Task<AgentFleetInspectionResult> RunReadOnlyDiagnosticAcrossSessionsAsync(
         string scope,
         CancellationToken cancellationToken = default);
@@ -46,30 +47,71 @@ public interface IAgentSessionEndpoint
     Task<AgentCommandExecutionResult> ExecuteCommandAsync(
         AgentCommandRequest request,
         CancellationToken cancellationToken);
+
+    Task<AgentCommandExecutionResult> ExecuteCommandAsync(
+        AgentCommandRequest request,
+        CancellationToken cancellationToken,
+        Action<AgentCommandProgress>? progressReceived)
+        => ExecuteCommandAsync(request, cancellationToken);
 }
 
 public sealed record AgentCommandExecutionResult(
     bool RemoteCompletionConfirmed,
-    string? Output = null);
+    string? Output = null,
+    string? Error = null,
+    int? ExitCode = null)
+{
+    public bool Succeeded => RemoteCompletionConfirmed && (ExitCode is null or 0);
+}
 
 public sealed class AgentSessionEndpoint : IAgentSessionEndpoint
 {
     private readonly Func<AgentSessionSnapshot> _snapshotProvider;
     private readonly Func<AgentCommandRequest, CancellationToken, Task> _sendCommand;
     private readonly Func<AgentCommandRequest, CancellationToken, Task<string>>? _runCommand;
+    private readonly Func<AgentCommandRequest, CancellationToken, Task<AgentCommandExecutionResult>>? _runCommandResult;
+    private readonly Func<AgentCommandRequest, CancellationToken, Action<AgentCommandProgress>?, Task<AgentCommandExecutionResult>>? _runCommandProgressResult;
 
     public AgentSessionEndpoint(
         Func<AgentSessionSnapshot> snapshotProvider,
         Func<AgentCommandRequest, CancellationToken, Task> sendCommand,
         Func<AgentCommandRequest, CancellationToken, Task<string>>? runCommand = null)
+        : this(snapshotProvider, sendCommand, runCommand, runCommandResult: null)
+    {
+    }
+
+    public AgentSessionEndpoint(
+        Func<AgentSessionSnapshot> snapshotProvider,
+        Func<AgentCommandRequest, CancellationToken, Task> sendCommand,
+        Func<AgentCommandRequest, CancellationToken, Task<string>>? runCommand,
+        Func<AgentCommandRequest, CancellationToken, Task<AgentCommandExecutionResult>>? runCommandResult)
+        : this(
+            snapshotProvider,
+            sendCommand,
+            runCommand,
+            runCommandResult,
+            runCommandProgressResult: null)
+    {
+    }
+
+    public AgentSessionEndpoint(
+        Func<AgentSessionSnapshot> snapshotProvider,
+        Func<AgentCommandRequest, CancellationToken, Task> sendCommand,
+        Func<AgentCommandRequest, CancellationToken, Task<string>>? runCommand,
+        Func<AgentCommandRequest, CancellationToken, Task<AgentCommandExecutionResult>>? runCommandResult,
+        Func<AgentCommandRequest, CancellationToken, Action<AgentCommandProgress>?, Task<AgentCommandExecutionResult>>? runCommandProgressResult)
     {
         _snapshotProvider = snapshotProvider ?? throw new ArgumentNullException(nameof(snapshotProvider));
         _sendCommand = sendCommand ?? throw new ArgumentNullException(nameof(sendCommand));
         _runCommand = runCommand;
+        _runCommandResult = runCommandResult;
+        _runCommandProgressResult = runCommandProgressResult;
     }
 
     public AgentSessionSnapshot Snapshot => _snapshotProvider();
-    public bool SupportsCommandOutputCapture => _runCommand != null;
+    public bool SupportsCommandOutputCapture => _runCommand != null ||
+                                                _runCommandResult != null ||
+                                                _runCommandProgressResult != null;
 
     public Task SendCommandAsync(AgentCommandRequest request, CancellationToken cancellationToken)
         => _sendCommand(request, cancellationToken);
@@ -78,6 +120,15 @@ public sealed class AgentSessionEndpoint : IAgentSessionEndpoint
         AgentCommandRequest request,
         CancellationToken cancellationToken)
     {
+        if (_runCommandProgressResult != null)
+        {
+            return await _runCommandProgressResult(request, cancellationToken, null)
+                .ConfigureAwait(false);
+        }
+
+        if (_runCommandResult != null)
+            return await _runCommandResult(request, cancellationToken).ConfigureAwait(false);
+
         if (_runCommand == null)
         {
             await _sendCommand(request, cancellationToken).ConfigureAwait(false);
@@ -86,6 +137,18 @@ public sealed class AgentSessionEndpoint : IAgentSessionEndpoint
 
         var output = await _runCommand(request, cancellationToken).ConfigureAwait(false);
         return new AgentCommandExecutionResult(true, output);
+    }
+
+    public async Task<AgentCommandExecutionResult> ExecuteCommandAsync(
+        AgentCommandRequest request,
+        CancellationToken cancellationToken,
+        Action<AgentCommandProgress>? progressReceived)
+    {
+        if (_runCommandProgressResult != null)
+            return await _runCommandProgressResult(request, cancellationToken, progressReceived)
+                .ConfigureAwait(false);
+
+        return await ExecuteCommandAsync(request, cancellationToken).ConfigureAwait(false);
     }
 }
 
