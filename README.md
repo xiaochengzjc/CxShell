@@ -14,17 +14,17 @@ Packages are available for Windows x64, macOS x64/arm64, and Linux x64/arm64. Th
 
 ## Screenshots
 
-### SSH Workspace, SFTP, and Server Monitoring
+### SSH Workspace, SFTP, Monitoring, and Agent
 
-![CxShell SSH terminal with SFTP file management and server monitoring](docs/images/cxshell-ssh-sftp-monitor.png)
+![CxShell SSH terminal with SFTP file management, server monitoring, and Agent panel](docs/images/cxshell-ssh-sftp-monitor.png)
 
-CxShell keeps the terminal, remote file browser, transfer queue, and server metrics together in one workspace.
+CxShell keeps the terminal, remote file browser, transfer queue, server metrics, and Agent panel together in one workspace.
 
 ### Integrated RDP Session
 
-![CxShell integrated RDP remote desktop session](docs/images/cxshell-rdp-session.png)
+![CxShell integrated RDP remote desktop session with the Agent panel](docs/images/cxshell-rdp-session.png)
 
-RDP sessions run inside the same tabbed workspace and share CxShell's session management experience.
+RDP sessions run inside the same tabbed workspace and share CxShell's session management experience, with the Agent panel available alongside the remote desktop.
 
 ## Features
 

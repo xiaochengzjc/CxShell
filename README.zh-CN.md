@@ -14,17 +14,17 @@ CxShell 是一个使用 .NET、Avalonia 和 AtomUI 构建的跨平台远程会�
 
 ## 界面展示
 
-### SSH 工作区、SFTP 与服务器监控
+### SSH 工作区、SFTP、服务器监控与 Agent
 
-![CxShell SSH 终端、SFTP 文件管理和服务器监控](docs/images/cxshell-ssh-sftp-monitor.png)
+![CxShell SSH 终端、SFTP 文件管理、服务器监控和 Agent 面板](docs/images/cxshell-ssh-sftp-monitor.png)
 
-终端、远程文件浏览、传输队列和服务器指标可以在同一个工作区内协同使用。
+终端、远程文件浏览、传输队列、服务器指标和 Agent 面板可以在同一个工作区内协同使用。
 
 ### 内嵌 RDP 会话
 
-![CxShell 内嵌 RDP 远程桌面会话](docs/images/cxshell-rdp-session.png)
+![CxShell 内嵌 RDP 远程桌面会话与 Agent 面板](docs/images/cxshell-rdp-session.png)
 
-RDP 会话直接运行在统一的标签工作区中，并复用 CxShell 的会话管理体验。
+RDP 会话直接运行在统一的标签工作区中，并复用 CxShell 的会话管理体验，Agent 面板也可以并列显示。
 
 ## 功能特性
 
