@@ -50,6 +50,27 @@ public sealed class ApplicationSettingsStoreTests
     }
 
     [Fact]
+    public void SaveAndLoad_PreservesGlobalPanelVisibility()
+    {
+        using var directory = new TemporaryDirectory();
+        var store = new ApplicationSettingsStore(directory.Path);
+        store.Save(new ApplicationSettings
+        {
+            ShowTabBar = true,
+            ShowSftpPanel = true,
+            ShowMonitorPanel = true,
+            ShowAgentPanel = true
+        });
+
+        var loaded = store.Load();
+
+        Assert.True(loaded.ShowTabBar);
+        Assert.True(loaded.ShowSftpPanel);
+        Assert.True(loaded.ShowMonitorPanel);
+        Assert.True(loaded.ShowAgentPanel);
+    }
+
+    [Fact]
     public void Load_UsesFallbackWhenStandaloneSettingsAreInvalid()
     {
         using var directory = new TemporaryDirectory();

@@ -8,7 +8,7 @@ CxShell 是一个使用 .NET、Avalonia 和 AtomUI 构建的跨平台远程会�
 
 ## 最新版本
 
-当前最新版本为 [CxShell v0.1.45](https://github.com/xiaochengzjc/CxShell/releases/tag/v0.1.45)。本版本包含 Agent Runtime 稳定性改进、命令校验与敏感信息脱敏、长任务处理能力、AtomUI 6.1.7 升级、最新工作区截图、图片和文档附件、Markdown 渲染，以及最新的终端和远程会话体验改进。
+当前最新版本为 [CxShell v0.1.46](https://github.com/xiaochengzjc/CxShell/releases/tag/v0.1.46)。本版本包含参考 VelaShell 的 Agent 会话权限边界、可恢复运行 checkpoint、统一工具结果语义、SFTP 传输生命周期保护、SSH 终端读取缓冲优化，以及全局面板设置持久化。
 
 发布页提供 Windows x64、macOS x64/arm64 和 Linux x64/arm64 安装包。Windows 和 macOS 提供安装包或便携包，Linux 提供 AppImage 和 tar.gz 压缩包。
 

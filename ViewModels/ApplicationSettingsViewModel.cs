@@ -52,6 +52,9 @@ public partial class ApplicationSettingsViewModel : ObservableObject
 
     [ObservableProperty] private bool _showSessionManagerOnStartup;
     [ObservableProperty] private bool _showTabBar;
+    [ObservableProperty] private bool _showSftpPanel;
+    [ObservableProperty] private bool _showMonitorPanel;
+    [ObservableProperty] private bool _showAgentPanel;
     [ObservableProperty] private bool _enableCommandSuggestions;
     [ObservableProperty] private string _themeMode;
     [ObservableProperty] private bool _autoCheckForUpdates;
@@ -101,6 +104,9 @@ public partial class ApplicationSettingsViewModel : ObservableObject
     public string RecordingDaysText => Text("ApplicationSettings.Days");
     public string ShowSessionManagerOnStartupText => Text("ApplicationSettings.ShowSessionManagerOnStartup");
     public string ShowTabBarText => Text("ApplicationSettings.ShowTabBar");
+    public string ShowSftpPanelText => Text("ApplicationSettings.ShowSftpPanel");
+    public string ShowMonitorPanelText => Text("ApplicationSettings.ShowMonitorPanel");
+    public string ShowAgentPanelText => Text("ApplicationSettings.ShowAgentPanel");
     public string EnableCommandSuggestionsText => Text("ApplicationSettings.EnableCommandSuggestions");
     public string AutoCheckForUpdatesText => Text("ApplicationSettings.AutoCheckForUpdates");
     public string IncludePrereleaseUpdatesText => Text("ApplicationSettings.IncludePrereleaseUpdates");
@@ -197,6 +203,9 @@ public partial class ApplicationSettingsViewModel : ObservableObject
 
         _showSessionManagerOnStartup = settings.ShowSessionManagerOnStartup;
         _showTabBar = settings.ShowTabBar;
+        _showSftpPanel = settings.ShowSftpPanel;
+        _showMonitorPanel = settings.ShowMonitorPanel;
+        _showAgentPanel = settings.ShowAgentPanel;
         _enableCommandSuggestions = settings.EnableCommandSuggestions;
         _themeMode = NormalizeThemeMode(settings.ThemeMode);
         _autoCheckForUpdates = settings.AutoCheckForUpdates;
@@ -244,6 +253,24 @@ public partial class ApplicationSettingsViewModel : ObservableObject
     partial void OnShowTabBarChanged(bool value)
     {
         _settings.ShowTabBar = value;
+        Persist();
+    }
+
+    partial void OnShowSftpPanelChanged(bool value)
+    {
+        _settings.ShowSftpPanel = value;
+        Persist();
+    }
+
+    partial void OnShowMonitorPanelChanged(bool value)
+    {
+        _settings.ShowMonitorPanel = value;
+        Persist();
+    }
+
+    partial void OnShowAgentPanelChanged(bool value)
+    {
+        _settings.ShowAgentPanel = value;
         Persist();
     }
 
@@ -533,6 +560,9 @@ public partial class ApplicationSettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(RecordingDaysText));
         OnPropertyChanged(nameof(ShowSessionManagerOnStartupText));
         OnPropertyChanged(nameof(ShowTabBarText));
+        OnPropertyChanged(nameof(ShowSftpPanelText));
+        OnPropertyChanged(nameof(ShowMonitorPanelText));
+        OnPropertyChanged(nameof(ShowAgentPanelText));
         OnPropertyChanged(nameof(EnableCommandSuggestionsText));
         OnPropertyChanged(nameof(AutoCheckForUpdatesText));
         OnPropertyChanged(nameof(IncludePrereleaseUpdatesText));

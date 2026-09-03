@@ -32,6 +32,12 @@
                     <StackPanel Spacing="8">
                         <atom:CheckBox Content="{Binding ShowTabBarText}"
                                        IsChecked="{Binding ShowTabBar, Mode=TwoWay}"/>
+                        <atom:CheckBox Content="{Binding ShowSftpPanelText}"
+                                       IsChecked="{Binding ShowSftpPanel, Mode=TwoWay}"/>
+                        <atom:CheckBox Content="{Binding ShowMonitorPanelText}"
+                                       IsChecked="{Binding ShowMonitorPanel, Mode=TwoWay}"/>
+                        <atom:CheckBox Content="{Binding ShowAgentPanelText}"
+                                       IsChecked="{Binding ShowAgentPanel, Mode=TwoWay}"/>
                         <atom:CheckBox Content="{Binding EnableCommandSuggestionsText}"
                                        IsChecked="{Binding EnableCommandSuggestions, Mode=TwoWay}"/>
                     </StackPanel>

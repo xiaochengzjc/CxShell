@@ -17,9 +17,14 @@ public class AnsiParser
         CsiEntry,
         CsiParam,
         CsiIntermediate,
+        EscapeIntermediate,
         OscString,
         OscEscape,
-        CharsetDesignate
+        CharsetDesignate,
+        DcsString,
+        DcsEscape,
+        ControlString,
+        ControlStringEscape
     }
 
     private State _state = State.Ground;
@@ -29,33 +34,136 @@ public class AnsiParser
     private char _intermediateChar;
     private char _charsetTarget;
     private bool _isPrivateMode; // ? prefix for private modes
+    private char _csiPrefix;
+    private bool _csiParameterStarted;
     private bool _g0LineDrawing;
     private bool _g1LineDrawing;
     private bool _useG1;
     private int _savedCursorRow;
     private int _savedCursorCol;
+    private Color _savedForeground;
+    private Color _savedBackground;
+    private bool _savedBoldIntensity;
+    private bool _savedBold;
+    private bool _savedDim;
+    private bool _savedItalic;
+    private bool _savedUnderline;
+    private bool _savedDoubleUnderline;
+    private bool _savedBlinking;
+    private bool _savedReverse;
+    private bool _savedInvisible;
+    private bool _savedStrikethrough;
+    private bool _hasSavedCursor;
+    private char _pendingHighSurrogate;
+    private bool _csiHasSubparameters;
+    private int _csiIntermediateCount;
     private readonly StringBuilder _oscBuffer = new();
+    private readonly StringBuilder _dcsBuffer = new();
 
     private readonly TerminalBuffer _buffer;
 
     public event Action? BellReceived;
     public event Action<string>? OperatingSystemCommandReceived;
+    public event Action<string>? DeviceControlCommandReceived;
+    public event Action<char>? DeviceAttributesRequested;
+    public event Action<int>? DeviceStatusReportRequested;
+    public event Action<bool, int>? DeviceModeQueryRequested;
+    public event Action? KittyKeyboardProtocolQueryRequested;
 
     public AnsiParser(TerminalBuffer buffer)
     {
         _buffer = buffer;
     }
 
+    /// <summary>
+    /// Drops a partially received escape/control string. A reconnect can begin
+    /// with ordinary text, so parser state must never leak across sessions.
+    /// </summary>
+    public void ResetInputState()
+    {
+        _state = State.Ground;
+        ResetParams();
+        _charsetTarget = '\0';
+        _isPrivateMode = false;
+        _pendingHighSurrogate = '\0';
+        _oscBuffer.Clear();
+        _dcsBuffer.Clear();
+        _g0LineDrawing = false;
+        _g1LineDrawing = false;
+        _useG1 = false;
+        _hasSavedCursor = false;
+        _buffer.ResetInputHyperlink();
+    }
+
     public void Process(string data)
     {
-        foreach (var ch in data)
+        _buffer.BeginUpdate();
+        try
         {
-            ProcessChar(ch);
+            foreach (var ch in data)
+            {
+                if (_pendingHighSurrogate != '\0')
+                {
+                    if (_state == State.Ground && char.IsLowSurrogate(ch))
+                    {
+                        _buffer.PutRune(char.ConvertToUtf32(_pendingHighSurrogate, ch));
+                        _pendingHighSurrogate = '\0';
+                        continue;
+                    }
+
+                    ProcessChar('\uFFFD');
+                    _pendingHighSurrogate = '\0';
+                }
+
+                if (_state == State.Ground && char.IsHighSurrogate(ch))
+                {
+                    _pendingHighSurrogate = ch;
+                    continue;
+                }
+
+                if (_state == State.Ground && char.IsLowSurrogate(ch))
+                {
+                    _buffer.PutRune(0xFFFD);
+                    continue;
+                }
+
+                ProcessChar(ch);
+            }
+        }
+        finally
+        {
+            _buffer.EndUpdate();
         }
     }
 
     private void ProcessChar(char ch)
     {
+        if (ch is '\x18' or '\x1A')
+        {
+            _oscBuffer.Clear();
+            _dcsBuffer.Clear();
+            _state = State.Ground;
+            ResetParams();
+            return;
+        }
+
+        if (ch == '\x9C')
+        {
+            if (_state is State.OscString or State.OscEscape)
+                CompleteOscString();
+            else if (_state is State.DcsString or State.DcsEscape)
+                CompleteDcsString();
+            else if (_state is State.ControlString or State.ControlStringEscape)
+                _state = State.Ground;
+            return;
+        }
+
+        if (_state == State.Ground && ch is >= '\x80' and <= '\x9F')
+        {
+            ProcessC1Control(ch);
+            return;
+        }
+
         switch (_state)
         {
             case State.Ground:
@@ -73,6 +181,9 @@ public class AnsiParser
             case State.CsiIntermediate:
                 ProcessCsiIntermediate(ch);
                 break;
+            case State.EscapeIntermediate:
+                ProcessEscapeIntermediate(ch);
+                break;
             case State.OscString:
                 ProcessOscString(ch);
                 break;
@@ -82,6 +193,29 @@ public class AnsiParser
                     CompleteOscString();
                 else
                     _state = State.Ground;
+                break;
+            case State.DcsString:
+                ProcessDcsString(ch);
+                break;
+            case State.DcsEscape:
+                if (ch == '\\')
+                    CompleteDcsString();
+                else
+                {
+                    if (_dcsBuffer.Length < 8192)
+                        _dcsBuffer.Append('\x1B');
+                    _state = State.DcsString;
+                    ProcessDcsString(ch);
+                }
+                break;
+            case State.ControlString:
+                ProcessControlString(ch);
+                break;
+            case State.ControlStringEscape:
+                if (ch == '\\')
+                    _state = State.Ground;
+                else
+                    _state = State.ControlString;
                 break;
             case State.CharsetDesignate:
                 ProcessCharsetDesignation(ch);
@@ -120,7 +254,7 @@ public class AnsiParser
             default:
                 if (ch >= ' ')
                 {
-                    _buffer.PutChar(MapPrintableCharacter(ch));
+                    _buffer.PutRune(MapPrintableCharacter(ch));
                 }
                 break;
         }
@@ -139,13 +273,25 @@ public class AnsiParser
                 _oscBuffer.Clear();
                 _state = State.OscString;
                 break;
+            case 'P':
+                _dcsBuffer.Clear();
+                _state = State.DcsString;
+                break;
             case '(':
             case ')':
                 _charsetTarget = ch;
                 _state = State.CharsetDesignate;
                 break;
+            case '#':
+                _intermediateChar = '#';
+                _state = State.EscapeIntermediate;
+                break;
+            case 'H': // HTS - set a tab stop at the current column
+                _buffer.SetTabStop();
+                _state = State.Ground;
+                break;
             case 'M': // Reverse index
-                if (_buffer.CursorRow == 0)
+                if (_buffer.CursorRow == _buffer.ScrollTop)
                     _buffer.ScrollDown();
                 else
                     _buffer.MoveCursorUp(1);
@@ -168,6 +314,10 @@ public class AnsiParser
                 RestoreCursor();
                 _state = State.Ground;
                 break;
+            case 'c': // RIS - full terminal reset
+                ExecuteFullReset();
+                _state = State.Ground;
+                break;
             default:
                 _state = State.Ground;
                 break;
@@ -179,21 +329,36 @@ public class AnsiParser
         if (ch == '?')
         {
             _isPrivateMode = true;
+            _csiPrefix = ch;
+            _state = State.CsiParam;
+        }
+        else if (ch is '>' or '=' or '<')
+        {
+            _csiPrefix = ch;
             _state = State.CsiParam;
         }
         else if (ch >= '0' && ch <= '9')
         {
+            _csiParameterStarted = true;
             _currentParam = ch - '0';
             _state = State.CsiParam;
         }
         else if (ch == ';')
         {
+            _csiParameterStarted = true;
             StoreParam();
+            _state = State.CsiParam;
+        }
+        else if (ch == ':')
+        {
+            _csiParameterStarted = true;
+            _csiHasSubparameters = true;
             _state = State.CsiParam;
         }
         else if (ch >= 0x20 && ch <= 0x2F)
         {
             _intermediateChar = ch;
+            _csiIntermediateCount++;
             _state = State.CsiIntermediate;
         }
         else if (ch >= 0x40 && ch <= 0x7E)
@@ -211,16 +376,27 @@ public class AnsiParser
     {
         if (ch >= '0' && ch <= '9')
         {
-            _currentParam = _currentParam * 10 + (ch - '0');
+            _csiParameterStarted = true;
+            AppendParamDigit(ch - '0');
         }
         else if (ch == ';')
         {
+            _csiParameterStarted = true;
             StoreParam();
+        }
+        else if (ch == ':')
+        {
+            _csiParameterStarted = true;
+            // Colon subparameters are intentionally consumed as one opaque
+            // parameter group until their final byte. This keeps unsupported
+            // modern sequences from leaking their payload onto the screen.
+            _csiHasSubparameters = true;
         }
         else if (ch >= 0x20 && ch <= 0x2F)
         {
             StoreParam();
             _intermediateChar = ch;
+            _csiIntermediateCount++;
             _state = State.CsiIntermediate;
         }
         else if (ch >= 0x40 && ch <= 0x7E)
@@ -240,6 +416,7 @@ public class AnsiParser
         if (ch >= 0x20 && ch <= 0x2F)
         {
             _intermediateChar = ch;
+            _csiIntermediateCount++;
         }
         else if (ch >= 0x40 && ch <= 0x7E)
         {
@@ -274,17 +451,125 @@ public class AnsiParser
         var command = _oscBuffer.ToString();
         _oscBuffer.Clear();
         _state = State.Ground;
+        if (TryApplyHyperlinkCommand(command))
+            return;
+
         if (!string.IsNullOrEmpty(command))
             OperatingSystemCommandReceived?.Invoke(command);
     }
 
+    private bool TryApplyHyperlinkCommand(string command)
+    {
+        if (!command.StartsWith("8;", StringComparison.Ordinal))
+            return false;
+
+        var separator = command.IndexOf(';', 2);
+        if (separator < 0)
+            return true;
+
+        var uri = command[(separator + 1)..];
+        if (uri.Length > 4096)
+            return true;
+
+        foreach (var character in uri)
+        {
+            if (character < ' ' || character == '\x7F')
+                return true;
+        }
+
+        _buffer.SetHyperlink(uri);
+        return true;
+    }
+
+    private void ProcessDcsString(char ch)
+    {
+        if (ch == '\x1B')
+        {
+            _state = State.DcsEscape;
+            return;
+        }
+
+        if (ch == '\a')
+        {
+            CompleteDcsString();
+            return;
+        }
+
+        if (_dcsBuffer.Length < 8192)
+            _dcsBuffer.Append(ch);
+    }
+
+    private void CompleteDcsString()
+    {
+        var command = _dcsBuffer.ToString();
+        _dcsBuffer.Clear();
+        _state = State.Ground;
+        if (!string.IsNullOrEmpty(command))
+            DeviceControlCommandReceived?.Invoke(command);
+    }
+
     private void ExecuteCsi(char finalChar)
     {
+        if (_intermediateChar == '$' && finalChar == 'p')
+        {
+            if (_paramCount > 0)
+                DeviceModeQueryRequested?.Invoke(_isPrivateMode, _params[0]);
+            return;
+        }
+
+        if (_csiPrefix == '?' && finalChar == 'u' && !_csiParameterStarted)
+        {
+            KittyKeyboardProtocolQueryRequested?.Invoke();
+            return;
+        }
+
+        if (finalChar == 'u' && _csiPrefix is ('=' or '>' or '<'))
+        {
+            ExecuteKittyKeyboardCommand();
+            return;
+        }
+
         if (_isPrivateMode)
         {
             ExecutePrivateMode(finalChar);
             return;
         }
+
+        if (_intermediateChar == ' ' && finalChar == 'q')
+        {
+            _buffer.SetCursorStyle(GetParam(0, 0));
+            return;
+        }
+
+        if (_csiHasSubparameters)
+            return;
+
+        if (_csiPrefix == '>' && finalChar == 'm')
+        {
+            ExecuteModifyOtherKeys();
+            return;
+        }
+
+        if (_intermediateChar == '!' && finalChar == 'p')
+        {
+            ExecuteSoftReset();
+            return;
+        }
+
+        if (_csiIntermediateCount > 1)
+            return;
+
+        // CSI intermediates define a different command grammar. Unknown
+        // intermediate sequences must be consumed without running a command
+        // that happens to share the same final byte.
+        if (_intermediateChar != '\0')
+            return;
+
+        // CSI >/=/< has its own grammar. Unsupported prefixed commands must be
+        // consumed silently instead of falling through to an unprefixed command
+        // with the same final byte (notably vim's modifyOtherKeys probe).
+        if ((_csiPrefix is '>' or '=' or '<') && finalChar != 'c')
+            return;
 
         switch (finalChar)
         {
@@ -312,7 +597,13 @@ public class AnsiParser
             case 'f':
                 int row = GetParam(0, 1) - 1;
                 int col = GetParam(1, 1) - 1;
-                _buffer.MoveCursor(row, col);
+                _buffer.MoveCursorPosition(row, col);
+                break;
+            case 'I': // CHT - Cursor Horizontal Tabulation
+                _buffer.TabForward(GetParam(0, 1));
+                break;
+            case 'Z': // CBT - Cursor Backward Tabulation
+                _buffer.TabBackward(GetParam(0, 1));
                 break;
             case 'a': // HPR - Horizontal Position Relative
                 _buffer.MoveCursorForward(GetParam(0, 1));
@@ -364,7 +655,7 @@ public class AnsiParser
                     _buffer.ScrollDown();
                 break;
             case 'd': // VPA - Vertical Position Absolute
-                _buffer.MoveCursor(GetParam(0, 1) - 1, _buffer.CursorCol);
+                _buffer.MoveCursorVerticalAbsolute(GetParam(0, 1) - 1);
                 break;
             case 'e': // VPR - Vertical Position Relative
                 _buffer.MoveCursorDown(GetParam(0, 1));
@@ -388,7 +679,20 @@ public class AnsiParser
                 _buffer.EraseCharacters(GetParam(0, 1));
                 break;
             case 'r': // DECSTBM - Set scrolling region
-                // Ignored in basic implementation
+                var top = GetParam(0, 1) - 1;
+                var bottom = GetParam(1, _buffer.Rows) - 1;
+                _buffer.SetScrollRegion(top, bottom);
+                break;
+            case 'g': // TBC - Tabulation Clear
+                switch (GetParam(0, 0))
+                {
+                    case 0:
+                        _buffer.ClearTabStopAtCursor();
+                        break;
+                    case 3:
+                        _buffer.ClearAllTabStops();
+                        break;
+                }
                 break;
             case 's': // SCP - Save cursor position
                 SaveCursor();
@@ -397,9 +701,12 @@ public class AnsiParser
                 RestoreCursor();
                 break;
             case 'n': // DSR - Device Status Report
-                // Could report cursor position back
+                // The view model owns the connection, so response-capable reports
+                // are surfaced there instead of making the parser depend on SSH.
+                DeviceStatusReportRequested?.Invoke(GetParam(0, 0));
                 break;
             case 'c': // DA - Device Attributes
+                DeviceAttributesRequested?.Invoke(_csiPrefix);
                 break;
             case 'h': // SM - Set Mode
                 ExecuteSetMode(enabled: true);
@@ -412,14 +719,98 @@ public class AnsiParser
         }
     }
 
+    private void ProcessC1Control(char ch)
+    {
+        switch (ch)
+        {
+            case '\x84': // IND
+                _buffer.LineFeed();
+                break;
+            case '\x85': // NEL
+                _buffer.CarriageReturn();
+                _buffer.LineFeed();
+                break;
+            case '\x88': // HTS
+                _buffer.SetTabStop();
+                break;
+            case '\x8D': // RI
+                if (_buffer.CursorRow == _buffer.ScrollTop)
+                    _buffer.ScrollDown();
+                else
+                    _buffer.MoveCursorUp(1);
+                break;
+            case '\x90': // DCS
+                _dcsBuffer.Clear();
+                _state = State.DcsString;
+                break;
+            case '\x9B': // CSI
+                ResetParams();
+                _isPrivateMode = false;
+                _state = State.CsiEntry;
+                break;
+            case '\x9D': // OSC
+                _oscBuffer.Clear();
+                _state = State.OscString;
+                break;
+            case '\x98': // SOS
+            case '\x9E': // PM
+            case '\x9F': // APC
+                _state = State.ControlString;
+                break;
+        }
+    }
+
+    private void ProcessControlString(char ch)
+    {
+        if (ch == '\x1B')
+            _state = State.ControlStringEscape;
+    }
+
+    private void ProcessEscapeIntermediate(char ch)
+    {
+        if (_intermediateChar == '#' && ch == '8')
+            _buffer.FillScreenWithCharacter('E');
+
+        _intermediateChar = '\0';
+        _state = State.Ground;
+    }
+
     private void SaveCursor()
     {
         _savedCursorRow = _buffer.CursorRow;
         _savedCursorCol = _buffer.CursorCol;
+        _savedForeground = _buffer.CurrentForeground;
+        _savedBackground = _buffer.CurrentBackground;
+        _savedBoldIntensity = _buffer.CurrentBoldIntensity;
+        _savedBold = _buffer.CurrentBold;
+        _savedDim = _buffer.CurrentDim;
+        _savedItalic = _buffer.CurrentItalic;
+        _savedUnderline = _buffer.CurrentUnderline;
+        _savedDoubleUnderline = _buffer.CurrentDoubleUnderline;
+        _savedBlinking = _buffer.CurrentBlinking;
+        _savedReverse = _buffer.CurrentReverse;
+        _savedInvisible = _buffer.CurrentInvisible;
+        _savedStrikethrough = _buffer.CurrentStrikethrough;
+        _hasSavedCursor = true;
     }
 
     private void RestoreCursor()
     {
+        if (!_hasSavedCursor)
+            return;
+
+        _buffer.CurrentForeground = _savedForeground;
+        _buffer.CurrentBackground = _savedBackground;
+        _buffer.CurrentBoldIntensity = _savedBoldIntensity;
+        _buffer.CurrentBold = _savedBold;
+        _buffer.CurrentDim = _savedDim;
+        _buffer.CurrentItalic = _savedItalic;
+        _buffer.CurrentUnderline = _savedUnderline;
+        _buffer.CurrentDoubleUnderline = _savedDoubleUnderline;
+        _buffer.CurrentBlinking = _savedBlinking;
+        _buffer.CurrentReverse = _savedReverse;
+        _buffer.CurrentInvisible = _savedInvisible;
+        _buffer.CurrentStrikethrough = _savedStrikethrough;
         _buffer.MoveCursor(_savedCursorRow, _savedCursorCol);
     }
 
@@ -489,77 +880,134 @@ public class AnsiParser
 
     private void ExecutePrivateMode(char finalChar)
     {
-        int mode = GetParam(0, 0);
-        switch (finalChar)
+        for (var index = 0; index < _paramCount; index++)
         {
-            case 'h': // DECSET
-                switch (mode)
-                {
-                    case 1:
-                        _buffer.CursorKeyApplicationMode = true;
-                        break;
-                    case 6:
-                        _buffer.OriginMode = true;
-                        _buffer.MoveCursor(0, 0);
-                        break;
-                    case 7:
-                        _buffer.AutoWrapMode = true;
-                        break;
-                    case 25:
-                        _buffer.CursorVisible = true;
-                        break;
-                    case 47:
-                    case 1047:
-                    case 1049:
-                        if (!_buffer.DisableAlternateScreen)
-                        {
-                            _buffer.ClearScreen();
-                            _buffer.MoveCursor(0, 0);
-                        }
-                        break;
-                    case 66:
-                        _buffer.NumericKeypadApplicationMode = true;
-                        break;
-                    case 5:
-                        _buffer.ReverseVideoMode = true;
-                        _buffer.MarkAllDirty();
-                        break;
-                }
-                break;
-            case 'l': // DECRST
-                switch (mode)
-                {
-                    case 1:
-                        _buffer.CursorKeyApplicationMode = false;
-                        break;
-                    case 6:
-                        _buffer.OriginMode = false;
-                        _buffer.MoveCursor(0, 0);
-                        break;
-                    case 7:
-                        _buffer.AutoWrapMode = false;
-                        break;
-                    case 25:
-                        _buffer.CursorVisible = false;
-                        break;
-                    case 47:
-                    case 1047:
-                    case 1049:
-                        if (!_buffer.DisableAlternateScreen)
-                        {
-                            _buffer.ClearScreen();
-                            _buffer.MoveCursor(0, 0);
-                        }
-                        break;
-                    case 66:
-                        _buffer.NumericKeypadApplicationMode = false;
-                        break;
-                    case 5:
-                        _buffer.ReverseVideoMode = false;
-                        _buffer.MarkAllDirty();
-                        break;
-                }
-                break;
+            int mode = _params[index];
+            switch (finalChar)
+            {
+                case 'h': // DECSET
+                    switch (mode)
+                    {
+                        case 1:
+                            _buffer.CursorKeyApplicationMode = true;
+                            break;
+                        case 6:
+                            _buffer.OriginMode = true;
+                            _buffer.MoveCursorHome();
+                            break;
+                        case 7:
+                            _buffer.AutoWrapMode = true;
+                            break;
+                        case 25:
+                            _buffer.CursorVisible = true;
+                            break;
+                        case 47:
+                        case 1047:
+                            _buffer.EnterAlternateScreen();
+                            break;
+                        case 1048:
+                            SaveCursor();
+                            break;
+                        case 1049:
+                            SaveCursor();
+                            _buffer.EnterAlternateScreen();
+                            break;
+                        case 66:
+                            _buffer.NumericKeypadApplicationMode = true;
+                            break;
+                        case 5:
+                            _buffer.ReverseVideoMode = true;
+                            _buffer.MarkAllDirty();
+                            break;
+                        case 9:
+                            _buffer.MouseTracking = TerminalMouseTracking.X10;
+                            break;
+                        case 1000:
+                            _buffer.MouseTracking = TerminalMouseTracking.Normal;
+                            break;
+                        case 1002:
+                            _buffer.MouseTracking = TerminalMouseTracking.ButtonEvent;
+                            break;
+                        case 1003:
+                            _buffer.MouseTracking = TerminalMouseTracking.AnyEvent;
+                            break;
+                        case 1006:
+                            _buffer.MouseEncoding = TerminalMouseEncoding.Sgr;
+                            break;
+                        case 1015:
+                            _buffer.MouseEncoding = TerminalMouseEncoding.Urxvt;
+                            break;
+                        case 2004:
+                            _buffer.BracketedPasteMode = true;
+                            break;
+                        case 1004:
+                            _buffer.FocusReportingMode = true;
+                            break;
+                        case 2026:
+                            _buffer.SetSynchronizedOutputMode(true);
+                            break;
+                    }
+                    break;
+                case 'l': // DECRST
+                    switch (mode)
+                    {
+                        case 1:
+                            _buffer.CursorKeyApplicationMode = false;
+                            break;
+                        case 6:
+                            _buffer.OriginMode = false;
+                            _buffer.MoveCursorHome();
+                            break;
+                        case 7:
+                            _buffer.AutoWrapMode = false;
+                            break;
+                        case 25:
+                            _buffer.CursorVisible = false;
+                            break;
+                        case 47:
+                        case 1047:
+                            _buffer.ExitAlternateScreen();
+                            break;
+                        case 1048:
+                            RestoreCursor();
+                            break;
+                        case 1049:
+                            _buffer.ExitAlternateScreen();
+                            RestoreCursor();
+                            break;
+                        case 66:
+                            _buffer.NumericKeypadApplicationMode = false;
+                            break;
+                        case 5:
+                            _buffer.ReverseVideoMode = false;
+                            _buffer.MarkAllDirty();
+                            break;
+                        case 9:
+                        case 1000:
+                        case 1002:
+                        case 1003:
+                            _buffer.MouseTracking = TerminalMouseTracking.None;
+                            break;
+                        case 1006:
+                            if (_buffer.MouseEncoding == TerminalMouseEncoding.Sgr)
+                                _buffer.MouseEncoding = TerminalMouseEncoding.Default;
+                            break;
+                        case 1015:
+                            if (_buffer.MouseEncoding == TerminalMouseEncoding.Urxvt)
+                                _buffer.MouseEncoding = TerminalMouseEncoding.Default;
+                            break;
+                        case 2004:
+                            _buffer.BracketedPasteMode = false;
+                            break;
+                        case 1004:
+                            _buffer.FocusReportingMode = false;
+                            break;
+                        case 2026:
+                            _buffer.SetSynchronizedOutputMode(false);
+                            break;
+                    }
+                    break;
+            }
         }
     }
 
@@ -582,8 +1030,18 @@ public class AnsiParser
                 case 1: // Bold
                     _buffer.SetBoldIntensity(true);
                     break;
+                case 2: // Dim/faint
+                    _buffer.CurrentDim = true;
+                    break;
+                case 3: // Italic
+                    _buffer.CurrentItalic = true;
+                    break;
                 case 4: // Underline
                     _buffer.CurrentUnderline = true;
+                    _buffer.CurrentDoubleUnderline = false;
+                    break;
+                case 8: // Conceal/invisible
+                    _buffer.CurrentInvisible = true;
                     break;
                 case 5: // Blink
                     if (!_buffer.DisableBlinkingText)
@@ -591,12 +1049,36 @@ public class AnsiParser
                     break;
                 case 22: // Normal intensity
                     _buffer.SetBoldIntensity(false);
+                    _buffer.CurrentDim = false;
+                    break;
+                case 23: // Not italic
+                    _buffer.CurrentItalic = false;
                     break;
                 case 24: // No underline
                     _buffer.CurrentUnderline = false;
+                    _buffer.CurrentDoubleUnderline = false;
                     break;
                 case 25: // No blink
                     _buffer.CurrentBlinking = false;
+                    break;
+                case 7: // Reverse video
+                    _buffer.CurrentReverse = true;
+                    break;
+                case 9: // Strikethrough
+                    _buffer.CurrentStrikethrough = true;
+                    break;
+                case 27: // Not reverse video
+                    _buffer.CurrentReverse = false;
+                    break;
+                case 29: // Not strikethrough
+                    _buffer.CurrentStrikethrough = false;
+                    break;
+                case 21: // Double underline
+                    _buffer.CurrentDoubleUnderline = true;
+                    _buffer.CurrentUnderline = false;
+                    break;
+                case 28: // Reveal
+                    _buffer.CurrentInvisible = false;
                     break;
                 case >= 30 and <= 37: // Standard foreground
                     _buffer.CurrentForeground = _buffer.GetAnsiColor(p - 30);
@@ -658,11 +1140,62 @@ public class AnsiParser
         }
     }
 
+    private void ExecuteModifyOtherKeys()
+    {
+        if (_paramCount == 0 || _params[0] != 4)
+            return;
+
+        var level = _paramCount > 1 ? _params[1] : 1;
+        _buffer.ModifyOtherKeysMode = Math.Clamp(level, 0, 2);
+    }
+
+    private void ExecuteSoftReset()
+    {
+        _buffer.AutoWrapMode = true;
+        _buffer.OriginMode = false;
+        _buffer.ReverseVideoMode = false;
+        _buffer.NewLineMode = false;
+        _buffer.InsertMode = false;
+        _buffer.CursorKeyApplicationMode = false;
+        _buffer.NumericKeypadApplicationMode = false;
+        _buffer.BracketedPasteMode = false;
+        _buffer.FocusReportingMode = false;
+        _buffer.ModifyOtherKeysMode = 0;
+        _buffer.ResetKittyKeyboardFlags();
+        _buffer.SetSynchronizedOutputMode(false);
+        _buffer.CursorVisible = true;
+        _buffer.MouseTracking = TerminalMouseTracking.None;
+        _buffer.MouseEncoding = TerminalMouseEncoding.Default;
+        _buffer.ResetScrollRegion();
+        _buffer.ResetAttributes();
+        _buffer.ResetInputHyperlink();
+        _buffer.ResetCursorStyle();
+        _g0LineDrawing = false;
+        _g1LineDrawing = false;
+        _useG1 = false;
+        _buffer.MarkAllDirty();
+    }
+
+    private void ExecuteFullReset()
+    {
+        ExecuteSoftReset();
+        _buffer.ResetTabStops();
+        _buffer.ClearScreen(clearScrollback: true);
+        _buffer.MoveCursorHome();
+        _savedCursorRow = 0;
+        _savedCursorCol = 0;
+        _hasSavedCursor = false;
+    }
+
     private void ResetParams()
     {
         _paramCount = 0;
         _currentParam = 0;
         _intermediateChar = '\0';
+        _csiPrefix = '\0';
+        _csiParameterStarted = false;
+        _csiHasSubparameters = false;
+        _csiIntermediateCount = 0;
         for (int i = 0; i < _params.Length; i++)
             _params[i] = 0;
     }
@@ -676,10 +1209,41 @@ public class AnsiParser
         }
     }
 
+    private void AppendParamDigit(int digit)
+    {
+        const int maxParameter = 1_000_000_000;
+        _currentParam = _currentParam > (maxParameter - digit) / 10
+            ? maxParameter
+            : _currentParam * 10 + digit;
+    }
+
     private int GetParam(int index, int defaultValue)
     {
         if (index >= _paramCount) return defaultValue;
         int val = _params[index];
         return val == 0 ? defaultValue : val;
+    }
+
+    private void ExecuteKittyKeyboardCommand()
+    {
+        switch (_csiPrefix)
+        {
+            case '=':
+                // CSI = flags ; mode u. Mode 1 replaces, mode 2 sets, and
+                // mode 3 clears the requested bits.
+                _buffer.ApplyKittyKeyboardFlags(
+                    _paramCount > 0 ? _params[0] : 0,
+                    GetParam(1, 1));
+                break;
+            case '>':
+                // CSI > flags u pushes the current flags and installs flags.
+                _buffer.PushKittyKeyboardFlags(_paramCount > 0 ? _params[0] : 0);
+                break;
+            case '<':
+                // CSI < number u pops number entries. An empty stack resets
+                // the flags, as required by the Kitty protocol.
+                _buffer.PopKittyKeyboardFlags(GetParam(0, 1));
+                break;
+        }
     }
 }

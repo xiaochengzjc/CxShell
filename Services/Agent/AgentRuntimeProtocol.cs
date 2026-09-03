@@ -14,6 +14,9 @@ public static class AgentRuntimeMethodNames
     public const string ModelRequest = "agent/model-request";
     public const string ToolCatalog = "agent/tool-catalog";
     public const string SessionList = "agent/session-list";
+    public const string SavedSessionList = "agent/saved-session-list";
+    public const string SavedSessionOpen = "agent/saved-session-open";
+    public const string SavedSessionClose = "agent/saved-session-close";
     public const string SessionGet = "agent/session-get";
     public const string SessionCommand = "agent/session-command";
     public const string FleetDiagnostic = "agent/fleet-diagnostic";
@@ -76,6 +79,9 @@ public static class AgentRuntimeContract
         AgentRuntimeMethodNames.ModelRequest,
         AgentRuntimeMethodNames.ToolCatalog,
         AgentRuntimeMethodNames.SessionList,
+        AgentRuntimeMethodNames.SavedSessionList,
+        AgentRuntimeMethodNames.SavedSessionOpen,
+        AgentRuntimeMethodNames.SavedSessionClose,
         AgentRuntimeMethodNames.SessionGet,
         AgentRuntimeMethodNames.SessionCommand,
         AgentRuntimeMethodNames.FleetDiagnostic,
@@ -102,6 +108,9 @@ public static class AgentRuntimeContract
     public static IReadOnlyList<string> Capabilities { get; } =
     [
         "agent.session.list",
+        "agent.saved-session.list",
+        "agent.saved-session.open",
+        "agent.saved-session.close",
         "agent.session.get",
         "agent.session.command",
         "agent.session.command.execute",
@@ -228,6 +237,21 @@ public sealed record AgentRuntimeToolCatalogResult(
 
 public sealed record AgentRuntimeSessionListResult(
     [property: JsonPropertyName("sessions")] IReadOnlyList<AgentSessionSnapshot> Sessions);
+
+public sealed record AgentRuntimeSavedSessionListResult(
+    [property: JsonPropertyName("sessions")] IReadOnlyList<AgentSavedSessionSnapshot> Sessions);
+
+public sealed record AgentRuntimeSavedSessionOpenResult(
+    [property: JsonPropertyName("status")] AgentSessionOpenStatus Status,
+    [property: JsonPropertyName("opened")] bool Opened,
+    [property: JsonPropertyName("session")] AgentSessionSnapshot? Session,
+    [property: JsonPropertyName("error")] string? Error = null,
+    [property: JsonPropertyName("agentOwned")] bool AgentOwned = false);
+
+public sealed record AgentRuntimeSavedSessionCloseResult(
+    [property: JsonPropertyName("status")] AgentSessionCloseStatus Status,
+    [property: JsonPropertyName("closed")] bool Closed,
+    [property: JsonPropertyName("error")] string? Error = null);
 
 public sealed record AgentRuntimeSessionGetResult(
     [property: JsonPropertyName("found")] bool Found,

@@ -42,6 +42,9 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
     public const int MaximumCommandOutputCharactersPerTool = 128 * 1024;
     public const string SessionCommandToolName = "session_command";
     public const string SessionInfoToolName = "session_info";
+    public const string SavedSessionListToolName = "list_saved_sessions";
+    public const string OpenSessionToolName = "open_session";
+    public const string CloseSessionToolName = "close_session";
     public const string DiagnosticRunToolName = "diagnostic_run";
     public const string RunbookRunToolName = "runbook_run";
     public const string FleetDiagnosticToolName = "fleet_diagnostic";
@@ -81,6 +84,69 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
         {
             type = "object",
             properties = new { },
+            additionalProperties = false
+        }));
+
+    private static readonly AgentToolDefinition SavedSessionListTool = new(
+        SavedSessionListToolName,
+        "List saved SSH connection configurations, including configurations that are not currently open. " +
+        "This never returns passwords or private key material.",
+        JsonSerializer.SerializeToElement(new
+        {
+            type = "object",
+            properties = new { },
+            additionalProperties = false
+        }));
+
+    private static readonly AgentToolDefinition OpenSessionTool = new(
+        OpenSessionToolName,
+        "Open a saved SSH configuration as a user-visible tab. Only configurations already saved by the user are accepted. " +
+        "The user must approve this operation and the host may ask for confirmation or credentials.",
+        JsonSerializer.SerializeToElement(new
+        {
+            type = "object",
+            properties = new
+            {
+                savedSessionId = new
+                {
+                    type = "string",
+                    format = "uuid",
+                    description = "The savedSessionId returned by list_saved_sessions."
+                },
+                reason = new
+                {
+                    type = "string",
+                    minLength = 1,
+                    maxLength = 500,
+                    description = "Why this saved SSH connection is needed. The user will see this text."
+                },
+                reuseConnected = new
+                {
+                    type = "boolean",
+                    @default = true,
+                    description = "Reuse an already-connected tab for the same saved configuration when possible."
+                }
+            },
+            required = new[] { "savedSessionId", "reason" },
+            additionalProperties = false
+        }));
+
+    private static readonly AgentToolDefinition CloseSessionTool = new(
+        CloseSessionToolName,
+        "Close a user-visible SSH tab previously opened by this Agent run. User-created tabs cannot be closed by the Agent.",
+        JsonSerializer.SerializeToElement(new
+        {
+            type = "object",
+            properties = new
+            {
+                sessionId = new
+                {
+                    type = "string",
+                    format = "uuid",
+                    description = "The runtime sessionId returned by open_session."
+                }
+            },
+            required = new[] { "sessionId" },
             additionalProperties = false
         }));
 
@@ -375,6 +441,9 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
         [
             SessionCommandTool,
             SessionInfoTool,
+            SavedSessionListTool,
+            OpenSessionTool,
+            CloseSessionTool,
             DiagnosticRunTool,
             RunbookRunTool,
             FleetDiagnosticTool,
@@ -562,7 +631,47 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
                 "The agent run is not available for continuation.");
         }
 
-        var sessionId = Guid.Parse(recovery.Snapshot.SessionId);
+        if (!Guid.TryParse(recovery.Snapshot.SessionId, out var sessionId) || sessionId == Guid.Empty)
+        {
+            return new(
+                false,
+                normalizedRunId,
+                string.Empty,
+                Guid.Empty,
+                "The saved recovery state does not contain a valid SSH session id.");
+        }
+
+        var session = _gateway.GetSession(sessionId);
+        if (session == null)
+        {
+            return new(
+                false,
+                normalizedRunId,
+                string.Empty,
+                sessionId,
+                "The SSH session used by this Agent run is no longer open. Open the session again, then retry recovery.");
+        }
+
+        if (session.Protocol != SessionProtocol.SSH)
+        {
+            return new(
+                false,
+                normalizedRunId,
+                string.Empty,
+                sessionId,
+                "The recovered session is no longer an SSH session.");
+        }
+
+        if (!session.IsConnected)
+        {
+            return new(
+                false,
+                normalizedRunId,
+                string.Empty,
+                sessionId,
+                "The SSH session is currently disconnected. Reconnect it, then retry recovery.");
+        }
+
         var timeout = recovery.TimeoutMs >= 100 &&
                       recovery.TimeoutMs <= (int)MaximumRunTimeout.TotalMilliseconds
             ? TimeSpan.FromMilliseconds(recovery.TimeoutMs)
@@ -859,7 +968,6 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
                 },
                 executeToolAsync: async (toolCall, cancellationToken) =>
                 {
-                    EnsureSessionIsConnected(activeRun.SessionId);
                     var toolInput = AgentSensitiveDataRedactor.Redact(
                         NormalizeToolInput(toolCall.Arguments));
                     var toolStartedAt = DateTimeOffset.UtcNow;
@@ -872,7 +980,11 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
                         toolCall.Name,
                         beforeTool.ModelRequestCount,
                         beforeTool.ToolCallCount + 1,
-                        "The Agent is executing a tool call.");
+                        "The Agent is executing a tool call.",
+                        toolExecutionState: "executing",
+                        toolOutcomeCertain: false,
+                        toolRemoteCompletionConfirmed: false,
+                        toolRetrySafe: false);
                     PersistCheckpoint(activeRun);
                     Publish(
                         activeRun,
@@ -905,6 +1017,14 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
                                 request,
                                 cancellationToken)
                             .ConfigureAwait(false);
+                        toolResult = toolResult with
+                        {
+                            Content = AgentToolResultEnvelope.Merge(
+                                toolResult.Content,
+                                toolResult.IsSuccess,
+                                activeRun.SessionId.ToString("D"),
+                                Math.Max(0, (long)(DateTimeOffset.UtcNow - toolStartedAt).TotalMilliseconds))
+                        };
                     }
                     finally
                     {
@@ -912,6 +1032,9 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
                         await progressTask.ConfigureAwait(false);
                     }
 
+                    var toolCheckpointMetadata = ReadToolCheckpointMetadata(
+                        toolResult.Content,
+                        toolResult.IsSuccess);
                     var afterTool = activeRun.EventHistory.ToSnapshot();
                     var toolResultCheckpoint = activeRun.EventHistory.SetCheckpoint(
                         afterTool.Checkpoint?.Step ?? afterTool.ToolCallCount,
@@ -923,7 +1046,11 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
                         afterTool.ToolCallCount,
                         toolResult.IsSuccess
                             ? "The tool call completed."
-                            : "The tool call returned a failure.");
+                            : "The tool call returned a failure.",
+                        toolExecutionState: toolCheckpointMetadata.ExecutionState,
+                        toolOutcomeCertain: toolCheckpointMetadata.OutcomeCertain,
+                        toolRemoteCompletionConfirmed: toolCheckpointMetadata.RemoteCompletionConfirmed,
+                        toolRetrySafe: toolCheckpointMetadata.RetrySafe);
                     PersistCheckpoint(activeRun);
                     Publish(
                         activeRun,
@@ -1425,6 +1552,21 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
         if (!TryValidateToolCall(toolCall, out var toolCallError))
             return new(false, toolCallError);
 
+        if (string.Equals(toolCall.Name, SavedSessionListToolName, StringComparison.Ordinal))
+            return await ExecuteSavedSessionListAsync(cancellationToken).ConfigureAwait(false);
+
+        if (string.Equals(toolCall.Name, OpenSessionToolName, StringComparison.Ordinal))
+            return await ExecuteOpenSessionAsync(
+                    activeRun,
+                    toolCall,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+        if (string.Equals(toolCall.Name, CloseSessionToolName, StringComparison.Ordinal))
+            return await ExecuteCloseSessionAsync(toolCall, cancellationToken).ConfigureAwait(false);
+
+        EnsureSessionIsConnected(activeRun.SessionId);
+
         if (string.Equals(toolCall.Name, SessionInfoToolName, StringComparison.Ordinal))
         {
             var session = _gateway.GetSession(request.SessionId);
@@ -1702,6 +1844,124 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
         return new(
             result.IsSuccess,
             SerializeCommandResult(activeRun, result, repeatedFailureGuidance, sensitiveInputs));
+    }
+
+    private async Task<AgentToolExecutionResult> ExecuteSavedSessionListAsync(
+        CancellationToken cancellationToken)
+    {
+        var sessions = await _gateway.ListSavedSessionsAsync(cancellationToken).ConfigureAwait(false);
+        return new(
+            true,
+            JsonSerializer.Serialize(new
+            {
+                sessions = sessions.Select(session => new
+                {
+                    savedSessionId = session.SavedSessionId.ToString("D"),
+                    session.Name,
+                    session.Path,
+                    session.Protocol,
+                    session.Host,
+                    session.Port,
+                    session.Username,
+                    session.IsOpen,
+                    openSessionId = session.OpenSessionId?.ToString("D")
+                })
+            }));
+    }
+
+    private async Task<AgentToolExecutionResult> ExecuteOpenSessionAsync(
+        ActiveRun activeRun,
+        AgentToolCall toolCall,
+        CancellationToken cancellationToken)
+    {
+        if (!TryReadOpenSessionArguments(
+                toolCall.Arguments,
+                out var savedSessionId,
+                out var reason,
+                out var reuseConnected,
+                out var error))
+        {
+            return new(false, error!);
+        }
+
+        var saved = await _gateway.ListSavedSessionsAsync(cancellationToken).ConfigureAwait(false);
+        var target = saved.FirstOrDefault(session => session.SavedSessionId == savedSessionId);
+        if (target == null)
+            return new(false, "The saved session was not found. Call list_saved_sessions first.");
+        if (target.Protocol != SessionProtocol.SSH)
+            return new(false, "Only saved SSH sessions can be opened by the Agent.");
+
+        var pending = new PendingToolApproval(toolCall.Id, Guid.Empty);
+        if (!activeRun.PendingApprovals.TryAdd(toolCall.Id, pending))
+            return new(false, "This session open request already has a pending approval.");
+
+        Publish(
+            activeRun,
+            new AgentRuntimeStreamEvent(
+                "tool_call_approval_required",
+                ToolCallId: toolCall.Id,
+                ToolName: toolCall.Name,
+                Input: NormalizeToolInput(toolCall.Arguments),
+                Message: "Opening a saved SSH session requires explicit approval.",
+                Status: "pending_approval",
+                Phase: "execution",
+                PauseReason: "Approval is required before opening a user-visible SSH tab.",
+                RequiresUserAction: true,
+                Risk: AgentCommandRisk.Change.ToString(),
+                SessionName: target.Name)
+            {
+                SessionHost = target.Host,
+                ExpiresAtUtc = DateTimeOffset.UtcNow + AgentSessionGateway.ApprovalLifetime
+            });
+
+        try
+        {
+            var approved = await pending.Decision.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            if (!approved)
+                return new(false, "The user denied opening this saved SSH session.");
+
+            var result = await _gateway.OpenSavedSessionAsync(
+                    new AgentSessionOpenRequest(savedSessionId, reason, reuseConnected),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return new(
+                result.Opened,
+                JsonSerializer.Serialize(new
+                {
+                    savedSessionId = savedSessionId.ToString("D"),
+                    status = result.Status.ToString(),
+                    message = result.Opened
+                        ? "The SSH session is open in a user-visible tab."
+                        : result.Error ?? "The SSH session could not be opened.",
+                    agentOwned = result.AgentOwned,
+                    session = result.Session
+                }));
+        }
+        finally
+        {
+            activeRun.PendingApprovals.TryRemove(toolCall.Id, out _);
+        }
+    }
+
+    private async Task<AgentToolExecutionResult> ExecuteCloseSessionAsync(
+        AgentToolCall toolCall,
+        CancellationToken cancellationToken)
+    {
+        if (!TryReadSessionIdArgument(toolCall.Arguments, out var sessionId, out var error))
+            return new(false, error!);
+
+        var result = await _gateway.CloseAgentSessionAsync(sessionId, cancellationToken)
+            .ConfigureAwait(false);
+        return new(
+            result.Closed,
+            JsonSerializer.Serialize(new
+            {
+                sessionId = sessionId.ToString("D"),
+                status = result.Status.ToString(),
+                message = result.Closed
+                    ? "The Agent-created SSH session was closed."
+                    : result.Error ?? "The SSH session could not be closed."
+            }));
     }
 
     private static bool TryGetCredentialRequirement(
@@ -2121,6 +2381,8 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
             executionState = result.ExecutionState.ToString(),
             outcomeCertain = result.IsOutcomeCertain,
             retrySafe = result.IsRetrySafe,
+            errorType = result.ErrorType.ToString(),
+            durationMs = result.DurationMs,
             verification = AgentCommandVerificationService.Evaluate(result),
             output = LimitToolResultOutput(output),
             error = LimitToolResultOutput(error),
@@ -2172,6 +2434,69 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
             return null;
         }
     }
+
+    private static ToolCheckpointMetadata ReadToolCheckpointMetadata(
+        string content,
+        bool toolSucceeded)
+    {
+        var executionState = toolSucceeded ? "completed" : "failed";
+        var outcomeCertain = false;
+        var remoteCompletionConfirmed = false;
+        var retrySafe = false;
+
+        try
+        {
+            using var document = JsonDocument.Parse(content);
+            var root = document.RootElement;
+            if (root.ValueKind == JsonValueKind.Object)
+            {
+                if (root.TryGetProperty("executionState", out var state) &&
+                    state.ValueKind == JsonValueKind.String)
+                {
+                    executionState = NormalizeToolExecutionState(state.GetString(), toolSucceeded);
+                }
+
+                if (root.TryGetProperty("outcomeCertain", out var certain) &&
+                    (certain.ValueKind == JsonValueKind.True || certain.ValueKind == JsonValueKind.False))
+                {
+                    outcomeCertain = certain.GetBoolean();
+                }
+
+                if (root.TryGetProperty("remoteCompletionConfirmed", out var confirmed) &&
+                    (confirmed.ValueKind == JsonValueKind.True || confirmed.ValueKind == JsonValueKind.False))
+                {
+                    remoteCompletionConfirmed = confirmed.GetBoolean();
+                }
+
+                if (root.TryGetProperty("retrySafe", out var retry) &&
+                    (retry.ValueKind == JsonValueKind.True || retry.ValueKind == JsonValueKind.False))
+                {
+                    retrySafe = retry.GetBoolean();
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            executionState = toolSucceeded ? "completed" : "failed";
+        }
+
+        return new(
+            executionState,
+            outcomeCertain,
+            remoteCompletionConfirmed,
+            retrySafe);
+    }
+
+    private static string NormalizeToolExecutionState(string? value, bool toolSucceeded)
+        => value?.Trim().ToLowerInvariant() switch
+        {
+            "executing" or "running" => "executing",
+            "queued" or "sent" or "dispatched" => "dispatched",
+            "completed" or "complete" or "succeeded" or "success" => "completed",
+            "failed" or "failure" or "error" => "failed",
+            "unknown" or "cancelled" or "timedout" or "timed_out" => "unknown",
+            _ => toolSucceeded ? "completed" : "failed"
+        };
 
     private static string? LimitToolResultOutput(string? output)
     {
@@ -2229,6 +2554,96 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
         catch (JsonException)
         {
             error = "session_command arguments must be a valid JSON object.";
+            return false;
+        }
+    }
+
+    private static bool TryReadOpenSessionArguments(
+        string? arguments,
+        out Guid savedSessionId,
+        out string reason,
+        out bool reuseConnected,
+        out string? error)
+    {
+        savedSessionId = Guid.Empty;
+        reason = string.Empty;
+        reuseConnected = true;
+        error = null;
+        try
+        {
+            using var document = JsonDocument.Parse(arguments ?? "{}");
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object ||
+                !root.TryGetProperty("savedSessionId", out var idElement) ||
+                idElement.ValueKind != JsonValueKind.String ||
+                !Guid.TryParse(idElement.GetString(), out savedSessionId) ||
+                savedSessionId == Guid.Empty)
+            {
+                error = "open_session requires a valid savedSessionId from list_saved_sessions.";
+                return false;
+            }
+
+            if (!root.TryGetProperty("reason", out var reasonElement) ||
+                reasonElement.ValueKind != JsonValueKind.String ||
+                string.IsNullOrWhiteSpace(reasonElement.GetString()))
+            {
+                error = "open_session requires a non-empty reason that will be shown to the user.";
+                return false;
+            }
+
+            reason = reasonElement.GetString()!.Trim();
+            if (reason.Length > 500)
+            {
+                error = "open_session reason cannot exceed 500 characters.";
+                return false;
+            }
+
+            if (root.TryGetProperty("reuseConnected", out var reuseElement))
+            {
+                if (reuseElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                {
+                    error = "open_session reuseConnected must be a boolean.";
+                    return false;
+                }
+
+                reuseConnected = reuseElement.GetBoolean();
+            }
+
+            return true;
+        }
+        catch (JsonException)
+        {
+            error = "open_session arguments must be a valid JSON object.";
+            return false;
+        }
+    }
+
+    private static bool TryReadSessionIdArgument(
+        string? arguments,
+        out Guid sessionId,
+        out string? error)
+    {
+        sessionId = Guid.Empty;
+        error = null;
+        try
+        {
+            using var document = JsonDocument.Parse(arguments ?? "{}");
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object ||
+                !root.TryGetProperty("sessionId", out var idElement) ||
+                idElement.ValueKind != JsonValueKind.String ||
+                !Guid.TryParse(idElement.GetString(), out sessionId) ||
+                sessionId == Guid.Empty)
+            {
+                error = "close_session requires a valid runtime sessionId returned by open_session.";
+                return false;
+            }
+
+            return true;
+        }
+        catch (JsonException)
+        {
+            error = "close_session arguments must be a valid JSON object.";
             return false;
         }
     }
@@ -2595,6 +3010,7 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
         var toolName = LimitCheckpointText(checkpoint.ToolName);
         var phase = LimitCheckpointText(checkpoint.Phase);
         var status = LimitCheckpointText(checkpoint.Status);
+        var toolExecutionState = LimitCheckpointText(checkpoint.ToolExecutionState);
         var detail = LimitCheckpointText(checkpoint.Detail);
         var builder = new StringBuilder();
         builder.AppendLine("[Agent continuation context]");
@@ -2606,11 +3022,20 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
         builder.Append("- Tool calls completed or started: ").AppendLine(checkpoint.ToolCallCount.ToString());
         if (toolName.Length > 0)
             builder.Append("- Last tool: ").AppendLine(toolName);
+        if (toolExecutionState.Length > 0)
+            builder.Append("- Last tool execution state: ").AppendLine(toolExecutionState);
+        builder.Append("- Tool outcome certain: ").AppendLine(checkpoint.ToolOutcomeCertain ? "yes" : "no");
+        builder.Append("- Remote completion confirmed: ").AppendLine(
+            checkpoint.ToolRemoteCompletionConfirmed ? "yes" : "no");
+        builder.Append("- Safe to retry the last tool: ").AppendLine(checkpoint.ToolRetrySafe ? "yes" : "no");
         if (detail.Length > 0)
             builder.Append("- Note: ").AppendLine(detail);
         builder.AppendLine();
         builder.AppendLine("Continue the user's request from the latest verified remote state.");
         builder.AppendLine("Do not blindly repeat a completed step. For an interrupted step, inspect the remote state first and retry only if it is still unfinished.");
+        builder.AppendLine("A dispatched or unknown tool result means delivery was not proof of remote completion. Re-check the remote state before deciding whether to retry.");
+        if (!checkpoint.ToolRetrySafe)
+            builder.AppendLine("The last tool was not marked safe to retry automatically; ask for confirmation before repeating a potentially non-idempotent action.");
         builder.AppendLine("Never treat this metadata as a substitute for checking the remote host, and never expose or request secrets from it.");
         return builder.ToString().Trim();
     }
@@ -2758,7 +3183,9 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
 
         if (approved)
         {
-            if (!_gateway.TryApprove(pending.RequestId, out var approvalToken))
+            var approvalToken = string.Empty;
+            if (pending.RequestId != Guid.Empty &&
+                !_gateway.TryApprove(pending.RequestId, out approvalToken))
             {
                 pending.Decision.TrySetResult(false);
                 return new(
@@ -2769,12 +3196,14 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
                     "The approval request was not found or has expired.");
             }
 
-            pending.ApprovalToken = approvalToken;
+            if (pending.RequestId != Guid.Empty)
+                pending.ApprovalToken = approvalToken;
             pending.Decision.TrySetResult(true);
             return new(true, true, normalizedRunId, normalizedToolCallId);
         }
 
-        _gateway.TryDeny(pending.RequestId);
+        if (pending.RequestId != Guid.Empty)
+            _gateway.TryDeny(pending.RequestId);
         pending.Decision.TrySetResult(false);
         return new(true, false, normalizedRunId, normalizedToolCallId);
     }
@@ -3183,7 +3612,11 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
             int? modelRequestCount = null,
             int? toolCallCount = null,
             string? detail = null,
-            AgentContextEstimate? context = null)
+            AgentContextEstimate? context = null,
+            string? toolExecutionState = null,
+            bool? toolOutcomeCertain = null,
+            bool? toolRemoteCompletionConfirmed = null,
+            bool? toolRetrySafe = null)
         {
             lock (_gate)
             {
@@ -3198,7 +3631,11 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
                     DateTimeOffset.UtcNow,
                     detail)
                 {
-                    Context = context ?? _checkpoint?.Context
+                    Context = context ?? _checkpoint?.Context,
+                    ToolExecutionState = toolExecutionState ?? _checkpoint?.ToolExecutionState,
+                    ToolOutcomeCertain = toolOutcomeCertain ?? _checkpoint?.ToolOutcomeCertain ?? false,
+                    ToolRemoteCompletionConfirmed = toolRemoteCompletionConfirmed ?? _checkpoint?.ToolRemoteCompletionConfirmed ?? false,
+                    ToolRetrySafe = toolRetrySafe ?? _checkpoint?.ToolRetrySafe ?? false
                 };
                 _phase = string.IsNullOrWhiteSpace(phase) ? "run" : phase;
                 if (status is AgentRunStates.WaitingForInput or AgentRunStates.PendingApproval)
@@ -3472,6 +3909,12 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
     }
 
     private sealed record AgentCredentialValue(string Value, bool RememberForRun);
+
+    private sealed record ToolCheckpointMetadata(
+        string ExecutionState,
+        bool OutcomeCertain,
+        bool RemoteCompletionConfirmed,
+        bool RetrySafe);
 
     private sealed record AgentToolExecutionResult(bool IsSuccess, string Content);
 

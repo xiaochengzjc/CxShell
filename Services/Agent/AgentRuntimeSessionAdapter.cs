@@ -109,6 +109,17 @@ public sealed class AgentRuntimeSessionAdapter :
                     cancellationToken).ConfigureAwait(false),
                 AgentRuntimeMethodNames.ToolCatalog => ToolCatalog(normalizedRequestId),
                 AgentRuntimeMethodNames.SessionList => ListSessions(normalizedRequestId),
+                AgentRuntimeMethodNames.SavedSessionList => await ListSavedSessionsAsync(
+                    normalizedRequestId,
+                    cancellationToken).ConfigureAwait(false),
+                AgentRuntimeMethodNames.SavedSessionOpen => await OpenSavedSessionAsync(
+                    normalizedRequestId,
+                    parameters,
+                    cancellationToken).ConfigureAwait(false),
+                AgentRuntimeMethodNames.SavedSessionClose => await CloseSavedSessionAsync(
+                    normalizedRequestId,
+                    parameters,
+                    cancellationToken).ConfigureAwait(false),
                 AgentRuntimeMethodNames.SessionGet => GetSession(normalizedRequestId, parameters),
                 AgentRuntimeMethodNames.AuditList => ListAudit(normalizedRequestId, parameters),
                 AgentRuntimeMethodNames.RunList => ListRuns(normalizedRequestId, parameters),
@@ -240,6 +251,10 @@ public sealed class AgentRuntimeSessionAdapter :
         => capability switch
         {
             "agent.session.list" => _gateway.Capabilities.SupportsSessionDiscovery,
+            "agent.saved-session.list" => _gateway.Capabilities.SupportsSavedSessionManagement,
+            "agent.saved-session.open" => _gateway.Capabilities.SupportsSavedSessionManagement &&
+                                           _gateway.Capabilities.RequiresApprovalForSessionOpen,
+            "agent.saved-session.close" => _gateway.Capabilities.SupportsSavedSessionManagement,
             "agent.session.get" => _gateway.Capabilities.SupportsSessionDiscovery,
             "agent.session.command" => _gateway.Capabilities.SupportsTerminalCommandDispatch,
             "agent.session.command.execute" => _gateway.Capabilities.SupportsTerminalCommandDispatch &&
@@ -288,6 +303,81 @@ public sealed class AgentRuntimeSessionAdapter :
         => Success(
             requestId,
             new AgentRuntimeSessionListResult(_gateway.GetSessions()));
+
+    private async Task<AgentRuntimeResponse> ListSavedSessionsAsync(
+        string requestId,
+        CancellationToken cancellationToken)
+    {
+        var sessions = await _gateway.ListSavedSessionsAsync(cancellationToken).ConfigureAwait(false);
+        return Success(requestId, new AgentRuntimeSavedSessionListResult(sessions));
+    }
+
+    private async Task<AgentRuntimeResponse> OpenSavedSessionAsync(
+        string requestId,
+        JsonElement parameters,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetGuid(parameters, "savedSessionId", out var savedSessionId))
+        {
+            return Error(
+                requestId,
+                AgentRuntimeErrorCodes.InvalidParameters,
+                "A valid savedSessionId is required.");
+        }
+
+        var reason = GetString(parameters, "reason");
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            return Error(
+                requestId,
+                AgentRuntimeErrorCodes.InvalidParameters,
+                "A non-empty reason is required before opening a saved session.");
+        }
+
+        if (reason.Length > 500)
+        {
+            return Error(
+                requestId,
+                AgentRuntimeErrorCodes.InvalidParameters,
+                "The session open reason cannot exceed 500 characters.");
+        }
+
+        var result = await _gateway.OpenSavedSessionAsync(
+                new AgentSessionOpenRequest(
+                    savedSessionId,
+                    reason.Trim(),
+                    GetBool(parameters, "reuseConnected", true)),
+                cancellationToken)
+            .ConfigureAwait(false);
+        return Success(
+            requestId,
+            new AgentRuntimeSavedSessionOpenResult(
+                result.Status,
+                result.Opened,
+                result.Session,
+                result.Error,
+                result.AgentOwned));
+    }
+
+    private async Task<AgentRuntimeResponse> CloseSavedSessionAsync(
+        string requestId,
+        JsonElement parameters,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetGuid(parameters, "sessionId", out var sessionId))
+        {
+            return Error(
+                requestId,
+                AgentRuntimeErrorCodes.InvalidParameters,
+                "A valid runtime sessionId is required.");
+        }
+
+        var result = await _gateway.CloseAgentSessionAsync(sessionId, cancellationToken)
+            .ConfigureAwait(false);
+        return Success(
+            requestId,
+            new AgentRuntimeSavedSessionCloseResult(result.Status, result.Closed, result.Error));
+    }
 
     private AgentRuntimeResponse ListAudit(string requestId, JsonElement parameters)
     {
@@ -520,6 +610,15 @@ public sealed class AgentRuntimeSessionAdapter :
             return capabilities.SupportsTerminalCommandDispatch && capabilities.AllowsCommandExecution
                 ? (true, null)
                 : (false, "Terminal command execution is disabled in the current gateway.");
+        }
+
+        if (string.Equals(toolName, AgentRunCoordinator.SavedSessionListToolName, StringComparison.Ordinal) ||
+            string.Equals(toolName, AgentRunCoordinator.OpenSessionToolName, StringComparison.Ordinal) ||
+            string.Equals(toolName, AgentRunCoordinator.CloseSessionToolName, StringComparison.Ordinal))
+        {
+            return capabilities.SupportsSavedSessionManagement
+                ? (true, null)
+                : (false, "Saved session management is not available in the current gateway.");
         }
 
         return capabilities.SupportsReadOnlyDiagnostics && capabilities.AllowsCommandExecution

@@ -21,6 +21,7 @@ public sealed class AgentSessionGateway : IAgentSessionGateway, IDisposable
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _activeRequests = new();
     private readonly ConcurrentDictionary<Guid, CompletedRequest> _completedRequests = new();
     private readonly ConcurrentDictionary<Guid, PendingApproval> _pendingApprovals = new();
+    private readonly ConcurrentDictionary<Guid, byte> _agentOwnedSessions = new();
     private int _disposed;
 
     public AgentSessionGateway(
@@ -38,6 +39,8 @@ public sealed class AgentSessionGateway : IAgentSessionGateway, IDisposable
         {
             SupportsCommandOutputCapture = GetEndpoints().Any(endpoint => endpoint.SupportsCommandOutputCapture),
             SupportsReadOnlyDiagnostics = GetEndpoints().Any(endpoint => endpoint.SupportsCommandOutputCapture),
+            SupportsSavedSessionManagement = HasSavedSessionManagement,
+            RequiresApprovalForSessionOpen = HasSavedSessionManagement,
             AllowsCommandExecution = _permissionPolicy.AllowCommandExecution,
             PermissionMode = AgentPermissionPolicy.NormalizePermissionMode(_permissionPolicy.PermissionMode),
             RequiresApprovalForDangerousCommands = _permissionPolicy.RequireApprovalForDangerousCommands,
@@ -62,7 +65,121 @@ public sealed class AgentSessionGateway : IAgentSessionGateway, IDisposable
         if (sessionId == Guid.Empty)
             return null;
 
-        return GetSessions().FirstOrDefault(session => session.SessionId == sessionId);
+            return GetSessions().FirstOrDefault(session => session.SessionId == sessionId);
+    }
+
+    public async Task<IReadOnlyList<AgentSavedSessionSnapshot>> ListSavedSessionsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        if (_host is not IAgentSessionLifecycleHost lifecycleHost ||
+            !lifecycleHost.SupportsSavedSessionManagement)
+            return [];
+
+        var sessions = await lifecycleHost.ListSavedSessionsAsync(cancellationToken)
+            .ConfigureAwait(false);
+        // The Agent session contract is intentionally limited to saved SSH
+        // sessions. Other protocols must remain outside its control boundary.
+        return sessions
+            .Where(session => session.Protocol == SessionProtocol.SSH)
+            .ToList();
+    }
+
+    public async Task<AgentSessionOpenResult> OpenSavedSessionAsync(
+        AgentSessionOpenRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ThrowIfDisposed();
+
+        if (_host is not IAgentSessionLifecycleHost lifecycleHost ||
+            !lifecycleHost.SupportsSavedSessionManagement)
+        {
+            return new(
+                AgentSessionOpenStatus.Unsupported,
+                Error: "The host does not support Agent-managed saved sessions.");
+        }
+
+        if (request.SavedSessionId == Guid.Empty)
+        {
+            return new(
+                AgentSessionOpenStatus.NotFound,
+                Error: "A valid saved session id is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Reason))
+        {
+            return new(
+                AgentSessionOpenStatus.UserDenied,
+                Error: "A reason is required before opening a saved session.");
+        }
+
+        var savedSessions = await lifecycleHost.ListSavedSessionsAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var savedSession = savedSessions.FirstOrDefault(session =>
+            session.SavedSessionId == request.SavedSessionId);
+        if (savedSession == null)
+        {
+            return new(
+                AgentSessionOpenStatus.NotFound,
+                Error: "The saved session was not found.");
+        }
+
+        if (savedSession.Protocol != SessionProtocol.SSH)
+        {
+            return new(
+                AgentSessionOpenStatus.Unsupported,
+                Error: "Only saved SSH sessions can be opened by the Agent.");
+        }
+
+        var result = await lifecycleHost.OpenSavedSessionAsync(request, cancellationToken)
+            .ConfigureAwait(false);
+        if (result.Opened && result.AgentOwned && result.Session is { } session)
+            _agentOwnedSessions[session.SessionId] = 0;
+
+        return result;
+    }
+
+    public void NotifySessionClosed(Guid sessionId)
+    {
+        if (sessionId != Guid.Empty)
+            _agentOwnedSessions.TryRemove(sessionId, out _);
+    }
+
+    public async Task<AgentSessionCloseResult> CloseAgentSessionAsync(
+        Guid sessionId,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        if (sessionId == Guid.Empty)
+        {
+            return new(
+                AgentSessionCloseStatus.NotFound,
+                "A valid runtime session id is required.");
+        }
+
+        if (!_agentOwnedSessions.ContainsKey(sessionId))
+        {
+            return new(
+                AgentSessionCloseStatus.NotAgentOwned,
+                "The Agent can close only sessions it opened itself.");
+        }
+
+        if (_host is not IAgentSessionLifecycleHost lifecycleHost ||
+            !lifecycleHost.SupportsSavedSessionManagement)
+        {
+            _agentOwnedSessions.TryRemove(sessionId, out _);
+            return new(
+                AgentSessionCloseStatus.Unsupported,
+                "The host does not support Agent-managed saved sessions.");
+        }
+
+        var result = await lifecycleHost.CloseAgentSessionAsync(sessionId, cancellationToken)
+            .ConfigureAwait(false);
+        if (result.Closed || result.Status == AgentSessionCloseStatus.NotFound)
+            _agentOwnedSessions.TryRemove(sessionId, out _);
+
+        return result;
     }
 
     public async Task<AgentCommandResult> ExecuteCommandAsync(
@@ -319,10 +436,14 @@ public sealed class AgentSessionGateway : IAgentSessionGateway, IDisposable
         _activeRequests.Clear();
         _completedRequests.Clear();
         _pendingApprovals.Clear();
+        _agentOwnedSessions.Clear();
     }
 
     private IReadOnlyList<IAgentSessionEndpoint> GetEndpoints()
         => _host.GetAgentSessionEndpoints() ?? [];
+
+    private bool HasSavedSessionManagement
+        => _host is IAgentSessionLifecycleHost { SupportsSavedSessionManagement: true };
 
     private async Task InspectEndpointAsync(
         IAgentSessionEndpoint endpoint,
@@ -433,6 +554,7 @@ public sealed class AgentSessionGateway : IAgentSessionGateway, IDisposable
             AgentCommandStatus.Failed => AgentCommandExecutionState.Unknown,
             _ => AgentCommandExecutionState.Failed
         };
+        var completedAt = DateTimeOffset.UtcNow;
         var result = new AgentCommandResult
         {
             RequestId = request.RequestId,
@@ -442,16 +564,37 @@ public sealed class AgentSessionGateway : IAgentSessionGateway, IDisposable
             Risk = permission?.Risk ?? AgentCommandRisk.ReadOnly,
             Message = message,
             StartedAtUtc = startedAt,
-            CompletedAtUtc = DateTimeOffset.UtcNow,
+            CompletedAtUtc = completedAt,
+            DurationMs = Math.Max(0, (long)(completedAt - startedAt).TotalMilliseconds),
             RemoteCompletionConfirmed = execution?.RemoteCompletionConfirmed == true,
             ApprovalRequired = approvalRequired,
             Output = LimitCapturedOutput(execution?.Output),
             Error = LimitCapturedOutput(execution?.Error),
-            ExitCode = execution?.ExitCode
+            ExitCode = execution?.ExitCode,
+            ErrorType = GetErrorType(status, execution)
         };
         _auditLog.Record(request, result, permission: permission, approvalGranted: approvalGranted);
         return result;
     }
+
+    private static AgentCommandErrorType GetErrorType(
+        AgentCommandStatus status,
+        AgentCommandExecutionResult? execution)
+        => status switch
+        {
+            AgentCommandStatus.Sent => AgentCommandErrorType.None,
+            AgentCommandStatus.InvalidRequest => AgentCommandErrorType.InvalidRequest,
+            AgentCommandStatus.Denied => AgentCommandErrorType.PermissionDenied,
+            AgentCommandStatus.SessionNotFound or AgentCommandStatus.SessionNotConnected
+                => AgentCommandErrorType.SessionUnavailable,
+            AgentCommandStatus.UnsupportedProtocol => AgentCommandErrorType.UnsupportedProtocol,
+            AgentCommandStatus.Cancelled => AgentCommandErrorType.Cancelled,
+            AgentCommandStatus.TimedOut => AgentCommandErrorType.Timeout,
+            AgentCommandStatus.Failed when execution?.RemoteCompletionConfirmed == true
+                => AgentCommandErrorType.RemoteExitCode,
+            AgentCommandStatus.Failed => AgentCommandErrorType.Transport,
+            _ => AgentCommandErrorType.Unknown
+        };
 
     private bool TryGetCompletedRequest(
         AgentCommandRequest request,

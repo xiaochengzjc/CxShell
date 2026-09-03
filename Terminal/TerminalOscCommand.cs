@@ -1,12 +1,26 @@
 using System;
+using System.Globalization;
 using System.Text;
 
 namespace CxShell.Terminal;
+
+public enum TerminalShellIntegrationEventKind
+{
+    PromptStart,
+    PromptEnd,
+    CommandStart,
+    CommandFinished
+}
+
+public readonly record struct TerminalShellIntegrationEvent(
+    TerminalShellIntegrationEventKind Kind,
+    int? ExitCode);
 
 public static class TerminalOscCommand
 {
     public const int MaximumTitleLength = 160;
     public const int MaximumClipboardBytes = 1024 * 1024;
+    public const int MaximumCurrentDirectoryLength = 4096;
 
     public static bool TryParseTitle(string command, out string title)
     {
@@ -74,5 +88,95 @@ public static class TerminalOscCommand
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// Parses OSC 7 file URLs emitted by shell integrations such as bash,
+    /// zsh, and fish. Only absolute POSIX-style paths are accepted.
+    /// </summary>
+    public static bool TryParseCurrentDirectory(string command, out string path)
+    {
+        path = string.Empty;
+
+        if (!command.StartsWith("7;", StringComparison.Ordinal))
+            return false;
+
+        var value = command[2..].Trim();
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        string pathPart;
+        if (value.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+        {
+            var remainder = value[7..];
+            var slashIndex = remainder.IndexOf('/');
+            if (slashIndex < 0)
+                return false;
+
+            pathPart = remainder[slashIndex..];
+        }
+        else
+        {
+            pathPart = value;
+        }
+
+        try
+        {
+            pathPart = Uri.UnescapeDataString(pathPart);
+        }
+        catch (UriFormatException)
+        {
+            return false;
+        }
+
+        pathPart = pathPart.Replace('\\', '/').Trim();
+        if (pathPart.Length is 0 or > MaximumCurrentDirectoryLength ||
+            !pathPart.StartsWith("/", StringComparison.Ordinal) ||
+            pathPart.Contains('\0'))
+        {
+            return false;
+        }
+
+        path = pathPart;
+        return true;
+    }
+
+    /// <summary>
+    /// Parses the FinalTerm/OSC 133 shell integration markers. Parameters
+    /// after the marker are intentionally ignored except for D's exit code.
+    /// </summary>
+    public static bool TryParseShellIntegration(
+        string command,
+        out TerminalShellIntegrationEvent integrationEvent)
+    {
+        integrationEvent = default;
+        if (!command.StartsWith("133;", StringComparison.Ordinal))
+            return false;
+
+        var fields = command[4..].Split(';');
+        if (fields.Length == 0)
+            return false;
+
+        var kind = fields[0] switch
+        {
+            "A" => TerminalShellIntegrationEventKind.PromptStart,
+            "B" => TerminalShellIntegrationEventKind.PromptEnd,
+            "C" => TerminalShellIntegrationEventKind.CommandStart,
+            "D" => TerminalShellIntegrationEventKind.CommandFinished,
+            _ => (TerminalShellIntegrationEventKind?)null
+        };
+        if (kind == null)
+            return false;
+
+        int? exitCode = null;
+        if (kind == TerminalShellIntegrationEventKind.CommandFinished &&
+            fields.Length > 1 &&
+            int.TryParse(fields[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedExitCode))
+        {
+            exitCode = parsedExitCode;
+        }
+
+        integrationEvent = new TerminalShellIntegrationEvent(kind.Value, exitCode);
+        return true;
     }
 }

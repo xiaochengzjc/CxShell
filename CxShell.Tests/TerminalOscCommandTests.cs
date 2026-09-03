@@ -69,4 +69,36 @@ public sealed class TerminalOscCommandTests
         Assert.False(TerminalOscCommand.TryParseClipboard($"52;c;{payload}", out var text));
         Assert.Empty(text);
     }
+
+    [Theory]
+    [InlineData("7;file:///home/user/project", "/home/user/project")]
+    [InlineData("7;file://server/home/user/project%20files", "/home/user/project files")]
+    public void TryParseCurrentDirectoryAcceptsAbsoluteFileUrls(string command, string expected)
+    {
+        Assert.True(TerminalOscCommand.TryParseCurrentDirectory(command, out var path));
+        Assert.Equal(expected, path);
+    }
+
+    [Fact]
+    public void TryParseShellIntegrationRecognizesPromptAndCommandMarkers()
+    {
+        Assert.True(TerminalOscCommand.TryParseShellIntegration(
+            "133;A", out var promptStart));
+        Assert.Equal(TerminalShellIntegrationEventKind.PromptStart, promptStart.Kind);
+        Assert.Null(promptStart.ExitCode);
+
+        Assert.True(TerminalOscCommand.TryParseShellIntegration(
+            "133;D;17", out var commandFinished));
+        Assert.Equal(TerminalShellIntegrationEventKind.CommandFinished, commandFinished.Kind);
+        Assert.Equal(17, commandFinished.ExitCode);
+    }
+
+    [Theory]
+    [InlineData("133;X")]
+    [InlineData("133")]
+    [InlineData("7;relative/path")]
+    public void TryParseShellIntegrationRejectsUnknownMarkers(string command)
+    {
+        Assert.False(TerminalOscCommand.TryParseShellIntegration(command, out _));
+    }
 }

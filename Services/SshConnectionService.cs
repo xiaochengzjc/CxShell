@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
 using System.Globalization;
@@ -908,7 +909,7 @@ public class SshConnectionService : ITerminalConnectionService
 
     private void ReadLoop(CancellationToken ct)
     {
-        var buffer = new byte[4096];
+        var buffer = ArrayPool<byte>.Shared.Rent(16 * 1024);
 
         try
         {
@@ -953,6 +954,7 @@ public class SshConnectionService : ITerminalConnectionService
         }
         finally
         {
+            ArrayPool<byte>.Shared.Return(buffer);
             RaiseConnectionClosedOnce("Connection closed.");
         }
     }

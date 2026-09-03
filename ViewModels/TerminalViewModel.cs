@@ -232,7 +232,10 @@ public partial class TerminalViewModel : ObservableObject
     public event Action? CommandLineChanged;
     public event Action? SshTunnelRuntimeChanged;
     public event Action<string>? RemoteCurrentDirectoryChanged;
+    public event Action<TerminalShellIntegrationEvent>? ShellIntegrationChanged;
     public string? RemoteCurrentDirectory { get; private set; }
+    public TerminalShellIntegrationEventKind ShellIntegrationState { get; private set; }
+    public int? LastCommandExitCode { get; private set; }
 
     public IReadOnlyList<QuickCommandItem> GetQuickCommands()
     {
@@ -655,6 +658,8 @@ public partial class TerminalViewModel : ObservableObject
         Parser = new AnsiParser(Buffer);
         AttachParserHandlers(Parser);
         RemoteCurrentDirectory = null;
+        ShellIntegrationState = default;
+        LastCommandExitCode = null;
         _remoteHomeDirectory = null;
         _previousRemoteCurrentDirectory = null;
         _remoteDirectoryQueryId = 0;
@@ -681,6 +686,11 @@ public partial class TerminalViewModel : ObservableObject
 
             int generation = ++_connectionGeneration;
             _pendingTerminalOutput.Clear();
+            if (isReconnect)
+            {
+                await Dispatcher.UIThread.InvokeAsync(() => Parser.ResetInputState());
+            }
+
             var previous = _connection;
             _connection = null;
             var previousSendQueue = Interlocked.Exchange(ref _sendQueue, null);
@@ -799,6 +809,11 @@ public partial class TerminalViewModel : ObservableObject
     {
         parser.BellReceived += OnBellReceived;
         parser.OperatingSystemCommandReceived += OnOperatingSystemCommandReceived;
+        parser.DeviceControlCommandReceived += OnDeviceControlCommandReceived;
+        parser.DeviceAttributesRequested += OnDeviceAttributesRequested;
+        parser.DeviceStatusReportRequested += OnDeviceStatusReportRequested;
+        parser.DeviceModeQueryRequested += OnDeviceModeQueryRequested;
+        parser.KittyKeyboardProtocolQueryRequested += OnKittyKeyboardProtocolQueryRequested;
     }
 
     private void EnqueueTerminalOutput(
@@ -906,7 +921,19 @@ public partial class TerminalViewModel : ObservableObject
 
     private void OnOperatingSystemCommandReceived(string command)
     {
-        if (TryParseOsc7CurrentDirectory(command, out var path))
+        if (TerminalOscCommand.TryParseShellIntegration(command, out var shellEvent))
+        {
+            ShellIntegrationState = shellEvent.Kind;
+            if (shellEvent.Kind == TerminalShellIntegrationEventKind.PromptStart)
+                LastCommandExitCode = null;
+            else if (shellEvent.Kind == TerminalShellIntegrationEventKind.CommandFinished)
+                LastCommandExitCode = shellEvent.ExitCode;
+
+            ShellIntegrationChanged?.Invoke(shellEvent);
+            return;
+        }
+
+        if (TerminalOscCommand.TryParseCurrentDirectory(command, out var path))
         {
             SetRemoteCurrentDirectory(path);
             return;
@@ -925,6 +952,71 @@ public partial class TerminalViewModel : ObservableObject
         {
             RemoteTitle = title;
         }
+    }
+
+    private void OnDeviceControlCommandReceived(string command)
+    {
+        if (_connection is not { IsConnected: true } connection)
+            return;
+
+        // Vim and a few other full-screen programs use DECRQSS while probing
+        // xterm compatibility. The parser consumes every DCS; only answer the
+        // small, well-known subset whose response is useful to the application.
+        var response = command switch
+        {
+            "$qm" => "\x1bP1$r0m\x1b\\",
+            "$qr" => $"\x1bP1$r{Buffer.ScrollTop + 1};{Buffer.ScrollBottom + 1}r\x1b\\",
+            "$q q" => $"\x1bP1$r{Buffer.CursorStyle} q\x1b\\",
+            _ => null
+        };
+
+        if (response != null)
+            TrySendData(connection, response);
+    }
+
+    private void OnDeviceAttributesRequested(char prefix)
+    {
+        if (_connection is not { IsConnected: true } connection)
+            return;
+
+        var response = prefix == '>'
+            ? "\x1b[>0;10;1c"
+            : "\x1b[?1;2c";
+        TrySendData(connection, response);
+    }
+
+    private void OnDeviceStatusReportRequested(int request)
+    {
+        if (_connection is not { IsConnected: true } connection)
+            return;
+
+        var response = request switch
+        {
+            5 => "\x1b[0n",
+            6 => $"\x1b[{(Buffer.OriginMode ? Buffer.CursorRow - Buffer.ScrollTop + 1 : Buffer.CursorRow + 1)};{Buffer.CursorCol + 1}R",
+            _ => null
+        };
+
+        if (response != null)
+            TrySendData(connection, response);
+    }
+
+    private void OnDeviceModeQueryRequested(bool isPrivate, int mode)
+    {
+        if (_connection is not { IsConnected: true } connection)
+            return;
+
+        var status = Buffer.IsModeEnabled(isPrivate, mode) ? 1 : 2;
+        var prefix = isPrivate ? "?" : string.Empty;
+        TrySendData(connection, $"\x1b[{prefix}{mode};{status}$y");
+    }
+
+    private void OnKittyKeyboardProtocolQueryRequested()
+    {
+        if (_connection is not { IsConnected: true } connection)
+            return;
+
+        TrySendData(connection, $"\x1b[?{Buffer.KittyKeyboardFlags}u");
     }
 
     private static async Task ApplyOsc52ClipboardAsync(Func<string, Task> setClipboardText, string text)
@@ -958,53 +1050,6 @@ public partial class TerminalViewModel : ObservableObject
         _previousRemoteCurrentDirectory = RemoteCurrentDirectory;
         RemoteCurrentDirectory = path;
         RemoteCurrentDirectoryChanged?.Invoke(path);
-    }
-
-    private static bool TryParseOsc7CurrentDirectory(string command, out string path)
-    {
-        path = string.Empty;
-
-        if (!command.StartsWith("7;", StringComparison.Ordinal))
-            return false;
-
-        var value = command[2..].Trim();
-        if (string.IsNullOrWhiteSpace(value))
-            return false;
-
-        string pathPart;
-        if (value.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
-        {
-            var remainder = value[7..];
-            var slashIndex = remainder.IndexOf('/');
-            if (slashIndex < 0)
-                return false;
-
-            pathPart = remainder[slashIndex..];
-        }
-        else
-        {
-            pathPart = value;
-        }
-
-        try
-        {
-            pathPart = Uri.UnescapeDataString(pathPart);
-        }
-        catch (UriFormatException)
-        {
-            return false;
-        }
-
-        pathPart = pathPart.Replace('\\', '/').Trim();
-        if (pathPart.Length is 0 or > 4096 ||
-            !pathPart.StartsWith("/", StringComparison.Ordinal) ||
-            pathPart.Contains('\0'))
-        {
-            return false;
-        }
-
-        path = pathPart;
-        return true;
     }
 
     private static bool TryParseWindowsPromptCurrentDirectory(string data, out string path)
@@ -2681,6 +2726,11 @@ public partial class TerminalViewModel : ObservableObject
         SendInputCore(data, observeCommandLine: true);
     }
 
+    public void SendInputBytes(byte[] data)
+    {
+        TrySendBytes(_connection, data);
+    }
+
     private void SendInputCore(string data, bool observeCommandLine)
     {
         _lastUserInputAt = DateTimeOffset.UtcNow;
@@ -2897,7 +2947,7 @@ public partial class TerminalViewModel : ObservableObject
         {
             var cell = buffer.GetCell(row, col);
             if (!cell.IsWideContinuation)
-                line.Append(cell.Character);
+                line.Append(cell.GetText());
         }
 
         var text = line.ToString().TrimEnd();

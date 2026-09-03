@@ -214,7 +214,7 @@ public class ApplicationSettings
 {
     public const string DarkThemeMode = "Dark";
     public const string LightThemeMode = "Light";
-    public const int CurrentSchemaVersion = 4;
+    public const int CurrentSchemaVersion = 5;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public string UiLanguage { get; set; } = "zh-CN";
@@ -244,6 +244,9 @@ public class ApplicationSettings
     public double SftpPanelWidth { get; set; } = 318;
     public double AgentPanelWidth { get; set; } = 360;
     public bool ShowTabBar { get; set; }
+    public bool ShowSftpPanel { get; set; }
+    public bool ShowMonitorPanel { get; set; }
+    public bool ShowAgentPanel { get; set; }
     public bool EnableCommandSuggestions { get; set; } = true;
 }
 

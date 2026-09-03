@@ -1,3 +1,4 @@
+using System.Text.Json;
 using CxShell.Models;
 using CxShell.Services.Agent;
 
@@ -23,6 +24,139 @@ public sealed class AgentSessionGatewayTests
     }
 
     [Fact]
+    public async Task SavedSessionListContainsMetadataOnlyAndNoCredentials()
+    {
+        var savedSession = new AgentSavedSessionSnapshot
+        {
+            SavedSessionId = Guid.NewGuid(),
+            Name = "Production",
+            Path = "Production/Server",
+            Protocol = SessionProtocol.SSH,
+            Host = "server.example",
+            Port = 22,
+            Username = "operator"
+        };
+        using var gateway = CreateLifecycleGateway(
+            savedSession,
+            (_, _) => Task.FromResult(new AgentSessionOpenResult(AgentSessionOpenStatus.UserDenied)),
+            (_, _) => Task.FromResult(new AgentSessionCloseResult(AgentSessionCloseStatus.NotFound)));
+
+        var sessions = await gateway.ListSavedSessionsAsync();
+        var json = JsonSerializer.Serialize(sessions);
+
+        Assert.Single(sessions);
+        Assert.DoesNotContain("password", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("secret", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("credential", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task AgentCanCloseOnlyASessionItOpened()
+    {
+        var savedSession = CreateSavedSession();
+        var openedSession = CreateSnapshot(SessionProtocol.SSH, isConnected: true);
+        var closedSessionId = Guid.Empty;
+        using var gateway = CreateLifecycleGateway(
+            savedSession,
+            (_, _) => Task.FromResult(new AgentSessionOpenResult(
+                AgentSessionOpenStatus.Opened,
+                openedSession,
+                AgentOwned: true)),
+            (sessionId, _) =>
+            {
+                closedSessionId = sessionId;
+                return Task.FromResult(new AgentSessionCloseResult(AgentSessionCloseStatus.Closed));
+            });
+
+        var opened = await gateway.OpenSavedSessionAsync(new AgentSessionOpenRequest(
+            savedSession.SavedSessionId,
+            "inspect the host"));
+        var closed = await gateway.CloseAgentSessionAsync(openedSession.SessionId);
+
+        Assert.True(opened.Opened);
+        Assert.True(opened.AgentOwned);
+        Assert.True(closed.Closed);
+        Assert.Equal(openedSession.SessionId, closedSessionId);
+    }
+
+    [Fact]
+    public async Task ClosingAnAgentOwnedTabRemovesItsOwnership()
+    {
+        var savedSession = CreateSavedSession();
+        var openedSession = CreateSnapshot(SessionProtocol.SSH, isConnected: true);
+        using var gateway = CreateLifecycleGateway(
+            savedSession,
+            (_, _) => Task.FromResult(new AgentSessionOpenResult(
+                AgentSessionOpenStatus.Opened,
+                openedSession,
+                AgentOwned: true)),
+            (_, _) => Task.FromResult(new AgentSessionCloseResult(AgentSessionCloseStatus.Closed)));
+
+        var opened = await gateway.OpenSavedSessionAsync(new AgentSessionOpenRequest(
+            savedSession.SavedSessionId,
+            "inspect the host"));
+        Assert.True(opened.Opened);
+
+        gateway.NotifySessionClosed(openedSession.SessionId);
+
+        var closed = await gateway.CloseAgentSessionAsync(openedSession.SessionId);
+        Assert.Equal(AgentSessionCloseStatus.NotAgentOwned, closed.Status);
+    }
+
+    [Fact]
+    public async Task AgentCannotCloseAManuallyOpenedSession()
+    {
+        var savedSession = CreateSavedSession();
+        var manuallyOpenedSession = CreateSnapshot(SessionProtocol.SSH, isConnected: true);
+        var closeCalled = false;
+        using var gateway = CreateLifecycleGateway(
+            savedSession,
+            (_, _) => Task.FromResult(new AgentSessionOpenResult(
+                AgentSessionOpenStatus.Opened,
+                manuallyOpenedSession,
+                AgentOwned: false)),
+            (_, _) =>
+            {
+                closeCalled = true;
+                return Task.FromResult(new AgentSessionCloseResult(AgentSessionCloseStatus.Closed));
+            });
+
+        var opened = await gateway.OpenSavedSessionAsync(new AgentSessionOpenRequest(
+            savedSession.SavedSessionId,
+            "inspect the host"));
+        var closed = await gateway.CloseAgentSessionAsync(manuallyOpenedSession.SessionId);
+
+        Assert.True(opened.Opened);
+        Assert.False(opened.AgentOwned);
+        Assert.Equal(AgentSessionCloseStatus.NotAgentOwned, closed.Status);
+        Assert.False(closeCalled);
+    }
+
+    [Theory]
+    [InlineData(AgentSessionOpenStatus.UserDenied)]
+    [InlineData(AgentSessionOpenStatus.ConnectionFailed)]
+    [InlineData(AgentSessionOpenStatus.UserCancelled)]
+    public async Task SavedSessionOpenPreservesUserAndConnectionOutcome(
+        AgentSessionOpenStatus expectedStatus)
+    {
+        var savedSession = CreateSavedSession();
+        using var gateway = CreateLifecycleGateway(
+            savedSession,
+            (_, _) => Task.FromResult(new AgentSessionOpenResult(
+                expectedStatus,
+                Error: expectedStatus.ToString())),
+            (_, _) => Task.FromResult(new AgentSessionCloseResult(AgentSessionCloseStatus.NotFound)));
+
+        var result = await gateway.OpenSavedSessionAsync(new AgentSessionOpenRequest(
+            savedSession.SavedSessionId,
+            "connect for maintenance"));
+
+        Assert.Equal(expectedStatus, result.Status);
+        Assert.False(result.Opened);
+        Assert.False(result.AgentOwned);
+    }
+
+    [Fact]
     public async Task ExecuteCommandDispatchesToEndpointAndRecordsNoRawCommand()
     {
         var snapshot = CreateSnapshot(SessionProtocol.SSH, isConnected: true);
@@ -42,6 +176,7 @@ public sealed class AgentSessionGatewayTests
 
         Assert.Equal(AgentCommandStatus.Sent, result.Status);
         Assert.Equal(AgentCommandExecutionState.Dispatched, result.ExecutionState);
+        Assert.False(result.IsOutcomeCertain);
         Assert.False(result.IsRetrySafe);
         Assert.Same(request, sentRequest);
         var audit = Assert.Single(gateway.ReadAudit());
@@ -99,6 +234,8 @@ public sealed class AgentSessionGatewayTests
         });
 
         Assert.Equal(AgentCommandStatus.Failed, result.Status);
+        Assert.Equal(AgentCommandErrorType.RemoteExitCode, result.ErrorType);
+        Assert.True(result.DurationMs >= 0);
         Assert.Equal(AgentCommandExecutionState.Failed, result.ExecutionState);
         Assert.True(result.RemoteCompletionConfirmed);
         Assert.Equal(13, result.ExitCode);
@@ -310,6 +447,8 @@ public sealed class AgentSessionGatewayTests
         Assert.Equal(AgentCommandRisk.Dangerous, audit.Risk);
         Assert.Equal(AgentPermissionDecision.DangerousCommand, audit.PermissionDecision);
         Assert.True(audit.ApprovalRequired);
+        Assert.Equal(AgentCommandErrorType.PermissionDenied, result.ErrorType);
+        Assert.True(result.DurationMs >= 0);
     }
 
     [Fact]
@@ -427,6 +566,7 @@ public sealed class AgentSessionGatewayTests
         });
 
         Assert.Equal(AgentCommandStatus.UnsupportedProtocol, result.Status);
+        Assert.Equal(AgentCommandErrorType.UnsupportedProtocol, result.ErrorType);
     }
 
     [Fact]
@@ -452,6 +592,9 @@ public sealed class AgentSessionGatewayTests
         var result = await execution;
 
         Assert.Equal(AgentCommandStatus.Cancelled, result.Status);
+        Assert.Equal(AgentCommandErrorType.Cancelled, result.ErrorType);
+        Assert.True(result.WasCancelled);
+        Assert.False(result.IsOutcomeCertain);
     }
 
     [Fact]
@@ -469,6 +612,10 @@ public sealed class AgentSessionGatewayTests
         });
 
         Assert.Equal(AgentCommandStatus.TimedOut, result.Status);
+        Assert.Equal(AgentCommandExecutionState.Unknown, result.ExecutionState);
+        Assert.Equal(AgentCommandErrorType.Timeout, result.ErrorType);
+        Assert.True(result.TimedOut);
+        Assert.False(result.IsOutcomeCertain);
     }
 
     [Fact]
@@ -484,6 +631,7 @@ public sealed class AgentSessionGatewayTests
         });
 
         Assert.Equal(AgentCommandStatus.SessionNotConnected, result.Status);
+        Assert.Equal(AgentCommandErrorType.SessionUnavailable, result.ErrorType);
     }
 
     private static AgentSessionGateway CreateGateway(
@@ -504,6 +652,18 @@ public sealed class AgentSessionGatewayTests
         endpoints.AddRange(rest.Select(snapshot => CreateEndpoint(snapshot, null)));
 
         return new AgentSessionGateway(new DelegateAgentSessionHost(() => endpoints));
+    }
+
+    private static AgentSessionGateway CreateLifecycleGateway(
+        AgentSavedSessionSnapshot savedSession,
+        Func<AgentSessionOpenRequest, CancellationToken, Task<AgentSessionOpenResult>> open,
+        Func<Guid, CancellationToken, Task<AgentSessionCloseResult>> close)
+    {
+        return new AgentSessionGateway(new DelegateAgentSessionHost(
+            () => [],
+            _ => Task.FromResult<IReadOnlyList<AgentSavedSessionSnapshot>>([savedSession]),
+            open,
+            close));
     }
 
     private static IAgentSessionEndpoint CreateEndpoint(
@@ -527,4 +687,16 @@ public sealed class AgentSessionGatewayTests
         };
         return AgentSessionSnapshot.FromSession(session, isConnected);
     }
+
+    private static AgentSavedSessionSnapshot CreateSavedSession()
+        => new()
+        {
+            SavedSessionId = Guid.NewGuid(),
+            Name = "Saved SSH",
+            Path = "Operations/Saved SSH",
+            Protocol = SessionProtocol.SSH,
+            Host = "saved.example",
+            Port = 22,
+            Username = "operator"
+        };
 }

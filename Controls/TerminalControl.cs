@@ -32,11 +32,16 @@ public class TerminalControl : Control
     private bool _isSelecting;
     private int _scrollOffset;
     private TerminalBuffer? _observedBuffer;
+    private bool _lastRemoteCursorStyleSet;
+    private int _lastRemoteCursorStyle;
     private int _lastScrollbackCount;
     private bool _isDraggingScrollbar;
     private double _scrollbarDragOffsetY;
     private bool _isPointerOverScrollbar;
+    private string? _pointerHyperlinkUri;
     private bool _scrollLockActive;
+    private TerminalMouseButton? _mouseButtonDown;
+    private (int Column, int Row) _lastMouseReportCell = (-1, -1);
     private string _searchQuery = string.Empty;
     private IReadOnlyList<TerminalTextMatch> _searchMatches = [];
     private readonly Dictionary<int, List<TerminalTextMatch>> _searchMatchesByRow = new();
@@ -49,6 +54,13 @@ public class TerminalControl : Control
     private string? _loadedBackgroundImagePath;
     private IReadOnlyList<CompiledHighlightRule> _compiledHighlightRules = [];
     private string _ghostText = string.Empty;
+    private TerminalBuffer? _renderCacheBuffer;
+    private TerminalCell[][] _renderRows = [];
+    private bool[] _renderRowsLoaded = [];
+    private bool _renderCacheActive;
+    private Key _pendingTextInputKey = Key.None;
+    private KeyModifiers _pendingTextInputModifiers;
+    private TerminalKeyEventType _pendingTextInputEventType = TerminalKeyEventType.Press;
     private const double ScrollbarWidth = 16;
     private const double ScrollbarMinThumbHeight = 28;
 
@@ -413,6 +425,7 @@ public class TerminalControl : Control
     }
 
     public event Action<string>? InputReceived;
+    public event Action<byte[]>? BinaryInputReceived;
     public event Action<int, int>? SizeChanged2;
     public event Action? SearchChanged;
 
@@ -442,6 +455,8 @@ public class TerminalControl : Control
     public bool HasSelection => _selectionAnchor.HasValue
         && _selectionEnd.HasValue
         && _selectionAnchor.Value != _selectionEnd.Value;
+
+    public bool IsMouseReportingEnabled => TerminalBuffer?.MouseTracking != TerminalMouseTracking.None;
 
     public TerminalControl()
     {
@@ -485,7 +500,7 @@ public class TerminalControl : Control
 
     private void UpdateCursorBlinkTimer()
     {
-        if (!UseBlinkingCursor || !this.IsAttachedToVisualTree())
+        if (!IsCursorBlinking(TerminalBuffer) || !this.IsAttachedToVisualTree())
         {
             _cursorBlinkTimer.Stop();
             _cursorBlinkVisible = true;
@@ -531,6 +546,8 @@ public class TerminalControl : Control
 
             _observedBuffer = TerminalBuffer;
             _lastScrollbackCount = _observedBuffer?.ScrollbackCount ?? 0;
+            _lastRemoteCursorStyleSet = _observedBuffer?.HasRemoteCursorStyle == true;
+            _lastRemoteCursorStyle = _observedBuffer?.CursorStyle ?? 0;
             if (_observedBuffer != null)
                 _observedBuffer.Changed += OnTerminalBufferChanged;
 
@@ -708,125 +725,133 @@ public class TerminalControl : Control
         DrawBackgroundImage(context, GetContentRect(Bounds.Size));
 
         var contentRect = GetContentRect(Bounds.Size);
-        using (context.PushClip(contentRect))
-        using (context.PushTransform(Matrix.CreateTranslation(contentRect.X, contentRect.Y)))
+        BeginRenderCache(buffer);
+        try
         {
-            for (int row = 0; row < buffer.Rows; row++)
+            using (context.PushClip(contentRect))
+            using (context.PushTransform(Matrix.CreateTranslation(contentRect.X, contentRect.Y)))
             {
-                double y = row * _cellHeight;
-                var highlightMap = BuildHighlightMap(buffer, row);
-
-                // Draw background segments
-                int segStart = 0;
-                var segColor = ResolveHighlightBackground(buffer, GetViewportCell(buffer, row, 0), highlightMap?[0]);
-
-                for (int col = 0; col <= buffer.Columns; col++)
+                for (int row = 0; row < buffer.Rows; row++)
                 {
-                    var cellColor = col < buffer.Columns
-                        ? ResolveHighlightBackground(buffer, GetViewportCell(buffer, row, col), highlightMap?[col])
-                        : ResolveBackground(buffer, buffer.CreateDefaultCell());
+                    double y = row * _cellHeight;
+                    var highlightMap = BuildHighlightMap(buffer, row);
 
-                    if (cellColor != segColor || col == buffer.Columns)
+                    // Draw background segments
+                    int segStart = 0;
+                    var segColor = ResolveHighlightBackground(buffer, GetViewportCell(buffer, row, 0), highlightMap?[0]);
+
+                    for (int col = 0; col <= buffer.Columns; col++)
                     {
-                        if (segColor != buffer.DefaultBackgroundColor)
+                        var cellColor = col < buffer.Columns
+                            ? ResolveHighlightBackground(buffer, GetViewportCell(buffer, row, col), highlightMap?[col])
+                            : ResolveBackground(buffer, buffer.CreateDefaultCell());
+
+                        if (cellColor != segColor || col == buffer.Columns)
                         {
-                            context.FillRectangle(
-                                GetBrush(segColor),
-                                new Rect(segStart * _cellWidth, y, (col - segStart) * _cellWidth, _cellHeight));
+                            if (segColor != buffer.DefaultBackgroundColor)
+                            {
+                                context.FillRectangle(
+                                    GetBrush(segColor),
+                                    new Rect(segStart * _cellWidth, y, (col - segStart) * _cellWidth, _cellHeight));
+                            }
+                            segStart = col;
+                            segColor = cellColor;
                         }
-                        segStart = col;
-                        segColor = cellColor;
+                    }
+
+                    DrawSearchMatches(context, row, y, buffer);
+                    DrawSelection(context, row, y);
+
+                    // Merge adjacent cells with the same style. Wide and combining
+                    // characters remain individual runs so their grid positions stay exact.
+                    DrawTextRuns(context, buffer, row, y, highlightMap);
+
+                    // Draw underline for cells that have it
+                    for (int col = 0; col < buffer.Columns; col++)
+                    {
+                        var cell = GetViewportCell(buffer, row, col);
+                        var highlight = highlightMap?[col];
+                        if (!cell.Invisible &&
+                            (cell.HyperlinkUri != null || cell.Underline || cell.DoubleUnderline || cell.Strikethrough || highlight?.Underline == true || highlight?.Strikethrough == true) &&
+                            cell.GetText() != " " && !cell.IsWideContinuation)
+                        {
+                            var width = col + 1 < buffer.Columns && GetViewportCell(buffer, row, col + 1).IsWideContinuation
+                                ? 2
+                                : 1;
+                            var pen = new Pen(GetBrush(ResolveHighlightForeground(buffer, cell, highlight)), 1);
+                            if (cell.HyperlinkUri != null || cell.Underline || highlight?.Underline == true)
+                            {
+                                context.DrawLine(pen,
+                                    new Point(col * _cellWidth, y + _cellHeight - 1),
+                                    new Point((col + width) * _cellWidth, y + _cellHeight - 1));
+                            }
+
+                            if (cell.DoubleUnderline)
+                            {
+                                context.DrawLine(pen,
+                                    new Point(col * _cellWidth, y + Math.Max(1, _cellHeight - 3)),
+                                    new Point((col + width) * _cellWidth, y + Math.Max(1, _cellHeight - 3)));
+                                context.DrawLine(pen,
+                                    new Point(col * _cellWidth, y + _cellHeight - 1),
+                                    new Point((col + width) * _cellWidth, y + _cellHeight - 1));
+                            }
+
+                            if (cell.Strikethrough || highlight?.Strikethrough == true)
+                            {
+                                context.DrawLine(pen,
+                                    new Point(col * _cellWidth, y + _cellHeight * 0.55),
+                                    new Point((col + width) * _cellWidth, y + _cellHeight * 0.55));
+                            }
+                        }
+                    }
+
+                }
+
+                // Draw cursor
+                if (buffer.CursorVisible && _scrollOffset == 0 &&
+                    (!IsCursorBlinking(buffer) || _cursorBlinkVisible))
+                {
+                    var cursorCol = buffer.CursorCol;
+                    var cursorCell = buffer.GetCell(buffer.CursorRow, cursorCol);
+                    var cursorWidth = !cursorCell.IsWideContinuation
+                        && cursorCol + 1 < buffer.Columns
+                        && buffer.GetCell(buffer.CursorRow, cursorCol + 1).IsWideContinuation
+                        ? _cellWidth * 2
+                        : _cellWidth;
+                    double cursorX = cursorCol * _cellWidth;
+                    double cursorY = buffer.CursorRow * _cellHeight;
+                    DrawCursor(context, cursorX, cursorY, cursorWidth, GetCursorShape(buffer));
+                    // Re-draw the character under cursor in black (inverted) so it remains visible
+                    if (!cursorCell.Invisible && !cursorCell.IsWideContinuation && cursorCell.GetText() != " ")
+                    {
+                        DrawTextRun(context, cursorCell.GetText(),
+                            cursorX, cursorY,
+                            CursorTextColor, cursorCell.Bold, cursorCell.Italic);
                     }
                 }
 
-                DrawSearchMatches(context, row, y, buffer);
-                DrawSelection(context, row, y);
-
-                // Draw foreground text at cell positions so wide CJK characters keep cursor alignment.
-                for (int col = 0; col < buffer.Columns; col++)
+                if (!string.IsNullOrEmpty(_ghostText) &&
+                    _scrollOffset == 0 &&
+                    buffer.CursorRow >= 0 && buffer.CursorRow < buffer.Rows &&
+                    buffer.CursorCol >= 0 && buffer.CursorCol < buffer.Columns)
                 {
-                    var cell = GetViewportCell(buffer, row, col);
-                    if (cell.IsWideContinuation || cell.Character == ' ')
-                        continue;
-
-                    var highlight = highlightMap?[col];
-                    DrawTextRun(
-                        context,
-                        cell.Character.ToString(),
-                        col * _cellWidth,
-                        y,
-                        ResolveHighlightForeground(buffer, cell, highlight),
-                        cell.Bold || highlight?.Bold == true,
-                        highlight?.Italic == true);
-                }
-
-                // Draw underline for cells that have it
-                for (int col = 0; col < buffer.Columns; col++)
-                {
-                    var cell = GetViewportCell(buffer, row, col);
-                    var highlight = highlightMap?[col];
-                    if ((cell.Underline || highlight?.Underline == true || highlight?.Strikethrough == true) && cell.Character != ' ' && !cell.IsWideContinuation)
+                    var ghostLength = Math.Min(_ghostText.Length, buffer.Columns - buffer.CursorCol);
+                    if (ghostLength > 0)
                     {
-                        var width = col + 1 < buffer.Columns && GetViewportCell(buffer, row, col + 1).IsWideContinuation
-                            ? 2
-                            : 1;
-                        var pen = new Pen(GetBrush(ResolveHighlightForeground(buffer, cell, highlight)), 1);
-                        if (cell.Underline || highlight?.Underline == true)
-                        {
-                            context.DrawLine(pen,
-                                new Point(col * _cellWidth, y + _cellHeight - 1),
-                                new Point((col + width) * _cellWidth, y + _cellHeight - 1));
-                        }
-
-                        if (highlight?.Strikethrough == true)
-                        {
-                            context.DrawLine(pen,
-                                new Point(col * _cellWidth, y + _cellHeight * 0.55),
-                                new Point((col + width) * _cellWidth, y + _cellHeight * 0.55));
-                        }
+                        DrawTextRun(
+                            context,
+                            _ghostText[..ghostLength],
+                            buffer.CursorCol * _cellWidth,
+                            buffer.CursorRow * _cellHeight,
+                            Color.FromArgb(150, CursorColor.R, CursorColor.G, CursorColor.B),
+                            bold: false);
                     }
                 }
             }
-
-            // Draw cursor
-            if (buffer.CursorVisible && _scrollOffset == 0 && _cursorBlinkVisible)
-            {
-                var cursorCol = buffer.CursorCol;
-                var cursorCell = buffer.GetCell(buffer.CursorRow, cursorCol);
-                var cursorWidth = !cursorCell.IsWideContinuation
-                    && cursorCol + 1 < buffer.Columns
-                    && buffer.GetCell(buffer.CursorRow, cursorCol + 1).IsWideContinuation
-                    ? _cellWidth * 2
-                    : _cellWidth;
-                double cursorX = cursorCol * _cellWidth;
-                double cursorY = buffer.CursorRow * _cellHeight;
-                DrawCursor(context, cursorX, cursorY, cursorWidth);
-                // Re-draw the character under cursor in black (inverted) so it remains visible
-                if (!cursorCell.IsWideContinuation && cursorCell.Character != '\0' && cursorCell.Character != ' ')
-                {
-                    DrawTextRun(context, cursorCell.Character.ToString(),
-                        cursorX, cursorY,
-                        CursorTextColor, cursorCell.Bold);
-                }
-            }
-
-            if (!string.IsNullOrEmpty(_ghostText) &&
-                _scrollOffset == 0 &&
-                buffer.CursorRow >= 0 && buffer.CursorRow < buffer.Rows &&
-                buffer.CursorCol >= 0 && buffer.CursorCol < buffer.Columns)
-            {
-                var ghostLength = Math.Min(_ghostText.Length, buffer.Columns - buffer.CursorCol);
-                if (ghostLength > 0)
-                {
-                    DrawTextRun(
-                        context,
-                        _ghostText[..ghostLength],
-                        buffer.CursorCol * _cellWidth,
-                        buffer.CursorRow * _cellHeight,
-                        Color.FromArgb(150, CursorColor.R, CursorColor.G, CursorColor.B),
-                        bold: false);
-                }
-            }
+        }
+        finally
+        {
+            EndRenderCache();
         }
 
         DrawScrollbar(context, buffer);
@@ -937,7 +962,19 @@ public class TerminalControl : Control
 
     private void OnTerminalBufferChanged()
     {
-        var count = TerminalBuffer?.ScrollbackCount ?? 0;
+        var buffer = TerminalBuffer;
+        if (buffer != null &&
+            (buffer.HasRemoteCursorStyle != _lastRemoteCursorStyleSet ||
+             buffer.CursorStyle != _lastRemoteCursorStyle))
+        {
+            _lastRemoteCursorStyleSet = buffer.HasRemoteCursorStyle;
+            _lastRemoteCursorStyle = buffer.CursorStyle;
+            UpdateCursorBlinkTimer();
+        }
+
+        InvalidateVisual();
+
+        var count = buffer?.ScrollbackCount ?? 0;
         var delta = count - _lastScrollbackCount;
         if (_scrollOffset > 0 && delta > 0)
         {
@@ -955,6 +992,12 @@ public class TerminalControl : Control
         _lastScrollbackCount = count;
         ScheduleSearchMatchesRefresh();
     }
+
+    /// <summary>
+    /// Lets the owner notify the control when output was parsed as a batched
+    /// operation without raising a buffer event for every written character.
+    /// </summary>
+    public void NotifyBufferChanged() => OnTerminalBufferChanged();
 
     private void ScheduleSearchMatchesRefresh()
     {
@@ -1017,25 +1060,73 @@ public class TerminalControl : Control
 
     private TerminalCell GetViewportCell(TerminalBuffer buffer, int row, int col)
     {
+        if (_renderCacheActive && ReferenceEquals(_renderCacheBuffer, buffer) &&
+            row >= 0 && row < _renderRows.Length && col >= 0 && col < buffer.Columns)
+        {
+            if (!_renderRowsLoaded[row])
+            {
+                buffer.CopyViewportRow(row, _scrollOffset, _renderRows[row]);
+                _renderRowsLoaded[row] = true;
+            }
+
+            return _renderRows[row][col];
+        }
+
         return buffer.GetViewportCell(row, col, _scrollOffset);
+    }
+
+    private void BeginRenderCache(TerminalBuffer buffer)
+    {
+        _renderCacheBuffer = buffer;
+        _renderCacheActive = true;
+        if (_renderRows.Length != buffer.Rows)
+            _renderRows = new TerminalCell[buffer.Rows][];
+
+        if (_renderRowsLoaded.Length != buffer.Rows)
+            _renderRowsLoaded = new bool[buffer.Rows];
+        else
+            Array.Clear(_renderRowsLoaded, 0, _renderRowsLoaded.Length);
+
+        for (var row = 0; row < buffer.Rows; row++)
+        {
+            if (_renderRows[row] == null || _renderRows[row].Length != buffer.Columns)
+                _renderRows[row] = new TerminalCell[buffer.Columns];
+        }
+    }
+
+    private void EndRenderCache()
+    {
+        _renderCacheActive = false;
+        _renderCacheBuffer = null;
     }
 
     private static Color ResolveForeground(TerminalBuffer buffer, TerminalCell cell)
     {
-        return buffer.ReverseVideoMode ? cell.Background : cell.Foreground;
+        return buffer.ReverseVideoMode ^ cell.Reverse ? cell.Background : cell.Foreground;
     }
 
     private static Color ResolveBackground(TerminalBuffer buffer, TerminalCell cell)
     {
-        return buffer.ReverseVideoMode ? cell.Foreground : cell.Background;
+        return buffer.ReverseVideoMode ^ cell.Reverse ? cell.Foreground : cell.Background;
     }
 
     private static Color ResolveHighlightForeground(TerminalBuffer buffer, TerminalCell cell, CompiledHighlightRule? highlight)
     {
-        if (highlight == null || highlight.UseTerminalColor)
-            return ResolveForeground(buffer, cell);
+        var color = highlight == null || highlight.UseTerminalColor
+            ? ResolveForeground(buffer, cell)
+            : highlight.ForegroundColor;
 
-        return highlight.ForegroundColor;
+        return cell.Dim ? DimColor(color) : color;
+    }
+
+    private static Color DimColor(Color color)
+    {
+        const double factor = 0.6;
+        return Color.FromArgb(
+            color.A,
+            (byte)Math.Clamp((int)Math.Round(color.R * factor), 0, 255),
+            (byte)Math.Clamp((int)Math.Round(color.G * factor), 0, 255),
+            (byte)Math.Clamp((int)Math.Round(color.B * factor), 0, 255));
     }
 
     private static Color ResolveHighlightBackground(TerminalBuffer buffer, TerminalCell cell, CompiledHighlightRule? highlight)
@@ -1046,34 +1137,114 @@ public class TerminalControl : Control
         return highlight.BackgroundColor;
     }
 
+    private void DrawTextRuns(
+        DrawingContext context,
+        TerminalBuffer buffer,
+        int row,
+        double y,
+        CompiledHighlightRule?[]? highlightMap)
+    {
+        for (var col = 0; col < buffer.Columns;)
+        {
+            var cell = GetViewportCell(buffer, row, col);
+            if (cell.IsWideContinuation)
+            {
+                col++;
+                continue;
+            }
+
+            var highlight = highlightMap?[col];
+            var color = ResolveHighlightForeground(buffer, cell, highlight);
+            var bold = cell.Bold || highlight?.Bold == true;
+            var italic = cell.Italic || highlight?.Italic == true;
+            var cellWidth = col + 1 < buffer.Columns && GetViewportCell(buffer, row, col + 1).IsWideContinuation ? 2 : 1;
+            var text = cell.GetText();
+
+            if (cell.Invisible)
+            {
+                col += cellWidth;
+                continue;
+            }
+
+            // Supplementary-plane/combining text and wide cells need their own
+            // origin because their rendered width is not one terminal column.
+            if (cellWidth != 1 || text.Length != 1)
+            {
+                DrawTextRun(context, text, col * _cellWidth, y, color, bold, italic);
+                col += cellWidth;
+                continue;
+            }
+
+            var start = col;
+            var run = new StringBuilder();
+            while (col < buffer.Columns)
+            {
+                var candidate = GetViewportCell(buffer, row, col);
+                if (candidate.IsWideContinuation || candidate.Invisible)
+                    break;
+
+                var candidateHighlight = highlightMap?[col];
+                var candidateText = candidate.GetText();
+                var candidateWidth = col + 1 < buffer.Columns && GetViewportCell(buffer, row, col + 1).IsWideContinuation ? 2 : 1;
+                var candidateColor = ResolveHighlightForeground(buffer, candidate, candidateHighlight);
+                var candidateBold = candidate.Bold || candidateHighlight?.Bold == true;
+                var candidateItalic = candidate.Italic || candidateHighlight?.Italic == true;
+                if (candidateWidth != 1 || candidateText.Length != 1 ||
+                    candidateColor != color || candidateBold != bold || candidateItalic != italic)
+                    break;
+
+                run.Append(candidateText);
+                col++;
+            }
+
+            if (run.Length > 0)
+                DrawTextRun(context, run.ToString(), start * _cellWidth, y, color, bold, italic);
+            else
+                col = Math.Min(buffer.Columns, start + 1);
+        }
+    }
+
     private CompiledHighlightRule?[]? BuildHighlightMap(TerminalBuffer buffer, int row)
     {
         if (_compiledHighlightRules.Count == 0)
             return null;
 
-        var chars = new char[buffer.Columns];
+        var text = new StringBuilder(buffer.Columns);
+        var columns = new List<int>();
+        var columnEnds = new List<int>();
         for (var col = 0; col < buffer.Columns; col++)
         {
             var cell = GetViewportCell(buffer, row, col);
-            chars[col] = cell.IsWideContinuation || cell.Character == '\0'
-                ? ' '
-                : cell.Character;
+            if (cell.IsWideContinuation)
+                continue;
+
+            var cellText = cell.GetText();
+            var width = col + 1 < buffer.Columns && GetViewportCell(buffer, row, col + 1).IsWideContinuation ? 2 : 1;
+            foreach (var character in cellText)
+            {
+                text.Append(character);
+                columns.Add(col);
+                columnEnds.Add(col + width);
+            }
         }
 
-        var text = new string(chars);
         CompiledHighlightRule?[]? map = null;
         foreach (var rule in _compiledHighlightRules)
         {
             try
             {
-                foreach (Match match in rule.Regex.Matches(text))
+                foreach (Match match in rule.Regex.Matches(text.ToString()))
                 {
                     if (!match.Success || match.Length <= 0)
                         continue;
 
                     map ??= new CompiledHighlightRule?[buffer.Columns];
-                    var start = Math.Clamp(match.Index, 0, buffer.Columns);
-                    var end = Math.Clamp(match.Index + match.Length, 0, buffer.Columns);
+                    if (match.Index >= columns.Count)
+                        continue;
+
+                    var start = Math.Clamp(columns[match.Index], 0, buffer.Columns);
+                    var endOffset = Math.Min(match.Index + match.Length - 1, columnEnds.Count - 1);
+                    var end = Math.Clamp(columnEnds[endOffset], start, buffer.Columns);
                     for (var col = start; col < end; col++)
                         map[col] = rule;
                 }
@@ -1153,7 +1324,24 @@ public class TerminalControl : Control
         if (e.Text != null)
         {
             MaybeScrollToBottomForInput();
-            InputReceived?.Invoke(e.Text);
+            if (TerminalKeyboardEncoder.TryEncodeTextInput(
+                    e.Text,
+                    _pendingTextInputKey,
+                    _pendingTextInputModifiers,
+                    TerminalBuffer?.KittyKeyboardFlags ?? 0,
+                    _pendingTextInputEventType,
+                    out var kittyTextData))
+            {
+                InputReceived?.Invoke(kittyTextData);
+            }
+            else
+            {
+                InputReceived?.Invoke(e.Text);
+            }
+
+            _pendingTextInputKey = Key.None;
+            _pendingTextInputModifiers = KeyModifiers.None;
+            _pendingTextInputEventType = TerminalKeyEventType.Press;
             e.Handled = true;
         }
     }
@@ -1229,23 +1417,23 @@ public class TerminalControl : Control
 
     private static bool ContainsCjk(string text)
     {
-        foreach (var ch in text)
+        foreach (var rune in text.EnumerateRunes())
         {
-            if (IsCjkCharacter(ch))
+            if (IsCjkCharacter(rune.Value))
                 return true;
         }
 
         return false;
     }
 
-    private static bool IsCjkCharacter(char ch)
+    private static bool IsCjkCharacter(int code)
     {
-        var code = (int)ch;
         return code >= 0x2E80 && code <= 0xA4CF
                || code >= 0xAC00 && code <= 0xD7A3
                || code >= 0xF900 && code <= 0xFAFF
                || code >= 0xFE10 && code <= 0xFE6F
-               || code >= 0xFF00 && code <= 0xFFEF;
+               || code >= 0xFF00 && code <= 0xFFEF
+               || code >= 0x1F300 && code <= 0x1FAFF;
     }
 
     private static TextRenderingMode GetTextRenderingMode(string? value)
@@ -1296,10 +1484,34 @@ public class TerminalControl : Control
         bool Underline,
         bool Strikethrough);
 
-    private void DrawCursor(DrawingContext context, double x, double y, double width)
+    private bool IsCursorBlinking(TerminalBuffer? buffer)
+    {
+        if (buffer == null)
+            return UseBlinkingCursor;
+
+        if (!buffer.HasRemoteCursorStyle)
+            return UseBlinkingCursor;
+
+        return buffer.CursorStyle is 0 or 1 or 3 or 5;
+    }
+
+    private string GetCursorShape(TerminalBuffer buffer)
+    {
+        if (!buffer.HasRemoteCursorStyle)
+            return CursorShape;
+
+        return buffer.CursorStyle switch
+        {
+            3 or 4 => "Underline",
+            5 or 6 => "Vertical",
+            _ => "Block"
+        };
+    }
+
+    private void DrawCursor(DrawingContext context, double x, double y, double width, string shape)
     {
         var brush = GetBrush(CursorColor);
-        var shape = CursorShape?.Trim();
+        shape = shape.Trim();
         if (string.Equals(shape, "Vertical", StringComparison.OrdinalIgnoreCase))
         {
             context.FillRectangle(brush, new Rect(x, y, Math.Max(2, width * 0.18), _cellHeight));
@@ -1321,6 +1533,7 @@ public class TerminalControl : Control
 
         var buffer = TerminalBuffer;
         var point = e.GetPosition(this);
+        var properties = e.GetCurrentPoint(this).Properties;
         if (buffer != null && e.GetCurrentPoint(this).Properties.IsLeftButtonPressed && IsPointInScrollbar(point, buffer))
         {
             var track = GetScrollbarTrackRect();
@@ -1336,7 +1549,32 @@ public class TerminalControl : Control
             return;
         }
 
-        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        if (properties.IsLeftButtonPressed &&
+            (e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta)) &&
+            TryGetHyperlinkAtPoint(point) is { } hyperlinkUri &&
+            TryOpenHyperlink(hyperlinkUri))
+        {
+            e.Handled = true;
+            return;
+        }
+
+        // A terminal application that enabled mouse tracking owns the pointer
+        // on the live screen. Shift keeps the local selection/context menu path.
+        if (buffer != null
+            && buffer.MouseTracking != TerminalMouseTracking.None
+            && _scrollOffset == 0
+            && !e.KeyModifiers.HasFlag(KeyModifiers.Shift)
+            && TryGetPressedMouseButton(properties) is { } mouseButton
+            && SendMouseReport(TerminalMouseEventType.Press, mouseButton, point, e.KeyModifiers))
+        {
+            _mouseButtonDown = mouseButton;
+            _lastMouseReportCell = GetMouseCell(point);
+            e.Pointer.Capture(this);
+            e.Handled = true;
+            return;
+        }
+
+        if (!properties.IsLeftButtonPressed)
             return;
 
         var position = GetCellPosition(e.GetPosition(this), includeCell: true);
@@ -1353,11 +1591,37 @@ public class TerminalControl : Control
         base.OnPointerMoved(e);
         UpdatePointerCursor(e.GetPosition(this));
 
+        var buffer = TerminalBuffer;
+        if (buffer != null
+            && _scrollOffset == 0
+            && !e.KeyModifiers.HasFlag(KeyModifiers.Shift)
+            && buffer.MouseTracking is TerminalMouseTracking.ButtonEvent or TerminalMouseTracking.AnyEvent)
+        {
+            var mouseCell = GetMouseCell(e.GetPosition(this));
+            var hasButton = _mouseButtonDown.HasValue;
+            if ((buffer.MouseTracking == TerminalMouseTracking.AnyEvent || hasButton)
+                && mouseCell != _lastMouseReportCell)
+            {
+                var mouseButton = _mouseButtonDown ?? TerminalMouseButton.None;
+                if (SendMouseReport(TerminalMouseEventType.Move, mouseButton, e.GetPosition(this), e.KeyModifiers))
+                    _lastMouseReportCell = mouseCell;
+
+                e.Handled = true;
+                return;
+            }
+
+            if (hasButton)
+            {
+                e.Handled = true;
+                return;
+            }
+        }
+
         if (_isDraggingScrollbar)
         {
-            var buffer = TerminalBuffer;
-            if (buffer != null)
-                UpdateScrollOffsetFromScrollbar(e.GetPosition(this).Y, buffer);
+            var scrollBuffer = TerminalBuffer;
+            if (scrollBuffer != null)
+                UpdateScrollOffsetFromScrollbar(e.GetPosition(this).Y, scrollBuffer);
 
             InvalidateVisual();
             e.Handled = true;
@@ -1376,12 +1640,23 @@ public class TerminalControl : Control
     {
         base.OnPointerExited(e);
         _isPointerOverScrollbar = false;
+        _pointerHyperlinkUri = null;
         Cursor = new Cursor(StandardCursorType.Ibeam);
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
+        if (_mouseButtonDown is { } mouseButton)
+        {
+            SendMouseReport(TerminalMouseEventType.Release, mouseButton, e.GetPosition(this), e.KeyModifiers);
+            _mouseButtonDown = null;
+            _lastMouseReportCell = (-1, -1);
+            e.Pointer.Capture(null);
+            e.Handled = true;
+            return;
+        }
+
         if (_isDraggingScrollbar)
         {
             _isDraggingScrollbar = false;
@@ -1406,6 +1681,21 @@ public class TerminalControl : Control
         base.OnPointerWheelChanged(e);
 
         var buffer = TerminalBuffer;
+        if (buffer != null
+            && buffer.MouseTracking != TerminalMouseTracking.None
+            && _scrollOffset == 0
+            && e.Delta.Y != 0
+            && !e.KeyModifiers.HasFlag(KeyModifiers.Shift)
+            && SendMouseReport(
+                TerminalMouseEventType.Press,
+                e.Delta.Y > 0 ? TerminalMouseButton.WheelUp : TerminalMouseButton.WheelDown,
+                e.GetPosition(this),
+                e.KeyModifiers))
+        {
+            e.Handled = true;
+            return;
+        }
+
         if (buffer == null || GetMaxScrollOffset(buffer) == 0)
             return;
 
@@ -1537,13 +1827,37 @@ public class TerminalControl : Control
             if (!string.IsNullOrEmpty(text))
             {
                 ScrollToBottom();
-                InputReceived?.Invoke(text.Replace("\r\n", "\r").Replace("\n", "\r"));
+                InputReceived?.Invoke(BuildPastePayload(text, TerminalBuffer?.BracketedPasteMode == true));
             }
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Error pasting into terminal: {ex.Message}");
         }
+    }
+
+    protected override void OnGotFocus(FocusChangedEventArgs e)
+    {
+        base.OnGotFocus(e);
+        UpdateCursorBlinkTimer();
+        if (TerminalBuffer?.FocusReportingMode == true)
+            InputReceived?.Invoke("\x1b[I");
+    }
+
+    protected override void OnLostFocus(FocusChangedEventArgs e)
+    {
+        base.OnLostFocus(e);
+        UpdateCursorBlinkTimer();
+        if (TerminalBuffer?.FocusReportingMode == true)
+            InputReceived?.Invoke("\x1b[O");
+    }
+
+    internal static string BuildPastePayload(string text, bool bracketedPasteMode)
+    {
+        var normalizedText = text.Replace("\r\n", "\r").Replace("\n", "\r");
+        return bracketedPasteMode
+            ? "\x1b[200~" + normalizedText + "\x1b[201~"
+            : normalizedText;
     }
 
     private string GetSelectedText()
@@ -1563,7 +1877,7 @@ public class TerminalControl : Control
             {
                 var cell = GetViewportCell(buffer, row, col);
                 if (!cell.IsWideContinuation)
-                    line.Append(cell.Character);
+                    line.Append(cell.GetText());
             }
 
             result.Append(line.ToString().TrimEnd());
@@ -1577,16 +1891,66 @@ public class TerminalControl : Control
     private CellPosition GetCellPosition(Point point, bool includeCell = false)
     {
         var buffer = TerminalBuffer;
-        int columns = buffer?.Columns ?? _columns;
-        int rows = buffer?.Rows ?? _rows;
+        int columns = Math.Max(1, buffer?.Columns ?? _columns);
+        int rows = Math.Max(1, buffer?.Rows ?? _rows);
         var contentPoint = point - GetContentRect(Bounds.Size).Position;
         int row = Math.Clamp((int)(contentPoint.Y / _cellHeight), 0, rows - 1);
         int column = Math.Clamp((int)(contentPoint.X / _cellWidth), 0, columns - 1);
 
         if (includeCell && contentPoint.X >= column * _cellWidth + _cellWidth / 2)
-            column++;
+            column = Math.Min(columns, column + 1);
 
         return new CellPosition(row, column);
+    }
+
+    private static TerminalMouseButton? TryGetPressedMouseButton(PointerPointProperties properties)
+    {
+        if (properties.IsLeftButtonPressed)
+            return TerminalMouseButton.Left;
+        if (properties.IsRightButtonPressed)
+            return TerminalMouseButton.Right;
+        if (properties.IsMiddleButtonPressed)
+            return TerminalMouseButton.Middle;
+        return null;
+    }
+
+    private (int Column, int Row) GetMouseCell(Point point)
+    {
+        var contentPoint = point - GetContentRect(Bounds.Size).Position;
+        var columns = Math.Max(1, TerminalBuffer?.Columns ?? _columns);
+        var rows = Math.Max(1, TerminalBuffer?.Rows ?? _rows);
+        return (
+            Math.Clamp((int)(contentPoint.X / _cellWidth), 0, columns - 1),
+            Math.Clamp((int)(contentPoint.Y / _cellHeight), 0, rows - 1));
+    }
+
+    private bool SendMouseReport(
+        TerminalMouseEventType type,
+        TerminalMouseButton button,
+        Point point,
+        KeyModifiers modifiers)
+    {
+        var buffer = TerminalBuffer;
+        if (buffer == null)
+            return false;
+
+        var cell = GetMouseCell(point);
+        var bytes = TerminalMouseEncoder.Encode(
+            type,
+            button,
+            cell.Column,
+            cell.Row,
+            modifiers.HasFlag(KeyModifiers.Shift),
+            modifiers.HasFlag(KeyModifiers.Alt) || modifiers.HasFlag(KeyModifiers.Meta),
+            modifiers.HasFlag(KeyModifiers.Control),
+            buffer.MouseTracking,
+            buffer.MouseEncoding);
+        if (bytes is not { Length: > 0 })
+            return false;
+
+        ScrollToBottom();
+        BinaryInputReceived?.Invoke(bytes);
+        return true;
     }
 
     private bool TryGetOrderedSelection(out CellPosition start, out CellPosition end)
@@ -1625,6 +1989,12 @@ public class TerminalControl : Control
         bool ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
         bool alt = e.KeyModifiers.HasFlag(KeyModifiers.Alt);
         bool useAltAsMeta = alt && (LeftAltAsMeta || RightAltAsMeta) && !(ctrl && CtrlAltAsAltGr);
+        _pendingTextInputKey = e.Key;
+        _pendingTextInputModifiers = e.KeyModifiers;
+        // Avalonia 12 does not expose an IsRepeat flag on KeyEventArgs. A
+        // repeated key-down therefore uses the protocol's press form until
+        // the platform provides a distinct repeat event.
+        _pendingTextInputEventType = TerminalKeyEventType.Press;
 
         if (e.Key == Key.Scroll)
         {
@@ -1634,22 +2004,23 @@ public class TerminalControl : Control
         }
 
         // Ctrl+key combinations
+        if (TerminalKeyboardEncoder.TryEncode(
+                e.Key,
+                e.KeyModifiers,
+                TerminalBuffer?.ModifyOtherKeysMode ?? 0,
+                TerminalBuffer?.KittyKeyboardFlags ?? 0,
+                _pendingTextInputEventType,
+                out var protocolData))
+        {
+            MaybeScrollToBottomForInput();
+            InputReceived?.Invoke(protocolData);
+            e.Handled = true;
+            return;
+        }
+
         if (ctrl && !alt)
         {
-            string? ctrlData = e.Key switch
-            {
-                Key.C => "\x03",  // ETX - interrupt
-                Key.D => "\x04",  // EOT - EOF
-                Key.Z => "\x1A",  // SUB - suspend
-                Key.L => "\x0C",  // FF  - clear screen
-                Key.A => "\x01",  // SOH - start of line
-                Key.E => "\x05",  // ENQ - end of line
-                Key.U => "\x15",  // NAK - clear line
-                Key.K => "\x0B",  // VT  - kill to end
-                Key.W => "\x17",  // ETB - delete word
-                Key.R => "\x12",  // DC2 - reverse search
-                _ => null
-            };
+            string? ctrlData = GetControlCharacter(e.Key);
 
             if (ctrlData != null)
             {
@@ -1660,10 +2031,13 @@ public class TerminalControl : Control
             }
         }
 
+        var standardModifiers = useAltAsMeta
+            ? e.KeyModifiers
+            : e.KeyModifiers & ~KeyModifiers.Alt;
         string? data = TryGetCustomKeySequence(e.Key)
-            ?? GetStandardKeySequence(e.Key, e.KeyModifiers);
+            ?? GetStandardKeySequence(e.Key, standardModifiers);
 
-        if (data != null && useAltAsMeta)
+        if (data != null && useAltAsMeta && !IsModifiedCsiSequence(data))
             data = "\x1B" + data;
 
         if (data != null)
@@ -1672,6 +2046,47 @@ public class TerminalControl : Control
             InputReceived?.Invoke(data);
             e.Handled = true;
         }
+    }
+
+    protected override void OnKeyUp(KeyEventArgs e)
+    {
+        base.OnKeyUp(e);
+
+        if (TerminalKeyboardEncoder.TryEncode(
+                e.Key,
+                e.KeyModifiers,
+                TerminalBuffer?.ModifyOtherKeysMode ?? 0,
+                TerminalBuffer?.KittyKeyboardFlags ?? 0,
+                TerminalKeyEventType.Release,
+                out var protocolData))
+        {
+            MaybeScrollToBottomForInput();
+            InputReceived?.Invoke(protocolData);
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>
+    /// Converts the conventional Ctrl+letter combinations to the control
+    /// characters used by POSIX terminals. Full-screen programs such as nano
+    /// rely on the complete A-Z range, not just shell editing shortcuts.
+    /// </summary>
+    internal static string? GetControlCharacter(Key key)
+    {
+        if (key >= Key.A && key <= Key.Z)
+            return ((char)((int)key - (int)Key.A + 1)).ToString();
+
+        return key switch
+        {
+            // ASCII control aliases commonly used by nano and other full-screen editors.
+            Key.Space => "\0",              // Ctrl+Space / Ctrl+@
+            Key.D6 => "\x1E",                // Ctrl+6 / Ctrl+^
+            Key.OemOpenBrackets => "\x1B",   // Ctrl+[
+            Key.OemBackslash => "\x1C",      // Ctrl+\\
+            Key.OemCloseBrackets => "\x1D",  // Ctrl+]
+            Key.OemMinus => "\x1F",           // Ctrl+_
+            _ => null
+        };
     }
 
     private string? GetStandardKeySequence(Key key, KeyModifiers modifiers)
@@ -1686,23 +2101,24 @@ public class TerminalControl : Control
             Key.Down => GetCursorKeySequence('B', modifiers),
             Key.Right => GetCursorKeySequence('C', modifiers),
             Key.Left => GetCursorKeySequence('D', modifiers),
-            Key.Home => UseRxvtHomeEnd ? "\x1B[7~" : "\x1B[H",
-            Key.End => UseRxvtHomeEnd ? "\x1B[8~" : "\x1B[F",
-            Key.Delete => ResolveEraseSequence(DeleteKeySequence),
-            Key.PageUp => "\x1B[5~",
-            Key.PageDown => "\x1B[6~",
-            Key.F1 => GetFunctionKeySequence(1),
-            Key.F2 => GetFunctionKeySequence(2),
-            Key.F3 => GetFunctionKeySequence(3),
-            Key.F4 => GetFunctionKeySequence(4),
-            Key.F5 => GetFunctionKeySequence(5),
-            Key.F6 => GetFunctionKeySequence(6),
-            Key.F7 => GetFunctionKeySequence(7),
-            Key.F8 => GetFunctionKeySequence(8),
-            Key.F9 => GetFunctionKeySequence(9),
-            Key.F10 => GetFunctionKeySequence(10),
-            Key.F11 => GetFunctionKeySequence(11),
-            Key.F12 => GetFunctionKeySequence(12),
+            Key.Home => GetHomeEndSequence(home: true, modifiers),
+            Key.End => GetHomeEndSequence(home: false, modifiers),
+            Key.Insert => GetTildeSequence("2", "\x1B[2~", modifiers),
+            Key.Delete => GetTildeSequence("3", ResolveEraseSequence(DeleteKeySequence), modifiers),
+            Key.PageUp => GetTildeSequence("5", "\x1B[5~", modifiers),
+            Key.PageDown => GetTildeSequence("6", "\x1B[6~", modifiers),
+            Key.F1 => GetFunctionKeySequence(1, modifiers),
+            Key.F2 => GetFunctionKeySequence(2, modifiers),
+            Key.F3 => GetFunctionKeySequence(3, modifiers),
+            Key.F4 => GetFunctionKeySequence(4, modifiers),
+            Key.F5 => GetFunctionKeySequence(5, modifiers),
+            Key.F6 => GetFunctionKeySequence(6, modifiers),
+            Key.F7 => GetFunctionKeySequence(7, modifiers),
+            Key.F8 => GetFunctionKeySequence(8, modifiers),
+            Key.F9 => GetFunctionKeySequence(9, modifiers),
+            Key.F10 => GetFunctionKeySequence(10, modifiers),
+            Key.F11 => GetFunctionKeySequence(11, modifiers),
+            Key.F12 => GetFunctionKeySequence(12, modifiers),
             Key.NumPad0 => GetNumericKeypadSequence("0", "Op"),
             Key.NumPad1 => GetNumericKeypadSequence("1", "Oq"),
             Key.NumPad2 => GetNumericKeypadSequence("2", "Or"),
@@ -1719,6 +2135,9 @@ public class TerminalControl : Control
 
     private string GetCursorKeySequence(char suffix, KeyModifiers modifiers)
     {
+        if (HasKeyModifier(modifiers))
+            return $"\x1B[1;{TerminalKeyboardEncoder.GetModifierCode(modifiers)}{suffix}";
+
         var shiftLimitsApplication = ShiftLimitsApplicationCursorMode && modifiers.HasFlag(KeyModifiers.Shift);
         var applicationMode = UseApplicationCursorMode &&
                               !shiftLimitsApplication &&
@@ -1753,13 +2172,36 @@ public class TerminalControl : Control
         };
     }
 
-    private string? GetFunctionKeySequence(int index)
+    private string GetHomeEndSequence(bool home, KeyModifiers modifiers)
+    {
+        var normal = home
+            ? UseRxvtHomeEnd ? "\x1B[7~" : "\x1B[H"
+            : UseRxvtHomeEnd ? "\x1B[8~" : "\x1B[F";
+        return GetTildeSequence(home ? "1" : "4", normal, modifiers, home ? 'H' : 'F');
+    }
+
+    private static string GetTildeSequence(
+        string parameter,
+        string normal,
+        KeyModifiers modifiers,
+        char? nonTildeFinal = null)
+    {
+        if (!HasKeyModifier(modifiers))
+            return normal;
+
+        var modifier = TerminalKeyboardEncoder.GetModifierCode(modifiers);
+        return nonTildeFinal is { } final
+            ? $"\x1B[1;{modifier}{final}"
+            : $"\x1B[{parameter};{modifier}~";
+    }
+
+    private string? GetFunctionKeySequence(int index, KeyModifiers modifiers)
     {
         var mode = KeyboardFunctionKeyMode?.Trim();
         if (string.IsNullOrWhiteSpace(mode) || string.Equals(mode, "Default", StringComparison.OrdinalIgnoreCase))
             mode = "XtermR6";
 
-        return mode.ToUpperInvariant() switch
+        var sequence = mode.ToUpperInvariant() switch
         {
             "ESCN" => index is >= 1 and <= 12 ? $"\x1B[{index + 10}~" : null,
             "LINUX" => GetLinuxFunctionKeySequence(index),
@@ -1768,7 +2210,57 @@ public class TerminalControl : Control
             "SCO" => index is >= 1 and <= 12 ? "\x1B[" + (char)('M' + index - 1) : null,
             _ => GetXtermFunctionKeySequence(index)
         };
+
+        if (sequence == null || !HasKeyModifier(modifiers))
+            return sequence;
+
+        var modifier = TerminalKeyboardEncoder.GetModifierCode(modifiers);
+        return index switch
+        {
+            1 => $"\x1B[1;{modifier}P",
+            2 => $"\x1B[1;{modifier}Q",
+            3 => $"\x1B[1;{modifier}R",
+            4 => $"\x1B[1;{modifier}S",
+            _ => GetModifiedFunctionTilde(index, modifier)
+        };
     }
+
+    private static string GetModifiedFunctionTilde(int index, int modifier)
+    {
+        var parameter = index switch
+        {
+            5 => 15,
+            6 => 17,
+            7 => 18,
+            8 => 19,
+            9 => 20,
+            10 => 21,
+            11 => 23,
+            12 => 24,
+            _ => 0
+        };
+        return parameter == 0 ? string.Empty : $"\x1B[{parameter};{modifier}~";
+    }
+
+    private static bool HasKeyModifier(KeyModifiers modifiers) =>
+        modifiers.HasFlag(KeyModifiers.Shift) ||
+        modifiers.HasFlag(KeyModifiers.Alt) ||
+        modifiers.HasFlag(KeyModifiers.Control) ||
+        modifiers.HasFlag(KeyModifiers.Meta);
+
+    private static bool IsModifiedCsiSequence(string value) =>
+        value.StartsWith("\x1B[1;", StringComparison.Ordinal) ||
+        value.Contains(";2~", StringComparison.Ordinal) ||
+        value.Contains(";3~", StringComparison.Ordinal) ||
+        value.Contains(";4~", StringComparison.Ordinal) ||
+        value.Contains(";5~", StringComparison.Ordinal) ||
+        value.Contains(";6~", StringComparison.Ordinal) ||
+        value.Contains(";7~", StringComparison.Ordinal) ||
+        value.Contains(";8~", StringComparison.Ordinal) ||
+        value.Contains(";9~", StringComparison.Ordinal) ||
+        value.Contains(";10~", StringComparison.Ordinal) ||
+        value.Contains(";11~", StringComparison.Ordinal) ||
+        value.Contains(";12~", StringComparison.Ordinal);
 
     private static string? GetVt100FunctionKeySequence(int index)
     {
@@ -1945,11 +2437,64 @@ public class TerminalControl : Control
     {
         var buffer = TerminalBuffer;
         var overScrollbar = buffer != null && IsPointInScrollbar(point, buffer);
-        if (overScrollbar == _isPointerOverScrollbar)
+        var hyperlinkUri = overScrollbar ? null : TryGetHyperlinkAtPoint(point);
+        if (overScrollbar == _isPointerOverScrollbar &&
+            string.Equals(hyperlinkUri, _pointerHyperlinkUri, StringComparison.Ordinal))
             return;
 
         _isPointerOverScrollbar = overScrollbar;
-        Cursor = new Cursor(overScrollbar ? StandardCursorType.Arrow : StandardCursorType.Ibeam);
+        _pointerHyperlinkUri = hyperlinkUri;
+        Cursor = new Cursor(overScrollbar
+            ? StandardCursorType.Arrow
+            : hyperlinkUri != null ? StandardCursorType.Hand : StandardCursorType.Ibeam);
+    }
+
+    private string? TryGetHyperlinkAtPoint(Point point)
+    {
+        var buffer = TerminalBuffer;
+        if (buffer == null || _cellWidth <= 0 || _cellHeight <= 0)
+            return null;
+
+        var position = GetCellPosition(point);
+        var cell = GetViewportCell(buffer, position.Row, position.Column);
+        if (cell.HyperlinkUri == null && position.Column > 0)
+            cell = GetViewportCell(buffer, position.Row, position.Column - 1);
+
+        return IsOpenableHyperlink(cell.HyperlinkUri) ? cell.HyperlinkUri : null;
+    }
+
+    private static bool IsOpenableHyperlink(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) ||
+            !Uri.TryCreate(value, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        return uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) ||
+               uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+               uri.Scheme.Equals(Uri.UriSchemeMailto, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryOpenHyperlink(string value)
+    {
+        if (!IsOpenableHyperlink(value))
+            return false;
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = value,
+                UseShellExecute = true
+            });
+            return true;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error opening terminal hyperlink: {ex.Message}");
+            return false;
+        }
     }
 
     private void UpdateScrollOffsetFromScrollbar(double pointerY, TerminalBuffer buffer)

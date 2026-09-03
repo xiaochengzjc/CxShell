@@ -23,6 +23,11 @@ public partial class TerminalTabViewModel : ObservableObject, IDisposable
     private readonly CancellationToken _lifetimeToken;
 
     public SessionInfo Session { get; }
+    /// <summary>
+    /// Runtime identity used by Agent tools. It is intentionally different
+    /// from <see cref="SessionInfo.Id"/> so duplicate tabs remain distinct.
+    /// </summary>
+    public Guid AgentSessionId { get; } = Guid.NewGuid();
     public TerminalViewModel Terminal { get; }
     public VncViewModel? Vnc { get; }
     public RdpViewModel? Rdp { get; }
@@ -270,9 +275,22 @@ public partial class TerminalTabViewModel : ObservableObject, IDisposable
             System.Diagnostics.Debug.WriteLine($"RDP tab cleanup failed: {ex.Message}");
         }
 
-        FileTransfer?.Dispose();
+        if (FileTransfer != null)
+            _ = DisposeFileTransferAsync(FileTransfer);
         CompanionSftp.Dispose();
         Monitor.Dispose();
         _lifetimeCancellation.Dispose();
+    }
+
+    private static async Task DisposeFileTransferAsync(SftpViewModel fileTransfer)
+    {
+        try
+        {
+            await fileTransfer.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"SFTP tab cleanup failed: {ex.Message}");
+        }
     }
 }

@@ -582,7 +582,13 @@ public sealed class AgentRunCoordinatorTests
         Assert.Equal("running", runStart.Checkpoint?.Status);
         Assert.Equal("tool_call", toolStart.Checkpoint?.Phase);
         Assert.Equal("running", toolStart.Checkpoint?.Status);
+        Assert.Equal("executing", toolStart.Checkpoint?.ToolExecutionState);
+        Assert.False(toolStart.Checkpoint?.ToolOutcomeCertain);
         Assert.Equal("completed", toolResult.Checkpoint?.Status);
+        Assert.Equal("completed", toolResult.Checkpoint?.ToolExecutionState);
+        Assert.True(toolResult.Checkpoint?.ToolOutcomeCertain);
+        Assert.True(toolResult.Checkpoint?.ToolRemoteCompletionConfirmed);
+        Assert.False(toolResult.Checkpoint?.ToolRetrySafe);
         Assert.Equal("completed", loopEnd.Checkpoint?.Status);
         Assert.Equal(2, loopEnd.Checkpoint?.ModelRequestCount);
         Assert.Equal(1, loopEnd.Checkpoint?.ToolCallCount);
@@ -1602,7 +1608,11 @@ public sealed class AgentRunCoordinatorTests
                             ToolName: "session_command",
                             ModelRequestCount: 2,
                             ToolCallCount: 1,
-                            Detail: "Waiting for input.")),
+                            Detail: "Waiting for input.",
+                            ToolExecutionState: "dispatched",
+                            ToolOutcomeCertain: false,
+                            ToolRemoteCompletionConfirmed: false,
+                            ToolRetrySafe: false)),
                     [new AgentChatMessage("user", "check the host")])
             ]);
 
@@ -1639,6 +1649,8 @@ public sealed class AgentRunCoordinatorTests
                 resumedRequest!.Messages,
                 message => message.Role == "system" &&
                            message.Content.Contains("waiting_for_input", StringComparison.Ordinal) &&
+                           message.Content.Contains("dispatched", StringComparison.Ordinal) &&
+                           message.Content.Contains("Remote completion confirmed: no", StringComparison.Ordinal) &&
                            message.Content.Contains("Do not blindly repeat", StringComparison.Ordinal));
         }
         finally

@@ -63,11 +63,15 @@ public partial class SftpViewModel : ObservableObject, IDisposable
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _transferPersistenceCancellations = new();
     private readonly SftpTransferQueueStore _transferQueueStore = new();
     private readonly SemaphoreSlim _stopGate = new(1, 1);
+    private readonly object _transferLifecycleGate = new();
+    private int _transferStopDepth;
+    private bool _stoppingTransfers;
     private long _connectionVersion;
     private long _navigationVersion;
     private readonly LatestRequestVersion _switchRequests = new();
     private static int _dragCacheCleanupStarted;
     private const long MaxEditableFileSize = 5 * 1024 * 1024;
+    private static readonly TimeSpan TransferShutdownTimeout = TimeSpan.FromSeconds(10);
     private int _disposeState;
 
     [ObservableProperty] private bool _isConnected;
@@ -135,6 +139,35 @@ public partial class SftpViewModel : ObservableObject, IDisposable
     }
 
     public bool IsDisposed => Volatile.Read(ref _disposeState) != 0;
+
+    private bool IsTransferLifecycleStopping
+    {
+        get
+        {
+            lock (_transferLifecycleGate)
+                return _stoppingTransfers;
+        }
+    }
+
+    private void BeginTransferStop()
+    {
+        lock (_transferLifecycleGate)
+        {
+            _transferStopDepth++;
+            _stoppingTransfers = true;
+        }
+    }
+
+    private void EndTransferStop()
+    {
+        lock (_transferLifecycleGate)
+        {
+            if (_transferStopDepth > 0)
+                _transferStopDepth--;
+            if (_transferStopDepth == 0 && !IsDisposed)
+                _stoppingTransfers = false;
+        }
+    }
 
     public SftpViewModel()
     {
@@ -422,76 +455,113 @@ public partial class SftpViewModel : ObservableObject, IDisposable
         if (invalidateSwitchRequests)
             _switchRequests.Invalidate();
 
-        await _stopGate.WaitAsync().ConfigureAwait(false);
+        BeginTransferStop();
         try
         {
-            var serviceToStop = _service;
-            var stopVersion = Interlocked.Increment(ref _connectionVersion);
-            var activeTasks = await Dispatcher.UIThread.InvokeAsync(() =>
-                TransferTasks.Where(task => task.IsExecutionActive).ToList());
-
-            foreach (var task in activeTasks)
+            await _stopGate.WaitAsync().ConfigureAwait(false);
+            try
             {
-                task.CancellationTokenSource?.Cancel();
-                try
+                var serviceToStop = _service;
+                var stopVersion = Interlocked.Increment(ref _connectionVersion);
+                var activeTasks = await Dispatcher.UIThread.InvokeAsync(() =>
+                    TransferTasks.Where(task => task.IsExecutionActive).ToList());
+
+                foreach (var task in activeTasks)
                 {
-                    task.ActiveService?.Disconnect();
+                    task.CancellationTokenSource?.Cancel();
+                    try
+                    {
+                        task.ActiveService?.Disconnect();
+                    }
+                    catch
+                    {
+                        // Cancellation remains authoritative even if a transfer service is
+                        // already tearing itself down.
+                    }
                 }
-                catch
+
+                await Dispatcher.UIThread.InvokeAsync(() =>
                 {
-                    // Cancellation remains authoritative even if a transfer service is
-                    // already tearing itself down.
-                }
+                    foreach (var task in activeTasks.Where(task => task.IsExecutionActive))
+                        task.MarkCancelling();
+                });
+
+                serviceToStop.Disconnect();
+
+                await WaitForTransfersAsync(TransferShutdownTimeout).ConfigureAwait(false);
+
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    // A new connection may have started while the old transfer was
+                    // finishing. In that case its UI state belongs to the new connection.
+                    if (!ReferenceEquals(_service, serviceToStop) ||
+                        stopVersion != Volatile.Read(ref _connectionVersion))
+                    {
+                        return;
+                    }
+
+                    IsConnected = false;
+                    IsLoading = false;
+                    HostLabel = "Not connected";
+                    Files.Clear();
+                    VisibleFiles.Clear();
+                    PathSegments.Clear();
+                    SetSelectedFiles(Array.Empty<SftpFileItem>());
+                    CurrentPath = "/";
+                    PathInput = "/";
+                    ErrorMessage = null;
+                });
             }
-
-            await Dispatcher.UIThread.InvokeAsync(() =>
+            finally
             {
-                foreach (var task in activeTasks.Where(task => task.IsExecutionActive))
-                    task.MarkCancelling();
-            });
-
-            serviceToStop.Disconnect();
-
-            var transfers = _transferCompletions.Values
-                .Select(completion => completion.Task)
-                .ToArray();
-            if (transfers.Length > 0)
-            {
-                try
-                {
-                    await Task.WhenAll(transfers).ConfigureAwait(false);
-                }
-                catch
-                {
-                    // Each transfer settles its own UI state. Closing the panel must not rethrow it.
-                }
+                _stopGate.Release();
             }
-
-            await Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                // A new connection may have started while the old transfer was
-                // finishing. In that case its UI state belongs to the new connection.
-                if (!ReferenceEquals(_service, serviceToStop) ||
-                    stopVersion != Volatile.Read(ref _connectionVersion))
-                {
-                    return;
-                }
-
-                IsConnected = false;
-                IsLoading = false;
-                HostLabel = "Not connected";
-                Files.Clear();
-                VisibleFiles.Clear();
-                PathSegments.Clear();
-                SetSelectedFiles(Array.Empty<SftpFileItem>());
-                CurrentPath = "/";
-                PathInput = "/";
-                ErrorMessage = null;
-            });
         }
         finally
         {
-            _stopGate.Release();
+            EndTransferStop();
+        }
+    }
+
+    /// <summary>
+    /// Waits for the transfer workers that are currently shutting down. A
+    /// bounded wait keeps connection switching and tab closing responsive when
+    /// a third-party transport does not unblock immediately after Disconnect.
+    /// </summary>
+    public async Task<bool> WaitForTransfersAsync(TimeSpan timeout)
+    {
+        if (timeout < TimeSpan.Zero && timeout != Timeout.InfiniteTimeSpan)
+            throw new ArgumentOutOfRangeException(nameof(timeout));
+
+        Task[] completions;
+        lock (_transferLifecycleGate)
+        {
+            completions = _transferCompletions.Values
+                .Select(completion => completion.Task)
+                .ToArray();
+        }
+        if (completions.Length == 0)
+            return true;
+
+        try
+        {
+            await Task.WhenAll(completions).WaitAsync(timeout).ConfigureAwait(false);
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            return false;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+        catch
+        {
+            // Transfer workers normally complete successfully even when the
+            // underlying operation fails. Treat an unexpected worker fault as
+            // settled so teardown never surfaces it to the UI.
+            return true;
         }
     }
 
@@ -1390,6 +1460,7 @@ public partial class SftpViewModel : ObservableObject, IDisposable
     {
         return _service is SftpService &&
                _service.IsConnected &&
+               !IsTransferLifecycleStopping &&
                PlatformServices.SupportsVirtualFileDragOut &&
                (!PlatformServices.IsMacOS || !item.IsDirectory);
     }
@@ -1398,6 +1469,8 @@ public partial class SftpViewModel : ObservableObject, IDisposable
     {
         if (_service is not SftpService || _currentSession == null)
             throw new NotSupportedException("Only SFTP supports streaming drag-out.");
+        if (IsTransferLifecycleStopping)
+            throw new OperationCanceledException("SFTP transfers are stopping.");
 
         var dragSession = CloneTransferSession(_currentSession);
         var dragPassword = _currentPassword;
@@ -1478,10 +1551,16 @@ public partial class SftpViewModel : ObservableObject, IDisposable
             SupportsRetry = false
         };
 
-        task.PrepareForStart();
-        task.IsExecutionActive = true;
-        TransferTasks.Add(task);
-        IsTransferPanelExpanded = true;
+        lock (_transferLifecycleGate)
+        {
+            if (_stoppingTransfers || IsDisposed)
+                throw new OperationCanceledException("SFTP transfers are stopping.");
+
+            task.PrepareForStart();
+            task.IsExecutionActive = true;
+            TransferTasks.Add(task);
+            IsTransferPanelExpanded = true;
+        }
 
         var cancellation = task.CancellationTokenSource
             ?? throw new InvalidOperationException("The drag transfer cancellation source is unavailable.");
@@ -1932,29 +2011,42 @@ public partial class SftpViewModel : ObservableObject, IDisposable
 
     private SftpTransferTaskItem EnqueueTransferTask(SftpTransferTaskItem task, SessionInfo session, string? password)
     {
-        var matchingTask = TransferTasks.FirstOrDefault(existing =>
-            existing.IsExecutionActive &&
-            TransferTasksBelongToSameSession(existing, session) &&
-            string.Equals(
-                BuildTransferKey(session, existing.Direction, existing.LocalPath, existing.RemotePath),
-                BuildTransferKey(session, task.Direction, task.LocalPath, task.RemotePath),
-                StringComparison.Ordinal));
-        if (matchingTask != null)
+        lock (_transferLifecycleGate)
         {
-            IsTransferPanelExpanded = true;
-            return matchingTask;
-        }
+            if (_stoppingTransfers || IsDisposed)
+            {
+                task.PrepareForStart();
+                task.MarkCancelled();
+                task.IsExecutionActive = false;
+                task.CancellationTokenSource?.Dispose();
+                task.CancellationTokenSource = null;
+                return task;
+            }
 
-        task.PrepareForStart();
-        task.IsExecutionActive = true;
-        _transferSessions[task.Id] = (session, password);
-        TransferTasks.Add(task);
-        IsTransferPanelExpanded = true;
-        SchedulePersistTransferTask(task, session, immediate: true);
-        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        _transferCompletions[task.Id] = completion;
-        _ = RunTransferTaskAsync(task, completion);
-        return task;
+            var matchingTask = TransferTasks.FirstOrDefault(existing =>
+                existing.IsExecutionActive &&
+                TransferTasksBelongToSameSession(existing, session) &&
+                string.Equals(
+                    BuildTransferKey(session, existing.Direction, existing.LocalPath, existing.RemotePath),
+                    BuildTransferKey(session, task.Direction, task.LocalPath, task.RemotePath),
+                    StringComparison.Ordinal));
+            if (matchingTask != null)
+            {
+                IsTransferPanelExpanded = true;
+                return matchingTask;
+            }
+
+            task.PrepareForStart();
+            task.IsExecutionActive = true;
+            _transferSessions[task.Id] = (session, password);
+            TransferTasks.Add(task);
+            IsTransferPanelExpanded = true;
+            SchedulePersistTransferTask(task, session, immediate: true);
+            var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _transferCompletions[task.Id] = completion;
+            _ = RunTransferTaskAsync(task, completion);
+            return task;
+        }
     }
 
     private async Task RunTransferTaskAsync(
@@ -2287,14 +2379,23 @@ public partial class SftpViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void RetryTransfer(SftpTransferTaskItem? task)
     {
-        if (task == null || !task.CanRetry || !_transferSessions.ContainsKey(task.Id))
+        if (task == null)
             return;
 
-        task.PrepareForResume();
-        task.IsExecutionActive = true;
-        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        _transferCompletions[task.Id] = completion;
-        _ = RunTransferTaskAsync(task, completion);
+        lock (_transferLifecycleGate)
+        {
+            if (_stoppingTransfers || IsDisposed ||
+                !task.CanRetry || !_transferSessions.ContainsKey(task.Id))
+            {
+                return;
+            }
+
+            task.PrepareForResume();
+            task.IsExecutionActive = true;
+            var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _transferCompletions[task.Id] = completion;
+            _ = RunTransferTaskAsync(task, completion);
+        }
     }
 
     [RelayCommand]
@@ -2610,8 +2711,23 @@ public partial class SftpViewModel : ObservableObject, IDisposable
     /// </summary>
     public void Dispose()
     {
-        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+        _ = DisposeAsync().AsTask();
+    }
+
+    /// <summary>
+    /// Asynchronous tab teardown. It gives active transfers a chance to finish
+    /// their cancellation path before the owned services are disposed.
+    /// </summary>
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.CompareExchange(ref _disposeState, 1, 0) != 0)
             return;
+
+        lock (_transferLifecycleGate)
+        {
+            _transferStopDepth++;
+            _stoppingTransfers = true;
+        }
 
         _switchRequests.Invalidate();
         Interlocked.Increment(ref _connectionVersion);
@@ -2634,9 +2750,19 @@ public partial class SftpViewModel : ObservableObject, IDisposable
             }
             catch
             {
-                // Teardown remains best-effort; the cancellation token is authoritative.
+                // Cancellation remains authoritative during teardown.
             }
         }
+
+        try
+        {
+            _service.Disconnect();
+        }
+        catch
+        {
+        }
+
+        await WaitForTransfersAsync(TransferShutdownTimeout).ConfigureAwait(false);
 
         foreach (var cancellation in _transferPersistenceCancellations.Values)
             cancellation.Cancel();

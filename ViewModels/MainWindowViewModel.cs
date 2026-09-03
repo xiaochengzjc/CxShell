@@ -226,7 +226,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         CommandPalette = new CommandPaletteViewModel(BuildCommandPaletteItems);
         _sftp = _emptySftp;
         _lastSftpPanelWidth = Math.Max(MinimumSftpPanelWidth, _sessionTreeVm.Settings.SftpPanelWidth);
+        _isSftpVisible = _sessionTreeVm.Settings.ShowSftpPanel;
+        _isMonitorVisible = _sessionTreeVm.Settings.ShowMonitorPanel;
         _isTabBarVisible = _sessionTreeVm.Settings.ShowTabBar;
+        _isAgentPanelVisible = _sessionTreeVm.Settings.ShowAgentPanel;
         _lastAgentPanelWidth = Math.Clamp(
             _sessionTreeVm.Settings.AgentPanelWidth,
             MinimumAgentPanelWidth,
@@ -244,7 +247,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             BlockedCommandPrefixes = _sessionTreeVm.Settings.AgentBlockedCommandPrefixes
         };
         AgentSessionGateway = new AgentSessionGateway(
-            new DelegateAgentSessionHost(BuildAgentSessionEndpoints),
+            new DelegateAgentSessionHost(
+                BuildAgentSessionEndpoints,
+                ListAgentSavedSessionsAsync,
+                OpenAgentSavedSessionAsync,
+                CloseAgentSessionAsync),
             _agentPermissionPolicy);
         var agentModelClient = new OpenAiCompatibleAgentModelClient();
         AgentRunCoordinator = new AgentRunCoordinator(
@@ -755,6 +762,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         if (IsTabBarVisible != settings.ShowTabBar)
             IsTabBarVisible = settings.ShowTabBar;
+        if (IsSftpVisible != settings.ShowSftpPanel)
+            IsSftpVisible = settings.ShowSftpPanel;
+        if (IsMonitorVisible != settings.ShowMonitorPanel)
+            IsMonitorVisible = settings.ShowMonitorPanel;
+        if (IsAgentPanelVisible != settings.ShowAgentPanel)
+            IsAgentPanelVisible = settings.ShowAgentPanel;
     }
 
     private static string BuildAppVersion()
@@ -1180,6 +1193,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     partial void OnIsMonitorVisibleChanged(bool value)
     {
+        _sessionTreeVm.Settings.ShowMonitorPanel = value;
+        _sessionTreeVm.SaveSettings(_sessionTreeVm.Settings);
         OnPropertyChanged(nameof(IsMonitorPanelVisible));
         OnPropertyChanged(nameof(IsAgentPanelHostVisible));
         OnPropertyChanged(nameof(AgentSplitterWidth));
@@ -1197,6 +1212,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     partial void OnIsSftpVisibleChanged(bool value)
     {
+        _sessionTreeVm.Settings.ShowSftpPanel = value;
+        _sessionTreeVm.SaveSettings(_sessionTreeVm.Settings);
         OnPropertyChanged(nameof(IsSftpPanelVisible));
         OnPropertyChanged(nameof(SftpSplitterWidth));
         if (value)
@@ -1234,6 +1251,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     partial void OnIsAgentPanelVisibleChanged(bool value)
     {
+        _sessionTreeVm.Settings.ShowAgentPanel = value;
+        _sessionTreeVm.SaveSettings(_sessionTreeVm.Settings);
         OnPropertyChanged(nameof(IsAgentPanelHostVisible));
         OnPropertyChanged(nameof(AgentSplitterWidth));
         OnPropertyChanged(nameof(AgentPanelColumnWidth));
@@ -1241,7 +1260,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             AgentPanel.RefreshSessions();
             AgentPanel.RefreshRunHistory();
-            AgentPanel.EnsureSessionSelection(SelectedTab?.Session.Id);
+            AgentPanel.EnsureSessionSelection(SelectedTab?.AgentSessionId);
             AgentPanel.RefreshActiveRun();
         }
     }
@@ -2653,6 +2672,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
         tab.PropertyChanged -= OnTerminalTabPropertyChanged;
         tab.Terminal.PropertyChanged -= OnActiveTerminalPropertyChanged;
+        AgentSessionGateway.NotifySessionClosed(tab.AgentSessionId);
 
         group?.RemoveTab(tab);
         if (group is { HasTabs: false })
@@ -2725,9 +2745,126 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         return Tabs
             .Where(tab => tab.IsTerminalSession)
-            .GroupBy(tab => tab.Session.Id)
-            .Select(group => CreateAgentSessionEndpoint(group.First()))
+            .Select(CreateAgentSessionEndpoint)
             .ToList();
+    }
+
+    private async Task<IReadOnlyList<AgentSavedSessionSnapshot>> ListAgentSavedSessionsAsync(
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var openTabs = Tabs
+            .Where(tab => tab.IsTerminalSession && tab.Session.Protocol == SessionProtocol.SSH)
+            .GroupBy(tab => tab.Session.Id)
+            .ToDictionary(
+                group => group.Key,
+                group => group.FirstOrDefault(tab => tab.IsConnected) ?? group.First());
+
+        return _sessionTreeVm.GetAllSessions()
+            .Where(session => session.Protocol == SessionProtocol.SSH)
+            .Select(session =>
+            {
+                openTabs.TryGetValue(session.Id, out var tab);
+                return new AgentSavedSessionSnapshot
+                {
+                    SavedSessionId = session.Id,
+                    Name = session.Name ?? string.Empty,
+                    Path = _sessionTreeVm.GetSessionPath(session),
+                    Protocol = session.Protocol,
+                    Host = session.Host ?? string.Empty,
+                    Port = session.Port,
+                    Username = session.Username ?? string.Empty,
+                    IsOpen = tab?.IsConnected == true,
+                    OpenSessionId = tab?.AgentSessionId
+                };
+            })
+            .ToArray();
+    }
+
+    private async Task<AgentSessionOpenResult> OpenAgentSavedSessionAsync(
+        AgentSessionOpenRequest request,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var session = _sessionTreeVm.FindSessionById(request.SavedSessionId);
+        if (session == null)
+        {
+            return new(
+                AgentSessionOpenStatus.NotFound,
+                Error: "The saved SSH session was not found.");
+        }
+
+        if (session.Protocol != SessionProtocol.SSH)
+        {
+            return new(
+                AgentSessionOpenStatus.UnsupportedProtocol,
+                Error: "Agent-managed sessions currently support SSH only.");
+        }
+
+        var existing = Tabs.FirstOrDefault(tab =>
+            tab.IsTerminalSession &&
+            tab.Session.Id == session.Id &&
+            tab.IsConnected &&
+            tab.Terminal.IsConnected);
+        if (request.ReuseConnected && existing != null)
+        {
+            return new(
+                AgentSessionOpenStatus.Opened,
+                AgentSessionSnapshot.FromSession(
+                    session,
+                    existing.AgentSessionId,
+                    true,
+                    existing.Terminal.SupportsPosixShellFeatures ? "Linux/Unix" : "Windows"),
+                AgentOwned: false);
+        }
+
+        var before = Tabs.ToHashSet();
+        await ConnectSession(session).ConfigureAwait(true);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var opened = Tabs
+            .Except(before)
+            .FirstOrDefault(tab => tab.IsTerminalSession && tab.Session.Id == session.Id);
+        if (opened == null)
+        {
+            return new(
+                AgentSessionOpenStatus.UserCancelled,
+                Error: "The user cancelled the SSH connection or no visible tab was created.");
+        }
+
+        if (!opened.IsConnected || !opened.Terminal.IsConnected)
+        {
+            CloseTab(opened);
+            return new(
+                AgentSessionOpenStatus.ConnectionFailed,
+                Error: "The SSH connection failed. See the connection status for details.");
+        }
+
+        return new(
+            AgentSessionOpenStatus.Opened,
+            AgentSessionSnapshot.FromSession(
+                session,
+                opened.AgentSessionId,
+                true,
+                opened.Terminal.SupportsPosixShellFeatures ? "Linux/Unix" : "Windows"),
+            AgentOwned: true);
+    }
+
+    private Task<AgentSessionCloseResult> CloseAgentSessionAsync(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var tab = Tabs.FirstOrDefault(item => item.AgentSessionId == sessionId);
+        if (tab == null)
+        {
+            return Task.FromResult(new AgentSessionCloseResult(
+                AgentSessionCloseStatus.NotFound,
+                "The Agent-created session tab no longer exists."));
+        }
+
+        CloseTab(tab);
+        return Task.FromResult(new AgentSessionCloseResult(AgentSessionCloseStatus.Closed));
     }
 
     private IAgentSessionEndpoint CreateAgentSessionEndpoint(TerminalTabViewModel tab)
@@ -2735,6 +2872,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         return new AgentSessionEndpoint(
             () => AgentSessionSnapshot.FromSession(
                 tab.Session,
+                tab.AgentSessionId,
                 tab.IsConnected && tab.Terminal.IsConnected && !tab.IsDisposed,
                 tab.Terminal.SupportsPosixShellFeatures ? "Linux/Unix" : "Windows"),
             async (request, cancellationToken) =>

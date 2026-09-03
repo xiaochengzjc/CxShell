@@ -65,6 +65,7 @@ public partial class TerminalView : UserControl
         _suppressNextRemoteResizeEvents = 2;
 
         _terminal.InputReceived += OnInputReceived;
+        _terminal.BinaryInputReceived += OnBinaryInputReceived;
         _terminal.SizeChanged2 += OnSizeChanged;
         _terminal.PointerPressed += OnPointerPressed;
         _terminal.KeyDown += OnTerminalKeyDown;
@@ -89,6 +90,7 @@ public partial class TerminalView : UserControl
         if (_terminal != null)
         {
             _terminal.InputReceived -= OnInputReceived;
+            _terminal.BinaryInputReceived -= OnBinaryInputReceived;
             _terminal.SizeChanged2 -= OnSizeChanged;
             _terminal.PointerPressed -= OnPointerPressed;
             _terminal.KeyDown -= OnTerminalKeyDown;
@@ -190,6 +192,11 @@ public partial class TerminalView : UserControl
 
         _boundVm?.SendInput(data);
     }
+
+    private void OnBinaryInputReceived(byte[] data)
+    {
+        _boundVm?.SendInputBytes(data);
+    }
     private void OnSizeChanged(int cols, int rows)
     {
         if (!IsActuallyVisible())
@@ -268,6 +275,9 @@ public partial class TerminalView : UserControl
 
     private void OnPointerPressed(object? s, Avalonia.Input.PointerPressedEventArgs e)
     {
+        if (e.Handled)
+            return;
+
         _terminal?.Focus();
         if (_terminal == null || !e.GetCurrentPoint(_terminal).Properties.IsRightButtonPressed)
             return;
@@ -622,7 +632,7 @@ public partial class TerminalView : UserControl
         }
     }
 
-    private void OnBufferChanged() => _terminal?.InvalidateVisual();
+    private void OnBufferChanged() => _terminal?.NotifyBufferChanged();
 
     private void OnBellRequested()
     {

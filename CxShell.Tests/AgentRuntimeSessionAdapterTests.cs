@@ -397,6 +397,62 @@ public sealed class AgentRuntimeSessionAdapterTests
     }
 
     [Fact]
+    public async Task SavedSessionLifecycleIsExposedThroughRuntimeWithoutSecrets()
+    {
+        var savedSession = new AgentSavedSessionSnapshot
+        {
+            SavedSessionId = Guid.NewGuid(),
+            Name = "Runtime saved SSH",
+            Path = "Operations/Runtime saved SSH",
+            Protocol = SessionProtocol.SSH,
+            Host = "runtime-saved.example",
+            Port = 22,
+            Username = "operator"
+        };
+        var runtimeSession = CreateSnapshot(isConnected: true);
+        var closedSessionId = Guid.Empty;
+        using var gateway = new AgentSessionGateway(new DelegateAgentSessionHost(
+            () => [],
+            _ => Task.FromResult<IReadOnlyList<AgentSavedSessionSnapshot>>([savedSession]),
+            (_, _) => Task.FromResult(new AgentSessionOpenResult(
+                AgentSessionOpenStatus.Opened,
+                runtimeSession,
+                AgentOwned: true)),
+            (sessionId, _) =>
+            {
+                closedSessionId = sessionId;
+                return Task.FromResult(new AgentSessionCloseResult(AgentSessionCloseStatus.Closed));
+            }));
+        using var adapter = new AgentRuntimeSessionAdapter(gateway);
+
+        var list = await Dispatch(adapter, "saved-list-1", AgentRuntimeMethodNames.SavedSessionList);
+        var open = await Dispatch(
+            adapter,
+            "saved-open-1",
+            AgentRuntimeMethodNames.SavedSessionOpen,
+            new
+            {
+                savedSessionId = savedSession.SavedSessionId.ToString("D"),
+                reason = "inspect the host"
+            });
+        var close = await Dispatch(
+            adapter,
+            "saved-close-1",
+            AgentRuntimeMethodNames.SavedSessionClose,
+            new { sessionId = runtimeSession.SessionId.ToString("D") });
+
+        Assert.True(list.Ok);
+        Assert.DoesNotContain("password", list.Result!.Value.GetRawText(), StringComparison.OrdinalIgnoreCase);
+        Assert.Single(list.Result.Value.GetProperty("sessions").EnumerateArray());
+        Assert.True(open.Ok);
+        Assert.True(open.Result!.Value.GetProperty("opened").GetBoolean());
+        Assert.True(open.Result.Value.GetProperty("agentOwned").GetBoolean());
+        Assert.True(close.Ok);
+        Assert.True(close.Result!.Value.GetProperty("closed").GetBoolean());
+        Assert.Equal(runtimeSession.SessionId, closedSessionId);
+    }
+
+    [Fact]
     public async Task AuditListReturnsRecentEntriesWithoutRawCommand()
     {
         var snapshot = CreateSnapshot(isConnected: true);

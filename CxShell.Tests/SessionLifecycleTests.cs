@@ -28,6 +28,19 @@ public sealed class SessionLifecycleTests
     }
 
     [Fact]
+    public async Task SftpDocumentWaitsForNoTransfersAndAsyncDisposeIsIdempotent()
+    {
+        using var sftp = new SftpViewModel();
+
+        Assert.True(await sftp.WaitForTransfersAsync(TimeSpan.Zero));
+
+        await sftp.DisposeAsync();
+        await sftp.DisposeAsync();
+
+        Assert.True(sftp.IsDisposed);
+    }
+
+    [Fact]
     public void TabDisposeIsIdempotentAndDisposesCompanionPanels()
     {
         var session = new SessionInfo

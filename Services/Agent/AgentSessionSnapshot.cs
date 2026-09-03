@@ -9,6 +9,8 @@ namespace CxShell.Services.Agent;
 public sealed record AgentSessionSnapshot
 {
     public Guid SessionId { get; init; }
+    /// <summary>The id of the saved CxShell configuration, when available.</summary>
+    public Guid? SavedSessionId { get; init; }
     public string Name { get; init; } = string.Empty;
     public SessionProtocol Protocol { get; init; }
     public string Host { get; init; } = string.Empty;
@@ -22,12 +24,22 @@ public sealed record AgentSessionSnapshot
         SessionInfo session,
         bool isConnected,
         string platform = "Unknown")
+        => FromSession(session, session.Id, isConnected, platform);
+
+    public static AgentSessionSnapshot FromSession(
+        SessionInfo session,
+        Guid runtimeSessionId,
+        bool isConnected,
+        string platform = "Unknown")
     {
         ArgumentNullException.ThrowIfNull(session);
+        if (runtimeSessionId == Guid.Empty)
+            throw new ArgumentException("A runtime session id is required.", nameof(runtimeSessionId));
 
         return new AgentSessionSnapshot
         {
-            SessionId = session.Id,
+            SessionId = runtimeSessionId,
+            SavedSessionId = session.Id,
             Name = session.Name ?? string.Empty,
             Protocol = session.Protocol,
             Host = session.Host ?? string.Empty,

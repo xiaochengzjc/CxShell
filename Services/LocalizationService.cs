@@ -942,6 +942,9 @@ public sealed class LocalizationService : INotifyPropertyChanged
         EnglishTexts["ApplicationSettings.Days"] = "days";
         EnglishTexts["ApplicationSettings.ShowSessionManagerOnStartup"] = "Show the session manager at startup";
         EnglishTexts["ApplicationSettings.ShowTabBar"] = "Show the tab bar";
+        EnglishTexts["ApplicationSettings.ShowSftpPanel"] = "Show the SFTP panel";
+        EnglishTexts["ApplicationSettings.ShowMonitorPanel"] = "Show the monitoring panel";
+        EnglishTexts["ApplicationSettings.ShowAgentPanel"] = "Show the Agent panel";
         EnglishTexts["ApplicationSettings.EnableCommandSuggestions"] = "Show command input suggestions";
         EnglishTexts["ApplicationSettings.AutoCheckForUpdates"] = "Automatically check for updates";
         EnglishTexts["ApplicationSettings.IncludePrereleaseUpdates"] = "Receive preview updates";
@@ -1422,6 +1425,9 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ChineseTexts["ApplicationSettings.Days"] = "\u5929";
         ChineseTexts["ApplicationSettings.ShowSessionManagerOnStartup"] = "\u542f\u52a8\u65f6\u663e\u793a\u4f1a\u8bdd\u7ba1\u7406\u5668";
         ChineseTexts["ApplicationSettings.ShowTabBar"] = "\u663e\u793a\u6807\u7b7e\u680f";
+        ChineseTexts["ApplicationSettings.ShowSftpPanel"] = "\u663e\u793a SFTP \u9762\u677f";
+        ChineseTexts["ApplicationSettings.ShowMonitorPanel"] = "\u663e\u793a\u76d1\u63a7\u9762\u677f";
+        ChineseTexts["ApplicationSettings.ShowAgentPanel"] = "\u663e\u793a Agent \u9762\u677f";
         ChineseTexts["ApplicationSettings.EnableCommandSuggestions"] = "\u663e\u793a\u547d\u4ee4\u8f93\u5165\u63d0\u793a";
         ChineseTexts["ApplicationSettings.AutoCheckForUpdates"] = "\u81ea\u52a8\u68c0\u67e5\u66f4\u65b0";
         ChineseTexts["ApplicationSettings.IncludePrereleaseUpdates"] = "\u63a5\u6536\u9884\u89c8\u7248\u66f4\u65b0";

@@ -62,7 +62,11 @@ public sealed record AgentRunCheckpoint(
     [property: JsonPropertyName("modelRequestCount")] int ModelRequestCount = 0,
     [property: JsonPropertyName("toolCallCount")] int ToolCallCount = 0,
     [property: JsonPropertyName("updatedAtUtc")] DateTimeOffset UpdatedAtUtc = default,
-    [property: JsonPropertyName("detail")] string? Detail = null)
+    [property: JsonPropertyName("detail")] string? Detail = null,
+    [property: JsonPropertyName("toolExecutionState")] string? ToolExecutionState = null,
+    [property: JsonPropertyName("toolOutcomeCertain")] bool ToolOutcomeCertain = false,
+    [property: JsonPropertyName("toolRemoteCompletionConfirmed")] bool ToolRemoteCompletionConfirmed = false,
+    [property: JsonPropertyName("toolRetrySafe")] bool ToolRetrySafe = false)
 {
     [JsonPropertyName("context")]
     public AgentContextEstimate? Context { get; init; }
