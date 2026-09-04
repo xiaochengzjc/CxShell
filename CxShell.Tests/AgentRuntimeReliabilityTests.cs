@@ -20,6 +20,22 @@ public sealed class AgentRuntimeReliabilityTests
     }
 
     [Fact]
+    public void SensitiveDataRedactorCoversCommandLineSecretFormsAndKeepsSshPort()
+    {
+        var redacted = AgentSensitiveDataRedactor.Redact(
+            "curl --password secret --token=token-value --api-key \"api value\" " +
+            "ssh -p 22 host.example -p password -t token-value");
+
+        Assert.DoesNotContain("secret", redacted, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("token-value", redacted, StringComparison.Ordinal);
+        Assert.DoesNotContain("api value", redacted, StringComparison.Ordinal);
+        Assert.Contains("-p 22", redacted, StringComparison.Ordinal);
+        Assert.Contains("--password [redacted]", redacted, StringComparison.Ordinal);
+        Assert.Contains("--token=[redacted]", redacted, StringComparison.Ordinal);
+        Assert.Contains("--api-key \"[redacted]\"", redacted, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ContextEstimatorIncludesMessageAndContentPartOverhead()
     {
         var estimate = AgentContextEstimator.Estimate(

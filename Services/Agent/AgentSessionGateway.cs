@@ -270,11 +270,23 @@ public sealed class AgentSessionGateway : IAgentSessionGateway, IDisposable
             var requestToExecute = effectiveTimeout == request.Timeout
                 ? request
                 : request with { Timeout = effectiveTimeout };
-            var execution = await endpoint.ExecuteCommandAsync(
-                    requestToExecute,
-                    linkedCancellation.Token,
-                    progressReceived)
-                .ConfigureAwait(false);
+            AgentCommandExecutionResult execution;
+            if (requestToExecute.TerminalInput)
+            {
+                await endpoint.SendCommandAsync(
+                        requestToExecute,
+                        linkedCancellation.Token)
+                    .ConfigureAwait(false);
+                execution = new AgentCommandExecutionResult(false);
+            }
+            else
+            {
+                execution = await endpoint.ExecuteCommandAsync(
+                        requestToExecute,
+                        linkedCancellation.Token,
+                        progressReceived)
+                    .ConfigureAwait(false);
+            }
             var executionFailed = execution.RemoteCompletionConfirmed && !execution.Succeeded;
             var executionStatus = executionFailed
                 ? AgentCommandStatus.Failed

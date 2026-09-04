@@ -11,7 +11,10 @@ public static class AgentRuntimeMethodNames
     public const string CapabilitiesCheck = "capabilities/check";
     public const string ProviderStatus = "agent/provider-status";
     public const string ProviderTest = "agent/provider-test";
+    public const string ProviderModels = "agent/provider-models";
     public const string ModelRequest = "agent/model-request";
+    public const string WebSearch = "agent/web-search";
+    public const string WebFetch = "agent/web-fetch";
     public const string ToolCatalog = "agent/tool-catalog";
     public const string SessionList = "agent/session-list";
     public const string SavedSessionList = "agent/saved-session-list";
@@ -76,7 +79,10 @@ public static class AgentRuntimeContract
         AgentRuntimeMethodNames.CapabilitiesCheck,
         AgentRuntimeMethodNames.ProviderStatus,
         AgentRuntimeMethodNames.ProviderTest,
+        AgentRuntimeMethodNames.ProviderModels,
         AgentRuntimeMethodNames.ModelRequest,
+        AgentRuntimeMethodNames.WebSearch,
+        AgentRuntimeMethodNames.WebFetch,
         AgentRuntimeMethodNames.ToolCatalog,
         AgentRuntimeMethodNames.SessionList,
         AgentRuntimeMethodNames.SavedSessionList,
@@ -112,9 +118,12 @@ public static class AgentRuntimeContract
         "agent.saved-session.open",
         "agent.saved-session.close",
         "agent.session.get",
+        "agent.session.list.connected",
         "agent.session.command",
         "agent.session.command.execute",
         "agent.session.command.output",
+        "agent.session.terminal.write",
+        "agent.session.command.batch",
         "agent.diagnostics",
         "agent.diagnostic.run",
         "agent.diagnostic.runbook",
@@ -130,6 +139,7 @@ public static class AgentRuntimeContract
         "runtime.request.cancel",
         "agent.provider.status",
         "agent.provider.test",
+        "agent.provider.models",
         "agent.provider.tools",
         "agent.provider.streaming",
         "agent.provider.vision",
@@ -138,6 +148,8 @@ public static class AgentRuntimeContract
         "agent.provider.usage",
         "agent.provider.reasoning",
         "agent.model.request",
+        "agent.web.search",
+        "agent.web.fetch",
         "agent.tool.catalog",
         "agent.run",
         "agent.run.append",
@@ -220,6 +232,25 @@ public sealed record AgentRuntimeProviderTestResult(
     public AgentProviderCapabilities Capabilities { get; init; } = new();
 }
 
+public sealed record AgentRuntimeProviderModelsResult(
+    [property: JsonPropertyName("models")] IReadOnlyList<string> Models,
+    [property: JsonPropertyName("updated")] bool Updated,
+    [property: JsonPropertyName("error")] string? Error = null);
+
+public sealed record AgentRuntimeWebSearchResult(
+    [property: JsonPropertyName("success")] bool Success,
+    [property: JsonPropertyName("query")] string Query,
+    [property: JsonPropertyName("content")] string Content,
+    [property: JsonPropertyName("url")] string? Url = null,
+    [property: JsonPropertyName("error")] string? Error = null);
+
+public sealed record AgentRuntimeWebFetchResult(
+    [property: JsonPropertyName("success")] bool Success,
+    [property: JsonPropertyName("content")] string Content,
+    [property: JsonPropertyName("url")] string? Url = null,
+    [property: JsonPropertyName("statusCode")] int? StatusCode = null,
+    [property: JsonPropertyName("error")] string? Error = null);
+
 public sealed record AgentRuntimeModelRequestResult(
     [property: JsonPropertyName("response")] AgentModelResponse Response);
 
@@ -233,7 +264,11 @@ public sealed record AgentRuntimeToolDescriptor(
 public sealed record AgentRuntimeToolCatalogResult(
     [property: JsonPropertyName("tools")] IReadOnlyList<AgentRuntimeToolDescriptor> Tools,
     [property: JsonPropertyName("requiresApprovalForDangerousCommands")] bool RequiresApprovalForDangerousCommands,
-    [property: JsonPropertyName("requiresApprovalForChangeCommands")] bool RequiresApprovalForChangeCommands = false);
+    [property: JsonPropertyName("requiresApprovalForChangeCommands")] bool RequiresApprovalForChangeCommands = false)
+{
+    [JsonPropertyName("mode")]
+    public AgentChatMode Mode { get; init; } = AgentChatMode.Agent;
+}
 
 public sealed record AgentRuntimeSessionListResult(
     [property: JsonPropertyName("sessions")] IReadOnlyList<AgentSessionSnapshot> Sessions);

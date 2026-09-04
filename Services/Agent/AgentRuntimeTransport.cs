@@ -163,7 +163,7 @@ public sealed class AgentRuntimeStreamSession : IAgentRuntimeStreamSession
         using var requestCts = CancellationTokenSource.CreateLinkedTokenSource(sessionCts.Token);
         var eventSubscription = _eventSource?.Subscribe(
             @event => outbound.TryEnqueueEvent(@event));
-        var writerTask = WriteOutboundAsync(stream, outbound.Reader, sessionCts);
+        var writerTask = WriteOutboundAsync(stream, outbound, sessionCts);
 
         try
         {
@@ -222,6 +222,7 @@ public sealed class AgentRuntimeStreamSession : IAgentRuntimeStreamSession
             catch (OperationCanceledException)
             {
             }
+            outbound.Dispose();
         }
     }
 
@@ -257,7 +258,7 @@ public sealed class AgentRuntimeStreamSession : IAgentRuntimeStreamSession
 
     private static async Task WriteOutboundAsync(
         Stream stream,
-        ChannelReader<OutboundFrame> outbound,
+        OutboundQueue outbound,
         CancellationTokenSource sessionCts)
     {
         try
@@ -275,14 +276,16 @@ public sealed class AgentRuntimeStreamSession : IAgentRuntimeStreamSession
         }
     }
 
-    private sealed record OutboundFrame(byte[] Frame, bool IsEvent);
+    private sealed record OutboundFrame(byte[] Frame, bool IsEvent, bool IsOverflow = false);
 
     private sealed class OutboundQueue
     {
         private readonly Channel<OutboundFrame> _channel;
+        private readonly Channel<OutboundFrame> _controlChannel;
         private readonly AgentRuntimeStreamSession _owner;
         private readonly SemaphoreSlim _responseGate = new(1, 1);
         private long _unreportedDroppedEvents;
+        private int _overflowQueued;
 
         public OutboundQueue(int capacity, AgentRuntimeStreamSession owner)
         {
@@ -293,9 +296,53 @@ public sealed class AgentRuntimeStreamSession : IAgentRuntimeStreamSession
                 SingleReader = true,
                 SingleWriter = false
             });
+            _controlChannel = Channel.CreateUnbounded<OutboundFrame>(new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = false
+            });
         }
 
         public ChannelReader<OutboundFrame> Reader => _channel.Reader;
+
+        public async IAsyncEnumerable<OutboundFrame> ReadAllAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            while (true)
+            {
+                while (_controlChannel.Reader.TryRead(out var control))
+                {
+                    if (control.IsOverflow)
+                    {
+                        Volatile.Write(ref _overflowQueued, 0);
+                        TryEnqueueOverflow();
+                    }
+                    yield return control;
+                }
+                while (_channel.Reader.TryRead(out var normal))
+                    yield return normal;
+
+                using var waitCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                var controlWait = _controlChannel.Reader.WaitToReadAsync(waitCancellation.Token).AsTask();
+                var normalWait = _channel.Reader.WaitToReadAsync(waitCancellation.Token).AsTask();
+                var completed = await Task.WhenAny(controlWait, normalWait).ConfigureAwait(false);
+                var controlReady = completed == controlWait && await controlWait.ConfigureAwait(false);
+                var normalReady = completed == normalWait && await normalWait.ConfigureAwait(false);
+                waitCancellation.Cancel();
+                try
+                {
+                    await Task.WhenAll(controlWait, normalWait).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+
+                if (!controlReady && !normalReady &&
+                    _controlChannel.Reader.Completion.IsCompleted &&
+                    _channel.Reader.Completion.IsCompleted)
+                    yield break;
+            }
+        }
 
         public void TryEnqueueEvent(AgentRuntimeModuleEvent @event)
         {
@@ -308,6 +355,7 @@ public sealed class AgentRuntimeStreamSession : IAgentRuntimeStreamSession
                 {
                     Interlocked.Increment(ref _owner._droppedEventCount);
                     Interlocked.Increment(ref _unreportedDroppedEvents);
+                    TryEnqueueOverflow();
                 }
             }
             catch
@@ -315,6 +363,36 @@ public sealed class AgentRuntimeStreamSession : IAgentRuntimeStreamSession
                 // A malformed optional event must not break the active request.
                 Interlocked.Increment(ref _owner._droppedEventCount);
                 Interlocked.Increment(ref _unreportedDroppedEvents);
+                TryEnqueueOverflow();
+            }
+        }
+
+        private void TryEnqueueOverflow()
+        {
+            if (Interlocked.CompareExchange(ref _overflowQueued, 1, 0) != 0)
+                return;
+
+            var dropped = Interlocked.Exchange(ref _unreportedDroppedEvents, 0);
+            if (dropped <= 0)
+            {
+                Volatile.Write(ref _overflowQueued, 0);
+                return;
+            }
+
+            var overflow = new AgentRuntimeEventEnvelope(
+                "event",
+                "runtime/overflow",
+                "runtime",
+                string.Empty,
+                "runtime",
+                JsonSerializer.SerializeToElement(new { droppedEvents = dropped }, JsonOptions));
+            if (!_controlChannel.Writer.TryWrite(new(
+                    AgentRuntimeFrameCodec.Encode(JsonSerializer.Serialize(overflow, JsonOptions)),
+                    true,
+                    true)))
+            {
+                Interlocked.Add(ref _unreportedDroppedEvents, dropped);
+                Volatile.Write(ref _overflowQueued, 0);
             }
         }
 
@@ -323,21 +401,7 @@ public sealed class AgentRuntimeStreamSession : IAgentRuntimeStreamSession
             await _responseGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                var dropped = Interlocked.Exchange(ref _unreportedDroppedEvents, 0);
-                if (dropped > 0)
-                {
-                    var overflow = new AgentRuntimeEventEnvelope(
-                        "event",
-                        "runtime/overflow",
-                        "runtime",
-                        string.Empty,
-                        "runtime",
-                        JsonSerializer.SerializeToElement(new { droppedEvents = dropped }, JsonOptions));
-                    await _channel.Writer.WriteAsync(
-                            new(AgentRuntimeFrameCodec.Encode(JsonSerializer.Serialize(overflow, JsonOptions)), true),
-                            cancellationToken)
-                        .ConfigureAwait(false);
-                }
+                TryEnqueueOverflow();
 
                 await _channel.Writer.WriteAsync(new(frame, false), cancellationToken)
                     .ConfigureAwait(false);
@@ -351,6 +415,11 @@ public sealed class AgentRuntimeStreamSession : IAgentRuntimeStreamSession
         public void Complete()
         {
             _channel.Writer.TryComplete();
+            _controlChannel.Writer.TryComplete();
+        }
+
+        public void Dispose()
+        {
             _responseGate.Dispose();
         }
     }

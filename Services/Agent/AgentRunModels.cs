@@ -2,6 +2,14 @@ using System.Text.Json.Serialization;
 
 namespace CxShell.Services.Agent;
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum AgentChatMode
+{
+    Chat,
+    Plan,
+    Agent
+}
+
 public sealed record AgentRunRequest
 {
     public string? RunId { get; init; }
@@ -10,6 +18,7 @@ public sealed record AgentRunRequest
     public string? Model { get; init; }
     public double? Temperature { get; init; }
     public int? MaxTokens { get; init; }
+    public AgentChatMode Mode { get; init; } = AgentChatMode.Agent;
     public TimeSpan Timeout { get; init; } = AgentRunCoordinator.DefaultRunTimeout;
 }
 
@@ -66,7 +75,10 @@ public sealed record AgentRunCheckpoint(
     [property: JsonPropertyName("toolExecutionState")] string? ToolExecutionState = null,
     [property: JsonPropertyName("toolOutcomeCertain")] bool ToolOutcomeCertain = false,
     [property: JsonPropertyName("toolRemoteCompletionConfirmed")] bool ToolRemoteCompletionConfirmed = false,
-    [property: JsonPropertyName("toolRetrySafe")] bool ToolRetrySafe = false)
+    [property: JsonPropertyName("toolRetrySafe")] bool ToolRetrySafe = false,
+    [property: JsonPropertyName("providerRequestCount")] int ProviderRequestCount = 0,
+    [property: JsonPropertyName("providerRetryCount")] int ProviderRetryCount = 0,
+    [property: JsonPropertyName("contextSummaryCount")] int ContextSummaryCount = 0)
 {
     [JsonPropertyName("context")]
     public AgentContextEstimate? Context { get; init; }
@@ -134,7 +146,8 @@ public sealed record AgentRunCredentialResult(
 public sealed record AgentRuntimeRunResult(
     [property: JsonPropertyName("started")] bool Started,
     [property: JsonPropertyName("runId")] string RunId,
-    [property: JsonPropertyName("sessionId")] string SessionId);
+    [property: JsonPropertyName("sessionId")] string SessionId,
+    [property: JsonPropertyName("mode")] AgentChatMode Mode = AgentChatMode.Agent);
 
 public sealed record AgentRuntimeRunSnapshot(
     [property: JsonPropertyName("runId")] string RunId,
@@ -157,8 +170,14 @@ public sealed record AgentRuntimeRunSnapshot(
     [property: JsonPropertyName("checkpoint")] AgentRunCheckpoint? Checkpoint = null,
     [property: JsonPropertyName("phase")] string Phase = "run",
     [property: JsonPropertyName("pauseReason")] string? PauseReason = null,
-    [property: JsonPropertyName("requiresUserAction")] bool RequiresUserAction = false)
+    [property: JsonPropertyName("requiresUserAction")] bool RequiresUserAction = false,
+    [property: JsonPropertyName("providerRequestCount")] int ProviderRequestCount = 0,
+    [property: JsonPropertyName("providerRetryCount")] int ProviderRetryCount = 0,
+    [property: JsonPropertyName("contextSummaryCount")] int ContextSummaryCount = 0)
 {
+    [JsonPropertyName("mode")]
+    public AgentChatMode Mode { get; init; } = AgentChatMode.Agent;
+
     [JsonPropertyName("steps")]
     public IReadOnlyList<AgentRunStep> Steps { get; init; } = [];
 }

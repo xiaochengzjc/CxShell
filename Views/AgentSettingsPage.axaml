@@ -109,10 +109,17 @@
                                        Text="{Binding AgentModelText}"
                                        VerticalAlignment="Center"
                                        Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
-                            <atom:TextBox Grid.Row="3"
-                                          Grid.Column="1"
-                                          Text="{Binding AgentModel, Mode=TwoWay}"
-                                          MinWidth="220"/>
+                            <Grid Grid.Row="3"
+                                  Grid.Column="1"
+                                  ColumnDefinitions="*,Auto"
+                                  ColumnSpacing="6">
+                                <atom:TextBox Text="{Binding AgentModel, Mode=TwoWay}"
+                                              MinWidth="160"/>
+                                <atom:Button Grid.Column="1"
+                                             Content="{Binding AgentRefreshModelsText}"
+                                             Command="{Binding RefreshAgentModelsCommand}"
+                                             ButtonType="Default"/>
+                            </Grid>
 
                             <TextBlock Grid.Row="4"
                                        Text="{Binding AgentPlanKeyText}"
@@ -126,6 +133,11 @@
                                           MinWidth="220"/>
                         </Grid>
                         <TextBlock Text="{Binding AgentPlanKeyDescriptionText}"
+                                   TextWrapping="Wrap"
+                                   FontSize="11"
+                                   Foreground="{atom:SharedTokenResource ColorTextTertiary}"
+                                   Margin="142,0,0,0"/>
+                        <TextBlock Text="{Binding AgentModelCatalogStatusText}"
                                    TextWrapping="Wrap"
                                    FontSize="11"
                                    Foreground="{atom:SharedTokenResource ColorTextTertiary}"
@@ -181,6 +193,68 @@
                                          ButtonType="Default"
                                          Command="{Binding UseRoutinPresetCommand}"/>
                         </Grid>
+                        <Border Background="{atom:SharedTokenResource ColorBgLayout}"
+                                BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                                BorderThickness="1"
+                                CornerRadius="5"
+                                Padding="12,10"
+                                Margin="0,4,0,0">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="{Binding AgentWebText}"
+                                           FontWeight="SemiBold"
+                                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                                <atom:CheckBox Content="{Binding AgentWebEnabledText}"
+                                               IsChecked="{Binding AgentWebEnabled, Mode=TwoWay}"/>
+                                <Grid ColumnDefinitions="132,*"
+                                      ColumnSpacing="10"
+                                      IsEnabled="{Binding AgentWebEnabled}">
+                                    <TextBlock Text="{Binding AgentSearxngBaseUrlText}"
+                                               VerticalAlignment="Center"
+                                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                    <atom:TextBox Grid.Column="1"
+                                                  Text="{Binding AgentSearxngBaseUrl, Mode=TwoWay}"
+                                                  Watermark="https://searx.example"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="132,*"
+                                      ColumnSpacing="10"
+                                      IsEnabled="{Binding AgentWebEnabled}">
+                                    <TextBlock Text="{Binding AgentAllowedPrivateHostsText}"
+                                               VerticalAlignment="Top"
+                                               Margin="0,6,0,0"
+                                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                    <atom:TextBox Grid.Column="1"
+                                                  Text="{Binding AgentAllowedPrivateHosts, Mode=TwoWay}"
+                                                  AcceptsReturn="True"
+                                                  TextWrapping="Wrap"
+                                                  MinHeight="48"
+                                                  Watermark="host.example.com:8080"/>
+                                </Grid>
+                                <atom:CheckBox Content="{Binding AgentAllowPrivateNetworkText}"
+                                               IsChecked="{Binding AgentAllowPrivateNetwork, Mode=TwoWay}"
+                                               IsEnabled="{Binding AgentWebEnabled}"/>
+                                <Grid ColumnDefinitions="132,Auto,132,Auto"
+                                      ColumnSpacing="10"
+                                      IsEnabled="{Binding AgentWebEnabled}">
+                                    <TextBlock Text="{Binding AgentWebMaxResultsText}"
+                                               VerticalAlignment="Center"
+                                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                    <atom:NumericUpDown Grid.Column="1"
+                                                        Width="76"
+                                                        Minimum="1"
+                                                        Maximum="20"
+                                                        Value="{Binding AgentWebMaxResults, Mode=TwoWay}"/>
+                                    <TextBlock Grid.Column="2"
+                                               Text="{Binding AgentWebMaxFetchCharactersText}"
+                                               VerticalAlignment="Center"
+                                               Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                    <atom:NumericUpDown Grid.Column="3"
+                                                        Width="92"
+                                                        Minimum="2000"
+                                                        Maximum="400000"
+                                                        Value="{Binding AgentWebMaxFetchCharacters, Mode=TwoWay}"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </Border>
             </StackPanel>

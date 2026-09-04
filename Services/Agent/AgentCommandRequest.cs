@@ -13,6 +13,13 @@ public sealed record AgentCommandRequest
     public string? ApprovalToken { get; init; }
 
     /// <summary>
+    /// Sends input through the visible terminal channel instead of an SSH exec
+    /// channel. This is process-local and is never accepted from JSON.
+    /// </summary>
+    [JsonIgnore]
+    internal bool TerminalInput { get; init; }
+
+    /// <summary>
     /// Internal, process-local grant used when an already approved command is
     /// retried with sensitive input. It is never accepted from the runtime
     /// protocol or serialized into a request.

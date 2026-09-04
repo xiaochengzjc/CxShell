@@ -41,6 +41,9 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
     public const int MaximumCommandOutputDeltaCharacters = 8 * 1024;
     public const int MaximumCommandOutputCharactersPerTool = 128 * 1024;
     public const string SessionCommandToolName = "session_command";
+    public const string TerminalWriteToolName = "terminal_write";
+    public const string ConnectedSessionListToolName = "list_connected_sessions";
+    public const string RunOnSessionsToolName = "run_on_sessions";
     public const string SessionInfoToolName = "session_info";
     public const string SavedSessionListToolName = "list_saved_sessions";
     public const string OpenSessionToolName = "open_session";
@@ -84,6 +87,78 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
         {
             type = "object",
             properties = new { },
+            additionalProperties = false
+        }));
+
+    private static readonly AgentToolDefinition TerminalWriteTool = new(
+        TerminalWriteToolName,
+        "Write input to the visible SSH terminal for interactive programs such as vim, top, or a shell prompt. " +
+        "This does not capture command output and must not be used for ordinary shell commands.",
+        JsonSerializer.SerializeToElement(new
+        {
+            type = "object",
+            properties = new
+            {
+                input = new
+                {
+                    type = "string",
+                    minLength = 1,
+                    maxLength = AgentSessionGateway.MaximumCommandLength,
+                    description = "Text or key sequence to write to the visible terminal."
+                },
+                appendLineEnding = new
+                {
+                    type = "boolean",
+                    @default = false,
+                    description = "Append the configured terminal line ending after the input."
+                }
+            },
+            required = new[] { "input" },
+            additionalProperties = false
+        }));
+
+    private static readonly AgentToolDefinition ConnectedSessionListTool = new(
+        ConnectedSessionListToolName,
+        "List currently connected SSH sessions and their runtime IDs. This never opens a new session or returns credentials.",
+        JsonSerializer.SerializeToElement(new
+        {
+            type = "object",
+            properties = new { },
+            additionalProperties = false
+        }));
+
+    private static readonly AgentToolDefinition RunOnSessionsTool = new(
+        RunOnSessionsToolName,
+        "Run one shell command on an explicit list of currently connected SSH sessions. " +
+        "Each target is isolated and returns its own status, output, exit code, and duration. " +
+        "The operation is capped and requires one approval when any target command needs approval.",
+        JsonSerializer.SerializeToElement(new
+        {
+            type = "object",
+            properties = new
+            {
+                sessionIds = new
+                {
+                    type = "array",
+                    minItems = 1,
+                    maxItems = 16,
+                    items = new { type = "string", format = "uuid" },
+                    description = "Runtime session IDs returned by list_connected_sessions."
+                },
+                command = new
+                {
+                    type = "string",
+                    minLength = 1,
+                    maxLength = AgentSessionGateway.MaximumCommandLength
+                },
+                timeoutMs = new
+                {
+                    type = "integer",
+                    minimum = 100,
+                    maximum = (int)AgentSessionGateway.MaximumCommandTimeout.TotalMilliseconds
+                }
+            },
+            required = new[] { "sessionIds", "command" },
             additionalProperties = false
         }));
 
@@ -364,10 +439,51 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
             additionalProperties = false
         }));
 
+    private static readonly AgentToolDefinition WebSearchTool = new(
+        "web_search",
+        "Search the public web through the configured SearXNG instance. This is read-only and returns bounded results.",
+        JsonSerializer.SerializeToElement(new
+        {
+            type = "object",
+            properties = new
+            {
+                query = new
+                {
+                    type = "string",
+                    minLength = 1,
+                    maxLength = 500,
+                    description = "The public web search query. Do not include passwords, tokens, or private host data."
+                }
+            },
+            required = new[] { "query" },
+            additionalProperties = false
+        }));
+
+    private static readonly AgentToolDefinition WebFetchTool = new(
+        "web_fetch",
+        "Fetch bounded text from one HTTP(S) URL. Redirects, binary content, and private addresses are blocked by default.",
+        JsonSerializer.SerializeToElement(new
+        {
+            type = "object",
+            properties = new
+            {
+                url = new
+                {
+                    type = "string",
+                    maxLength = 2048,
+                    description = "The HTTP(S) URL to read."
+                }
+            },
+            required = new[] { "url" },
+            additionalProperties = false
+        }));
+
     private readonly IAgentSessionGateway _gateway;
     private readonly Func<AgentProviderSettings?> _providerSettings;
     private readonly IAgentModelClient _modelClient;
     private readonly IAgentRunHistoryStore _historyStore;
+    private readonly Func<AgentWebSettings?> _webSettings;
+    private readonly AgentWebAccess _webAccess;
     private readonly OpenCoworkRuntimeLoop _runtimeLoop;
     private readonly ConcurrentDictionary<string, ActiveRun> _activeRuns = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<Guid, string> _activeSessionRuns = new();
@@ -382,12 +498,16 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
         IAgentSessionGateway gateway,
         Func<AgentProviderSettings?>? providerSettings = null,
         IAgentModelClient? modelClient = null,
-        IAgentRunHistoryStore? historyStore = null)
+        IAgentRunHistoryStore? historyStore = null,
+        Func<AgentWebSettings?>? webSettings = null,
+        AgentWebAccess? webAccess = null)
     {
         _gateway = gateway ?? throw new ArgumentNullException(nameof(gateway));
         _providerSettings = providerSettings ?? (() => null);
         _modelClient = modelClient ?? new OpenAiCompatibleAgentModelClient();
         _historyStore = historyStore ?? new NullAgentRunHistoryStore();
+        _webSettings = webSettings ?? (() => null);
+        _webAccess = webAccess ?? new AgentWebAccess(_webSettings);
         _runtimeLoop = new OpenCoworkRuntimeLoop(new OpenCoworkRuntimeLoopOptions
         {
             MaximumIterations = MaximumIterations,
@@ -436,14 +556,17 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
         PersistRunState();
     }
 
-    public static IReadOnlyList<AgentToolDefinition> GetToolDefinitions()
-        =>
-        [
-            SessionCommandTool,
+    public static IReadOnlyList<AgentToolDefinition> GetToolDefinitions(
+        AgentChatMode mode = AgentChatMode.Agent)
+    {
+        if (mode == AgentChatMode.Chat)
+            return [];
+
+        var tools = new List<AgentToolDefinition>
+        {
             SessionInfoTool,
+            ConnectedSessionListTool,
             SavedSessionListTool,
-            OpenSessionTool,
-            CloseSessionTool,
             DiagnosticRunTool,
             RunbookRunTool,
             FleetDiagnosticTool,
@@ -453,8 +576,21 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
             FilePreviewTool,
             PackageQueryTool,
             RuntimeCheckTool,
-            DiskCleanupAdviceTool
-        ];
+            DiskCleanupAdviceTool,
+            WebSearchTool,
+            WebFetchTool
+        };
+        if (mode == AgentChatMode.Agent)
+        {
+            tools.Add(SessionCommandTool);
+            tools.Add(TerminalWriteTool);
+            tools.Add(RunOnSessionsTool);
+            tools.Add(OpenSessionTool);
+            tools.Add(CloseSessionTool);
+        }
+
+        return tools;
+    }
 
     public AgentRunStartResult Start(AgentRunRequest request)
     {
@@ -471,7 +607,7 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
         }
 
         var runId = NormalizeRunId(request.RunId);
-        if (request.SessionId == Guid.Empty)
+        if (request.SessionId == Guid.Empty && request.Mode != AgentChatMode.Agent)
             return new(false, runId, "A valid SSH sessionId is required.");
 
         if (request.Messages == null || request.Messages.Count == 0)
@@ -485,13 +621,16 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
                 $"Run timeout must be between 100 ms and {MaximumRunTimeout.TotalMinutes:0} minutes.");
         }
 
-        var session = _gateway.GetSession(request.SessionId);
-        if (session == null)
-            return new(false, runId, "The requested session is not open or is not an SSH session.");
-        if (!session.IsConnected)
-            return new(false, runId, "The requested session is not connected.");
-        if (session.Protocol != SessionProtocol.SSH)
-            return new(false, runId, "Only SSH terminal sessions are supported.");
+        if (request.SessionId != Guid.Empty)
+        {
+            var session = _gateway.GetSession(request.SessionId);
+            if (session == null)
+                return new(false, runId, "The requested session is not open or is not an SSH session.");
+            if (!session.IsConnected)
+                return new(false, runId, "The requested session is not connected.");
+            if (session.Protocol != SessionProtocol.SSH)
+                return new(false, runId, "Only SSH terminal sessions are supported.");
+        }
 
         var provider = _providerSettings();
         var validation = AgentProviderConfiguration.Validate(provider);
@@ -502,8 +641,9 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
             runId,
             request.SessionId,
             provider.BuiltinId,
-            string.IsNullOrWhiteSpace(request.Model) ? provider.Model : request.Model,
-            BuildPromptPreview(request.Messages));
+            AgentProviderConfiguration.GetEffectiveModelId(provider, request.Model),
+            BuildPromptPreview(request.Messages),
+            request.Mode);
         if (!_activeRuns.TryAdd(runId, activeRun))
             return new(false, runId, $"Agent run already exists: {runId}");
         if (!_activeSessionRuns.TryAdd(request.SessionId, runId))
@@ -683,6 +823,7 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
             Model = recovery.Snapshot.Model,
             Temperature = recovery.Temperature,
             MaxTokens = recovery.MaxTokens,
+            Mode = recovery.Snapshot.Mode,
             Timeout = timeout
         });
         if (!start.Started)
@@ -920,7 +1061,7 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
                 new AgentRuntimeStreamEvent(
                     "run_start",
                     Provider: provider.BuiltinId,
-                    Model: string.IsNullOrWhiteSpace(request.Model) ? provider.Model : request.Model,
+                    Model: AgentProviderConfiguration.GetEffectiveModelId(provider, request.Model),
                     Checkpoint: runStartCheckpoint));
             PublishRunPhase(
                 activeRun,
@@ -946,7 +1087,7 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
                                 request.Model,
                                 request.Temperature,
                                 request.MaxTokens,
-                                GetToolDefinitions()),
+                                GetToolDefinitions(request.Mode)),
                             cancellationToken,
                             chunk =>
                             {
@@ -960,7 +1101,7 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
                                         "text_delta",
                                         Text: chunk.Text,
                                         Provider: provider.BuiltinId,
-                                        Model: request.Model ?? provider.Model));
+                                        Model: AgentProviderConfiguration.GetEffectiveModelId(provider, request.Model)));
                             })
                         .ConfigureAwait(false);
                     EnsureSessionIsConnected(activeRun.SessionId);
@@ -1130,8 +1271,9 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
                 contextCompressed: compression =>
                 {
                     var context = AgentContextEstimator.Estimate(compression.Messages);
+                    var previous = activeRun.EventHistory.ToSnapshot();
                     var checkpoint = activeRun.EventHistory.SetCheckpoint(
-                        activeRun.EventHistory.ToSnapshot().Checkpoint?.Step ?? 0,
+                        previous.Checkpoint?.Step ?? 0,
                         "analysis",
                         "running",
                         detail: $"Context compressed from {compression.OriginalMessageCount} to {compression.NewMessageCount} messages.",
@@ -1269,6 +1411,7 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
                 pending.Response.TrySetResult(null);
             activeRun.PendingCredentials.Clear();
             activeRun.ClearCredentials();
+            activeRun.CredentialInputGate.Dispose();
             activeRun.DisposeEventPublisher();
             activeRun.Cancellation.Dispose();
             PersistRunState();
@@ -1391,7 +1534,8 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
         AgentProviderSettings provider,
         AgentModelRequest request,
         CancellationToken cancellationToken,
-        Action<AgentModelStreamChunk>? onStreamChunk = null)
+        Action<AgentModelStreamChunk>? onStreamChunk = null,
+        bool isContextSummary = false)
     {
         var delay = TimeSpan.FromMilliseconds(400);
         var streamedOutput = false;
@@ -1399,6 +1543,10 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
         {
             try
             {
+                activeRun.EventHistory.RecordProviderRequest(
+                    isRetry: attempt > 1,
+                    isContextSummary: isContextSummary && attempt == 1);
+                PersistCheckpoint(activeRun);
                 if (onStreamChunk != null && _modelClient is IAgentStreamingModelClient streamingClient)
                 {
                     return await streamingClient.CompleteStreamingAsync(
@@ -1505,7 +1653,8 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
                     activeRun,
                     provider,
                     summaryRequest,
-                    summaryTimeout.Token)
+                    summaryTimeout.Token,
+                    isContextSummary: true)
                 .ConfigureAwait(false);
             return string.IsNullOrWhiteSpace(response.Text) ? null : response.Text.Trim();
         }
@@ -1535,6 +1684,11 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
 
     private void EnsureSessionIsConnected(Guid sessionId)
     {
+        // Agent mode may begin without a selected session so it can discover
+        // and open a saved SSH configuration first.
+        if (sessionId == Guid.Empty)
+            return;
+
         var session = _gateway.GetSession(sessionId);
         if (session == null || !session.IsConnected)
         {
@@ -1549,11 +1703,62 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
         AgentRunRequest request,
         CancellationToken cancellationToken)
     {
+        if (activeRun.SessionId != request.SessionId)
+            request = request with { SessionId = activeRun.SessionId };
+
         if (!TryValidateToolCall(toolCall, out var toolCallError))
             return new(false, toolCallError);
 
+        if (activeRun.Mode == AgentChatMode.Chat)
+        {
+            return new(
+                false,
+                "Tools are disabled in Chat mode. Switch to Plan or Agent mode for operational actions.");
+        }
+
+        if (activeRun.Mode == AgentChatMode.Plan && IsMutationTool(toolCall.Name))
+        {
+            return new(
+                false,
+                $"Tool '{toolCall.Name}' is available only in Agent mode. Plan mode is read-only.");
+        }
+
         if (string.Equals(toolCall.Name, SavedSessionListToolName, StringComparison.Ordinal))
             return await ExecuteSavedSessionListAsync(cancellationToken).ConfigureAwait(false);
+
+        if (string.Equals(toolCall.Name, ConnectedSessionListToolName, StringComparison.Ordinal))
+        {
+            return new(
+                true,
+                JsonSerializer.Serialize(new
+                {
+                    sessions = _gateway.GetSessions().Select(session => new
+                    {
+                        sessionId = session.SessionId.ToString("D"),
+                        session.Name,
+                        session.Host,
+                        session.Port,
+                        session.Username,
+                        session.Platform,
+                        session.IsConnected
+                    })
+                }));
+        }
+
+        if (string.Equals(toolCall.Name, "web_search", StringComparison.Ordinal))
+            return await ExecuteWebSearchAsync(toolCall, cancellationToken).ConfigureAwait(false);
+
+        if (string.Equals(toolCall.Name, "web_fetch", StringComparison.Ordinal))
+            return await ExecuteWebFetchAsync(toolCall, cancellationToken).ConfigureAwait(false);
+
+        if (string.Equals(toolCall.Name, RunOnSessionsToolName, StringComparison.Ordinal))
+        {
+            return await ExecuteRunOnSessionsAsync(
+                    activeRun,
+                    toolCall,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         if (string.Equals(toolCall.Name, OpenSessionToolName, StringComparison.Ordinal))
             return await ExecuteOpenSessionAsync(
@@ -1584,6 +1789,16 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
                     session.IsConnected,
                     canExecuteCommands = session.CanExecuteCommands
                 }));
+        }
+
+        if (string.Equals(toolCall.Name, TerminalWriteToolName, StringComparison.Ordinal))
+        {
+            return await ExecuteTerminalWriteAsync(
+                    activeRun,
+                    toolCall,
+                    request,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
 
         if (string.Equals(toolCall.Name, DiagnosticRunToolName, StringComparison.Ordinal))
@@ -1709,136 +1924,19 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
             }
         }
 
-        string? sensitiveInput = null;
-        var credentialAttempt = 0;
-        while (TryGetCredentialRequirement(command, result, out var credentialRequirement))
-        {
-            credentialAttempt++;
-            if (credentialAttempt > MaximumCredentialAttempts)
-                break;
-
-            var credentialRemembered = false;
-            var credentialWasCached = activeRun.TryGetCredential(
-                credentialRequirement.Kind,
-                out var cachedCredential);
-            if (credentialWasCached)
-            {
-                sensitiveInput = cachedCredential;
-            }
-            else
-            {
-                var credentialRequestId = Guid.NewGuid().ToString("N");
-                var pending = new PendingCredential(
-                    credentialRequestId,
-                    toolCall.Id,
-                    credentialRequirement.Kind,
-                    credentialRequirement.Prompt);
-                if (!activeRun.PendingCredentials.TryAdd(credentialRequestId, pending))
-                    return new(false, "The credential request could not be created.");
-
-                var credentialCheckpoint = activeRun.EventHistory.SetCheckpoint(
-                    activeRun.EventHistory.ToSnapshot().ToolCallCount,
-                    "credential",
-                    "waiting_for_input",
-                    toolCall.Id,
-                    toolCall.Name,
-                    detail: $"Waiting for {pending.Kind} input from the user.");
-                PersistCheckpoint(activeRun);
-                PublishRunPhase(
-                    activeRun,
-                    "credential",
-                    AgentRunStates.WaitingForInput,
-                    $"Waiting for {GetPublicCredentialKind(pending.Kind)} input from the user.",
-                    requiresUserAction: true,
-                    pauseReason: $"Waiting for {GetPublicCredentialKind(pending.Kind)} input from the user.");
-                Publish(
-                    activeRun,
-                    new AgentRuntimeStreamEvent(
-                        "credential_required",
-                        ToolCallId: toolCall.Id,
-                        ToolName: toolCall.Name,
-                        CredentialRequestId: credentialRequestId,
-                        CredentialKind: pending.Kind,
-                        CredentialPrompt: pending.Prompt,
-                        Message: $"The remote command requires {pending.Kind} input.",
-                        Status: "pending_credential",
-                        Phase: "credential",
-                        PauseReason: $"Waiting for {pending.Kind} input from the user.",
-                        RequiresUserAction: true,
-                        Attempt: credentialAttempt,
-                        MaxAttempts: MaximumCredentialAttempts,
-                        TimeoutMs: timeoutMs,
-                        SessionName: _gateway.GetSession(request.SessionId)?.Name,
-                        Checkpoint: credentialCheckpoint)
-                    {
-                        CredentialKind = GetPublicCredentialKind(pending.Kind),
-                        CredentialPurpose = GetCredentialPurpose(pending.Kind),
-                        CredentialInputType = GetCredentialInputType(pending.Kind),
-                        CredentialMasked = IsCredentialMasked(pending.Kind),
-                        CredentialCanRemember = true,
-                        ExpiresAtUtc = pending.CreatedAtUtc + CredentialRequestLifetime,
-                        SessionHost = _gateway.GetSession(request.SessionId)?.Host
-                    });
-
-                try
-                {
-                    AgentCredentialValue? credential;
-                    try
-                    {
-                        credential = await pending.Response.Task
-                            .WaitAsync(CredentialRequestLifetime, cancellationToken)
-                            .ConfigureAwait(false);
-                    }
-                    catch (TimeoutException)
-                    {
-                        return new(false, "Credential input expired before it was submitted.");
-                    }
-                    if (credential == null)
-                        return new(false, "Credential input was cancelled.");
-
-                    sensitiveInput = credential.Value;
-                    credentialRemembered = credential.RememberForRun;
-                    if (credentialRemembered)
-                        activeRun.RememberCredential(pending.Kind, credential.Value);
-                }
-                finally
-                {
-                    activeRun.PendingCredentials.TryRemove(credentialRequestId, out _);
-                }
-            }
-
-            if (!string.IsNullOrEmpty(sensitiveInput))
-                sensitiveInputs.Add(sensitiveInput);
-
-            var credentialCommand = PrepareCredentialCommand(command, credentialRequirement.Kind);
-            result = await ExecuteGatewayCommandAsync(
-                    activeRun,
-                    toolCall,
-                    commandRequest with
-                    {
-                        RequestId = Guid.NewGuid(),
-                        Command = credentialCommand,
-                        SensitiveInput = sensitiveInput,
-                        ApprovalGranted = approvalGranted,
-                        ApprovedCommand = approvalGranted ? command : null
-                    },
-                    cancellationToken,
-                    sensitiveInputs)
-                .ConfigureAwait(false);
-
-            if (TryGetCredentialRequirement(command, result, out var rejectedCredential))
-            {
-                // A cached or just-entered credential was rejected. Forget it
-                // before asking again so the next attempt cannot repeat it.
-                if (credentialWasCached || credentialRemembered)
-                    activeRun.RemoveCredential(rejectedCredential.Kind);
-
-                sensitiveInput = null;
-                continue;
-            }
-
-            break;
-        }
+        var credentialExecution = await ExecuteCommandWithCredentialsAsync(
+                activeRun,
+                toolCall,
+                commandRequest,
+                command,
+                result,
+                approvalGranted,
+                cancellationToken)
+            .ConfigureAwait(false);
+        result = credentialExecution.Result;
+        sensitiveInputs.AddRange(credentialExecution.SensitiveInputs);
+        if (credentialExecution.Error != null)
+            return new(false, credentialExecution.Error);
 
         var repeatedFailureGuidance = activeRun.RecordCommandOutcome(command, result.IsSuccess);
         return new(
@@ -1867,6 +1965,835 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
                     openSessionId = session.OpenSessionId?.ToString("D")
                 })
             }));
+    }
+
+    private async Task<CredentialCommandExecution> ExecuteCommandWithCredentialsAsync(
+        ActiveRun activeRun,
+        AgentToolCall toolCall,
+        AgentCommandRequest commandRequest,
+        string command,
+        AgentCommandResult initialResult,
+        bool approvalGranted,
+        CancellationToken cancellationToken)
+    {
+        var result = initialResult;
+        var sensitiveInputs = new List<string>();
+        string? sensitiveInput = null;
+        var credentialAttempt = 0;
+        var session = _gateway.GetSession(commandRequest.SessionId);
+
+        if (!TryGetCredentialRequirement(command, result, out _))
+            return new(result, sensitiveInputs);
+
+        await activeRun.CredentialInputGate.WaitAsync(cancellationToken)
+            .ConfigureAwait(false);
+        try
+        {
+            while (TryGetCredentialRequirement(command, result, out var credentialRequirement))
+            {
+                credentialAttempt++;
+                if (credentialAttempt > MaximumCredentialAttempts)
+                    break;
+
+                var credentialRemembered = false;
+                var credentialWasCached = activeRun.TryGetCredential(
+                    commandRequest.SessionId,
+                    credentialRequirement.Kind,
+                    out var cachedCredential);
+                if (credentialWasCached)
+                {
+                    sensitiveInput = cachedCredential;
+                }
+                else
+                {
+                    var credentialInput = await RequestCredentialAsync(
+                            activeRun,
+                            toolCall,
+                            commandRequest,
+                            credentialRequirement,
+                            credentialAttempt,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    if (credentialInput.Error != null)
+                        return new(result, sensitiveInputs, credentialInput.Error);
+
+                    sensitiveInput = credentialInput.Value;
+                    credentialRemembered = credentialInput.RememberForRun;
+                    if (credentialRemembered)
+                    {
+                        activeRun.RememberCredential(
+                            commandRequest.SessionId,
+                            credentialRequirement.Kind,
+                            credentialInput.Value!);
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(sensitiveInput))
+                    sensitiveInputs.Add(sensitiveInput);
+
+                var credentialCommand = PrepareCredentialCommand(command, credentialRequirement.Kind);
+                result = await ExecuteGatewayCommandAsync(
+                        activeRun,
+                        toolCall,
+                        commandRequest with
+                        {
+                            RequestId = Guid.NewGuid(),
+                            Command = credentialCommand,
+                            SensitiveInput = sensitiveInput,
+                            ApprovalGranted = approvalGranted,
+                            ApprovedCommand = approvalGranted ? command : null
+                        },
+                        cancellationToken,
+                        sensitiveInputs)
+                    .ConfigureAwait(false);
+
+                if (TryGetCredentialRequirement(command, result, out var rejectedCredential))
+                {
+                    // A rejected value must only invalidate the cache for this
+                    // session. Credentials are never shared between batch targets.
+                    if (credentialWasCached || credentialRemembered)
+                    {
+                        activeRun.RemoveCredential(
+                            commandRequest.SessionId,
+                            rejectedCredential.Kind);
+                    }
+
+                    sensitiveInput = null;
+                    continue;
+                }
+
+                break;
+            }
+
+            return new(result, sensitiveInputs);
+        }
+        finally
+        {
+            activeRun.CredentialInputGate.Release();
+        }
+    }
+
+    private async Task<CredentialInputResult> RequestCredentialAsync(
+        ActiveRun activeRun,
+        AgentToolCall toolCall,
+        AgentCommandRequest commandRequest,
+        CredentialRequirement requirement,
+        int attempt,
+        CancellationToken cancellationToken)
+    {
+        var credentialRequestId = Guid.NewGuid().ToString("N");
+        var pending = new PendingCredential(
+            credentialRequestId,
+            toolCall.Id,
+            commandRequest.SessionId,
+            requirement.Kind,
+            requirement.Prompt);
+        if (!activeRun.PendingCredentials.TryAdd(credentialRequestId, pending))
+            return new(null, false, "The credential request could not be created.");
+
+        var session = _gateway.GetSession(commandRequest.SessionId);
+        var credentialCheckpoint = activeRun.EventHistory.SetCheckpoint(
+            activeRun.EventHistory.ToSnapshot().ToolCallCount,
+            "credential",
+            "waiting_for_input",
+            toolCall.Id,
+            toolCall.Name,
+            detail: $"Waiting for {pending.Kind} input from the user.");
+        PersistCheckpoint(activeRun);
+        PublishRunPhase(
+            activeRun,
+            "credential",
+            AgentRunStates.WaitingForInput,
+            $"Waiting for {GetPublicCredentialKind(pending.Kind)} input from the user.",
+            requiresUserAction: true,
+            pauseReason: $"Waiting for {GetPublicCredentialKind(pending.Kind)} input from the user.");
+        Publish(
+            activeRun,
+            new AgentRuntimeStreamEvent(
+                "credential_required",
+                ToolCallId: toolCall.Id,
+                ToolName: toolCall.Name,
+                CredentialRequestId: credentialRequestId,
+                CredentialKind: pending.Kind,
+                CredentialPrompt: pending.Prompt,
+                Message: $"The remote command requires {pending.Kind} input.",
+                Status: "pending_credential",
+                Phase: "credential",
+                PauseReason: $"Waiting for {pending.Kind} input from the user.",
+                RequiresUserAction: true,
+                Attempt: attempt,
+                MaxAttempts: MaximumCredentialAttempts,
+                TimeoutMs: (int)Math.Min(
+                    AgentSessionGateway.MaximumCommandTimeout.TotalMilliseconds,
+                    commandRequest.Timeout.TotalMilliseconds),
+                SessionName: session?.Name,
+                Checkpoint: credentialCheckpoint)
+            {
+                CredentialKind = GetPublicCredentialKind(pending.Kind),
+                CredentialPurpose = GetCredentialPurpose(pending.Kind),
+                CredentialInputType = GetCredentialInputType(pending.Kind),
+                CredentialMasked = IsCredentialMasked(pending.Kind),
+                CredentialCanRemember = true,
+                ExpiresAtUtc = pending.CreatedAtUtc + CredentialRequestLifetime,
+                SessionHost = session?.Host
+            });
+
+        try
+        {
+            AgentCredentialValue? credential;
+            try
+            {
+                credential = await pending.Response.Task
+                    .WaitAsync(CredentialRequestLifetime, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                return new(null, false, "Credential input expired before it was submitted.");
+            }
+
+            return credential == null
+                ? new(null, false, "Credential input was cancelled.")
+                : new(credential.Value, credential.RememberForRun, null);
+        }
+        finally
+        {
+            activeRun.PendingCredentials.TryRemove(credentialRequestId, out _);
+        }
+    }
+
+    private async Task<AgentToolExecutionResult> ExecuteWebSearchAsync(
+        AgentToolCall toolCall,
+        CancellationToken cancellationToken)
+    {
+        if (!TryReadStringToolArgument(toolCall.Arguments, "query", 500, out var query, out var error))
+            return new(false, error!);
+
+        var result = await _webAccess.SearchAsync(query, cancellationToken).ConfigureAwait(false);
+        return new(
+            result.Success,
+            JsonSerializer.Serialize(new
+            {
+                tool = "web_search",
+                success = result.Success,
+                query,
+                url = result.Url,
+                content = result.Success ? result.Content : null,
+                error = result.Error
+            }));
+    }
+
+    private async Task<AgentToolExecutionResult> ExecuteWebFetchAsync(
+        AgentToolCall toolCall,
+        CancellationToken cancellationToken)
+    {
+        if (!TryReadStringToolArgument(toolCall.Arguments, "url", 2048, out var url, out var error))
+            return new(false, error!);
+
+        var result = await _webAccess.FetchAsync(url, cancellationToken).ConfigureAwait(false);
+        return new(
+            result.Success,
+            JsonSerializer.Serialize(new
+            {
+                tool = "web_fetch",
+                success = result.Success,
+                url = result.Url,
+                content = result.Success ? result.Content : null,
+                error = result.Error,
+                statusCode = result.StatusCode
+            }));
+    }
+
+    private static bool TryReadStringToolArgument(
+        string arguments,
+        string name,
+        int maximumLength,
+        out string value,
+        out string? error)
+    {
+        value = string.Empty;
+        error = null;
+        try
+        {
+            using var document = JsonDocument.Parse(arguments ?? "{}");
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object ||
+                !root.TryGetProperty(name, out var property) ||
+                property.ValueKind != JsonValueKind.String)
+            {
+                error = $"{name} is required and must be a non-empty string.";
+                return false;
+            }
+
+            var parsedValue = property.GetString();
+            if (string.IsNullOrWhiteSpace(parsedValue))
+            {
+                error = $"{name} is required and must be a non-empty string.";
+                return false;
+            }
+
+            value = parsedValue.Trim();
+            if (value.Length > maximumLength)
+            {
+                error = $"{name} cannot exceed {maximumLength} characters.";
+                return false;
+            }
+
+            return true;
+        }
+        catch (JsonException)
+        {
+            error = "Tool arguments must be valid JSON.";
+            return false;
+        }
+    }
+
+    private async Task<AgentToolExecutionResult> ExecuteTerminalWriteAsync(
+        ActiveRun activeRun,
+        AgentToolCall toolCall,
+        AgentRunRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryReadTerminalWriteArguments(
+                toolCall.Arguments,
+                out var input,
+                out var appendLineEnding,
+                out var error))
+        {
+            return new(false, error!);
+        }
+
+        var session = _gateway.GetSession(request.SessionId);
+        if (session == null || !session.IsConnected)
+            return new(false, "The selected SSH session is no longer connected.");
+
+        var commandRequest = new AgentCommandRequest
+        {
+            RequestId = Guid.NewGuid(),
+            SessionId = request.SessionId,
+            Command = input,
+            DisplayCommand = input,
+            Timeout = AgentSessionGateway.DefaultCommandTimeout,
+            AppendLineEnding = appendLineEnding,
+            TerminalInput = true
+        };
+        var result = await ExecuteGatewayCommandAsync(
+                activeRun,
+                toolCall,
+                commandRequest,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (result.ApprovalRequired)
+        {
+            var pending = new PendingToolApproval(toolCall.Id, result.RequestId);
+            if (!activeRun.PendingApprovals.TryAdd(toolCall.Id, pending))
+                return new(false, "This terminal input already has a pending approval request.");
+
+            Publish(
+                activeRun,
+                new AgentRuntimeStreamEvent(
+                    "tool_call_approval_required",
+                    ToolCallId: toolCall.Id,
+                    ToolName: toolCall.Name,
+                    Input: AgentSensitiveDataRedactor.Redact(NormalizeToolInput(toolCall.Arguments)),
+                    Message: "This terminal input requires explicit approval before it can be sent.",
+                    Status: "pending_approval",
+                    Phase: "execution",
+                    PauseReason: "Explicit approval is required before writing to the terminal.",
+                    RequiresUserAction: true,
+                    Risk: result.Risk.ToString(),
+                    SessionName: session.Name)
+                {
+                    SessionHost = session.Host,
+                    ExpiresAtUtc = DateTimeOffset.UtcNow + AgentSessionGateway.ApprovalLifetime
+                });
+
+            try
+            {
+                var approved = await pending.Decision.Task
+                    .WaitAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                if (!approved || string.IsNullOrWhiteSpace(pending.ApprovalToken))
+                    return new(false, "The terminal input approval was denied.");
+
+                result = await ExecuteGatewayCommandAsync(
+                        activeRun,
+                        toolCall,
+                        commandRequest with
+                        {
+                            ApprovalToken = pending.ApprovalToken,
+                            ApprovalGranted = true
+                        },
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                _gateway.TryDeny(pending.RequestId);
+                activeRun.PendingApprovals.TryRemove(toolCall.Id, out _);
+            }
+        }
+
+        return new(
+            result.IsSuccess,
+            JsonSerializer.Serialize(new
+            {
+                tool = TerminalWriteToolName,
+                sessionId = request.SessionId.ToString("D"),
+                status = result.Status.ToString(),
+                executionState = result.ExecutionState.ToString(),
+                message = result.Message,
+                inputDelivered = result.IsSuccess,
+                durationMs = result.DurationMs
+            }));
+    }
+
+    private async Task<AgentToolExecutionResult> ExecuteRunOnSessionsAsync(
+        ActiveRun activeRun,
+        AgentToolCall toolCall,
+        CancellationToken cancellationToken)
+    {
+        if (!TryReadBatchArguments(
+                toolCall.Arguments,
+                out var sessionIds,
+                out var command,
+                out var timeout,
+                out var error))
+        {
+            return new(false, error!);
+        }
+
+        var sessions = _gateway.GetSessions()
+            .Where(session => sessionIds.Contains(session.SessionId))
+            .ToDictionary(session => session.SessionId);
+        var missing = sessionIds.Where(sessionId =>
+                !sessions.TryGetValue(sessionId, out var session) ||
+                !session.IsConnected)
+            .ToArray();
+        if (missing.Length > 0)
+        {
+            return new(
+                false,
+                JsonSerializer.Serialize(new
+                {
+                    status = "rejected",
+                    message = "Every target must be a currently connected SSH session.",
+                    unavailableSessionIds = missing.Select(id => id.ToString("D"))
+                }));
+        }
+
+        var targets = sessionIds
+            .Select(sessionId => sessions[sessionId])
+            .ToArray();
+        var first = targets[0];
+        var firstRequest = new AgentCommandRequest
+        {
+            RequestId = Guid.NewGuid(),
+            SessionId = first.SessionId,
+            Command = command,
+            DisplayCommand = command,
+            Timeout = timeout,
+            AppendLineEnding = true
+        };
+        var firstResult = await ExecuteGatewayCommandAsync(
+                activeRun,
+                toolCall,
+                firstRequest,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var approvalGranted = false;
+
+        if (firstResult.ApprovalRequired)
+        {
+            var pending = new PendingToolApproval(toolCall.Id, firstResult.RequestId);
+            if (!activeRun.PendingApprovals.TryAdd(toolCall.Id, pending))
+                return new(false, "This batch command already has a pending approval request.");
+
+            Publish(
+                activeRun,
+                new AgentRuntimeStreamEvent(
+                    "tool_call_approval_required",
+                    ToolCallId: toolCall.Id,
+                    ToolName: toolCall.Name,
+                    Input: AgentSensitiveDataRedactor.Redact(NormalizeToolInput(toolCall.Arguments)),
+                    Message: $"This command will run on {targets.Length} SSH sessions and requires one approval.",
+                    Status: "pending_approval",
+                    Phase: "execution",
+                    PauseReason: "Approve the batch command once to run it on all selected sessions.",
+                    RequiresUserAction: true,
+                    Risk: firstResult.Risk.ToString(),
+                    SessionName: first.Name)
+                {
+                    SessionHost = first.Host,
+                    ExpiresAtUtc = DateTimeOffset.UtcNow + AgentSessionGateway.ApprovalLifetime
+                });
+
+            try
+            {
+                var approved = await pending.Decision.Task
+                    .WaitAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                if (!approved || string.IsNullOrWhiteSpace(pending.ApprovalToken))
+                    return new(false, "The batch command approval was denied.");
+
+                firstResult = await ExecuteGatewayCommandAsync(
+                        activeRun,
+                        toolCall,
+                        firstRequest with
+                        {
+                            ApprovalToken = pending.ApprovalToken,
+                            ApprovalGranted = true
+                        },
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                approvalGranted = true;
+            }
+            finally
+            {
+                _gateway.TryDeny(pending.RequestId);
+                activeRun.PendingApprovals.TryRemove(toolCall.Id, out _);
+            }
+        }
+
+        var results = new ConcurrentDictionary<Guid, BatchCommandExecution>();
+        using var concurrency = new SemaphoreSlim(4, 4);
+        var firstToolCall = toolCall with
+        {
+            Id = CreateBatchToolCallId(toolCall.Id, first.SessionId)
+        };
+        var firstExecutionTask = ExecuteBatchTargetWithCredentialsAsync(
+            activeRun,
+            firstToolCall,
+            firstRequest,
+            command,
+            firstResult,
+            approvalGranted,
+            concurrency,
+            cancellationToken);
+        var remainingTasks = targets.Skip(1).Select(async target =>
+        {
+            await concurrency.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                try
+                {
+                    var targetToolCall = toolCall with
+                    {
+                        Id = CreateBatchToolCallId(toolCall.Id, target.SessionId)
+                    };
+                    var targetRequest = new AgentCommandRequest
+                    {
+                        RequestId = Guid.NewGuid(),
+                        SessionId = target.SessionId,
+                        Command = command,
+                        DisplayCommand = command,
+                        Timeout = timeout,
+                        AppendLineEnding = true,
+                        ApprovalGranted = approvalGranted,
+                        ApprovedCommand = approvalGranted ? command : null
+                    };
+                    var targetInitialResult = await ExecuteGatewayCommandAsync(
+                            activeRun,
+                            targetToolCall,
+                            targetRequest,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    var execution = await ExecuteCommandWithCredentialsAsync(
+                            activeRun,
+                            targetToolCall,
+                            targetRequest,
+                            command,
+                            targetInitialResult,
+                            approvalGranted,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    results[target.SessionId] = new(
+                        execution.Error == null
+                            ? execution.Result
+                            : WithExecutionError(execution.Result, execution.Error),
+                        execution.SensitiveInputs);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    // A transport or endpoint failure is isolated to this
+                    // target so the remaining sessions can still complete.
+                    results[target.SessionId] = new(CreateBatchFailureResult(target, exception), []);
+                }
+            }
+            finally
+            {
+                concurrency.Release();
+            }
+        });
+        await Task.WhenAll(remainingTasks).ConfigureAwait(false);
+
+        var firstExecution = await firstExecutionTask.ConfigureAwait(false);
+        results[first.SessionId] = new(
+            firstExecution.Error == null
+                ? firstExecution.Result
+                : WithExecutionError(firstExecution.Result, firstExecution.Error),
+            firstExecution.SensitiveInputs);
+
+        var orderedResults = targets
+            .Select(target => new
+            {
+                sessionId = target.SessionId.ToString("D"),
+                name = target.Name,
+                host = target.Host,
+                status = results[target.SessionId].Result.Status.ToString(),
+                executionState = results[target.SessionId].Result.ExecutionState.ToString(),
+                success = results[target.SessionId].Result.IsSuccess,
+                outcomeCertain = results[target.SessionId].Result.IsOutcomeCertain,
+                remoteCompletionConfirmed = results[target.SessionId].Result.RemoteCompletionConfirmed,
+                message = AgentSensitiveDataRedactor.Redact(
+                    results[target.SessionId].Result.Message,
+                    results[target.SessionId].SensitiveInputs),
+                output = LimitToolResultOutput(AgentSensitiveDataRedactor.Redact(
+                    results[target.SessionId].Result.Output,
+                    results[target.SessionId].SensitiveInputs)),
+                error = LimitToolResultOutput(AgentSensitiveDataRedactor.Redact(
+                    results[target.SessionId].Result.Error,
+                    results[target.SessionId].SensitiveInputs)),
+                exitCode = results[target.SessionId].Result.ExitCode,
+                durationMs = results[target.SessionId].Result.DurationMs
+            })
+            .ToArray();
+        var succeeded = orderedResults.Count(item => item.success);
+        return new(
+            succeeded == orderedResults.Length,
+            JsonSerializer.Serialize(new
+            {
+                command,
+                targetCount = orderedResults.Length,
+                succeeded,
+                failed = orderedResults.Length - succeeded,
+                results = orderedResults
+            }));
+    }
+
+    private async Task<CredentialCommandExecution> ExecuteBatchTargetWithCredentialsAsync(
+        ActiveRun activeRun,
+        AgentToolCall toolCall,
+        AgentCommandRequest request,
+        string command,
+        AgentCommandResult initialResult,
+        bool approvalGranted,
+        SemaphoreSlim concurrency,
+        CancellationToken cancellationToken)
+    {
+        await concurrency.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await ExecuteCommandWithCredentialsAsync(
+                    activeRun,
+                    toolCall,
+                    request,
+                    command,
+                    initialResult,
+                    approvalGranted,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            concurrency.Release();
+        }
+    }
+
+    private static AgentCommandResult WithExecutionError(
+        AgentCommandResult result,
+        string error)
+        => result with
+        {
+            Status = AgentCommandStatus.Failed,
+            ExecutionState = AgentCommandExecutionState.Failed,
+            Message = error,
+            Error = error,
+            ErrorType = AgentCommandErrorType.Transport
+        };
+
+    private static AgentCommandResult CreateBatchFailureResult(
+        AgentSessionSnapshot session,
+        Exception exception)
+    {
+        var message = exception is AgentProviderException providerException
+            ? providerException.SafeMessage
+            : exception.Message;
+        return new AgentCommandResult
+        {
+            RequestId = Guid.NewGuid(),
+            SessionId = session.SessionId,
+            Status = AgentCommandStatus.Failed,
+            ExecutionState = AgentCommandExecutionState.Failed,
+            Risk = AgentCommandRisk.ReadOnly,
+            Message = string.IsNullOrWhiteSpace(message)
+                ? "The command failed before a result was returned."
+                : message,
+            StartedAtUtc = DateTimeOffset.UtcNow,
+            CompletedAtUtc = DateTimeOffset.UtcNow,
+            Error = message,
+            ErrorType = AgentCommandErrorType.Transport
+        };
+    }
+
+    private static string CreateBatchToolCallId(string toolCallId, Guid sessionId)
+    {
+        var suffix = $":{sessionId:N}";
+        if (toolCallId.Length + suffix.Length <= MaximumToolCallIdCharacters)
+            return toolCallId + suffix;
+
+        var prefixLength = Math.Max(1, MaximumToolCallIdCharacters - suffix.Length);
+        return toolCallId[..prefixLength] + suffix;
+    }
+
+    private static bool IsMutationTool(string toolName)
+        => toolName is SessionCommandToolName or
+            TerminalWriteToolName or
+            RunOnSessionsToolName or
+            OpenSessionToolName or
+            CloseSessionToolName;
+
+    private static bool TryReadTerminalWriteArguments(
+        string arguments,
+        out string input,
+        out bool appendLineEnding,
+        out string? error)
+    {
+        input = string.Empty;
+        appendLineEnding = false;
+        error = null;
+        try
+        {
+            using var document = JsonDocument.Parse(arguments ?? "{}");
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object ||
+                !root.TryGetProperty("input", out var inputElement) ||
+                inputElement.ValueKind != JsonValueKind.String)
+            {
+                error = "terminal_write requires a non-empty input.";
+                return false;
+            }
+
+            var parsedInput = inputElement.GetString();
+            if (string.IsNullOrEmpty(parsedInput))
+            {
+                error = "terminal_write requires a non-empty input.";
+                return false;
+            }
+
+            input = parsedInput;
+
+            if (input.Length > AgentSessionGateway.MaximumCommandLength)
+            {
+                error = $"Terminal input cannot exceed {AgentSessionGateway.MaximumCommandLength} characters.";
+                return false;
+            }
+
+            if (root.TryGetProperty("appendLineEnding", out var lineEnding) &&
+                (lineEnding.ValueKind is JsonValueKind.True or JsonValueKind.False))
+            {
+                appendLineEnding = lineEnding.GetBoolean();
+            }
+
+            return true;
+        }
+        catch (JsonException)
+        {
+            error = "terminal_write arguments must be valid JSON.";
+            return false;
+        }
+    }
+
+    private static bool TryReadBatchArguments(
+        string arguments,
+        out IReadOnlyList<Guid> sessionIds,
+        out string command,
+        out TimeSpan timeout,
+        out string? error)
+    {
+        sessionIds = [];
+        command = string.Empty;
+        timeout = AgentSessionGateway.DefaultCommandTimeout;
+        error = null;
+        try
+        {
+            using var document = JsonDocument.Parse(arguments ?? "{}");
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object ||
+                !root.TryGetProperty("sessionIds", out var ids) ||
+                ids.ValueKind != JsonValueKind.Array ||
+                ids.GetArrayLength() is < 1 or > 16)
+            {
+                error = "run_on_sessions requires between 1 and 16 sessionIds.";
+                return false;
+            }
+
+            var parsedIds = new List<Guid>();
+            foreach (var id in ids.EnumerateArray())
+            {
+                var parsed = Guid.Empty;
+                if (id.ValueKind != JsonValueKind.String ||
+                    !Guid.TryParse(id.GetString(), out parsed) ||
+                    parsed == Guid.Empty ||
+                    !parsedIds.Contains(parsed))
+                {
+                    if (parsedIds.Contains(parsed))
+                        continue;
+                    error = "run_on_sessions sessionIds must be unique UUIDs.";
+                    return false;
+                }
+
+                parsedIds.Add(parsed);
+            }
+
+            if (!root.TryGetProperty("command", out var commandElement) ||
+                commandElement.ValueKind != JsonValueKind.String)
+            {
+                error = "run_on_sessions requires a non-empty command.";
+                return false;
+            }
+
+            var parsedCommand = commandElement.GetString();
+            if (string.IsNullOrWhiteSpace(parsedCommand))
+            {
+                error = "run_on_sessions requires a non-empty command.";
+                return false;
+            }
+
+            command = parsedCommand;
+            if (command.Length > AgentSessionGateway.MaximumCommandLength)
+            {
+                error = $"Command length cannot exceed {AgentSessionGateway.MaximumCommandLength} characters.";
+                return false;
+            }
+
+            var timeoutMs = root.TryGetProperty("timeoutMs", out var timeoutElement) &&
+                            timeoutElement.TryGetInt32(out var parsedTimeout)
+                ? parsedTimeout
+                : (int)AgentSessionGateway.DefaultCommandTimeout.TotalMilliseconds;
+            if (timeoutMs < 100 || timeoutMs > (int)AgentSessionGateway.MaximumCommandTimeout.TotalMilliseconds)
+            {
+                error = "timeoutMs is outside the supported command timeout range.";
+                return false;
+            }
+
+            sessionIds = parsedIds;
+            timeout = AgentCommandTimeoutPolicy.Resolve(
+                command,
+                TimeSpan.FromMilliseconds(timeoutMs),
+                hasExplicitTimeout: root.TryGetProperty("timeoutMs", out _));
+            return true;
+        }
+        catch (JsonException)
+        {
+            error = "run_on_sessions arguments must be valid JSON.";
+            return false;
+        }
     }
 
     private async Task<AgentToolExecutionResult> ExecuteOpenSessionAsync(
@@ -1924,6 +2851,12 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
                     new AgentSessionOpenRequest(savedSessionId, reason, reuseConnected),
                     cancellationToken)
                 .ConfigureAwait(false);
+            if (result.Opened &&
+                result.Session is { IsConnected: true } openedSession &&
+                activeRun.SessionId == Guid.Empty)
+            {
+                TrySwitchActiveRunSession(activeRun, openedSession.SessionId);
+            }
             return new(
                 result.Opened,
                 JsonSerializer.Serialize(new
@@ -1940,6 +2873,30 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
         finally
         {
             activeRun.PendingApprovals.TryRemove(toolCall.Id, out _);
+        }
+    }
+
+    private void TrySwitchActiveRunSession(ActiveRun activeRun, Guid sessionId)
+    {
+        if (sessionId == Guid.Empty || activeRun.SessionId != Guid.Empty)
+            return;
+
+        if (!_activeSessionRuns.TryAdd(sessionId, activeRun.RunId))
+            return;
+
+        var previousSessionId = activeRun.SwitchSession(sessionId);
+        _activeSessionRuns.TryRemove(
+            new KeyValuePair<Guid, string>(previousSessionId, activeRun.RunId));
+
+        if (_recoverableRuns.TryGetValue(activeRun.RunId, out var recovery))
+        {
+            var snapshot = activeRun.EventHistory.ToSnapshot();
+            _recoverableRuns[activeRun.RunId] = recovery with
+            {
+                Snapshot = snapshot,
+                Checkpoint = snapshot.Checkpoint
+            };
+            PersistRecoverableRuns();
         }
     }
 
@@ -3215,7 +4172,8 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
             Guid sessionId,
             string provider,
             string model,
-            string? promptPreview)
+            string? promptPreview,
+            AgentChatMode mode = AgentChatMode.Agent)
         {
             RunId = runId;
             SessionId = sessionId;
@@ -3228,10 +4186,12 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
                 model,
                 promptPreview,
                 canResume: true);
+            Mode = mode;
         }
 
         public string RunId { get; }
-        public Guid SessionId { get; }
+        public Guid SessionId { get; private set; }
+        public AgentChatMode Mode { get; }
         public DateTimeOffset StartedAtUtc { get; }
         public CancellationTokenSource Cancellation { get; } = new();
         public TaskCompletionSource<object?> Completion { get; } =
@@ -3242,8 +4202,20 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
         public ConcurrentDictionary<string, PendingCredential> PendingCredentials { get; } = new(StringComparer.Ordinal);
         public object EventPublishGate { get; } = new();
 
+        public Guid SwitchSession(Guid sessionId)
+        {
+            if (sessionId == Guid.Empty)
+                throw new ArgumentException("A valid runtime session id is required.", nameof(sessionId));
+
+            var previousSessionId = SessionId;
+            SessionId = sessionId;
+            EventHistory.SwitchSession(sessionId);
+            return previousSessionId;
+        }
+
         private readonly object _credentialGate = new();
         private readonly Dictionary<string, string> _rememberedCredentials = new(StringComparer.OrdinalIgnoreCase);
+        public SemaphoreSlim CredentialInputGate { get; } = new(1, 1);
         private readonly object _pendingMessagesGate = new();
         private readonly Queue<AgentChatMessage> _pendingMessages = new();
         private readonly StringBuilder _pendingTextDelta = new();
@@ -3258,22 +4230,24 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
         public bool StopRequested => Volatile.Read(ref _stopRequested) != 0;
         public bool IsInterrupted => Volatile.Read(ref _interrupted) != 0;
 
-        public bool TryGetCredential(string kind, out string value)
+        public bool TryGetCredential(Guid sessionId, string kind, out string value)
         {
             lock (_credentialGate)
-                return _rememberedCredentials.TryGetValue(kind, out value!);
+                return _rememberedCredentials.TryGetValue(
+                    CredentialKey(sessionId, kind),
+                    out value!);
         }
 
-        public void RememberCredential(string kind, string value)
+        public void RememberCredential(Guid sessionId, string kind, string value)
         {
             lock (_credentialGate)
-                _rememberedCredentials[kind] = value;
+                _rememberedCredentials[CredentialKey(sessionId, kind)] = value;
         }
 
-        public void RemoveCredential(string kind)
+        public void RemoveCredential(Guid sessionId, string kind)
         {
             lock (_credentialGate)
-                _rememberedCredentials.Remove(kind);
+                _rememberedCredentials.Remove(CredentialKey(sessionId, kind));
         }
 
         public void ClearCredentials()
@@ -3281,6 +4255,9 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
             lock (_credentialGate)
                 _rememberedCredentials.Clear();
         }
+
+        private static string CredentialKey(Guid sessionId, string kind)
+            => $"{sessionId:D}:{kind}";
 
         public void MarkInterrupted()
             => Volatile.Write(ref _interrupted, 1);
@@ -3446,6 +4423,11 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
         private string? _errorType;
         private int _toolCallCount;
         private int _modelRequestCount;
+        private int _providerRequestCount;
+        private int _providerRetryCount;
+        private int _contextSummaryCount;
+        private AgentChatMode _mode;
+        private string _sessionId;
         private long? _durationMs;
         private DateTimeOffset? _lastEventAtUtc;
         private AgentRunCheckpoint? _checkpoint;
@@ -3462,27 +4444,33 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
             string? provider = null,
             string? model = null,
             string? promptPreview = null,
-            bool canResume = false)
+            bool canResume = false,
+            AgentChatMode mode = AgentChatMode.Agent)
         {
             RunId = runId;
-            SessionId = sessionId.ToString("D");
+            _sessionId = sessionId.ToString("D");
             StartedAtUtc = startedAtUtc;
             _provider = provider;
             _model = model;
             _promptPreview = promptPreview;
             _canResume = canResume;
+            _mode = mode;
         }
 
         public static RunEventHistory FromSnapshot(AgentRuntimeRunSnapshot snapshot)
         {
+            var sessionId = Guid.TryParse(snapshot.SessionId, out var parsedSessionId)
+                ? parsedSessionId
+                : Guid.Empty;
             var history = new RunEventHistory(
                 snapshot.RunId,
-                Guid.Parse(snapshot.SessionId),
+                sessionId,
                 snapshot.StartedAtUtc,
                 snapshot.Provider,
                 snapshot.Model,
                 snapshot.PromptPreview,
-                snapshot.CanResume)
+                snapshot.CanResume,
+                snapshot.Mode)
             {
                 _completed = 1,
                 _status = snapshot.Status,
@@ -3493,6 +4481,9 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
                 _errorType = snapshot.ErrorType,
                 _toolCallCount = snapshot.ToolCallCount,
                 _modelRequestCount = snapshot.ModelRequestCount,
+                _providerRequestCount = snapshot.ProviderRequestCount,
+                _providerRetryCount = snapshot.ProviderRetryCount,
+                _contextSummaryCount = snapshot.ContextSummaryCount,
                 _durationMs = snapshot.DurationMs,
                 _lastEventAtUtc = snapshot.LastEventAtUtc,
                 _checkpoint = snapshot.Checkpoint,
@@ -3505,9 +4496,30 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
         }
 
         public string RunId { get; }
-        public string SessionId { get; }
+        public string SessionId
+        {
+            get
+            {
+                lock (_gate)
+                    return _sessionId;
+            }
+        }
         public DateTimeOffset StartedAtUtc { get; }
         public bool IsCompleted => Volatile.Read(ref _completed) != 0;
+
+        public void SwitchSession(Guid sessionId)
+        {
+            if (sessionId == Guid.Empty)
+                throw new ArgumentException("A valid runtime session id is required.", nameof(sessionId));
+
+            lock (_gate)
+            {
+                if (_sessionId != Guid.Empty.ToString("D"))
+                    return;
+
+                _sessionId = sessionId.ToString("D");
+            }
+        }
 
         public AgentRunStep SetStep(
             string id,
@@ -3603,6 +4615,29 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
             }
         }
 
+        public void RecordProviderRequest(bool isRetry, bool isContextSummary)
+        {
+            lock (_gate)
+            {
+                _providerRequestCount++;
+                if (isRetry)
+                    _providerRetryCount++;
+                if (isContextSummary)
+                    _contextSummaryCount++;
+                _lastEventAtUtc = DateTimeOffset.UtcNow;
+                if (_checkpoint != null)
+                {
+                    _checkpoint = _checkpoint with
+                    {
+                        ProviderRequestCount = _providerRequestCount,
+                        ProviderRetryCount = _providerRetryCount,
+                        ContextSummaryCount = _contextSummaryCount,
+                        UpdatedAtUtc = _lastEventAtUtc.Value
+                    };
+                }
+            }
+        }
+
         public AgentRunCheckpoint SetCheckpoint(
             int step,
             string phase,
@@ -3635,7 +4670,10 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
                     ToolExecutionState = toolExecutionState ?? _checkpoint?.ToolExecutionState,
                     ToolOutcomeCertain = toolOutcomeCertain ?? _checkpoint?.ToolOutcomeCertain ?? false,
                     ToolRemoteCompletionConfirmed = toolRemoteCompletionConfirmed ?? _checkpoint?.ToolRemoteCompletionConfirmed ?? false,
-                    ToolRetrySafe = toolRetrySafe ?? _checkpoint?.ToolRetrySafe ?? false
+                    ToolRetrySafe = toolRetrySafe ?? _checkpoint?.ToolRetrySafe ?? false,
+                    ProviderRequestCount = _providerRequestCount,
+                    ProviderRetryCount = _providerRetryCount,
+                    ContextSummaryCount = _contextSummaryCount
                 };
                 _phase = string.IsNullOrWhiteSpace(phase) ? "run" : phase;
                 if (status is AgentRunStates.WaitingForInput or AgentRunStates.PendingApproval)
@@ -3753,7 +4791,10 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
                 {
                     Status = _status,
                     ModelRequestCount = _modelRequestCount,
-                    ToolCallCount = _toolCallCount
+                    ToolCallCount = _toolCallCount,
+                    ProviderRequestCount = _providerRequestCount,
+                    ProviderRetryCount = _providerRetryCount,
+                    ContextSummaryCount = _contextSummaryCount
                 };
             }
 
@@ -3781,6 +4822,9 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
                     Status = "interrupted",
                     ModelRequestCount = _modelRequestCount,
                     ToolCallCount = _toolCallCount,
+                    ProviderRequestCount = _providerRequestCount,
+                    ProviderRetryCount = _providerRetryCount,
+                    ContextSummaryCount = _contextSummaryCount,
                     Detail = _checkpoint?.Detail ?? "The application closed before the Agent run completed."
                 };
             }
@@ -3819,8 +4863,12 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
                     Checkpoint: _checkpoint,
                     Phase: _phase,
                     PauseReason: _pauseReason,
-                    RequiresUserAction: _requiresUserAction)
+                    RequiresUserAction: _requiresUserAction,
+                    ProviderRequestCount: _providerRequestCount,
+                    ProviderRetryCount: _providerRetryCount,
+                    ContextSummaryCount: _contextSummaryCount)
                 {
+                    Mode = _mode,
                     Steps = _snapshotSteps ??= _steps.ToArray()
                 };
             }
@@ -3881,11 +4929,13 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
         public PendingCredential(
             string requestId,
             string toolCallId,
+            Guid sessionId,
             string kind,
             string prompt)
         {
             RequestId = requestId;
             ToolCallId = toolCallId;
+            SessionId = sessionId;
             Kind = kind;
             Prompt = prompt;
             CreatedAtUtc = DateTimeOffset.UtcNow;
@@ -3893,6 +4943,7 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
 
         public string RequestId { get; }
         public string ToolCallId { get; }
+        public Guid SessionId { get; }
         public string Kind { get; }
         public string Prompt { get; }
         public DateTimeOffset CreatedAtUtc { get; }
@@ -3909,6 +4960,20 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
     }
 
     private sealed record AgentCredentialValue(string Value, bool RememberForRun);
+
+    private sealed record CredentialInputResult(
+        string? Value,
+        bool RememberForRun,
+        string? Error);
+
+    private sealed record CredentialCommandExecution(
+        AgentCommandResult Result,
+        IReadOnlyList<string> SensitiveInputs,
+        string? Error = null);
+
+    private sealed record BatchCommandExecution(
+        AgentCommandResult Result,
+        IReadOnlyList<string> SensitiveInputs);
 
     private sealed record ToolCheckpointMetadata(
         string ExecutionState,

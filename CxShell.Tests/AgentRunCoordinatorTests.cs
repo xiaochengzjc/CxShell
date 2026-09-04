@@ -56,7 +56,53 @@ public sealed class AgentRunCoordinatorTests
         Assert.Equal("completed", summary.EndReason);
         Assert.NotNull(summary.CompletedAtUtc);
         Assert.Equal(7L, summary.EventCount);
+        Assert.Equal(1, summary.ModelRequestCount);
+        Assert.Equal(1, summary.ProviderRequestCount);
+        Assert.Equal(0, summary.ProviderRetryCount);
+        Assert.Equal(0, summary.ContextSummaryCount);
         Assert.Equal(summary, coordinator.GetRun(start.RunId));
+    }
+
+    [Fact]
+    public async Task ProviderRetryCountsPhysicalRequestsWithoutIncreasingLogicalModelRequests()
+    {
+        var snapshot = CreateSnapshot(isConnected: true);
+        using var gateway = CreateGateway(snapshot);
+        var provider = CreateProvider();
+        var attempts = 0;
+        using var coordinator = new AgentRunCoordinator(
+            gateway,
+            () => provider,
+            new StubAgentModelClient((_, _, _) =>
+            {
+                if (Interlocked.Increment(ref attempts) == 1)
+                    throw AgentProviderException.Network(new IOException("temporary provider failure"));
+
+                return Task.FromResult(new AgentModelResponse(
+                    "recovered",
+                    provider.Model,
+                    provider.BuiltinId));
+            }));
+        var completed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var subscription = coordinator.Subscribe(envelope =>
+        {
+            if (envelope.Events.Any(@event => @event.Type == "loop_end"))
+                completed.TrySetResult(true);
+        });
+
+        var start = coordinator.Start(CreateRequest(snapshot, "provider-retry-counts"));
+        Assert.True(start.Started);
+        await completed.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+        var summary = Assert.Single(coordinator.GetRecentRuns());
+        Assert.Equal(2, attempts);
+        Assert.Equal(1, summary.ModelRequestCount);
+        Assert.Equal(2, summary.ProviderRequestCount);
+        Assert.Equal(1, summary.ProviderRetryCount);
+        Assert.Equal("completed", summary.Status);
+        Assert.Equal("completed", summary.EndReason);
+        Assert.Equal(2, summary.Checkpoint?.ProviderRequestCount);
+        Assert.Equal(1, summary.Checkpoint?.ProviderRetryCount);
     }
 
     [Fact]
@@ -512,6 +558,62 @@ public sealed class AgentRunCoordinatorTests
         Assert.Equal(2, callCount);
         Assert.Contains("Linux agent-host 6.8", toolResult, StringComparison.Ordinal);
         Assert.Contains("Sent", toolResult, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ChatModeRejectsUnexpectedProviderToolCalls()
+    {
+        var snapshot = CreateSnapshot(isConnected: true);
+        using var gateway = CreateGateway(snapshot);
+        var provider = CreateProvider();
+        var modelCalls = 0;
+        string? toolResult = null;
+        using var coordinator = new AgentRunCoordinator(
+            gateway,
+            () => provider,
+            new StubAgentModelClient((_, request, _) =>
+            {
+                if (Interlocked.Increment(ref modelCalls) == 1)
+                {
+                    return Task.FromResult(new AgentModelResponse(
+                        string.Empty,
+                        provider.Model,
+                        provider.BuiltinId,
+                        ToolCalls:
+                        [
+                            new AgentToolCall(
+                                "unexpected-chat-tool",
+                                AgentRunCoordinator.SessionInfoToolName,
+                                "{}")
+                        ]));
+                }
+
+                toolResult = request.Messages.Last().Content;
+                return Task.FromResult(new AgentModelResponse(
+                    "Chat mode answer.",
+                    provider.Model,
+                    provider.BuiltinId));
+            }));
+        var completed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var subscription = coordinator.Subscribe(envelope =>
+        {
+            if (envelope.Events.Any(@event => @event.Type == "loop_end"))
+                completed.TrySetResult(true);
+        });
+
+        var start = coordinator.Start(new AgentRunRequest
+        {
+            RunId = "chat-tool-guard",
+            SessionId = snapshot.SessionId,
+            Messages = [new AgentChatMessage("user", "just chat")],
+            Mode = AgentChatMode.Chat
+        });
+
+        Assert.True(start.Started);
+        await completed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(2, modelCalls);
+        Assert.Contains("disabled in Chat mode", toolResult, StringComparison.Ordinal);
+        Assert.Equal("completed", coordinator.GetRun(start.RunId)?.Status);
     }
 
     [Fact]
@@ -1147,6 +1249,114 @@ public sealed class AgentRunCoordinatorTests
         var summary = Assert.Single(coordinator.GetRecentRuns());
         Assert.Equal("completed", summary.Status);
         Assert.Equal("completed", summary.EndReason);
+    }
+
+    [Fact]
+    public async Task AgentCanOpenSavedSessionBeforeExecutingCommandWhenRunStartsWithoutSession()
+    {
+        var savedSession = new AgentSavedSessionSnapshot
+        {
+            SavedSessionId = Guid.NewGuid(),
+            Name = "Saved SSH",
+            Path = "Operations/Saved SSH",
+            Protocol = SessionProtocol.SSH,
+            Host = "saved.example",
+            Port = 22,
+            Username = "operator"
+        };
+        var openedSnapshot = CreateSnapshot(isConnected: true);
+        var endpoints = new List<IAgentSessionEndpoint>();
+        var executedCommand = string.Empty;
+        using var gateway = new AgentSessionGateway(
+            new DelegateAgentSessionHost(
+                () => endpoints,
+                _ => Task.FromResult<IReadOnlyList<AgentSavedSessionSnapshot>>([savedSession]),
+                (_, _) =>
+                {
+                    endpoints.Add(new AgentSessionEndpoint(
+                        () => openedSnapshot,
+                        (_, _) => Task.CompletedTask,
+                        (request, _) =>
+                        {
+                            executedCommand = request.Command;
+                            return Task.FromResult("command output");
+                        }));
+                    return Task.FromResult(new AgentSessionOpenResult(
+                        AgentSessionOpenStatus.Opened,
+                        openedSnapshot,
+                        AgentOwned: true));
+                },
+                (_, _) => Task.FromResult(new AgentSessionCloseResult(AgentSessionCloseStatus.Closed))));
+        var provider = CreateProvider();
+        var modelCalls = 0;
+        var approvalNeeded = new TaskCompletionSource<(string RunId, string ToolCallId)>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var completed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var coordinator = new AgentRunCoordinator(
+            gateway,
+            () => provider,
+            new StubAgentModelClient((_, _, _) =>
+            {
+                switch (Interlocked.Increment(ref modelCalls))
+                {
+                    case 1:
+                        return Task.FromResult(new AgentModelResponse(
+                            string.Empty,
+                            provider.Model,
+                            provider.BuiltinId,
+                            ToolCalls:
+                            [
+                                new AgentToolCall(
+                                    "open-saved-session",
+                                    AgentRunCoordinator.OpenSessionToolName,
+                                    $"{{\"savedSessionId\":\"{savedSession.SavedSessionId:D}\",\"reason\":\"inspect the saved host\"}}")
+                            ]));
+                    case 2:
+                        return Task.FromResult(new AgentModelResponse(
+                            string.Empty,
+                            provider.Model,
+                            provider.BuiltinId,
+                            ToolCalls:
+                            [
+                                new AgentToolCall(
+                                    "run-command-after-open",
+                                    AgentRunCoordinator.SessionCommandToolName,
+                                    "{\"command\":\"printf ready\"}")
+                            ]));
+                    default:
+                        return Task.FromResult(new AgentModelResponse(
+                            "The saved SSH session is ready.",
+                            provider.Model,
+                            provider.BuiltinId));
+                }
+            }));
+        using var subscription = coordinator.Subscribe(envelope =>
+        {
+            var approval = envelope.Events.FirstOrDefault(@event =>
+                @event.Type == "tool_call_approval_required");
+            if (approval != null)
+                approvalNeeded.TrySetResult((envelope.RunId, approval.ToolCallId!));
+            if (envelope.Events.Any(@event => @event.Type == "loop_end"))
+                completed.TrySetResult(true);
+        });
+
+        var start = coordinator.Start(new AgentRunRequest
+        {
+            RunId = "sessionless-open",
+            SessionId = Guid.Empty,
+            Messages = [new AgentChatMessage("user", "open the saved SSH session and run a check")],
+            Mode = AgentChatMode.Agent
+        });
+
+        Assert.True(start.Started);
+        var pendingApproval = await approvalNeeded.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.True(coordinator.Approve(pendingApproval.RunId, pendingApproval.ToolCallId).Approved);
+        await completed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal("printf ready", executedCommand);
+        Assert.Equal(3, modelCalls);
+        Assert.Equal(openedSnapshot.SessionId.ToString("D"), coordinator.GetRun(start.RunId)?.SessionId);
+        Assert.Equal("completed", coordinator.GetRun(start.RunId)?.Status);
     }
 
     [Fact]

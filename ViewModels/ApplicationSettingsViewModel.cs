@@ -75,13 +75,24 @@ public partial class ApplicationSettingsViewModel : ObservableObject
     [ObservableProperty] private string _agentProviderName;
     [ObservableProperty] private string _agentBaseUrl;
     [ObservableProperty] private string _agentModel;
+    [ObservableProperty] private ISelectOption? _agentModelOption;
     [ObservableProperty] private string _agentApiKey;
     [ObservableProperty] private int _agentRequestTimeoutSeconds;
+    [ObservableProperty] private bool _agentWebEnabled;
+    [ObservableProperty] private string _agentSearxngBaseUrl;
+    [ObservableProperty] private bool _agentAllowPrivateNetwork;
+    [ObservableProperty] private string _agentAllowedPrivateHosts;
+    [ObservableProperty] private int _agentWebMaxResults;
+    [ObservableProperty] private int _agentWebMaxFetchCharacters;
     [ObservableProperty] private string _agentStatusText = string.Empty;
     [ObservableProperty] private bool _agentIsReady;
+    [ObservableProperty] private string _agentModelCatalogStatus = string.Empty;
+
+    private readonly AgentModelCatalogClient _agentModelCatalogClient = new();
 
     public ObservableCollection<KnownSshHostKeyItemViewModel> KnownHosts { get; } = new();
     public ObservableCollection<ISelectOption> AgentPermissionModeOptions { get; } = new();
+    public ObservableCollection<ISelectOption> AgentModelOptions { get; } = new();
 
     public string TitleText => Text("ApplicationSettings.Title");
     public string GeneralText => Text("ApplicationSettings.General");
@@ -142,6 +153,15 @@ public partial class ApplicationSettingsViewModel : ObservableObject
     public string AgentRoutinRegistrationUrlText => "https://routin.ai/register?planInviteCode=PE32VR2X";
     public string AgentOpenRoutinRegistrationText => Text("ApplicationSettings.AgentOpenRoutinRegistration");
     public string AgentRequestTimeoutText => Text("ApplicationSettings.AgentRequestTimeout");
+    public string AgentRefreshModelsText => Text("ApplicationSettings.AgentRefreshModels");
+    public string AgentModelCatalogStatusText => AgentModelCatalogStatus;
+    public string AgentWebText => Text("ApplicationSettings.AgentWeb");
+    public string AgentWebEnabledText => Text("ApplicationSettings.AgentWebEnabled");
+    public string AgentSearxngBaseUrlText => Text("ApplicationSettings.AgentSearxngBaseUrl");
+    public string AgentAllowPrivateNetworkText => Text("ApplicationSettings.AgentAllowPrivateNetwork");
+    public string AgentAllowedPrivateHostsText => Text("ApplicationSettings.AgentAllowedPrivateHosts");
+    public string AgentWebMaxResultsText => Text("ApplicationSettings.AgentWebMaxResults");
+    public string AgentWebMaxFetchCharactersText => Text("ApplicationSettings.AgentWebMaxFetchCharacters");
     public string AgentSecondsText => Text("ApplicationSettings.Seconds");
     public string AgentReadyText => Text("ApplicationSettings.AgentReady");
     public string AgentUseRoutinPresetText => Text("ApplicationSettings.AgentUseRoutinPreset");
@@ -230,9 +250,20 @@ public partial class ApplicationSettingsViewModel : ObservableObject
         _agentBlockedCommandPrefixes = settings.AgentBlockedCommandPrefixes ?? string.Empty;
         _agentProviderName = agentProvider.Name ?? string.Empty;
         _agentBaseUrl = agentProvider.BaseUrl ?? string.Empty;
-        _agentModel = agentProvider.Model ?? string.Empty;
+        _agentModel = AgentProviderConfiguration.GetEffectiveModelId(agentProvider);
         _agentApiKey = AgentProviderConfiguration.GetApiKey(agentProvider);
         _agentRequestTimeoutSeconds = agentProvider.RequestTimeoutSeconds;
+        RebuildAgentModelOptions();
+        _agentModelOption = AgentModelOptions.FirstOrDefault(option =>
+            string.Equals(option.Content?.ToString(), _agentModel, StringComparison.OrdinalIgnoreCase));
+        var web = settings.AgentWeb ??= new AgentWebSettings();
+        web.Normalize();
+        _agentWebEnabled = web.Enabled;
+        _agentSearxngBaseUrl = web.SearxngBaseUrl;
+        _agentAllowPrivateNetwork = web.AllowPrivateNetwork;
+        _agentAllowedPrivateHosts = web.AllowedPrivateHosts;
+        _agentWebMaxResults = web.MaxResults;
+        _agentWebMaxFetchCharacters = web.MaxFetchCharacters;
         _hostKeyTrust.Configure(settings);
         ReloadKnownHosts();
         RefreshAgentProviderStatus();
@@ -435,8 +466,21 @@ public partial class ApplicationSettingsViewModel : ObservableObject
 
     partial void OnAgentModelChanged(string value)
     {
-        EnsureAgentProvider().Model = value.Trim();
+        var provider = EnsureAgentProvider();
+        provider.Model = value?.Trim() ?? string.Empty;
+        var active = AgentProviderConfiguration.EnsureActiveModel(provider);
+        active.ModelId = provider.Model;
+        if (string.IsNullOrWhiteSpace(active.Name))
+            active.Name = provider.Model;
+        RebuildAgentModelOptions();
         PersistAgentProvider();
+    }
+
+    partial void OnAgentModelOptionChanged(ISelectOption? value)
+    {
+        var model = value?.Content?.ToString();
+        if (!string.IsNullOrWhiteSpace(model) && !string.Equals(model, AgentModel, StringComparison.Ordinal))
+            AgentModel = model;
     }
 
     partial void OnAgentApiKeyChanged(string value)
@@ -455,6 +499,81 @@ public partial class ApplicationSettingsViewModel : ObservableObject
         }
 
         EnsureAgentProvider().RequestTimeoutSeconds = normalized;
+        PersistAgentProvider();
+    }
+
+    partial void OnAgentWebEnabledChanged(bool value)
+    {
+        EnsureWebSettings().Enabled = value;
+        Persist();
+    }
+
+    partial void OnAgentSearxngBaseUrlChanged(string value)
+    {
+        EnsureWebSettings().SearxngBaseUrl = value?.Trim() ?? string.Empty;
+        Persist();
+    }
+
+    partial void OnAgentAllowPrivateNetworkChanged(bool value)
+    {
+        EnsureWebSettings().AllowPrivateNetwork = value;
+        Persist();
+    }
+
+    partial void OnAgentAllowedPrivateHostsChanged(string value)
+    {
+        EnsureWebSettings().AllowedPrivateHosts = value ?? string.Empty;
+        Persist();
+    }
+
+    partial void OnAgentWebMaxResultsChanged(int value)
+    {
+        var normalized = Math.Clamp(value, 1, 20);
+        if (value != normalized)
+        {
+            AgentWebMaxResults = normalized;
+            return;
+        }
+
+        EnsureWebSettings().MaxResults = normalized;
+        Persist();
+    }
+
+    partial void OnAgentWebMaxFetchCharactersChanged(int value)
+    {
+        var normalized = Math.Clamp(value, 2_000, 400_000);
+        if (value != normalized)
+        {
+            AgentWebMaxFetchCharacters = normalized;
+            return;
+        }
+
+        EnsureWebSettings().MaxFetchCharacters = normalized;
+        Persist();
+    }
+
+    [RelayCommand]
+    private async Task RefreshAgentModels()
+    {
+        var provider = EnsureAgentProvider();
+        AgentModelCatalogStatus = Text("ApplicationSettings.AgentModelCatalogLoading");
+        OnPropertyChanged(nameof(AgentModelCatalogStatusText));
+        // Keep the continuation on Avalonia's UI context because the command
+        // updates bound collections and status properties below.
+        var result = await _agentModelCatalogClient.FetchAsync(provider);
+        if (result.Success)
+        {
+            AgentProviderConfiguration.ApplyModelCatalog(provider, result.Models);
+            AgentModel = AgentProviderConfiguration.GetEffectiveModelId(provider);
+            AgentModelCatalogStatus = string.Format(Text("ApplicationSettings.AgentModelCatalogLoaded"), result.Models.Count);
+        }
+        else
+        {
+            AgentModelCatalogStatus = result.Error ?? Text("ApplicationSettings.AgentModelCatalogFailed");
+        }
+
+        RebuildAgentModelOptions();
+        OnPropertyChanged(nameof(AgentModelCatalogStatusText));
         PersistAgentProvider();
     }
 
@@ -512,6 +631,28 @@ public partial class ApplicationSettingsViewModel : ObservableObject
     private AgentProviderSettings EnsureAgentProvider()
     {
         return _settings.AgentProvider ??= new AgentProviderSettings();
+    }
+
+    private AgentWebSettings EnsureWebSettings()
+    {
+        return _settings.AgentWeb ??= new AgentWebSettings();
+    }
+
+    private void RebuildAgentModelOptions()
+    {
+        AgentModelOptions.Clear();
+        var provider = EnsureAgentProvider();
+        foreach (var model in provider.Models
+                     .Where(model => model.Enabled && !string.IsNullOrWhiteSpace(model.ModelId))
+                     .Select(model => model.ModelId.Trim())
+                     .Concat(provider.AvailableModels ?? [])
+                     .Concat([provider.Model])
+                     .Where(model => !string.IsNullOrWhiteSpace(model))
+                     .Distinct(StringComparer.OrdinalIgnoreCase)
+                     .Take(100))
+        {
+            AgentModelOptions.Add(new SelectOption { Header = model, Content = model });
+        }
     }
 
     private void RefreshAgentProviderStatus()
@@ -591,6 +732,15 @@ public partial class ApplicationSettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(AgentRoutinRegistrationDescriptionText));
         OnPropertyChanged(nameof(AgentOpenRoutinRegistrationText));
         OnPropertyChanged(nameof(AgentRequestTimeoutText));
+        OnPropertyChanged(nameof(AgentRefreshModelsText));
+        OnPropertyChanged(nameof(AgentModelCatalogStatusText));
+        OnPropertyChanged(nameof(AgentWebText));
+        OnPropertyChanged(nameof(AgentWebEnabledText));
+        OnPropertyChanged(nameof(AgentSearxngBaseUrlText));
+        OnPropertyChanged(nameof(AgentAllowPrivateNetworkText));
+        OnPropertyChanged(nameof(AgentAllowedPrivateHostsText));
+        OnPropertyChanged(nameof(AgentWebMaxResultsText));
+        OnPropertyChanged(nameof(AgentWebMaxFetchCharactersText));
         OnPropertyChanged(nameof(AgentSecondsText));
         OnPropertyChanged(nameof(AgentReadyText));
         OnPropertyChanged(nameof(AgentUseRoutinPresetText));

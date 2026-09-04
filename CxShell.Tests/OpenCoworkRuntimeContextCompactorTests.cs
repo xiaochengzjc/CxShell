@@ -86,4 +86,56 @@ public sealed class OpenCoworkRuntimeContextCompactorTests
             result.Messages[2].Content,
             StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task CompressionHandlesBoundaryAtConversationEnd()
+    {
+        var conversation = new List<AgentChatMessage>
+        {
+            new("user", new string('x', 5_000)),
+            new("assistant", new string('y', 5_000))
+        };
+        var compactor = new OpenCoworkRuntimeContextCompactor(
+            messageLimit: 4,
+            characterLimit: 8 * 1024,
+            preserveRecentMessages: 3);
+
+        var result = await compactor.CompressIfNeededAsync(conversation);
+
+        Assert.True(result.IsCompressed);
+        Assert.Equal(2, result.MessagesSummarized);
+        Assert.Contains("Local summary", result.Messages[1].Content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CompressionMovesBackBeforeAllAdjacentToolResults()
+    {
+        var conversation = new List<AgentChatMessage>
+        {
+            new("user", "earlier context"),
+            new("user", "inspect"),
+            new(
+                "assistant",
+                "",
+                ToolCalls: [new AgentToolCall("call-1", "session_command", "{}")]),
+            new("tool", "result one", ToolCallId: "call-1"),
+            new("tool", "result two", ToolCallId: "call-1"),
+            new("user", "continue"),
+            new("assistant", "done")
+        };
+        var compactor = new OpenCoworkRuntimeContextCompactor(
+            messageLimit: 4,
+            characterLimit: 8 * 1024,
+            preserveRecentMessages: 3);
+
+        var result = await compactor.CompressIfNeededAsync(conversation);
+
+        Assert.True(result.IsCompressed);
+        var preserved = result.Messages.Skip(2).ToArray();
+        Assert.Equal("assistant", preserved[0].Role);
+        Assert.Equal("call-1", preserved[0].ToolCalls?[0].Id);
+        Assert.Equal("result one", preserved[1].Content);
+        Assert.Equal("result two", preserved[2].Content);
+        Assert.Equal("continue", preserved[3].Content);
+    }
 }

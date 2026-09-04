@@ -246,24 +246,29 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             AllowedCommandPrefixes = _sessionTreeVm.Settings.AgentAllowedCommandPrefixes,
             BlockedCommandPrefixes = _sessionTreeVm.Settings.AgentBlockedCommandPrefixes
         };
+        var agentAuditLog = new AgentAuditLog(
+            Path.Combine(SessionStorageService.GetStorageDirectory(), "agent-audit.json"));
         AgentSessionGateway = new AgentSessionGateway(
             new DelegateAgentSessionHost(
                 BuildAgentSessionEndpoints,
                 ListAgentSavedSessionsAsync,
                 OpenAgentSavedSessionAsync,
                 CloseAgentSessionAsync),
-            _agentPermissionPolicy);
+            _agentPermissionPolicy,
+            agentAuditLog);
         var agentModelClient = new OpenAiCompatibleAgentModelClient();
         AgentRunCoordinator = new AgentRunCoordinator(
             AgentSessionGateway,
             () => _sessionTreeVm.Settings.AgentProvider,
             agentModelClient,
-            new JsonAgentRunHistoryStore());
+            new JsonAgentRunHistoryStore(),
+            webSettings: () => _sessionTreeVm.Settings.AgentWeb);
         AgentRuntimeSessionAdapter = new AgentRuntimeSessionAdapter(
             AgentSessionGateway,
             () => _sessionTreeVm.Settings.AgentProvider,
             agentModelClient,
-            AgentRunCoordinator);
+            AgentRunCoordinator,
+            webSettings: () => _sessionTreeVm.Settings.AgentWeb);
         AgentRuntimeHost = new AgentRuntimeHost([(IAgentRuntimeModule)AgentRuntimeSessionAdapter]);
         AgentRuntimeJsonEndpoint = new AgentRuntimeJsonEndpoint(AgentRuntimeHost);
         AgentRuntimeTransport = new InProcessAgentRuntimeTransport(AgentRuntimeHost);
@@ -2743,6 +2748,17 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private IReadOnlyList<IAgentSessionEndpoint> BuildAgentSessionEndpoints()
     {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            // Agent runs execute off the UI thread, while Tabs is an
+            // Avalonia-bound collection. Snapshot the current endpoints on
+            // the owner thread before the gateway uses them.
+            return Dispatcher.UIThread
+                .InvokeAsync(BuildAgentSessionEndpoints)
+                .GetAwaiter()
+                .GetResult();
+        }
+
         return Tabs
             .Where(tab => tab.IsTerminalSession)
             .Select(CreateAgentSessionEndpoint)
@@ -2752,6 +2768,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private async Task<IReadOnlyList<AgentSavedSessionSnapshot>> ListAgentSavedSessionsAsync(
         CancellationToken cancellationToken)
     {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            return await Dispatcher.UIThread
+                .InvokeAsync(() => ListAgentSavedSessionsAsync(cancellationToken))
+                .ConfigureAwait(false);
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
         var openTabs = Tabs
             .Where(tab => tab.IsTerminalSession && tab.Session.Protocol == SessionProtocol.SSH)
@@ -2785,6 +2808,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         AgentSessionOpenRequest request,
         CancellationToken cancellationToken)
     {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            return await Dispatcher.UIThread
+                .InvokeAsync(() => OpenAgentSavedSessionAsync(request, cancellationToken))
+                .ConfigureAwait(false);
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
         var session = _sessionTreeVm.FindSessionById(request.SavedSessionId);
         if (session == null)
@@ -2808,6 +2838,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             tab.Terminal.IsConnected);
         if (request.ReuseConnected && existing != null)
         {
+            AgentPanel.RefreshSessions(existing.AgentSessionId);
+            AgentPanel.EnsureSessionSelection(existing.AgentSessionId);
             return new(
                 AgentSessionOpenStatus.Opened,
                 AgentSessionSnapshot.FromSession(
@@ -2840,6 +2872,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 Error: "The SSH connection failed. See the connection status for details.");
         }
 
+        AgentPanel.RefreshSessions(opened.AgentSessionId);
+        AgentPanel.EnsureSessionSelection(opened.AgentSessionId);
+
         return new(
             AgentSessionOpenStatus.Opened,
             AgentSessionSnapshot.FromSession(
@@ -2850,21 +2885,28 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             AgentOwned: true);
     }
 
-    private Task<AgentSessionCloseResult> CloseAgentSessionAsync(
+    private async Task<AgentSessionCloseResult> CloseAgentSessionAsync(
         Guid sessionId,
         CancellationToken cancellationToken)
     {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            return await Dispatcher.UIThread
+                .InvokeAsync(() => CloseAgentSessionAsync(sessionId, cancellationToken))
+                .ConfigureAwait(false);
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
         var tab = Tabs.FirstOrDefault(item => item.AgentSessionId == sessionId);
         if (tab == null)
         {
-            return Task.FromResult(new AgentSessionCloseResult(
+            return new AgentSessionCloseResult(
                 AgentSessionCloseStatus.NotFound,
-                "The Agent-created session tab no longer exists."));
+                "The Agent-created session tab no longer exists.");
         }
 
         CloseTab(tab);
-        return Task.FromResult(new AgentSessionCloseResult(AgentSessionCloseStatus.Closed));
+        return new AgentSessionCloseResult(AgentSessionCloseStatus.Closed);
     }
 
     private IAgentSessionEndpoint CreateAgentSessionEndpoint(TerminalTabViewModel tab)

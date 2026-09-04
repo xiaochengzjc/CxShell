@@ -36,7 +36,9 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         "bounded read-only operations. Use session_command only when a " +
         "diagnostic scope cannot answer the question. Explain " +
         "what you are doing, keep commands focused, and never claim a remote change succeeded " +
-        "unless the tool result confirms it.";
+        "unless the tool result confirms it. If no SSH session is selected, use " +
+        "list_saved_sessions and open_session to establish a saved SSH connection before " +
+        "attempting terminal operations.";
 
     private static readonly JsonSerializerOptions RuntimeJsonOptions = new()
     {
@@ -60,6 +62,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     private long _sessionRefreshVersion;
     private long _runHistoryRefreshVersion;
     private Guid? _preferredSessionId;
+    private Guid? _pendingSessionSelectionId;
     private Guid? _conversationSessionId;
     private ISelectOption? _lastSelectedSessionOption;
     private readonly Dictionary<string, string> _runPrompts = new(StringComparer.Ordinal);
@@ -75,6 +78,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     private int _disposeState;
 
     [ObservableProperty] private ISelectOption? _selectedSessionOption;
+    [ObservableProperty] private ISelectOption? _selectedChatModeOption;
     [ObservableProperty] private string _prompt = string.Empty;
     [ObservableProperty] private bool _isRunning;
     [ObservableProperty] private bool _isStopping;
@@ -102,6 +106,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _hasActiveRunCheckpoint;
 
     public ObservableCollection<ISelectOption> SessionOptions { get; } = new();
+    public ObservableCollection<ISelectOption> ChatModeOptions { get; } = new();
     public ObservableCollection<AgentPanelMessageViewModel> Messages { get; } = new();
     public ObservableCollection<AgentAttachmentViewModel> PendingAttachments { get; } = new();
     public ObservableCollection<AgentPanelRunViewModel> RunHistory { get; } = new();
@@ -116,6 +121,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         _runtimeClient = runtimeClient ?? throw new ArgumentNullException(nameof(runtimeClient));
         _runtimeStatusSource = runtimeClient as IAgentRuntimeStatusSource;
         _providerSettings = providerSettings ?? (() => null);
+        RebuildChatModeOptions();
         RebuildRunHistoryFilterOptions();
         _runtimeSubscription = _runtimeClient.SubscribeEvents(OnRuntimeEvent);
         if (_runtimeStatusSource != null)
@@ -143,6 +149,10 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     public string TitleText => Text("Agent.Title");
     public string DescriptionText => Text("Agent.Description");
     public string SessionText => Text("Agent.Session");
+    public string ModeText => Text("Agent.Mode");
+    public string ChatModeChatText => Text("Agent.ModeChat");
+    public string ChatModePlanText => Text("Agent.ModePlan");
+    public string ChatModeAgentText => Text("Agent.ModeAgent");
     public string PromptText => Text("Agent.Prompt");
     public string PromptPlaceholderText => Text("Agent.PromptPlaceholder");
     public string AttachFileText => Text("Agent.AttachFile");
@@ -235,6 +245,8 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     public bool HasSelectedSession => SelectedSession != null;
     public bool IsSelectedSessionConnected => SelectedSession?.IsConnected == true;
     public bool IsSessionSelectionEnabled => HasSessions && !IsRunning;
+    public bool CanStartSessionManagementRun
+        => SelectedChatMode == AgentChatMode.Agent && !IsSelectedSessionConnected;
     public bool IsRuntimeRetryVisible => RuntimeState == AgentRuntimeSessionState.Failed && !IsRunning;
     public bool IsPromptInputEnabled => !IsStopping && !IsCanceling;
     public string SelectedSessionStatusText => SelectedSession switch
@@ -248,7 +260,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         => !IsRunning &&
            IsRuntimeReady &&
            IsProviderReady &&
-           IsSelectedSessionConnected &&
+           (IsSelectedSessionConnected || CanStartSessionManagementRun) &&
            (!string.IsNullOrWhiteSpace(Prompt) || HasPendingAttachments);
 
     public bool CanAppend()
@@ -402,15 +414,18 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         return string.Join(Environment.NewLine, details);
     }
 
-    public void RefreshSessions()
+    public void RefreshSessions(Guid? preferredSessionId = null)
     {
         if (!Dispatcher.UIThread.CheckAccess())
         {
-            Dispatcher.UIThread.Post(RefreshSessions);
+            Dispatcher.UIThread.Post(() => RefreshSessions(preferredSessionId));
             return;
         }
 
-        var selectedId = SelectedSessionId ?? _preferredSessionId;
+        if (preferredSessionId is { } preferred && preferred != Guid.Empty)
+            _pendingSessionSelectionId = preferred;
+
+        var selectedId = _pendingSessionSelectionId ?? SelectedSessionId ?? _preferredSessionId;
         var version = Interlocked.Increment(ref _sessionRefreshVersion);
         BeginRuntimeRefresh();
         _ = RefreshSessionsAsync(version, selectedId);
@@ -479,11 +494,24 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
             });
         }
 
-        var option = selectedId is { } id
+        var targetSessionId = _pendingSessionSelectionId ?? selectedId;
+        var option = targetSessionId is { } id
             ? SessionOptions.FirstOrDefault(item =>
                 string.Equals(item.Content?.ToString(), id.ToString("D"), StringComparison.OrdinalIgnoreCase))
             : null;
-        SelectedSessionOption = option;
+        if (option != null && (!IsRunning || SelectedSessionId == targetSessionId))
+        {
+            SelectedSessionOption = option;
+            if (SelectedSessionId == targetSessionId)
+                _pendingSessionSelectionId = null;
+        }
+        else if (_pendingSessionSelectionId == null)
+        {
+            // The previously selected runtime session may have been closed.
+            // Clear the stale option instead of leaving the commands bound to
+            // a session that no longer exists in the refreshed snapshot.
+            SelectedSessionOption = null;
+        }
 
         // The selection callback captures the current transcript. Prune closed
         // session state only after that callback has finished.
@@ -498,6 +526,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasSessions));
         OnPropertyChanged(nameof(HasSelectedSession));
         OnPropertyChanged(nameof(IsSelectedSessionConnected));
+        OnPropertyChanged(nameof(CanStartSessionManagementRun));
         OnPropertyChanged(nameof(SelectedSessionStatusText));
         OnPropertyChanged(nameof(IsSessionSelectionEnabled));
         NotifyRunCommands();
@@ -511,18 +540,37 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
             return;
         }
 
+        if (preferredSessionId is { } preferred && preferred != Guid.Empty)
+        {
+            _preferredSessionId = preferred;
+            _pendingSessionSelectionId = preferred;
+        }
+
+        var targetSessionId = _pendingSessionSelectionId ?? preferredSessionId ?? _preferredSessionId;
+        if (IsRunning && targetSessionId is { } runningTarget && SelectedSessionId != runningTarget)
+            return;
+
+        if (targetSessionId is { } target && target != Guid.Empty)
+        {
+            var preferredOption = SessionOptions.FirstOrDefault(item =>
+                string.Equals(item.Content?.ToString(), target.ToString("D"), StringComparison.OrdinalIgnoreCase));
+            if (preferredOption != null)
+            {
+                SelectedSessionOption = preferredOption;
+                if (SelectedSessionId == target)
+                    _pendingSessionSelectionId = null;
+                return;
+            }
+
+            // The runtime refresh may still be in flight. Do not fall back to
+            // another session while an explicit target is pending.
+            return;
+        }
+
         if (SelectedSession != null)
             return;
 
-        _preferredSessionId = preferredSessionId;
-
         ISelectOption? option = null;
-        if (preferredSessionId is { } preferred && preferred != Guid.Empty)
-        {
-            option = SessionOptions.FirstOrDefault(item =>
-                string.Equals(item.Content?.ToString(), preferred.ToString("D"), StringComparison.OrdinalIgnoreCase));
-        }
-
         option ??= SessionOptions.FirstOrDefault(item =>
             Guid.TryParse(item.Content?.ToString(), out var id) &&
             _sessionsById.TryGetValue(id, out var session) &&
@@ -913,6 +961,10 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(TitleText));
         OnPropertyChanged(nameof(DescriptionText));
         OnPropertyChanged(nameof(SessionText));
+        OnPropertyChanged(nameof(ModeText));
+        OnPropertyChanged(nameof(ChatModeChatText));
+        OnPropertyChanged(nameof(ChatModePlanText));
+        OnPropertyChanged(nameof(ChatModeAgentText));
         OnPropertyChanged(nameof(PromptText));
         OnPropertyChanged(nameof(PromptPlaceholderText));
         OnPropertyChanged(nameof(RunText));
@@ -988,6 +1040,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         RebuildRunHistoryFilterOptions();
         RefreshFilteredRunHistory();
         OnPropertyChanged(nameof(SelectedSessionStatusText));
+        RebuildChatModeOptions(SelectedChatMode);
         foreach (var message in Messages)
             message.NotifyLocalizationChanged();
         RefreshProviderStatus();
@@ -1281,9 +1334,12 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     {
         var selectedSession = SelectedSession;
         var promptText = Prompt.Trim();
-        if (selectedSession == null || !selectedSession.IsConnected ||
+        var hasConnectedSession = selectedSession?.IsConnected == true;
+        if ((!hasConnectedSession && !CanStartSessionManagementRun) ||
             (promptText.Length == 0 && !HasPendingAttachments))
             return;
+
+        var runSessionId = hasConnectedSession ? selectedSession!.SessionId : Guid.Empty;
 
         if (promptText.Length > MaximumPromptCharacters)
             promptText = promptText[..MaximumPromptCharacters];
@@ -1298,7 +1354,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
             ContentParts: pendingAttachments.Select(item => item.ContentPart).ToArray());
         var requestMessages = new List<AgentChatMessage>
         {
-            new("system", SystemPrompt)
+            new("system", BuildModeSystemPrompt(SelectedChatMode))
         };
         requestMessages.AddRange(_conversation);
         requestMessages.Add(userMessage);
@@ -1325,7 +1381,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
             DateTimeOffset.UtcNow,
             modelRequestCount: 1,
             toolCallCount: 0,
-            sessionName: selectedSession.Name);
+            sessionName: selectedSession?.Name ?? string.Empty);
         AddMessage(AgentPanelMessageViewModel.User(modelPrompt, pendingAttachments));
 
         try
@@ -1335,7 +1391,8 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
                     new
                     {
                         runId,
-                        sessionId = selectedSession.SessionId.ToString("D"),
+                        sessionId = runSessionId.ToString("D"),
+                        mode = SelectedChatMode.ToString().ToLowerInvariant(),
                         messages = requestMessages,
                         timeoutMs = (int)timeout.TotalMilliseconds
                     },
@@ -2345,6 +2402,56 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         return $"{name} · {endpoint}";
     }
 
+    private static string BuildModeSystemPrompt(AgentChatMode mode)
+    {
+        var suffix = mode switch
+        {
+            AgentChatMode.Chat => "You are in Chat mode. Do not request tools or claim that you executed anything.",
+            AgentChatMode.Plan => "You are in Plan mode. Use read-only tools only and return a proposed plan; do not change the remote system.",
+            _ => "You are in Agent mode. Execute only the operations needed for the user's request and explain before risky changes."
+        };
+        return SystemPrompt + " " + suffix;
+    }
+
+    public AgentChatMode SelectedChatMode
+        => Enum.TryParse<AgentChatMode>(
+                SelectedChatModeOption?.Content?.ToString(),
+                ignoreCase: true,
+                out var mode)
+            ? mode
+            : AgentChatMode.Agent;
+
+    private void RebuildChatModeOptions(AgentChatMode preferred = AgentChatMode.Agent)
+    {
+        ChatModeOptions.Clear();
+        ChatModeOptions.Add(new SelectOption
+        {
+            Header = ChatModeChatText,
+            Content = AgentChatMode.Chat.ToString()
+        });
+        ChatModeOptions.Add(new SelectOption
+        {
+            Header = ChatModePlanText,
+            Content = AgentChatMode.Plan.ToString()
+        });
+        ChatModeOptions.Add(new SelectOption
+        {
+            Header = ChatModeAgentText,
+            Content = AgentChatMode.Agent.ToString()
+        });
+        SelectedChatModeOption = ChatModeOptions.FirstOrDefault(option =>
+            string.Equals(option.Content?.ToString(), preferred.ToString(), StringComparison.OrdinalIgnoreCase));
+        OnPropertyChanged(nameof(SelectedChatMode));
+        NotifyRunCommands();
+    }
+
+    partial void OnSelectedChatModeOptionChanged(ISelectOption? value)
+    {
+        OnPropertyChanged(nameof(SelectedChatMode));
+        OnPropertyChanged(nameof(CanStartSessionManagementRun));
+        NotifyRunCommands();
+    }
+
     private string GetRunSessionLabel(string sessionId)
         => Guid.TryParse(sessionId, out var id) &&
            _sessionsById.TryGetValue(id, out var session)
@@ -2364,6 +2471,14 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
             return;
         }
 
+        if (_pendingSessionSelectionId is { } pendingSessionId &&
+            pendingSessionId != nextSessionId)
+        {
+            // A manual selection supersedes a delayed selection requested by
+            // an Agent-opened session.
+            _pendingSessionSelectionId = null;
+        }
+
         if (_conversationSessionId != nextSessionId)
         {
             SaveCurrentSessionState();
@@ -2377,6 +2492,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(SelectedSessionId));
         OnPropertyChanged(nameof(HasSelectedSession));
         OnPropertyChanged(nameof(IsSelectedSessionConnected));
+        OnPropertyChanged(nameof(CanStartSessionManagementRun));
         OnPropertyChanged(nameof(SelectedSessionStatusText));
         OnPropertyChanged(nameof(IsSessionSelectionEnabled));
         RefreshFilteredRunHistory();
@@ -2417,6 +2533,8 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
             IsStopping = false;
             IsCanceling = false;
             IsAppending = false;
+            if (_pendingSessionSelectionId is not null)
+                EnsureSessionSelection();
         }
 
         NotifyRunCommands();
@@ -2608,6 +2726,7 @@ internal static class AgentCheckpointDisplay
         };
 
     private static string Text(string key) => LocalizationService.Shared.Text(key);
+
 }
 
 public enum AgentPanelMessageKind

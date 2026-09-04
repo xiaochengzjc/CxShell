@@ -43,6 +43,7 @@ public static partial class AgentSensitiveDataRedactor
 
         redacted = KeyValueSecretRegex().Replace(redacted, match =>
             $"{match.Groups["key"].Value}{match.Groups["separator"].Value}[redacted]");
+        redacted = CommandLineSecretRegex().Replace(redacted, RedactCommandLineSecret);
         redacted = BearerTokenRegex().Replace(redacted, "$1[redacted]");
         return redacted;
     }
@@ -54,6 +55,29 @@ public static partial class AgentSensitiveDataRedactor
         @"(?<key>password|passwd|passphrase|token|api[_-]?key|apikey|secret|private[_-]?key)(?<separator>\s*[:=]\s*)(?<value>[^\s,;]+)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex KeyValueSecretRegex();
+
+    [GeneratedRegex(
+        @"(?<flag>(?<![\w-])--?(?:password|passwd|passphrase|pass|pwd|token|api[_-]?key|apikey|secret|private[_-]?key|p|t))(?<separator>\s+|=)(?<value>""[^""]*""|'[^']*'|[^\s,;]+)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex CommandLineSecretRegex();
+
+    private static string RedactCommandLineSecret(Match match)
+    {
+        var flag = match.Groups["flag"].Value;
+        var value = match.Groups["value"].Value;
+        // -p is also used for SSH ports. Keep numeric port values intact while
+        // still protecting the common `-p password` form.
+        if (flag.Equals("-p", StringComparison.OrdinalIgnoreCase) &&
+            int.TryParse(value, out _))
+            return match.Value;
+
+        var quote = value.Length >= 2 &&
+                    (value[0] == '\"' || value[0] == '\'') &&
+                    value[^1] == value[0]
+            ? value[0].ToString()
+            : string.Empty;
+        return $"{flag}{match.Groups["separator"].Value}{quote}[redacted]{quote}";
+    }
 
     [GeneratedRegex(@"(?i)(Bearer\s+)[A-Za-z0-9._~+/=-]+", RegexOptions.CultureInvariant)]
     private static partial Regex BearerTokenRegex();

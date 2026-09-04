@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using CxShell.Services.Agent;
 
 namespace CxShell.Tests;
@@ -136,6 +137,35 @@ public sealed class AgentRuntimeTransportTests
 
         await module.Started.Task.WaitAsync(TimeSpan.FromSeconds(2));
         await module.Cancelled.Task.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public async Task StreamSessionDeliversOverflowNotificationWhileRequestHasNoResponseYet()
+    {
+        var module = new BurstBlockingModule();
+        using var host = new AgentRuntimeHost([module]);
+        IAgentRuntimeStreamSession session = new AgentRuntimeStreamSession(
+            new AgentRuntimeFrameEndpoint(host),
+            host);
+        var request = AgentRuntimeFrameCodec.Encode(
+            "{\"requestId\":\"stream-overflow\",\"method\":\"agent/burst\"}");
+        using var stream = new GatedWriteDuplexStream(request);
+        using var cancellation = new CancellationTokenSource();
+        var run = session.RunAsync(stream, cancellation.Token);
+
+        await module.Started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(0, stream.WrittenFrameCount);
+
+        stream.ReleaseWrites();
+        await stream.OverflowWritten.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.True(((AgentRuntimeStreamSession)session).DroppedEventCount > 0);
+
+        await cancellation.CancelAsync();
+        await run;
+
+        Assert.Contains(
+            stream.GetWrittenJson(),
+            json => json.Contains("runtime/overflow", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -304,6 +334,36 @@ public sealed class AgentRuntimeTransportTests
         }
     }
 
+    private sealed class BurstBlockingModule : IAgentRuntimeModule
+    {
+        public string Name => "burst";
+        public IReadOnlyCollection<string> Methods => ["agent/burst"];
+        public TaskCompletionSource Started { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<AgentRuntimeResponse> DispatchAsync(
+            AgentRuntimeRequest request,
+            AgentRuntimeModuleContext context)
+        {
+            for (var index = 0; index < AgentRuntimeStreamSession.MaximumOutboundFrames + 32; index++)
+            {
+                await context.EmitEventIgnoringCancellationAsync(
+                    "progress",
+                    new { index });
+            }
+
+            Started.TrySetResult();
+            await Release.Task.WaitAsync(context.CancellationToken);
+            return new AgentRuntimeResponse
+            {
+                RequestId = request.RequestId,
+                Ok = true
+            };
+        }
+    }
+
     private sealed class TestDuplexStream : Stream
     {
         private readonly byte[] _input;
@@ -377,6 +437,107 @@ public sealed class AgentRuntimeTransportTests
         public override void SetLength(long value) => throw new NotSupportedException();
         public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
 
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        private static int CountFrames(byte[] bytes)
+        {
+            var reader = new AgentRuntimeFrameReader();
+            reader.Append(bytes);
+            var count = 0;
+            while (reader.TryReadJson(out _))
+                count++;
+            return count;
+        }
+    }
+
+    private sealed class GatedWriteDuplexStream : Stream
+    {
+        private readonly byte[] _input;
+        private readonly object _gate = new();
+        private readonly MemoryStream _output = new();
+        private readonly TaskCompletionSource _writeRelease =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _inputOffset;
+        private int _firstWrite = 1;
+
+        public GatedWriteDuplexStream(byte[] input)
+        {
+            _input = input;
+        }
+
+        public TaskCompletionSource OverflowWritten { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int WrittenFrameCount
+        {
+            get
+            {
+                lock (_gate)
+                    return CountFrames(_output.ToArray());
+            }
+        }
+
+        public void ReleaseWrites() => _writeRelease.TrySetResult();
+
+        public string[] GetWrittenJson()
+        {
+            lock (_gate)
+            {
+                var reader = new AgentRuntimeFrameReader();
+                reader.Append(_output.ToArray());
+                var json = new List<string>();
+                while (reader.TryReadJson(out var value))
+                    json.Add(value!);
+                return json.ToArray();
+            }
+        }
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            if (_inputOffset < _input.Length)
+            {
+                var count = Math.Min(buffer.Length, _input.Length - _inputOffset);
+                _input.AsMemory(_inputOffset, count).CopyTo(buffer);
+                _inputOffset += count;
+                return count;
+            }
+
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return 0;
+        }
+
+        public override async ValueTask WriteAsync(
+            ReadOnlyMemory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Exchange(ref _firstWrite, 0) == 1)
+                await _writeRelease.Task.WaitAsync(cancellationToken);
+
+            var frame = buffer.ToArray();
+            lock (_gate)
+                _output.Write(frame);
+
+            var reader = new AgentRuntimeFrameReader();
+            reader.Append(frame);
+            if (reader.TryReadJson(out var json) &&
+                json!.Contains("runtime/overflow", StringComparison.Ordinal))
+            {
+                OverflowWritten.TrySetResult();
+            }
+        }
+
+        public override void Flush() { }
+        public override Task FlushAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => _input.Length;
+        public override long Position { get => _inputOffset; set => throw new NotSupportedException(); }
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
         public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 

@@ -12,6 +12,7 @@ namespace CxShell.Services;
 public sealed class ApplicationSettingsStore
 {
     private const string FileName = "application-settings.json";
+    private static readonly JsonSerializerOptions ComparisonJsonOptions = new();
     private readonly string _directory;
     private readonly string _path;
 
@@ -43,11 +44,14 @@ public sealed class ApplicationSettingsStore
             using var document = JsonDocument.Parse(json);
             var hasSchemaVersion = document.RootElement
                 .TryGetProperty(nameof(ApplicationSettings.SchemaVersion), out _);
-            if (!hasSchemaVersion || loaded.SchemaVersion < ApplicationSettings.CurrentSchemaVersion)
-            {
-                Normalize(loaded);
+            var beforeNormalization = JsonSerializer.Serialize(loaded, ComparisonJsonOptions);
+            Normalize(loaded);
+            var afterNormalization = JsonSerializer.Serialize(loaded, ComparisonJsonOptions);
+            if (!hasSchemaVersion || !string.Equals(
+                    beforeNormalization,
+                    afterNormalization,
+                    StringComparison.Ordinal))
                 TrySave(loaded);
-            }
 
             return loaded;
         }
@@ -100,13 +104,46 @@ public sealed class ApplicationSettingsStore
             settings.SchemaVersion = ApplicationSettings.CurrentSchemaVersion;
 
         settings.AgentProvider ??= new AgentProviderSettings();
+        settings.AgentProvider.Name = settings.AgentProvider.Name?.Trim() ?? string.Empty;
+        settings.AgentProvider.BuiltinId = settings.AgentProvider.BuiltinId?.Trim() ?? string.Empty;
+        settings.AgentProvider.BaseUrl = settings.AgentProvider.BaseUrl?.Trim() ?? string.Empty;
+        settings.AgentProvider.Model = settings.AgentProvider.Model?.Trim() ?? string.Empty;
+        settings.AgentProvider.ActiveModelId = settings.AgentProvider.ActiveModelId?.Trim() ?? string.Empty;
+        settings.AgentProvider.EncryptedApiKey = settings.AgentProvider.EncryptedApiKey?.Trim() ?? string.Empty;
+        settings.AgentProvider.Models = (settings.AgentProvider.Models ?? [])
+            .Where(model => model != null)
+            .ToList();
+        foreach (var model in settings.AgentProvider.Models)
+        {
+            model.Id = model.Id?.Trim() ?? string.Empty;
+            model.Name = model.Name?.Trim() ?? string.Empty;
+            model.ModelId = model.ModelId?.Trim() ?? string.Empty;
+            if (model.MaxOutputTokens is <= 0)
+                model.MaxOutputTokens = null;
+        }
+        settings.AgentWeb ??= new AgentWebSettings();
+        settings.AgentWeb.Normalize();
+        AgentProviderConfiguration.EnsureActiveModel(settings.AgentProvider);
+        settings.AgentProvider.AvailableModels = (settings.AgentProvider.AvailableModels ?? [])
+            .Where(model => !string.IsNullOrWhiteSpace(model))
+            .Select(model => model.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(100)
+            .ToList();
         settings.AgentPermissionMode = AgentPermissionPolicy.NormalizePermissionMode(
             settings.AgentPermissionMode);
         if (string.IsNullOrEmpty(settings.AgentPermissionMode))
             settings.AgentPermissionMode = AgentPermissionPolicy.RiskBasedApprovalMode;
         if (hasLegacySchema && settings.AgentProvider.RequestTimeoutSeconds == 120)
             settings.AgentProvider.RequestTimeoutSeconds = 300;
-        settings.AgentPanelWidth = Math.Clamp(settings.AgentPanelWidth, 280, 600);
+        settings.ThemeMode = settings.ThemeMode is ApplicationSettings.LightThemeMode
+            ? ApplicationSettings.LightThemeMode
+            : ApplicationSettings.DarkThemeMode;
+        settings.UiLanguage = string.IsNullOrWhiteSpace(settings.UiLanguage)
+            ? "zh-CN"
+            : settings.UiLanguage.Trim();
+        settings.SftpPanelWidth = NormalizeWidth(settings.SftpPanelWidth, 240, 800, 318);
+        settings.AgentPanelWidth = NormalizeWidth(settings.AgentPanelWidth, 280, 600, 360);
         if (settings.AgentProvider.BaseUrl.Contains("/plan/v1", StringComparison.OrdinalIgnoreCase))
         {
             settings.AgentProvider.Type = AgentProviderType.OpenAiResponses;
@@ -130,4 +167,9 @@ public sealed class ApplicationSettingsStore
             // A read-only profile must not prevent the application from starting.
         }
     }
+
+    private static double NormalizeWidth(double value, double minimum, double maximum, double fallback)
+        => double.IsNaN(value) || double.IsInfinity(value)
+            ? fallback
+            : Math.Clamp(value, minimum, maximum);
 }

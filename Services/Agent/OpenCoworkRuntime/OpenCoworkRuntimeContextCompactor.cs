@@ -162,14 +162,18 @@ public sealed class OpenCoworkRuntimeContextCompactor
     {
         var boundary = Math.Clamp(initialBoundary, prefixCount, conversation.Count);
         while (boundary > prefixCount &&
+               boundary < conversation.Count &&
                string.Equals(conversation[boundary].Role, "tool", StringComparison.OrdinalIgnoreCase))
         {
-            // Keep the assistant tool-call message together with its result.
+            // Keep an assistant tool-call and every adjacent tool result
+            // together. A single tool call may yield multiple result messages.
             boundary--;
         }
 
         return boundary;
     }
+
+
 
     private static int EstimateCharacters(IReadOnlyList<AgentChatMessage> conversation)
         => AgentContextEstimator.Estimate(conversation).CharacterCount;

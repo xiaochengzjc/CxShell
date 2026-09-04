@@ -29,11 +29,24 @@ public sealed record AgentProviderSnapshot
     public AgentProviderType Type { get; init; }
     public string BaseUrl { get; init; } = string.Empty;
     public string Model { get; init; } = string.Empty;
+    public string ActiveModelId { get; init; } = string.Empty;
+    public IReadOnlyList<AgentModelSnapshot> Models { get; init; } = [];
+    public IReadOnlyList<string> AvailableModels { get; init; } = [];
     public bool RequiresApiKey { get; init; }
     public bool HasApiKey { get; init; }
     public bool AllowInsecureTls { get; init; }
     public int RequestTimeoutSeconds { get; init; }
     public AgentProviderCapabilities Capabilities { get; init; } = new();
+}
+
+public sealed record AgentModelSnapshot
+{
+    public string Id { get; init; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
+    public string ModelId { get; init; } = string.Empty;
+    public AgentProviderType? ProtocolOverride { get; init; }
+    public bool Enabled { get; init; }
+    public int? MaxOutputTokens { get; init; }
 }
 
 public sealed record AgentProviderCapabilities
@@ -70,7 +83,7 @@ public static class AgentProviderConfiguration
         if (uri.Scheme == Uri.UriSchemeHttp && !settings.AllowInsecureTls && !IsLocalDevelopmentHost(uri.Host))
             return new(AgentProviderValidationStatus.InsecureBaseUrl, "HTTPS is required for a non-local provider.");
 
-        if (string.IsNullOrWhiteSpace(settings.Model))
+        if (string.IsNullOrWhiteSpace(GetEffectiveModelId(settings)))
             return new(AgentProviderValidationStatus.MissingModel, "Provider model is required.");
 
         if (settings.RequiresApiKey && string.IsNullOrWhiteSpace(GetApiKey(settings)))
@@ -89,7 +102,21 @@ public static class AgentProviderConfiguration
             BuiltinId = settings.BuiltinId ?? string.Empty,
             Type = settings.Type,
             BaseUrl = settings.BaseUrl ?? string.Empty,
-            Model = settings.Model ?? string.Empty,
+            Model = GetEffectiveModelId(settings),
+            ActiveModelId = settings.ActiveModelId ?? string.Empty,
+            Models = settings.Models
+                .Where(model => model != null && !string.IsNullOrWhiteSpace(model.ModelId))
+                .Select(model => new AgentModelSnapshot
+                {
+                    Id = model.Id ?? string.Empty,
+                    Name = model.Name ?? string.Empty,
+                    ModelId = model.ModelId ?? string.Empty,
+                    ProtocolOverride = model.ProtocolOverride,
+                    Enabled = model.Enabled,
+                    MaxOutputTokens = model.MaxOutputTokens
+                })
+                .ToArray(),
+            AvailableModels = settings.AvailableModels?.ToArray() ?? [],
             RequiresApiKey = settings.RequiresApiKey,
             HasApiKey = !string.IsNullOrWhiteSpace(GetApiKey(settings)),
             AllowInsecureTls = settings.AllowInsecureTls,
@@ -124,6 +151,98 @@ public static class AgentProviderConfiguration
         return PasswordEncryptionService.DecryptEncrypted(settings.EncryptedApiKey);
     }
 
+    public static string GetEffectiveModelId(
+        AgentProviderSettings settings,
+        string? requestedModel = null)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (!string.IsNullOrWhiteSpace(requestedModel))
+            return requestedModel.Trim();
+
+        var selected = settings.Models?.FirstOrDefault(model =>
+            model.Enabled &&
+            string.Equals(model.Id, settings.ActiveModelId, StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(model.ModelId));
+        if (!string.IsNullOrWhiteSpace(selected?.ModelId))
+            return selected.ModelId.Trim();
+
+        if (!string.IsNullOrWhiteSpace(settings.Model))
+            return settings.Model.Trim();
+
+        return settings.Models?
+                   .FirstOrDefault(model => model.Enabled && !string.IsNullOrWhiteSpace(model.ModelId))?
+                   .ModelId?.Trim() ?? string.Empty;
+    }
+
+    public static AgentModelSettings EnsureActiveModel(AgentProviderSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        settings.Models ??= [];
+        var active = settings.Models.FirstOrDefault(model =>
+            model.Enabled &&
+            !string.IsNullOrWhiteSpace(model.ModelId) &&
+            string.Equals(model.Id, settings.ActiveModelId, StringComparison.OrdinalIgnoreCase));
+        if (active != null)
+            return active;
+
+        active = settings.Models.FirstOrDefault(model =>
+            model.Enabled && !string.IsNullOrWhiteSpace(model.ModelId));
+        if (active != null)
+        {
+            settings.ActiveModelId = active.Id;
+            return active;
+        }
+
+        var effectiveModel = settings.Model?.Trim() ?? string.Empty;
+
+        active = new AgentModelSettings
+        {
+            Name = effectiveModel,
+            ModelId = effectiveModel,
+            Enabled = true
+        };
+        settings.Models.Insert(0, active);
+        settings.ActiveModelId = active.Id;
+        return active;
+    }
+
+    public static IReadOnlyList<string> ApplyModelCatalog(
+        AgentProviderSettings settings,
+        IEnumerable<string> modelIds)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(modelIds);
+
+        var ids = modelIds
+            .Where(model => !string.IsNullOrWhiteSpace(model))
+            .Select(model => model.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(100)
+            .ToArray();
+        settings.AvailableModels = ids.ToList();
+        settings.Models ??= [];
+
+        foreach (var modelId in ids)
+        {
+            var existing = settings.Models.FirstOrDefault(model =>
+                string.Equals(model.ModelId, modelId, StringComparison.OrdinalIgnoreCase));
+            if (existing == null)
+            {
+                settings.Models.Add(new AgentModelSettings
+                {
+                    Name = modelId,
+                    ModelId = modelId,
+                    Enabled = true
+                });
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(settings.Model) && ids.Length > 0)
+            settings.Model = ids[0];
+        EnsureActiveModel(settings);
+        return ids;
+    }
+
     public static void SetApiKey(AgentProviderSettings settings, string? apiKey)
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -150,10 +269,39 @@ public static class AgentProviderConfiguration
         return new Uri(baseUrl + "/responses", UriKind.Absolute);
     }
 
+    public static Uri BuildModelsUri(AgentProviderSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        var baseUrl = settings.BaseUrl.Trim().TrimEnd('/');
+        foreach (var suffix in new[] { "/chat/completions", "/responses", "/models" })
+        {
+            if (baseUrl.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                baseUrl = baseUrl[..^suffix.Length];
+        }
+
+        return new Uri(baseUrl + "/models", UriKind.Absolute);
+    }
+
     public static bool IsResponsesProvider(AgentProviderSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        return settings.Type == AgentProviderType.OpenAiResponses ||
+        return IsResponsesProvider(settings, null);
+    }
+
+    public static bool IsResponsesProvider(
+        AgentProviderSettings settings,
+        string? requestedModel)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        var model = !string.IsNullOrWhiteSpace(requestedModel)
+            ? settings.Models?.FirstOrDefault(candidate =>
+                candidate.Enabled &&
+                string.Equals(candidate.ModelId, requestedModel, StringComparison.OrdinalIgnoreCase))
+            : settings.Models?.FirstOrDefault(candidate =>
+                candidate.Enabled &&
+                string.Equals(candidate.Id, settings.ActiveModelId, StringComparison.OrdinalIgnoreCase));
+        var type = model?.ProtocolOverride ?? settings.Type;
+        return type == AgentProviderType.OpenAiResponses ||
                settings.BaseUrl.Contains("/plan/v1", StringComparison.OrdinalIgnoreCase);
     }
 

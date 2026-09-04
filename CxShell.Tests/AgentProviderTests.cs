@@ -94,6 +94,40 @@ public sealed class AgentProviderTests
     }
 
     [Fact]
+    public async Task ModelCatalogReadsOpenAiCompatibleModelsWithoutLeakingTheKey()
+    {
+        HttpRequestMessage? captured = null;
+        var handler = new DelegateHttpMessageHandler(request =>
+        {
+            captured = request;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    "{\"data\":[{\"id\":\"model-a\"},{\"id\":\"model-b\"},{\"id\":\"model-a\"}]}",
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        });
+        using var httpClient = new HttpClient(handler);
+        var client = new AgentModelCatalogClient(httpClient);
+        var settings = new AgentProviderSettings
+        {
+            Enabled = true,
+            BaseUrl = "https://api.example/v1",
+            Model = "model-a"
+        };
+        AgentProviderConfiguration.SetApiKey(settings, "catalog-secret");
+
+        var result = await client.FetchAsync(settings);
+
+        Assert.True(result.Success);
+        Assert.Equal(["model-a", "model-b"], result.Models);
+        Assert.Equal("https://api.example/v1/models", captured?.RequestUri?.ToString());
+        Assert.Equal("Bearer", captured?.Headers.Authorization?.Scheme);
+        Assert.Equal("catalog-secret", captured?.Headers.Authorization?.Parameter);
+    }
+
+    [Fact]
     public async Task OpenAiCompatibleClientSendsBearerKeyAndParsesResponse()
     {
         HttpRequestMessage? captured = null;
@@ -437,9 +471,10 @@ public sealed class AgentProviderTests
         };
         AgentProviderConfiguration.SetApiKey(settings, "secret-key");
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => client.CompleteAsync(
+        var exception = await Assert.ThrowsAsync<AgentProviderException>(() => client.CompleteAsync(
             settings,
-            new AgentModelRequest([new AgentChatMessage("user", "hello")]))) ;
+            new AgentModelRequest([new AgentChatMessage("user", "hello")])));
+        Assert.Equal(AgentProviderErrorKind.Protocol, exception.Kind);
     }
 
     [Fact]
@@ -484,9 +519,65 @@ public sealed class AgentProviderTests
         };
         AgentProviderConfiguration.SetApiKey(settings, "secret-key");
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => client.CompleteAsync(
+        var exception = await Assert.ThrowsAsync<AgentProviderException>(() => client.CompleteAsync(
             settings,
-            new AgentModelRequest([new AgentChatMessage("user", "hello")]))) ;
+            new AgentModelRequest([new AgentChatMessage("user", "hello")])));
+        Assert.Equal(AgentProviderErrorKind.Protocol, exception.Kind);
+    }
+
+    [Fact]
+    public async Task ProviderInvalidUtf8ResponseIsClassifiedAsProtocolError()
+    {
+        var handler = new DelegateHttpMessageHandler(_ =>
+        {
+            var content = new ByteArrayContent([(byte)'{', (byte)'"', 0xff, (byte)'"', (byte)':', (byte)'1', (byte)'}']);
+            content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+        });
+        using var httpClient = new HttpClient(handler);
+        var client = new OpenAiCompatibleAgentModelClient(httpClient);
+        var settings = new AgentProviderSettings
+        {
+            Enabled = true,
+            BaseUrl = "https://api.example/v1",
+            Model = "test-model",
+            RequiresApiKey = false
+        };
+
+        var exception = await Assert.ThrowsAsync<AgentProviderException>(() => client.CompleteAsync(
+            settings,
+            new AgentModelRequest([new AgentChatMessage("user", "hello")])));
+
+        Assert.Equal(AgentProviderErrorKind.Protocol, exception.Kind);
+        Assert.Contains("UTF-8", exception.SafeMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ProviderInvalidUtf8StreamingResponseIsClassifiedAsProtocolError()
+    {
+        var handler = new DelegateHttpMessageHandler(_ =>
+        {
+            var content = new ByteArrayContent([(byte)'d', (byte)'a', (byte)'t', (byte)'a', (byte)':', 0xff, (byte)'\n', (byte)'\n']);
+            content.Headers.ContentType = new MediaTypeHeaderValue("text/event-stream");
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+        });
+        using var httpClient = new HttpClient(handler);
+        var client = new OpenAiCompatibleAgentModelClient(httpClient);
+        var settings = new AgentProviderSettings
+        {
+            Enabled = true,
+            BaseUrl = "https://api.example/v1",
+            Model = "test-model",
+            RequiresApiKey = false
+        };
+
+        var exception = await Assert.ThrowsAsync<AgentProviderException>(() => client.CompleteStreamingAsync(
+            settings,
+            new AgentModelRequest([new AgentChatMessage("user", "hello")]),
+            _ => { }));
+
+        Assert.Equal(AgentProviderErrorKind.Protocol, exception.Kind);
+        Assert.Contains("UTF-8", exception.SafeMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class DelegateHttpMessageHandler : HttpMessageHandler

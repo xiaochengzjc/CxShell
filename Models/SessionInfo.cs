@@ -223,6 +223,7 @@ public class ApplicationSettings
     public bool AutoCheckForUpdates { get; set; } = true;
     public bool IncludePrereleaseUpdates { get; set; }
     public AgentProviderSettings AgentProvider { get; set; } = new();
+    public AgentWebSettings AgentWeb { get; set; } = new();
     public bool AgentAllowCommandExecution { get; set; } = true;
     public string AgentPermissionMode { get; set; } = "risk";
     public bool AgentRequireApprovalForDangerousCommands { get; set; } = true;

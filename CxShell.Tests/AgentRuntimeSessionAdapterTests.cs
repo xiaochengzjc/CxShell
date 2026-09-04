@@ -182,6 +182,31 @@ public sealed class AgentRuntimeSessionAdapterTests
     }
 
     [Fact]
+    public void ToolCatalogSeparatesChatPlanAndAgentModes()
+    {
+        var chat = AgentRunCoordinator.GetToolDefinitions(AgentChatMode.Chat);
+        var plan = AgentRunCoordinator.GetToolDefinitions(AgentChatMode.Plan);
+        var agent = AgentRunCoordinator.GetToolDefinitions(AgentChatMode.Agent);
+
+        Assert.Empty(chat);
+        Assert.DoesNotContain(
+            AgentRunCoordinator.SessionCommandToolName,
+            plan.Select(tool => tool.Name));
+        Assert.Contains(
+            AgentRunCoordinator.SessionInfoToolName,
+            plan.Select(tool => tool.Name));
+        Assert.Contains(
+            AgentRunCoordinator.SessionCommandToolName,
+            agent.Select(tool => tool.Name));
+        Assert.Contains(
+            AgentRunCoordinator.TerminalWriteToolName,
+            agent.Select(tool => tool.Name));
+        Assert.Contains(
+            AgentRunCoordinator.RunOnSessionsToolName,
+            agent.Select(tool => tool.Name));
+    }
+
+    [Fact]
     public async Task CapabilityNamesAreComparedCaseInsensitively()
     {
         using var gateway = CreateGateway(CreateSnapshot(isConnected: true));

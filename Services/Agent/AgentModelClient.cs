@@ -150,6 +150,9 @@ public sealed class AgentProviderException : InvalidOperationException
     public static AgentProviderException Protocol(string message, Exception? innerException = null)
         => new(AgentProviderErrorKind.Protocol, message, retryable: false, innerException: innerException);
 
+    public static AgentProviderException Request(string message, Exception? innerException = null)
+        => new(AgentProviderErrorKind.Request, message, retryable: false, innerException: innerException);
+
     private static string SafeEndpoint(string endpoint)
     {
         if (Uri.TryCreate(endpoint, UriKind.Absolute, out var uri))

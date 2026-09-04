@@ -34,7 +34,7 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
 
         ValidateRequest(provider, request);
 
-        if (AgentProviderConfiguration.IsResponsesProvider(provider))
+        if (AgentProviderConfiguration.IsResponsesProvider(provider, request.Model))
         {
             return await CompleteResponsesAsync(provider, request, cancellationToken)
                 .ConfigureAwait(false);
@@ -42,7 +42,7 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
 
         var body = new
         {
-            model = string.IsNullOrWhiteSpace(request.Model) ? provider.Model.Trim() : request.Model.Trim(),
+            model = AgentProviderConfiguration.GetEffectiveModelId(provider, request.Model),
             messages = request.Messages.Select(ToWireMessage),
             stream = false,
             temperature = request.Temperature,
@@ -85,6 +85,12 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
         {
             throw AgentProviderException.Timeout(httpRequest.RequestUri?.ToString(), exception);
         }
+        catch (DecoderFallbackException exception)
+        {
+            throw AgentProviderException.Protocol(
+                "Provider returned invalid UTF-8 response data.",
+                exception);
+        }
         catch (HttpRequestException exception) when (!cancellationToken.IsCancellationRequested)
         {
             if (exception.StatusCode is { } statusCode)
@@ -104,7 +110,7 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
         ArgumentNullException.ThrowIfNull(onChunk);
         ValidateRequest(provider, request);
 
-        return AgentProviderConfiguration.IsResponsesProvider(provider)
+        return AgentProviderConfiguration.IsResponsesProvider(provider, request.Model)
             ? CompleteResponsesStreamingAsync(provider, request, onChunk, cancellationToken)
             : CompleteChatStreamingAsync(provider, request, onChunk, cancellationToken);
     }
@@ -117,7 +123,7 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
     {
         var body = new
         {
-            model = string.IsNullOrWhiteSpace(request.Model) ? provider.Model.Trim() : request.Model.Trim(),
+            model = AgentProviderConfiguration.GetEffectiveModelId(provider, request.Model),
             messages = request.Messages.Select(ToWireMessage),
             stream = true,
             stream_options = new { include_usage = true },
@@ -168,6 +174,12 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
         {
             throw AgentProviderException.Timeout(httpRequest.RequestUri?.ToString(), exception);
         }
+        catch (DecoderFallbackException exception)
+        {
+            throw AgentProviderException.Protocol(
+                "Provider returned invalid UTF-8 streaming data.",
+                exception);
+        }
         catch (HttpRequestException exception) when (!cancellationToken.IsCancellationRequested)
         {
             if (exception.StatusCode is { } statusCode)
@@ -196,7 +208,7 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
     {
         var body = new
         {
-            model = string.IsNullOrWhiteSpace(request.Model) ? provider.Model.Trim() : request.Model.Trim(),
+            model = AgentProviderConfiguration.GetEffectiveModelId(provider, request.Model),
             input = request.Messages.SelectMany(ToResponsesInput).ToList(),
             stream = true,
             store = false,
@@ -247,6 +259,12 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
         {
             throw AgentProviderException.Timeout(httpRequest.RequestUri?.ToString(), exception);
         }
+        catch (DecoderFallbackException exception)
+        {
+            throw AgentProviderException.Protocol(
+                "Provider returned invalid UTF-8 streaming data.",
+                exception);
+        }
         catch (HttpRequestException exception) when (!cancellationToken.IsCancellationRequested)
         {
             if (exception.StatusCode is { } statusCode)
@@ -286,7 +304,7 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
         var rawResponse = new StringBuilder();
         var dataBuilder = new StringBuilder();
         var sawSsePayload = false;
-        var model = provider.Model;
+        var model = AgentProviderConfiguration.GetEffectiveModelId(provider);
         int? inputTokens = null;
         int? outputTokens = null;
         string? line;
@@ -430,7 +448,7 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
                     if (!toolBuffers.TryGetValue(index, out var buffer))
                     {
                         if (toolBuffers.Count >= MaximumToolCalls)
-                            throw new InvalidOperationException(
+                            throw AgentProviderException.Protocol(
                                 $"Provider response contained more than {MaximumToolCalls} tool calls.");
                         buffer = new StreamingToolCallBuffer(index);
                         toolBuffers[index] = buffer;
@@ -473,7 +491,7 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
         var rawResponse = new StringBuilder();
         var dataBuilder = new StringBuilder();
         var sawSsePayload = false;
-        var model = provider.Model;
+        var model = AgentProviderConfiguration.GetEffectiveModelId(provider);
         int? inputTokens = null;
         int? outputTokens = null;
         IReadOnlyList<AgentToolCall>? completedToolCalls = null;
@@ -616,7 +634,7 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
             if (!toolBuffers.TryGetValue(key, out var buffer))
             {
                 if (toolBuffers.Count >= MaximumToolCalls)
-                    throw new InvalidOperationException(
+                    throw AgentProviderException.Protocol(
                         $"Provider response contained more than {MaximumToolCalls} tool calls.");
                 buffer = new StreamingToolCallBuffer(toolBuffers.Count) { Id = key };
                 toolBuffers[key] = buffer;
@@ -642,8 +660,8 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
             if (!toolBuffers.TryGetValue(key, out var buffer))
             {
                 if (toolBuffers.Count >= MaximumToolCalls)
-                    throw new InvalidOperationException(
-                        $"Provider response contained more than {MaximumToolCalls} tool calls.");
+                throw AgentProviderException.Protocol(
+                    $"Provider response contained more than {MaximumToolCalls} tool calls.");
                 buffer = new StreamingToolCallBuffer(toolBuffers.Count);
                 toolBuffers[key] = buffer;
             }
@@ -682,7 +700,7 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
     private static void EnsureStreamingResponseSize(int characterCount)
     {
         if (characterCount > MaximumResponseCharacters)
-            throw new InvalidOperationException("Provider response is too large.");
+            throw AgentProviderException.Protocol("Provider response is too large.");
     }
 
     private sealed class StreamingToolCallBuffer
@@ -705,7 +723,7 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
     {
         var body = new
         {
-            model = string.IsNullOrWhiteSpace(request.Model) ? provider.Model.Trim() : request.Model.Trim(),
+            model = AgentProviderConfiguration.GetEffectiveModelId(provider, request.Model),
             input = request.Messages.SelectMany(ToResponsesInput).ToList(),
             stream = false,
             store = false,
@@ -752,11 +770,6 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
             {
                 throw;
             }
-            catch (InvalidOperationException exception)
-                when (IsProviderBoundaryViolation(exception))
-            {
-                throw;
-            }
             catch (Exception exception) when (exception is JsonException or InvalidOperationException)
             {
                 throw AgentProviderException.Protocol(
@@ -791,11 +804,6 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
         {
             throw;
         }
-        catch (InvalidOperationException exception)
-            when (IsProviderBoundaryViolation(exception))
-        {
-            throw;
-        }
         catch (Exception exception) when (exception is JsonException or InvalidOperationException)
         {
             throw AgentProviderException.Protocol(
@@ -822,22 +830,22 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
     private static AgentModelResponse ParseResponse(string responseText, AgentProviderSettings provider)
     {
         if (responseText.Length > MaximumResponseCharacters)
-            throw new InvalidOperationException("Provider response is too large.");
+            throw AgentProviderException.Protocol("Provider response is too large.");
 
         using var document = JsonDocument.Parse(responseText);
         var root = document.RootElement;
         var choices = root.TryGetProperty("choices", out var choicesElement) &&
                       choicesElement.ValueKind == JsonValueKind.Array
             ? choicesElement
-            : throw new InvalidOperationException("Provider response did not contain choices.");
+            : throw AgentProviderException.Protocol("Provider response did not contain choices.");
         if (choices.GetArrayLength() == 0)
-            throw new InvalidOperationException("Provider response contained no choices.");
+            throw AgentProviderException.Protocol("Provider response contained no choices.");
 
         var first = choices[0];
         if (!first.TryGetProperty("message", out var message) ||
             message.ValueKind != JsonValueKind.Object)
         {
-            throw new InvalidOperationException("Provider response did not contain a message.");
+            throw AgentProviderException.Protocol("Provider response did not contain a message.");
         }
 
         var content = message.TryGetProperty("content", out var contentElement)
@@ -849,8 +857,8 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
         var toolCalls = ParseToolCalls(message);
         var model = root.TryGetProperty("model", out var modelElement) &&
                     modelElement.ValueKind == JsonValueKind.String
-            ? modelElement.GetString() ?? provider.Model
-            : provider.Model;
+            ? modelElement.GetString() ?? AgentProviderConfiguration.GetEffectiveModelId(provider)
+            : AgentProviderConfiguration.GetEffectiveModelId(provider);
         var usage = root.TryGetProperty("usage", out var usageElement) ? usageElement : default;
         var inputTokens = ReadInt(usage, "prompt_tokens");
         var outputTokens = ReadInt(usage, "completion_tokens");
@@ -1085,7 +1093,7 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
         AgentProviderSettings provider)
     {
         if (responseText.Length > MaximumResponseCharacters)
-            throw new InvalidOperationException("Provider response is too large.");
+            throw AgentProviderException.Protocol("Provider response is too large.");
 
         using var document = JsonDocument.Parse(responseText);
         var root = document.RootElement;
@@ -1127,7 +1135,7 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
                 {
                     if (toolCalls.Count >= MaximumToolCalls)
                     {
-                        throw new InvalidOperationException(
+                        throw AgentProviderException.Protocol(
                             $"Provider response contained more than {MaximumToolCalls} tool calls.");
                     }
 
@@ -1139,7 +1147,7 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
 
         var model = ReadString(root, "model");
         if (string.IsNullOrWhiteSpace(model))
-            model = provider.Model;
+            model = AgentProviderConfiguration.GetEffectiveModelId(provider);
         var usage = root.TryGetProperty("usage", out var usageElement) ? usageElement : default;
 
         return new AgentModelResponse(
@@ -1187,7 +1195,7 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
         }
 
         if (calls.GetArrayLength() > MaximumToolCalls)
-            throw new InvalidOperationException(
+            throw AgentProviderException.Protocol(
                 $"Provider response contained more than {MaximumToolCalls} tool calls.");
 
         var parsed = new List<AgentToolCall>();
@@ -1201,7 +1209,7 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
                 !function.TryGetProperty("name", out var name) ||
                 name.ValueKind != JsonValueKind.String)
             {
-                throw new InvalidOperationException("Provider response contained an invalid tool call.");
+            throw AgentProviderException.Protocol("Provider response contained an invalid tool call.");
             }
 
             var arguments = function.TryGetProperty("arguments", out var argumentElement) &&
@@ -1223,25 +1231,25 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
         string? arguments)
     {
         if (string.IsNullOrWhiteSpace(id))
-            throw new InvalidOperationException("Provider response contained a tool call without an ID.");
+            throw AgentProviderException.Protocol("Provider response contained a tool call without an ID.");
         if (id.Length > AgentRunCoordinator.MaximumToolCallIdCharacters)
         {
-            throw new InvalidOperationException(
+            throw AgentProviderException.Protocol(
                 $"Provider tool call ID cannot exceed {AgentRunCoordinator.MaximumToolCallIdCharacters} characters.");
         }
 
         if (string.IsNullOrWhiteSpace(name))
-            throw new InvalidOperationException("Provider response contained a tool call without a name.");
+            throw AgentProviderException.Protocol("Provider response contained a tool call without a name.");
         if (name.Length > AgentRunCoordinator.MaximumToolNameCharacters)
         {
-            throw new InvalidOperationException(
+            throw AgentProviderException.Protocol(
                 $"Provider tool name cannot exceed {AgentRunCoordinator.MaximumToolNameCharacters} characters.");
         }
 
         var normalizedArguments = arguments ?? "{}";
         if (normalizedArguments.Length > AgentRunCoordinator.MaximumToolArgumentsCharacters)
         {
-            throw new InvalidOperationException(
+            throw AgentProviderException.Protocol(
                 $"Provider tool arguments cannot exceed {AgentRunCoordinator.MaximumToolArgumentsCharacters} characters.");
         }
 
@@ -1258,7 +1266,7 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
             });
         if (Encoding.UTF8.GetByteCount(json) > MaximumRequestBytes)
         {
-            throw new InvalidOperationException(
+            throw AgentProviderException.Request(
                 $"Provider request cannot exceed {MaximumRequestBytes} bytes.");
         }
 
@@ -1271,7 +1279,7 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
     {
         var contentLength = response.Content.Headers.ContentLength;
         if (contentLength > (long)MaximumResponseCharacters * 4)
-            throw new InvalidOperationException("Provider response is too large.");
+            throw AgentProviderException.Protocol("Provider response is too large.");
 
         await using var stream = await response.Content
             .ReadAsStreamAsync(cancellationToken)
@@ -1291,7 +1299,7 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
                 break;
 
             if (builder.Length > MaximumResponseCharacters - read)
-                throw new InvalidOperationException("Provider response is too large.");
+                throw AgentProviderException.Protocol("Provider response is too large.");
             builder.Append(buffer, 0, read);
         }
 
@@ -1338,12 +1346,12 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
 
         var validation = AgentProviderConfiguration.Validate(provider);
         if (!validation.IsValid)
-            throw new InvalidOperationException(validation.Message);
+            throw AgentProviderException.Request(validation.Message);
 
         if (request.Messages == null || request.Messages.Count == 0)
-            throw new ArgumentException("At least one chat message is required.", nameof(request));
+            throw AgentProviderException.Request("At least one chat message is required.");
         if (request.Messages.Count > MaximumMessages)
-            throw new ArgumentException($"At most {MaximumMessages} chat messages are supported.", nameof(request));
+            throw AgentProviderException.Request($"At most {MaximumMessages} chat messages are supported.");
         if (request.Messages.Any(message =>
                 message is null ||
                 string.IsNullOrWhiteSpace(message.Role) ||
@@ -1354,7 +1362,7 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
                 (message.Role.Equals("tool", StringComparison.OrdinalIgnoreCase) &&
                  string.IsNullOrWhiteSpace(message.ToolCallId))))
         {
-            throw new ArgumentException("Chat messages contain an invalid role or are too large.", nameof(request));
+            throw AgentProviderException.Request("Chat messages contain an invalid role or are too large.");
         }
 
         var capabilities = AgentProviderConfiguration.GetCapabilities(provider);
@@ -1402,8 +1410,4 @@ public sealed class OpenAiCompatibleAgentModelClient : IAgentModelClient, IAgent
         return normalized.Length <= 500 ? normalized : normalized[..500] + "...";
     }
 
-    private static bool IsProviderBoundaryViolation(InvalidOperationException exception)
-        => exception.Message.StartsWith("Provider response is too large", StringComparison.Ordinal) ||
-           exception.Message.StartsWith("Provider tool", StringComparison.Ordinal) ||
-           exception.Message.StartsWith("Provider response contained more than", StringComparison.Ordinal);
 }

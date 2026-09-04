@@ -24,7 +24,10 @@ public sealed class AgentRuntimeSessionAdapter :
 
     private readonly IAgentSessionGateway _gateway;
     private readonly Func<AgentProviderSettings?> _providerSettings;
+    private readonly Func<AgentWebSettings?> _webSettings;
     private readonly IAgentModelClient _modelClient;
+    private readonly AgentModelCatalogClient _modelCatalogClient;
+    private readonly AgentWebAccess _webAccess;
     private readonly IAgentRunCoordinator _runCoordinator;
     private readonly bool _ownsRunCoordinator;
 
@@ -32,12 +35,23 @@ public sealed class AgentRuntimeSessionAdapter :
         IAgentSessionGateway gateway,
         Func<AgentProviderSettings?>? providerSettings = null,
         IAgentModelClient? modelClient = null,
-        IAgentRunCoordinator? runCoordinator = null)
+        IAgentRunCoordinator? runCoordinator = null,
+        Func<AgentWebSettings?>? webSettings = null,
+        AgentModelCatalogClient? modelCatalogClient = null,
+        AgentWebAccess? webAccess = null)
     {
         _gateway = gateway ?? throw new ArgumentNullException(nameof(gateway));
         _providerSettings = providerSettings ?? (() => null);
+        _webSettings = webSettings ?? (() => null);
         _modelClient = modelClient ?? new OpenAiCompatibleAgentModelClient();
-        _runCoordinator = runCoordinator ?? new AgentRunCoordinator(_gateway, _providerSettings, _modelClient);
+        _modelCatalogClient = modelCatalogClient ?? new AgentModelCatalogClient();
+        _webAccess = webAccess ?? new AgentWebAccess(_webSettings);
+        _runCoordinator = runCoordinator ?? new AgentRunCoordinator(
+            _gateway,
+            _providerSettings,
+            _modelClient,
+            webSettings: _webSettings,
+            webAccess: _webAccess);
         _ownsRunCoordinator = runCoordinator == null;
     }
 
@@ -107,7 +121,10 @@ public sealed class AgentRuntimeSessionAdapter :
                 AgentRuntimeMethodNames.ProviderTest => await TestProviderAsync(
                     normalizedRequestId,
                     cancellationToken).ConfigureAwait(false),
-                AgentRuntimeMethodNames.ToolCatalog => ToolCatalog(normalizedRequestId),
+                AgentRuntimeMethodNames.ProviderModels => await ProviderModelsAsync(
+                    normalizedRequestId,
+                    cancellationToken).ConfigureAwait(false),
+                AgentRuntimeMethodNames.ToolCatalog => ToolCatalog(normalizedRequestId, parameters),
                 AgentRuntimeMethodNames.SessionList => ListSessions(normalizedRequestId),
                 AgentRuntimeMethodNames.SavedSessionList => await ListSavedSessionsAsync(
                     normalizedRequestId,
@@ -135,6 +152,14 @@ public sealed class AgentRuntimeSessionAdapter :
                     parameters,
                     cancellationToken).ConfigureAwait(false),
                 AgentRuntimeMethodNames.ModelRequest => await ModelRequestAsync(
+                    normalizedRequestId,
+                    parameters,
+                    cancellationToken).ConfigureAwait(false),
+                AgentRuntimeMethodNames.WebSearch => await WebSearchAsync(
+                    normalizedRequestId,
+                    parameters,
+                    cancellationToken).ConfigureAwait(false),
+                AgentRuntimeMethodNames.WebFetch => await WebFetchAsync(
                     normalizedRequestId,
                     parameters,
                     cancellationToken).ConfigureAwait(false),
@@ -256,9 +281,14 @@ public sealed class AgentRuntimeSessionAdapter :
                                            _gateway.Capabilities.RequiresApprovalForSessionOpen,
             "agent.saved-session.close" => _gateway.Capabilities.SupportsSavedSessionManagement,
             "agent.session.get" => _gateway.Capabilities.SupportsSessionDiscovery,
+            "agent.session.list.connected" => _gateway.Capabilities.SupportsSessionDiscovery,
             "agent.session.command" => _gateway.Capabilities.SupportsTerminalCommandDispatch,
             "agent.session.command.execute" => _gateway.Capabilities.SupportsTerminalCommandDispatch &&
                                                 _gateway.Capabilities.AllowsCommandExecution,
+            "agent.session.terminal.write" => _gateway.Capabilities.SupportsTerminalCommandDispatch &&
+                                               _gateway.Capabilities.AllowsCommandExecution,
+            "agent.session.command.batch" => _gateway.Capabilities.SupportsTerminalCommandDispatch &&
+                                               _gateway.Capabilities.AllowsCommandExecution,
             "agent.session.command.output" => _gateway.Capabilities.SupportsCommandOutputCapture,
             "agent.diagnostics" => _gateway.Capabilities.SupportsReadOnlyDiagnostics,
             "agent.diagnostic.run" => _gateway.Capabilities.SupportsReadOnlyDiagnostics &&
@@ -277,8 +307,9 @@ public sealed class AgentRuntimeSessionAdapter :
                                                  _gateway.Capabilities.RequiresApprovalForChangeCommands,
             "agent.session.command.change-approval" => _gateway.Capabilities.RequiresApprovalForChangeCommands,
             "runtime.request.cancel" => true,
-             "agent.provider.status" => true,
-             "agent.provider.test" => true,
+            "agent.provider.status" => true,
+            "agent.provider.test" => true,
+            "agent.provider.models" => AgentProviderConfiguration.Validate(_providerSettings()).IsValid,
             "agent.provider.tools" => GetProviderCapabilities().SupportsTools,
             "agent.provider.streaming" => GetProviderCapabilities().SupportsStreaming,
             "agent.provider.vision" => GetProviderCapabilities().SupportsVision,
@@ -287,6 +318,9 @@ public sealed class AgentRuntimeSessionAdapter :
             "agent.provider.usage" => GetProviderCapabilities().SupportsTokenUsage,
             "agent.provider.reasoning" => GetProviderCapabilities().SupportsReasoning,
             "agent.model.request" => true,
+            "agent.web.search" => _webSettings()?.Enabled == true &&
+                                   !string.IsNullOrWhiteSpace(_webSettings()?.SearxngBaseUrl),
+            "agent.web.fetch" => _webSettings()?.Enabled == true,
             "agent.tool.catalog" => true,
             "agent.run" => true,
             "agent.run.append" => true,
@@ -504,7 +538,7 @@ public sealed class AgentRuntimeSessionAdapter :
                         [new AgentChatMessage(
                             "user",
                             "Connectivity test. Reply with OK only.")],
-                        Model: provider.Model,
+                        Model: AgentProviderConfiguration.GetEffectiveModelId(provider),
                         MaxTokens: 16),
                     timeout.Token)
                 .ConfigureAwait(false);
@@ -527,7 +561,7 @@ public sealed class AgentRuntimeSessionAdapter :
                 new AgentRuntimeProviderTestResult(
                     false,
                     provider.BuiltinId,
-                    provider.Model,
+                    AgentProviderConfiguration.GetEffectiveModelId(provider),
                     ElapsedMilliseconds(startedAt),
                     "The provider connectivity test timed out.",
                     AgentProviderErrorKind.Timeout.ToString())
@@ -542,7 +576,7 @@ public sealed class AgentRuntimeSessionAdapter :
                 new AgentRuntimeProviderTestResult(
                     false,
                     provider.BuiltinId,
-                    provider.Model,
+                    AgentProviderConfiguration.GetEffectiveModelId(provider),
                     ElapsedMilliseconds(startedAt),
                     exception.SafeMessage,
                     exception.Kind.ToString())
@@ -557,7 +591,7 @@ public sealed class AgentRuntimeSessionAdapter :
                 new AgentRuntimeProviderTestResult(
                     false,
                     provider.BuiltinId,
-                    provider.Model,
+                    AgentProviderConfiguration.GetEffectiveModelId(provider),
                     ElapsedMilliseconds(startedAt),
                     TrimException(exception),
                     exception.GetType().Name)
@@ -567,13 +601,114 @@ public sealed class AgentRuntimeSessionAdapter :
         }
     }
 
+    private async Task<AgentRuntimeResponse> ProviderModelsAsync(
+        string requestId,
+        CancellationToken cancellationToken)
+    {
+        var provider = _providerSettings();
+        if (provider == null)
+        {
+            return Error(
+                requestId,
+                AgentRuntimeErrorCodes.ProviderUnavailable,
+                "Agent provider is not configured.");
+        }
+
+        var result = await _modelCatalogClient.FetchAsync(provider, cancellationToken)
+            .ConfigureAwait(false);
+        if (result.Success)
+        {
+            AgentProviderConfiguration.ApplyModelCatalog(provider, result.Models);
+        }
+
+        return Success(
+            requestId,
+            new AgentRuntimeProviderModelsResult(
+                result.Models,
+                result.Success,
+                result.Error));
+    }
+
+    private async Task<AgentRuntimeResponse> WebSearchAsync(
+        string requestId,
+        JsonElement parameters,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetBoundedString(parameters, "query", 500, out var query, out var error))
+            return Error(requestId, AgentRuntimeErrorCodes.InvalidParameters, error!);
+
+        var result = await _webAccess.SearchAsync(query, cancellationToken).ConfigureAwait(false);
+        return Success(
+            requestId,
+            new AgentRuntimeWebSearchResult(
+                result.Success,
+                query,
+                result.Success ? result.Content : string.Empty,
+                result.Url,
+                result.Error));
+    }
+
+    private async Task<AgentRuntimeResponse> WebFetchAsync(
+        string requestId,
+        JsonElement parameters,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetBoundedString(parameters, "url", 2048, out var url, out var error))
+            return Error(requestId, AgentRuntimeErrorCodes.InvalidParameters, error!);
+
+        var result = await _webAccess.FetchAsync(url, cancellationToken).ConfigureAwait(false);
+        return Success(
+            requestId,
+            new AgentRuntimeWebFetchResult(
+                result.Success,
+                result.Success ? result.Content : string.Empty,
+                result.Url,
+                result.StatusCode,
+                result.Error));
+    }
+
+    private static bool TryGetBoundedString(
+        JsonElement parameters,
+        string name,
+        int maximumLength,
+        out string value,
+        out string? error)
+    {
+        value = string.Empty;
+        error = null;
+        if (parameters.ValueKind != JsonValueKind.Object ||
+            !parameters.TryGetProperty(name, out var property) ||
+            property.ValueKind != JsonValueKind.String)
+        {
+            error = $"{name} is required and must be a non-empty string.";
+            return false;
+        }
+
+        var parsedValue = property.GetString();
+        if (string.IsNullOrWhiteSpace(parsedValue))
+        {
+            error = $"{name} is required and must be a non-empty string.";
+            return false;
+        }
+
+        value = parsedValue.Trim();
+        if (value.Length > maximumLength)
+        {
+            error = $"{name} cannot exceed {maximumLength} characters.";
+            return false;
+        }
+
+        return true;
+    }
+
     private static long ElapsedMilliseconds(DateTimeOffset startedAt)
         => Math.Max(0, (long)(DateTimeOffset.UtcNow - startedAt).TotalMilliseconds);
 
-    private AgentRuntimeResponse ToolCatalog(string requestId)
+    private AgentRuntimeResponse ToolCatalog(string requestId, JsonElement parameters)
     {
         var capabilities = _gateway.Capabilities;
-        var tools = AgentRunCoordinator.GetToolDefinitions()
+        var mode = ParseMode(parameters);
+        var tools = AgentRunCoordinator.GetToolDefinitions(mode)
             .Select(tool =>
             {
                 var availability = GetToolAvailability(tool.Name, capabilities);
@@ -591,13 +726,26 @@ public sealed class AgentRuntimeSessionAdapter :
             new AgentRuntimeToolCatalogResult(
                 tools,
                 capabilities.RequiresApprovalForDangerousCommands,
-                capabilities.RequiresApprovalForChangeCommands));
+                capabilities.RequiresApprovalForChangeCommands)
+            {
+                Mode = mode
+            });
     }
 
-    private static (bool Available, string? Reason) GetToolAvailability(
+    private (bool Available, string? Reason) GetToolAvailability(
         string toolName,
         AgentGatewayCapabilities capabilities)
     {
+        if (toolName is "web_search" or "web_fetch")
+        {
+            var settings = _webSettings();
+            if (settings?.Enabled != true)
+                return (false, "Web access is disabled in Agent settings.");
+            if (toolName == "web_search" && string.IsNullOrWhiteSpace(settings.SearxngBaseUrl))
+                return (false, "Web search requires a SearXNG URL in Agent settings.");
+            return (true, null);
+        }
+
         if (string.Equals(toolName, AgentRunCoordinator.SessionInfoToolName, StringComparison.Ordinal))
         {
             return capabilities.SupportsSessionDiscovery
@@ -606,6 +754,21 @@ public sealed class AgentRuntimeSessionAdapter :
         }
 
         if (string.Equals(toolName, AgentRunCoordinator.SessionCommandToolName, StringComparison.Ordinal))
+        {
+            return capabilities.SupportsTerminalCommandDispatch && capabilities.AllowsCommandExecution
+                ? (true, null)
+                : (false, "Terminal command execution is disabled in the current gateway.");
+        }
+
+        if (string.Equals(toolName, AgentRunCoordinator.ConnectedSessionListToolName, StringComparison.Ordinal))
+        {
+            return capabilities.SupportsSessionDiscovery
+                ? (true, null)
+                : (false, "Connected session discovery is not available in the current gateway.");
+        }
+
+        if (string.Equals(toolName, AgentRunCoordinator.TerminalWriteToolName, StringComparison.Ordinal) ||
+            string.Equals(toolName, AgentRunCoordinator.RunOnSessionsToolName, StringComparison.Ordinal))
         {
             return capabilities.SupportsTerminalCommandDispatch && capabilities.AllowsCommandExecution
                 ? (true, null)
@@ -718,11 +881,13 @@ public sealed class AgentRuntimeSessionAdapter :
 
     private AgentRuntimeResponse StartRun(string requestId, JsonElement parameters)
     {
-        if (!TryGetGuid(parameters, "sessionId", out var sessionId))
+        if (!Guid.TryParse(GetString(parameters, "sessionId"), out var sessionId))
             return Error(requestId, AgentRuntimeErrorCodes.InvalidParameters, "A valid sessionId is required.");
 
         if (!TryReadMessages(parameters, out var messages, out var messageError))
             return Error(requestId, AgentRuntimeErrorCodes.InvalidParameters, messageError!);
+
+        var mode = ParseMode(parameters);
 
         var timeoutMs = GetInt(
             parameters,
@@ -736,6 +901,7 @@ public sealed class AgentRuntimeSessionAdapter :
             Model = GetString(parameters, "model"),
             Temperature = GetDouble(parameters, "temperature"),
             MaxTokens = GetIntNullable(parameters, "maxTokens"),
+            Mode = mode,
             Timeout = TimeSpan.FromMilliseconds(timeoutMs)
         });
         if (!start.Started)
@@ -749,7 +915,8 @@ public sealed class AgentRuntimeSessionAdapter :
             new AgentRuntimeRunResult(
                 true,
                 start.RunId,
-                sessionId.ToString("D")));
+                sessionId.ToString("D"),
+                mode));
     }
 
     private AgentRuntimeResponse CancelRun(string requestId, JsonElement parameters)
@@ -1078,6 +1245,18 @@ public sealed class AgentRuntimeSessionAdapter :
         }
 
         return defaultValue;
+    }
+
+    private static AgentChatMode ParseMode(JsonElement parameters)
+    {
+        var value = GetString(parameters, "mode");
+        return value?.Trim().ToLowerInvariant() switch
+        {
+            "chat" => AgentChatMode.Chat,
+            "plan" => AgentChatMode.Plan,
+            "agent" => AgentChatMode.Agent,
+            _ => AgentChatMode.Agent
+        };
     }
 
     private static bool TryReadMessages(
