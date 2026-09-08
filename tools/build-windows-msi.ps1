@@ -61,6 +61,122 @@ function Export-EmbeddedResource([System.Reflection.Assembly]$Assembly, [string]
     }
 }
 
+function Assert-MsiDatabaseContract([string]$MsiPath) {
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    $database = $null
+
+    try {
+        $database = $installer.OpenDatabase($MsiPath, 0)
+
+        $checks = [ordered]@{
+            "Custom directory survives elevation" = @'
+SELECT Property, Value
+FROM Property
+WHERE Property = 'SecureCustomProperties'
+'@
+            "Install hook is scheduled" = @'
+SELECT Action
+FROM InstallExecuteSequence
+WHERE Action = 'InstallHookDeferred' AND Condition = 'NOT REMOVE'
+'@
+            "Uninstall hook is scheduled" = @'
+SELECT Action
+FROM InstallExecuteSequence
+WHERE Action = 'UninstallHookDeferred' AND Condition = 'REMOVE="ALL"'
+'@
+            "Velopack cleanup is scheduled" = @'
+SELECT Action
+FROM InstallExecuteSequence
+WHERE Action = 'RustCleanup' AND Condition = 'REMOVE="ALL"'
+'@
+            "Channel patch is scheduled" = @'
+SELECT Action
+FROM InstallExecuteSequence
+WHERE Action = 'PatchChannelDeferred' AND Condition = 'NOT REMOVE'
+'@
+        }
+
+        foreach ($check in $checks.GetEnumerator()) {
+            $view = $null
+            try {
+                $sql = [System.Text.RegularExpressions.Regex]::Replace($check.Value, '\s+', ' ').Trim()
+                $view = $database.OpenView($sql)
+                if ($null -eq $view) {
+                    throw "Could not open MSI query."
+                }
+
+                $view.Execute()
+                $record = $view.Fetch()
+                if ($null -eq $record) {
+                    throw "Required MSI row was not found."
+                }
+                if ($check.Key -eq "Custom directory survives elevation" -and
+                    $record.StringData(2) -notmatch '(^|;)VELOPACK_INSTALLDIR(;|$)') {
+                    throw "VELOPACK_INSTALLDIR is not listed in SecureCustomProperties."
+                }
+            }
+            catch {
+                throw "MSI contract check failed: $($check.Key) $($_.Exception.Message)"
+            }
+            finally {
+                if ($null -ne $view) {
+                    [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($view)
+                }
+            }
+        }
+
+        $controlEventChecks = @(
+            @{ Name = "ExitDialog Finish exits the wizard"; Dialog = "ExitDialog"; Control = "Finish"; Event = "EndDialog"; Argument = "Return" }
+            @{ Name = "ExitDialog Finish launches the app"; Dialog = "ExitDialog"; Control = "Finish"; Event = "DoAction"; Argument = "RustLaunchApplication" }
+            @{ Name = "InstallDirDlg validates the selected path"; Dialog = "InstallDirDlg"; Control = "Next"; Event = "DoAction"; Argument = "RustValidatePath" }
+            @{ Name = "InstallDirDlg continues after a valid path"; Dialog = "InstallDirDlg"; Control = "Next"; Event = "NewDialog"; Argument = "VerifyReadyDlg" }
+            @{ Name = "InstallDirDlg handles an invalid path"; Dialog = "InstallDirDlg"; Control = "Next"; Event = "SpawnDialog"; Argument = "InvalidDirDlg" }
+        )
+
+        $eventOrders = @{}
+        foreach ($check in $controlEventChecks) {
+            $view = $null
+            try {
+                $sql = "SELECT Event, Argument, Ordering FROM ControlEvent WHERE Dialog_ = '$($check.Dialog)' AND Control_ = '$($check.Control)'"
+                $view = $database.OpenView($sql)
+                $view.Execute()
+                $found = $false
+                while ($record = $view.Fetch()) {
+                    if ($record.StringData(1) -eq $check.Event -and $record.StringData(2) -eq $check.Argument) {
+                        $eventOrders[$check.Name] = [int]$record.StringData(3)
+                        $found = $true
+                        break
+                    }
+                }
+
+                if (!$found) {
+                    throw "Required control event was not found."
+                }
+            }
+            catch {
+                throw "MSI contract check failed: $($check.Name) $($_.Exception.Message)"
+            }
+            finally {
+                if ($null -ne $view) {
+                    [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($view)
+                }
+            }
+        }
+
+        if ($eventOrders["ExitDialog Finish launches the app"] -ge $eventOrders["ExitDialog Finish exits the wizard"]) {
+            throw "MSI contract check failed: app launch must run before ExitDialog closes."
+        }
+
+        Write-Host "MSI contract checks passed."
+    }
+    finally {
+        if ($null -ne $database) {
+            [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($database)
+        }
+        [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($installer)
+    }
+}
+
 function New-StableGuidFromHash([string]$Text) {
     $namespace = [Guid]"6ba7b812-9dad-11d1-80b4-00c04fd430c8"
     $namespaceBytes = $namespace.ToByteArray()
@@ -239,6 +355,11 @@ try {
         <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
         <Property Id="_BrowseProperty" Value="INSTALLFOLDER" />
         <Property Id="WixAppFolder" Value="WixPerMachineFolder" />
+        <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+        <Property Id="VELOPACK_INSTALLDIR" Secure="yes" />
+        <SetProperty Action="SetVelopackInstallFolder" Id="INSTALLFOLDER" Value="[VELOPACK_INSTALLDIR]" Before="CostFinalize" Sequence="execute" Condition="VELOPACK_INSTALLDIR" />
+        <SetProperty Action="SetQuietDefaultInstallFolder" Id="INSTALLFOLDER" Value="[$programFilesDirectory]CxShell" Before="CostFinalize" Sequence="execute"
+                     Condition="NOT Installed AND NOT VELOPACK_INSTALLDIR AND UILevel &lt; 5" />
 
         <Binary Id="RustDll" SourceFile="$rustNativeAttribute" />
         <Binary Id="WixUI_Bmp_Banner" SourceFile="$bannerAttribute" />
@@ -255,10 +376,39 @@ try {
 
         <CustomAction Id="RustSetLocaleStrings" BinaryRef="RustDll" DllEntry="RustSetLocaleStrings" Execute="immediate" Return="check" />
         <CustomAction Id="RustValidatePath" BinaryRef="RustDll" DllEntry="ValidatePath" Execute="immediate" Return="check" />
+        <CustomAction Id="RustLaunchApplication" BinaryRef="RustDll" DllEntry="LaunchApplication" Impersonate="yes" Execute="immediate" Return="ignore" />
+
+        <CustomAction Id="SetInstallHookData" Property="InstallHookDeferred"
+                      Value="[INSTALLFOLDER]&quot;[RustMainExeFileName]&quot;[RustAppVersion]" Execute="immediate" Return="check" />
+        <CustomAction Id="InstallHookDeferred" BinaryRef="RustDll" DllEntry="InstallHookDeferred"
+                      Execute="deferred" Impersonate="yes" Return="ignore" />
+        <CustomAction Id="SetUninstallHookData" Property="UninstallHookDeferred"
+                      Value="[INSTALLFOLDER]&quot;[RustMainExeFileName]&quot;[RustAppVersion]" Execute="immediate" Return="check" />
+        <CustomAction Id="UninstallHookDeferred" BinaryRef="RustDll" DllEntry="UninstallHookDeferred"
+                      Execute="deferred" Impersonate="yes" Return="ignore" />
+        <CustomAction Id="SetRustCleanupData" Property="RustCleanup"
+                      Value="[INSTALLFOLDER]&quot;[RustAppId]&quot;[TempFolder]" Execute="immediate" Return="check" />
+        <CustomAction Id="RustCleanup" BinaryRef="RustDll" DllEntry="CleanupDeferred"
+                      Execute="deferred" Impersonate="no" Return="ignore" />
+        <CustomAction Id="SetPatchChannelData" Property="PatchChannelDeferred"
+                      Value="[OriginalDatabase]&quot;[INSTALLFOLDER]" Execute="immediate" Return="check" />
+        <CustomAction Id="PatchChannelDeferred" BinaryRef="RustDll" DllEntry="PatchChannelDeferred"
+                      Execute="deferred" Impersonate="no" Return="ignore" />
 
         <InstallUISequence>
             <Custom Action="RustSetLocaleStrings" Before="AppSearch" />
         </InstallUISequence>
+
+        <InstallExecuteSequence>
+            <Custom Action="SetPatchChannelData" Before="PatchChannelDeferred" Condition="NOT REMOVE" />
+            <Custom Action="PatchChannelDeferred" After="InstallFiles" Condition="NOT REMOVE" />
+            <Custom Action="SetInstallHookData" Before="InstallHookDeferred" Condition="NOT REMOVE" />
+            <Custom Action="InstallHookDeferred" After="PatchChannelDeferred" Condition="NOT REMOVE" />
+            <Custom Action="SetUninstallHookData" Before="UninstallHookDeferred" Condition="REMOVE=&quot;ALL&quot;" />
+            <Custom Action="UninstallHookDeferred" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot;" />
+            <Custom Action="SetRustCleanupData" Before="RustCleanup" Condition="REMOVE=&quot;ALL&quot;" />
+            <Custom Action="RustCleanup" Before="RemoveFolders" Condition="REMOVE=&quot;ALL&quot;" />
+        </InstallExecuteSequence>
 
         <UI>
             <TextStyle Id="WixUI_Font_Normal" FaceName="Segoe UI" Size="8" />
@@ -306,6 +456,10 @@ $dialogRefs
             <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="MaintenanceTypeDlg" Order="2" Condition="Installed AND NOT PATCH" />
             <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="3" Condition="Installed AND PATCH" />
 
+            <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999" />
+            <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="RustLaunchApplication"
+                     Order="1" Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed" />
+
             <Property Id="ARPSYSTEMCOMPONENT" Value="1" />
         </UI>
     </Package>
@@ -324,6 +478,7 @@ $dialogRefs
     $outputDirectory = Split-Path -Parent ([System.IO.Path]::GetFullPath($OutputMsiPath))
     New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
     Move-Item -LiteralPath $generatedMsiPath -Destination ([System.IO.Path]::GetFullPath($OutputMsiPath)) -Force
+    Assert-MsiDatabaseContract ([System.IO.Path]::GetFullPath($OutputMsiPath))
     Write-Host "Created selectable-location MSI: $OutputMsiPath"
 }
 finally {
