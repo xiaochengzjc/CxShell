@@ -89,12 +89,12 @@ public partial class ApplicationSettingsViewModel : ObservableObject
     [ObservableProperty] private string _agentAllowedPrivateHosts;
     [ObservableProperty] private int _agentWebMaxResults;
     [ObservableProperty] private int _agentWebMaxFetchCharacters;
-    [ObservableProperty] private bool _agentGlobalProxyEnabled;
-    [ObservableProperty] private ISelectOption? _agentGlobalProxyTypeOption;
-    [ObservableProperty] private string _agentGlobalProxyHost;
-    [ObservableProperty] private int _agentGlobalProxyPort;
-    [ObservableProperty] private string _agentGlobalProxyUsername;
-    [ObservableProperty] private string _agentGlobalProxyPassword;
+    [ObservableProperty] private bool _globalProxyEnabled;
+    [ObservableProperty] private ISelectOption? _globalProxyTypeOption;
+    [ObservableProperty] private string _globalProxyHost;
+    [ObservableProperty] private int _globalProxyPort;
+    [ObservableProperty] private string _globalProxyUsername;
+    [ObservableProperty] private string _globalProxyPassword;
     [ObservableProperty] private string _agentStatusText = string.Empty;
     [ObservableProperty] private bool _agentIsReady;
     [ObservableProperty] private string _agentModelCatalogStatus = string.Empty;
@@ -105,7 +105,7 @@ public partial class ApplicationSettingsViewModel : ObservableObject
     public ObservableCollection<ISelectOption> AgentPermissionModeOptions { get; } = new();
     public ObservableCollection<ISelectOption> AgentProviderTypeOptions { get; } = new();
     public ObservableCollection<ISelectOption> AgentModelOptions { get; } = new();
-    public ObservableCollection<ISelectOption> AgentGlobalProxyTypeOptions { get; } = new();
+    public ObservableCollection<ISelectOption> GlobalProxyTypeOptions { get; } = new();
 
     public string TitleText => Text("ApplicationSettings.Title");
     public string GeneralText => Text("ApplicationSettings.General");
@@ -142,6 +142,7 @@ public partial class ApplicationSettingsViewModel : ObservableObject
     public string EnableCommandSuggestionsText => Text("ApplicationSettings.EnableCommandSuggestions");
     public string AutoCheckForUpdatesText => Text("ApplicationSettings.AutoCheckForUpdates");
     public string IncludePrereleaseUpdatesText => Text("ApplicationSettings.IncludePrereleaseUpdates");
+    public string NetworkText => Text("ApplicationSettings.Network");
     public string AgentText => Text("ApplicationSettings.Agent");
     public string AgentDescriptionText => Text("ApplicationSettings.AgentDescription");
     public string AgentEnabledText => Text("ApplicationSettings.AgentEnabled");
@@ -189,13 +190,13 @@ public partial class ApplicationSettingsViewModel : ObservableObject
     public string AgentAllowedPrivateHostsText => Text("ApplicationSettings.AgentAllowedPrivateHosts");
     public string AgentWebMaxResultsText => Text("ApplicationSettings.AgentWebMaxResults");
     public string AgentWebMaxFetchCharactersText => Text("ApplicationSettings.AgentWebMaxFetchCharacters");
-    public string AgentGlobalProxyText => Text("ApplicationSettings.AgentGlobalProxy");
-    public string AgentGlobalProxyEnabledText => Text("ApplicationSettings.AgentGlobalProxyEnabled");
-    public string AgentGlobalProxyTypeText => Text("ApplicationSettings.AgentGlobalProxyType");
-    public string AgentGlobalProxyHostText => Text("ApplicationSettings.AgentGlobalProxyHost");
-    public string AgentGlobalProxyPortText => Text("ApplicationSettings.AgentGlobalProxyPort");
-    public string AgentGlobalProxyUsernameText => Text("ApplicationSettings.AgentGlobalProxyUsername");
-    public string AgentGlobalProxyPasswordText => Text("ApplicationSettings.AgentGlobalProxyPassword");
+    public string GlobalProxyText => Text("ApplicationSettings.GlobalProxy");
+    public string GlobalProxyEnabledText => Text("ApplicationSettings.GlobalProxyEnabled");
+    public string GlobalProxyTypeText => Text("ApplicationSettings.GlobalProxyType");
+    public string GlobalProxyHostText => Text("ApplicationSettings.GlobalProxyHost");
+    public string GlobalProxyPortText => Text("ApplicationSettings.GlobalProxyPort");
+    public string GlobalProxyUsernameText => Text("ApplicationSettings.GlobalProxyUsername");
+    public string GlobalProxyPasswordText => Text("ApplicationSettings.GlobalProxyPassword");
     public string AgentSecondsText => Text("ApplicationSettings.Seconds");
     public string AgentReadyText => Text("ApplicationSettings.AgentReady");
     public string AgentUseRoutinPresetText => Text("ApplicationSettings.AgentUseRoutinPreset");
@@ -307,12 +308,12 @@ public partial class ApplicationSettingsViewModel : ObservableObject
         _agentWebMaxResults = web.MaxResults;
         _agentWebMaxFetchCharacters = web.MaxFetchCharacters;
         var globalProxy = settings.GlobalProxy ??= new ProxySettings();
-        _agentGlobalProxyEnabled = globalProxy.Protocol != ProxyProtocol.None;
-        _agentGlobalProxyHost = globalProxy.Host ?? string.Empty;
-        _agentGlobalProxyPort = globalProxy.Port;
-        _agentGlobalProxyUsername = globalProxy.Username ?? string.Empty;
-        _agentGlobalProxyPassword = PasswordEncryptionService.DecryptEncrypted(globalProxy.Password);
-        RebuildAgentGlobalProxyTypeOptions(globalProxy.Protocol);
+        _globalProxyEnabled = globalProxy.Protocol != ProxyProtocol.None;
+        _globalProxyHost = globalProxy.Host ?? string.Empty;
+        _globalProxyPort = globalProxy.Port;
+        _globalProxyUsername = globalProxy.Username ?? string.Empty;
+        _globalProxyPassword = PasswordEncryptionService.DecryptEncrypted(globalProxy.Password);
+        RebuildGlobalProxyTypeOptions(globalProxy.Protocol);
         _hostKeyTrust.Configure(settings);
         ReloadKnownHosts();
         RefreshAgentProviderStatus();
@@ -704,7 +705,7 @@ public partial class ApplicationSettingsViewModel : ObservableObject
         Persist();
     }
 
-    partial void OnAgentGlobalProxyEnabledChanged(bool value)
+    partial void OnGlobalProxyEnabledChanged(bool value)
     {
         var proxy = EnsureGlobalProxy();
         if (!value)
@@ -714,28 +715,28 @@ public partial class ApplicationSettingsViewModel : ObservableObject
         Persist();
     }
 
-    partial void OnAgentGlobalProxyTypeOptionChanged(ISelectOption? value)
+    partial void OnGlobalProxyTypeOptionChanged(ISelectOption? value)
     {
         if (value?.Content is not ProxyProtocol protocol)
             return;
 
         EnsureGlobalProxy().Protocol = protocol;
-        AgentGlobalProxyEnabled = protocol != ProxyProtocol.None;
+        GlobalProxyEnabled = protocol != ProxyProtocol.None;
         Persist();
     }
 
-    partial void OnAgentGlobalProxyHostChanged(string value)
+    partial void OnGlobalProxyHostChanged(string value)
     {
         EnsureGlobalProxy().Host = value?.Trim() ?? string.Empty;
         Persist();
     }
 
-    partial void OnAgentGlobalProxyPortChanged(int value)
+    partial void OnGlobalProxyPortChanged(int value)
     {
         var normalized = Math.Clamp(value, 0, 65535);
         if (value != normalized)
         {
-            AgentGlobalProxyPort = normalized;
+            GlobalProxyPort = normalized;
             return;
         }
 
@@ -743,13 +744,13 @@ public partial class ApplicationSettingsViewModel : ObservableObject
         Persist();
     }
 
-    partial void OnAgentGlobalProxyUsernameChanged(string value)
+    partial void OnGlobalProxyUsernameChanged(string value)
     {
         EnsureGlobalProxy().Username = value?.Trim() ?? string.Empty;
         Persist();
     }
 
-    partial void OnAgentGlobalProxyPasswordChanged(string value)
+    partial void OnGlobalProxyPasswordChanged(string value)
     {
         EnsureGlobalProxy().Password = PasswordEncryptionService.Encrypt(value?.Trim());
         Persist();
@@ -823,25 +824,25 @@ public partial class ApplicationSettingsViewModel : ObservableObject
     private ProxySettings? GetGlobalProxyIfEnabled()
     {
         var proxy = EnsureGlobalProxy();
-        return AgentGlobalProxyEnabled && proxy.IsEnabled ? proxy : null;
+        return GlobalProxyEnabled && proxy.IsEnabled ? proxy : null;
     }
 
-    private void RebuildAgentGlobalProxyTypeOptions(ProxyProtocol preferred)
+    private void RebuildGlobalProxyTypeOptions(ProxyProtocol preferred)
     {
-        AgentGlobalProxyTypeOptions.Clear();
+        GlobalProxyTypeOptions.Clear();
         foreach (var protocol in new[]
                  { ProxyProtocol.Http, ProxyProtocol.Socks4, ProxyProtocol.Socks4A, ProxyProtocol.Socks5, ProxyProtocol.None })
         {
-            AgentGlobalProxyTypeOptions.Add(new SelectOption
+            GlobalProxyTypeOptions.Add(new SelectOption
             {
                 Header = protocol == ProxyProtocol.None ? "None" : ProxySettings.GetTypeDisplay(protocol),
                 Content = protocol
             });
         }
 
-        AgentGlobalProxyTypeOption = AgentGlobalProxyTypeOptions.FirstOrDefault(option =>
+        GlobalProxyTypeOption = GlobalProxyTypeOptions.FirstOrDefault(option =>
             option.Content is ProxyProtocol protocol && protocol == preferred)
-            ?? AgentGlobalProxyTypeOptions[0];
+            ?? GlobalProxyTypeOptions[0];
     }
 
     private void RebuildAgentModelOptions()
@@ -921,6 +922,7 @@ public partial class ApplicationSettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(EnableCommandSuggestionsText));
         OnPropertyChanged(nameof(AutoCheckForUpdatesText));
         OnPropertyChanged(nameof(IncludePrereleaseUpdatesText));
+        OnPropertyChanged(nameof(NetworkText));
         OnPropertyChanged(nameof(AgentText));
         OnPropertyChanged(nameof(AgentDescriptionText));
         OnPropertyChanged(nameof(AgentEnabledText));
@@ -959,15 +961,15 @@ public partial class ApplicationSettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(AgentSecondsText));
         OnPropertyChanged(nameof(AgentReadyText));
         OnPropertyChanged(nameof(AgentUseRoutinPresetText));
-        OnPropertyChanged(nameof(AgentGlobalProxyText));
-        OnPropertyChanged(nameof(AgentGlobalProxyEnabledText));
-        OnPropertyChanged(nameof(AgentGlobalProxyTypeText));
-        OnPropertyChanged(nameof(AgentGlobalProxyHostText));
-        OnPropertyChanged(nameof(AgentGlobalProxyPortText));
-        OnPropertyChanged(nameof(AgentGlobalProxyUsernameText));
-        OnPropertyChanged(nameof(AgentGlobalProxyPasswordText));
+        OnPropertyChanged(nameof(GlobalProxyText));
+        OnPropertyChanged(nameof(GlobalProxyEnabledText));
+        OnPropertyChanged(nameof(GlobalProxyTypeText));
+        OnPropertyChanged(nameof(GlobalProxyHostText));
+        OnPropertyChanged(nameof(GlobalProxyPortText));
+        OnPropertyChanged(nameof(GlobalProxyUsernameText));
+        OnPropertyChanged(nameof(GlobalProxyPasswordText));
         RebuildAgentProviderTypeOptions(EnsureAgentProvider().Type);
-        RebuildAgentGlobalProxyTypeOptions(EnsureGlobalProxy().Protocol);
+        RebuildGlobalProxyTypeOptions(EnsureGlobalProxy().Protocol);
         RefreshAgentProviderStatus();
         OnPropertyChanged(nameof(ChineseText));
         OnPropertyChanged(nameof(EnglishText));

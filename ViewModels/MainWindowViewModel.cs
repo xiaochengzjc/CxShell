@@ -61,6 +61,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private readonly ConnectionAuditService _connectionAuditService = new();
     private readonly IReadOnlyList<LocalTerminalProfile> _localTerminalProfiles;
     private readonly AgentPermissionPolicy _agentPermissionPolicy;
+    private readonly HashSet<Guid> _quickSessionConnectionsInFlight = [];
     private UpdateProgressWindow? _updateProgressWindow;
     private UpdateProgressViewModel? _updateProgressViewModel;
     private SettingsCenterWindow? _settingsCenterWindow;
@@ -471,6 +472,23 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
 
         SendTerminalInput(sourceTab, data);
+    }
+
+    public bool AddTerminalSelectionToAgent(TerminalViewModel sourceTerminal, string selectedText)
+    {
+        if (string.IsNullOrWhiteSpace(selectedText))
+            return false;
+
+        var sourceTab = Tabs.FirstOrDefault(tab => ReferenceEquals(tab.Terminal, sourceTerminal));
+        var sourceLabel = sourceTab?.Session.Name;
+        if (string.IsNullOrWhiteSpace(sourceLabel))
+            sourceLabel = sourceTab?.Session.Host ?? sourceTerminal.HostInfo;
+
+        if (!AgentPanel.TryAddTerminalAnnotation(selectedText, sourceLabel))
+            return false;
+
+        IsAgentPanelVisible = true;
+        return true;
     }
 
     public void SendTerminalInput(TerminalTabViewModel? sourceTab, string data)
@@ -2276,7 +2294,21 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (session == null)
             return;
 
-        await ConnectSession(session);
+        // A CardTabStrip selection is transient because the click should not
+        // leave a tab highlighted. Guard the async command as well in case
+        // selection cleanup re-enters the handler before the first connect
+        // has completed.
+        if (!_quickSessionConnectionsInFlight.Add(session.Id))
+            return;
+
+        try
+        {
+            await ConnectSession(session);
+        }
+        finally
+        {
+            _quickSessionConnectionsInFlight.Remove(session.Id);
+        }
     }
 
     [RelayCommand]
@@ -2331,12 +2363,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         AddCurrentSessionToQuickBarCommand.NotifyCanExecuteChanged();
     }
 
-    public void MoveQuickSession(SessionInfo? source, SessionInfo? target, bool insertAfter)
+    public void HandleQuickSessionReordered()
     {
-        if (source == null || target == null)
-            return;
-
-        _sessionTreeVm.MoveQuickSession(source, target, insertAfter);
+        _sessionTreeVm.CommitQuickSessionOrder(QuickSessions.Select(session => session.Id));
     }
 
     public void HandleTabReordered(TerminalTabViewModel? tab)

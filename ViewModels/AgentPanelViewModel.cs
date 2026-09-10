@@ -74,6 +74,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     private DispatcherTimer? _runElapsedTimer;
     private DateTimeOffset? _runStartedAtUtc;
     private string _activeRunSessionName = string.Empty;
+    private int _nextAnnotationNumber = 1;
     private int _activeRunToolCallCount;
     private int _activeRunModelRequestCount;
     private int _disposeState;
@@ -112,6 +113,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     public ObservableCollection<ISelectOption> ReasoningEffortOptions { get; } = new();
     public ObservableCollection<AgentPanelMessageViewModel> Messages { get; } = new();
     public ObservableCollection<AgentAttachmentViewModel> PendingAttachments { get; } = new();
+    public ObservableCollection<AgentTerminalAnnotationViewModel> PendingAnnotations { get; } = new();
     public ObservableCollection<AgentPanelRunViewModel> RunHistory { get; } = new();
     public ObservableCollection<AgentPanelRunViewModel> FilteredRunHistory { get; } = new();
     public ObservableCollection<ISelectOption> RunHistoryFilterOptions { get; } = new();
@@ -167,6 +169,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     public string AttachFileText => Text("Agent.AttachFile");
     public string AttachFileTipText => Text("Agent.AttachFileTip");
     public string RemoveAttachmentText => Text("Agent.RemoveAttachment");
+    public string RemoveAnnotationText => Text("Agent.RemoveAnnotation");
     public string RunText => Text("Agent.Run");
     public string AppendText => Text("Agent.Append");
     public string StopText => Text("Agent.Stop");
@@ -242,6 +245,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     public bool HasSessions => SessionOptions.Count > 0;
     public bool HasMessages => Messages.Count > 0;
     public bool HasPendingAttachments => PendingAttachments.Count > 0;
+    public bool HasPendingAnnotations => PendingAnnotations.Count > 0;
     public bool HasRunHistory => RunHistory.Count > 0;
     public bool HasFilteredRunHistory => FilteredRunHistory.Count > 0;
     public bool HasActiveRuns => ActiveRunCount > 0;
@@ -272,7 +276,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
            IsRuntimeReady &&
            IsProviderReady &&
            (CanRunWithoutSession || IsSelectedSessionConnected || CanStartSessionManagementRun) &&
-           (!string.IsNullOrWhiteSpace(Prompt) || HasPendingAttachments);
+           (!string.IsNullOrWhiteSpace(Prompt) || HasPendingAttachments || HasPendingAnnotations);
 
     public bool CanAppend()
         => IsRunning &&
@@ -280,7 +284,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
            !IsCanceling &&
            !IsAppending &&
            !string.IsNullOrWhiteSpace(_activeRunId) &&
-           (!string.IsNullOrWhiteSpace(Prompt) || HasPendingAttachments);
+           (!string.IsNullOrWhiteSpace(Prompt) || HasPendingAttachments || HasPendingAnnotations);
 
     public bool CanStop()
         => IsRunning &&
@@ -977,8 +981,14 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(ChatModeChatText));
         OnPropertyChanged(nameof(ChatModePlanText));
         OnPropertyChanged(nameof(ChatModeAgentText));
+        OnPropertyChanged(nameof(ReasoningEffortText));
+        OnPropertyChanged(nameof(ReasoningEffortNoneText));
+        OnPropertyChanged(nameof(ReasoningEffortLowText));
+        OnPropertyChanged(nameof(ReasoningEffortMediumText));
+        OnPropertyChanged(nameof(ReasoningEffortHighText));
         OnPropertyChanged(nameof(PromptText));
         OnPropertyChanged(nameof(PromptPlaceholderText));
+        OnPropertyChanged(nameof(RemoveAnnotationText));
         OnPropertyChanged(nameof(RunText));
         OnPropertyChanged(nameof(AppendText));
         OnPropertyChanged(nameof(StopText));
@@ -1055,6 +1065,8 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         RebuildChatModeOptions(SelectedChatMode);
         foreach (var message in Messages)
             message.NotifyLocalizationChanged();
+        foreach (var annotation in PendingAnnotations)
+            annotation.NotifyLocalizationChanged();
         RefreshProviderStatus();
         foreach (var run in RunHistory)
             run.NotifyLocalizationChanged();
@@ -1341,6 +1353,43 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         NotifyRunCommands();
     }
 
+    public bool TryAddTerminalAnnotation(string selectedText, string? sourceLabel = null)
+    {
+        var normalized = selectedText.Replace("\r\n", "\n").Replace('\r', '\n').Trim('\n');
+        if (normalized.Length == 0)
+            return false;
+
+        if (normalized.Length > AgentTerminalAnnotationViewModel.MaximumTextCharacters)
+        {
+            normalized = normalized[..AgentTerminalAnnotationViewModel.MaximumTextCharacters] + "\n[...]";
+        }
+
+        var nextExistingNumber = PendingAnnotations
+            .Select(annotation => annotation.Number)
+            .Concat(Messages.SelectMany(message => message.Annotations).Select(annotation => annotation.Number))
+            .DefaultIfEmpty(0)
+            .Max() + 1;
+        _nextAnnotationNumber = Math.Max(_nextAnnotationNumber, nextExistingNumber);
+        var annotation = new AgentTerminalAnnotationViewModel(
+            _nextAnnotationNumber++,
+            normalized,
+            sourceLabel);
+        PendingAnnotations.Add(annotation);
+        OnPropertyChanged(nameof(HasPendingAnnotations));
+        NotifyRunCommands();
+        return true;
+    }
+
+    [RelayCommand]
+    private void RemoveAnnotation(AgentTerminalAnnotationViewModel? annotation)
+    {
+        if (annotation == null || !PendingAnnotations.Remove(annotation))
+            return;
+
+        OnPropertyChanged(nameof(HasPendingAnnotations));
+        NotifyRunCommands();
+    }
+
     [RelayCommand(CanExecute = nameof(CanRun))]
     private async Task Run()
     {
@@ -1348,7 +1397,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         var promptText = Prompt.Trim();
         var hasConnectedSession = selectedSession?.IsConnected == true;
         if ((!hasConnectedSession && !CanRunWithoutSession && !CanStartSessionManagementRun) ||
-            (promptText.Length == 0 && !HasPendingAttachments))
+            (promptText.Length == 0 && !HasPendingAttachments && !HasPendingAnnotations))
             return;
 
         var runSessionId = hasConnectedSession ? selectedSession!.SessionId : Guid.Empty;
@@ -1357,13 +1406,15 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
             promptText = promptText[..MaximumPromptCharacters];
 
         var pendingAttachments = PendingAttachments.ToArray();
+        var pendingAnnotations = PendingAnnotations.ToArray();
+        var contentParts = BuildContentParts(pendingAttachments, pendingAnnotations);
         var modelPrompt = promptText.Length == 0
             ? Text("Agent.AttachmentOnlyPrompt")
             : promptText;
         var userMessage = new AgentChatMessage(
             "user",
             modelPrompt,
-            ContentParts: pendingAttachments.Select(item => item.ContentPart).ToArray());
+            ContentParts: contentParts);
         var requestMessages = new List<AgentChatMessage>
         {
             new("system", BuildModeSystemPrompt(SelectedChatMode))
@@ -1394,7 +1445,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
             modelRequestCount: 1,
             toolCallCount: 0,
             sessionName: selectedSession?.Name ?? string.Empty);
-        AddMessage(AgentPanelMessageViewModel.User(modelPrompt, pendingAttachments));
+        AddMessage(AgentPanelMessageViewModel.User(modelPrompt, pendingAttachments, pendingAnnotations));
 
         try
         {
@@ -1421,6 +1472,8 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
             Prompt = string.Empty;
             PendingAttachments.Clear();
             OnPropertyChanged(nameof(HasPendingAttachments));
+            PendingAnnotations.Clear();
+            OnPropertyChanged(nameof(HasPendingAnnotations));
             RefreshActiveRun();
             return;
         }
@@ -1436,7 +1489,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         var runId = _activeRunId;
         var promptText = Prompt.Trim();
         if (string.IsNullOrWhiteSpace(runId) ||
-            (promptText.Length == 0 && !HasPendingAttachments))
+            (promptText.Length == 0 && !HasPendingAttachments && !HasPendingAnnotations))
         {
             return;
         }
@@ -1445,13 +1498,15 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
             promptText = promptText[..MaximumPromptCharacters];
 
         var pendingAttachments = PendingAttachments.ToArray();
+        var pendingAnnotations = PendingAnnotations.ToArray();
+        var contentParts = BuildContentParts(pendingAttachments, pendingAnnotations);
         var modelPrompt = promptText.Length == 0
             ? Text("Agent.AttachmentOnlyPrompt")
             : promptText;
         var userMessage = new AgentChatMessage(
             "user",
             modelPrompt,
-            ContentParts: pendingAttachments.Select(item => item.ContentPart).ToArray());
+            ContentParts: contentParts);
 
         IsAppending = true;
         try
@@ -1476,10 +1531,12 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
 
             _conversation.Add(userMessage);
             TrimConversation();
-            AddMessage(AgentPanelMessageViewModel.User(modelPrompt, pendingAttachments));
+            AddMessage(AgentPanelMessageViewModel.User(modelPrompt, pendingAttachments, pendingAnnotations));
             Prompt = string.Empty;
             PendingAttachments.Clear();
             OnPropertyChanged(nameof(HasPendingAttachments));
+            PendingAnnotations.Clear();
+            OnPropertyChanged(nameof(HasPendingAnnotations));
             StatusText = FollowUpQueuedText;
         }
         catch (Exception exception)
@@ -2616,6 +2673,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         state.Conversation.AddRange(_conversation);
         state.Messages.Clear();
         state.Messages.AddRange(Messages);
+        state.NextAnnotationNumber = _nextAnnotationNumber;
     }
 
     private void RestoreSessionState(Guid? sessionId)
@@ -2624,6 +2682,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         Messages.Clear();
         _toolMessages.Clear();
         _currentAssistantMessage = null;
+        _nextAnnotationNumber = 1;
 
         if (sessionId is { } id && _sessionStates.TryGetValue(id, out var state))
         {
@@ -2638,6 +2697,8 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
                     _toolMessages[toolCallId] = message;
                 }
             }
+
+            _nextAnnotationNumber = Math.Max(1, state.NextAnnotationNumber);
         }
 
         OnPropertyChanged(nameof(HasMessages));
@@ -2717,6 +2778,17 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     {
         public List<AgentChatMessage> Conversation { get; } = [];
         public List<AgentPanelMessageViewModel> Messages { get; } = [];
+        public int NextAnnotationNumber { get; set; } = 1;
+    }
+
+    private static IReadOnlyList<AgentContentPart> BuildContentParts(
+        IReadOnlyList<AgentAttachmentViewModel> attachments,
+        IReadOnlyList<AgentTerminalAnnotationViewModel> annotations)
+    {
+        var parts = new List<AgentContentPart>(attachments.Count + annotations.Count);
+        parts.AddRange(attachments.Select(item => item.ContentPart));
+        parts.AddRange(annotations.Select(item => item.ToContentPart()));
+        return parts;
     }
 }
 
@@ -2812,12 +2884,15 @@ public sealed partial class AgentPanelMessageViewModel : ObservableObject
     private AgentPanelMessageViewModel(
         AgentPanelMessageKind kind,
         string content,
-        IReadOnlyList<AgentAttachmentViewModel>? attachments = null)
+        IReadOnlyList<AgentAttachmentViewModel>? attachments = null,
+        IReadOnlyList<AgentTerminalAnnotationViewModel>? annotations = null)
     {
         Kind = kind;
         _content = content;
         if (attachments is { Count: > 0 })
             Attachments = attachments.ToArray();
+        if (annotations is { Count: > 0 })
+            Annotations = annotations.ToArray();
 
         if (kind == AgentPanelMessageKind.Assistant)
             MarkdownBuilder = new ObservableStringBuilder(content);
@@ -2833,6 +2908,8 @@ public sealed partial class AgentPanelMessageViewModel : ObservableObject
     public bool IsSummary => Kind == AgentPanelMessageKind.Summary;
     public IReadOnlyList<AgentAttachmentViewModel> Attachments { get; } = [];
     public bool HasAttachments => Attachments.Count > 0;
+    public IReadOnlyList<AgentTerminalAnnotationViewModel> Annotations { get; } = [];
+    public bool HasAnnotations => Annotations.Count > 0;
     public ObservableStringBuilder? MarkdownBuilder { get; }
     public ObservableStringBuilder? SummaryMarkdownBuilder { get; }
     public string ApprovalRequiredText => Text("Agent.ApprovalRequired");
@@ -2897,8 +2974,9 @@ public sealed partial class AgentPanelMessageViewModel : ObservableObject
 
     public static AgentPanelMessageViewModel User(
         string content,
-        IReadOnlyList<AgentAttachmentViewModel>? attachments = null)
-        => new(AgentPanelMessageKind.User, content, attachments);
+        IReadOnlyList<AgentAttachmentViewModel>? attachments = null,
+        IReadOnlyList<AgentTerminalAnnotationViewModel>? annotations = null)
+        => new(AgentPanelMessageKind.User, content, attachments, annotations);
     public static AgentPanelMessageViewModel Assistant(string content) => new(AgentPanelMessageKind.Assistant, content);
     public static AgentPanelMessageViewModel Tool(string content) => new(AgentPanelMessageKind.Tool, content);
     public static AgentPanelMessageViewModel Error(string content) => new(AgentPanelMessageKind.Error, content);
@@ -2983,6 +3061,8 @@ public sealed partial class AgentPanelMessageViewModel : ObservableObject
         OnPropertyChanged(nameof(SummaryMetricsText));
         OnPropertyChanged(nameof(SummaryDurationLabelText));
         OnPropertyChanged(nameof(SummaryResultLabelText));
+        foreach (var annotation in Annotations)
+            annotation.NotifyLocalizationChanged();
     }
 
     partial void OnIsToolDetailsExpandedChanged(bool value)

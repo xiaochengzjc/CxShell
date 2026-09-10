@@ -27,13 +27,9 @@ public partial class MainWindow : Window
     private bool _isPointerOverFullScreenHintArea;
     private bool _tabReorderHandlersAttached;
     private SessionInfo? _quickSessionContext;
-    private SessionInfo? _quickSessionDragSession;
-    private Avalonia.Controls.Control? _quickSessionDragControl;
-    private Point _quickSessionDragStart;
-    private bool _isQuickSessionDragging;
-    private bool _quickSessionDragMoved;
-    private SessionInfo? _quickSessionDropTargetSession;
-    private bool _quickSessionDropInsertAfter;
+    private readonly HashSet<Guid> _quickSessionActivationsPending = [];
+    private Guid? _quickSessionPointerPressedSessionId;
+    private bool _isQuickSessionActivationReady;
     private TerminalTabViewModel? _tabContext;
     private bool _isDraggingSftpSplitter;
     private bool _isSftpPanelWidthApplyQueued;
@@ -54,14 +50,6 @@ public partial class MainWindow : Window
     private const double MinimumAgentPanelWidth = 280;
     private const double MaximumAgentPanelWidth = 600;
     private const double AgentSplitterHitSlop = 5;
-    private const double QuickSessionDragThreshold = 6;
-    private const double QuickSessionDropIndicatorWidth = 2;
-    private const double QuickSessionDragGhostOffsetX = -22;
-    private const double QuickSessionDragGhostOffsetY = -7;
-    private const double QuickSessionDropVerticalTolerance = 8;
-    private const string QuickSessionButtonClass = "quick-session-bar-button";
-    private const string QuickSessionDraggingClass = "quick-session-dragging";
-    private const string QuickSessionDragActiveClass = "quick-session-drag-active";
 
     public MainWindow()
         : this(Array.Empty<string>())
@@ -73,6 +61,16 @@ public partial class MainWindow : Window
         _startupArgs = startupArgs;
         _startupLaunchOptions = CommandLineLaunchOptions.Parse(startupArgs);
         InitializeComponent();
+        // SelectingItemsControl exposes SelectionMode as a protected CLR
+        // property in Avalonia 12. Set the public styled property directly so
+        // the quick-session strip can have no persistent selection without
+        // making generated XAML call the inaccessible setter.
+        var selectionModeProperty = AvaloniaPropertyRegistry.Instance.FindRegistered(
+            typeof(Avalonia.Controls.Primitives.SelectingItemsControl),
+            "SelectionMode");
+        if (selectionModeProperty != null)
+            QuickSessionTabStrip.SetValue(selectionModeProperty, Avalonia.Controls.SelectionMode.Single);
+        QuickSessionTabStrip.SelectedIndex = -1;
         _fullScreenHintTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromSeconds(3)
@@ -111,6 +109,7 @@ public partial class MainWindow : Window
             }
         };
         DataContext = vm;
+        WriteToolbarDiagnostics("MainWindow initialized; toolbar menus use AtomUI ContextMenu.");
         Closed += (_, _) => vm.Dispose();
         PropertyChanged += (_, e) =>
         {
@@ -118,9 +117,6 @@ public partial class MainWindow : Window
                 UpdateApplicationSuspension(vm);
         };
         MainContentGrid.AddHandler(PointerPressedEvent, OnMainContentGridPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
-        AddHandler(PointerMovedEvent, OnQuickSessionDragPointerMoved, RoutingStrategies.Tunnel, handledEventsToo: true);
-        AddHandler(PointerReleasedEvent, OnQuickSessionDragPointerReleased, RoutingStrategies.Tunnel, handledEventsToo: true);
-        AddHandler(PointerCaptureLostEvent, OnQuickSessionDragPointerCaptureLost, RoutingStrategies.Bubble, handledEventsToo: true);
         AddHandler(PointerMovedEvent, OnSftpSplitterPointerMoved, RoutingStrategies.Tunnel, handledEventsToo: true);
         AddHandler(PointerReleasedEvent, OnSftpSplitterPointerReleased, RoutingStrategies.Tunnel, handledEventsToo: true);
         AddHandler(PointerCaptureLostEvent, OnSftpSplitterPointerCaptureLost, RoutingStrategies.Bubble, handledEventsToo: true);
@@ -141,6 +137,16 @@ public partial class MainWindow : Window
         if (DataContext is MainWindowViewModel vm)
         {
             AttachTabReorderHandlers();
+            _isQuickSessionActivationReady = false;
+            ClearQuickSessionSelection(QuickSessionTabStrip);
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (!this.IsAttachedToVisualTree())
+                    return;
+
+                ClearQuickSessionSelection(QuickSessionTabStrip);
+                _isQuickSessionActivationReady = true;
+            }, DispatcherPriority.ApplicationIdle);
             UpdateApplicationSuspension(vm);
             vm.StartAutomaticUpdateCheck(_startupArgs);
         }
@@ -148,6 +154,9 @@ public partial class MainWindow : Window
 
     protected override void OnUnloaded(RoutedEventArgs e)
     {
+        _isQuickSessionActivationReady = false;
+        _quickSessionPointerPressedSessionId = null;
+        _quickSessionActivationsPending.Clear();
         DetachTabReorderHandlers();
         if (DataContext is MainWindowViewModel vm)
             vm.SetApplicationSuspended(true);
@@ -161,10 +170,13 @@ public partial class MainWindow : Window
         if (_tabReorderHandlersAttached)
             return;
 
+        QuickSessionTabStrip.TabReordered += OnQuickSessionTabReordered;
+        QuickSessionTabStrip.LayoutUpdated += OnQuickSessionTabStripLayoutUpdated;
         foreach (var tabStrip in this.GetVisualDescendants().OfType<TabStrip>())
             tabStrip.TabReordered += OnTabReordered;
 
         _tabReorderHandlersAttached = true;
+        ApplyQuickSessionSquareCorners();
     }
 
     private void DetachTabReorderHandlers()
@@ -172,10 +184,26 @@ public partial class MainWindow : Window
         if (!_tabReorderHandlersAttached)
             return;
 
+        QuickSessionTabStrip.TabReordered -= OnQuickSessionTabReordered;
+        QuickSessionTabStrip.LayoutUpdated -= OnQuickSessionTabStripLayoutUpdated;
         foreach (var tabStrip in this.GetVisualDescendants().OfType<TabStrip>())
             tabStrip.TabReordered -= OnTabReordered;
 
         _tabReorderHandlersAttached = false;
+    }
+
+    private void OnQuickSessionTabStripLayoutUpdated(object? sender, EventArgs e)
+    {
+        ApplyQuickSessionSquareCorners();
+    }
+
+    private void ApplyQuickSessionSquareCorners()
+    {
+        foreach (var tabItem in QuickSessionTabStrip.GetVisualDescendants().OfType<TabStripItem>())
+        {
+            if (tabItem.CornerRadius != default)
+                tabItem.CornerRadius = default;
+        }
     }
 
     private void UpdateApplicationSuspension(MainWindowViewModel vm)
@@ -265,6 +293,31 @@ public partial class MainWindow : Window
 
         menu.Open(anchor);
         e.Handled = true;
+    }
+
+    private void OnLocalTerminalMenuItemLoaded(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not AtomMenuItem menuItem ||
+            DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        menuItem.Items.Clear();
+        foreach (var profile in vm.LocalTerminalProfiles)
+        {
+            var capturedProfile = profile;
+            var item = new AtomMenuItem
+            {
+                Header = profile.Name
+            };
+            item.Click += (_, args) =>
+            {
+                _ = vm.OpenLocalTerminalAsync(capturedProfile);
+                args.Handled = true;
+            };
+            menuItem.Items.Add(item);
+        }
     }
 
     private void OnAgentPanelCloseRequested(object? sender, EventArgs e)
@@ -376,407 +429,103 @@ public partial class MainWindow : Window
         var properties = e.GetCurrentPoint(this).Properties;
         if (properties.IsRightButtonPressed || properties.PointerUpdateKind == PointerUpdateKind.RightButtonPressed)
         {
-            ResetQuickSessionDrag();
             _quickSessionContext = session;
             ShowQuickSessionContextMenu(anchor);
             e.Handled = true;
             return;
         }
 
-        if (!properties.IsLeftButtonPressed && properties.PointerUpdateKind != PointerUpdateKind.LeftButtonPressed)
-            return;
-
-        _quickSessionDragSession = session;
-        _quickSessionDragControl = anchor;
-        _quickSessionDropTargetSession = null;
-        _quickSessionDragStart = e.GetPosition(this);
-        _isQuickSessionDragging = false;
-        _quickSessionDragMoved = false;
-        e.Pointer.Capture(this);
-        e.Handled = true;
+        if (properties.IsLeftButtonPressed || properties.PointerUpdateKind == PointerUpdateKind.LeftButtonPressed)
+        {
+            _quickSessionPointerPressedSessionId = session.Id;
+        }
     }
 
-    private void OnQuickSessionDragPointerMoved(object? sender, PointerEventArgs e)
+    private void OnQuickSessionTagPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
-        if (_quickSessionDragSession == null)
+        if (sender is not Avalonia.Controls.Control { DataContext: SessionInfo session })
             return;
 
-        var position = e.GetPosition(this);
-        if (!_isQuickSessionDragging)
+        if (_quickSessionPointerPressedSessionId != session.Id)
+            return;
+
+        // TabStripItem processes selection after the child release handler,
+        // so defer cleanup until the current pointer route has completed.
+        Dispatcher.UIThread.Post(() =>
         {
-            var delta = position - _quickSessionDragStart;
-            if (Math.Abs(delta.X) < QuickSessionDragThreshold &&
-                Math.Abs(delta.Y) < QuickSessionDragThreshold)
+            if (_quickSessionPointerPressedSessionId == session.Id)
+                _quickSessionPointerPressedSessionId = null;
+        }, DispatcherPriority.Background);
+    }
+
+    private void OnQuickSessionSelectionChanged(
+        object? sender,
+        Avalonia.Controls.SelectionChangedEventArgs e)
+    {
+        var session = e.AddedItems.OfType<SessionInfo>().FirstOrDefault();
+        if (session == null || DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        if (!_isQuickSessionActivationReady)
+        {
+            if (sender is Avalonia.Controls.Primitives.SelectingItemsControl initializingTabStrip)
+                ClearQuickSessionSelection(initializingTabStrip);
+            return;
+        }
+
+        // SelectionChanged can also be raised by ItemsSource initialization,
+        // keyboard focus, or the reorder implementation. Only a pointer
+        // activation from this tab's content is a connect request.
+        if (_quickSessionPointerPressedSessionId != session.Id)
+        {
+            if (sender is Avalonia.Controls.Primitives.SelectingItemsControl nonActivationTabStrip)
+                ClearQuickSessionSelection(nonActivationTabStrip);
+            return;
+        }
+
+        _quickSessionPointerPressedSessionId = null;
+
+        // CardTabStrip activates on pointer release. Clearing the transient
+        // selection can make the same routed event surface again, so only
+        // accept one activation for a session until the dispatcher is idle.
+        if (!_quickSessionActivationsPending.Add(session.Id))
+        {
+            if (sender is Avalonia.Controls.Primitives.SelectingItemsControl duplicateTabStrip)
+                ClearQuickSessionSelection(duplicateTabStrip);
+            return;
+        }
+
+        vm.ConnectQuickSessionCommand.Execute(session);
+
+        if (sender is Avalonia.Controls.Primitives.SelectingItemsControl tabStrip)
+        {
+            ClearQuickSessionSelection(tabStrip);
+            Dispatcher.UIThread.Post(() =>
             {
-                return;
-            }
-
-            _isQuickSessionDragging = true;
-            _quickSessionDragMoved = true;
-            SetQuickSessionDragActiveVisual(true);
-            RefreshQuickSessionDragVisuals();
-            ShowQuickSessionDragGhost(position);
-        }
-
-        ShowQuickSessionDragGhost(position);
-        UpdateQuickSessionDropTarget(e.GetPosition(this));
-        e.Handled = true;
-    }
-
-    private void OnQuickSessionDragPointerReleased(object? sender, PointerReleasedEventArgs e)
-    {
-        if (_quickSessionDragSession == null)
-            return;
-
-        var dragSession = _quickSessionDragSession;
-        var wasDragging = _isQuickSessionDragging || _quickSessionDragMoved;
-        var releaseTarget = ResolveQuickSessionContextAt(e.GetPosition(this));
-        if (wasDragging)
-            UpdateQuickSessionDropTarget(e.GetPosition(this));
-
-        var dropTarget = _quickSessionDropTargetSession;
-        var insertAfter = _quickSessionDropInsertAfter;
-        e.Pointer.Capture(null);
-        ResetQuickSessionDrag();
-
-        if (!wasDragging &&
-            releaseTarget?.Id == dragSession.Id &&
-            DataContext is MainWindowViewModel vm)
-        {
-            vm.ConnectQuickSessionCommand.Execute(dragSession);
-            e.Handled = true;
-            return;
-        }
-
-        if (wasDragging &&
-            dropTarget != null &&
-            dropTarget.Id != dragSession.Id &&
-            DataContext is MainWindowViewModel moveVm)
-        {
-            moveVm.MoveQuickSession(dragSession, dropTarget, insertAfter);
-        }
-
-        if (wasDragging)
-            e.Handled = true;
-    }
-
-    private void OnQuickSessionDragPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
-    {
-        if (_quickSessionDragSession != null)
-            ResetQuickSessionDrag();
-    }
-
-    private void ResetQuickSessionDrag()
-    {
-        SetQuickSessionClassControl(ref _quickSessionDragControl, null, QuickSessionDraggingClass);
-        SetQuickSessionDragActiveVisual(false);
-        HideQuickSessionDragGhost();
-        HideQuickSessionDropIndicator();
-        _quickSessionDragSession = null;
-        _isQuickSessionDragging = false;
-        _quickSessionDragMoved = false;
-        _quickSessionDropTargetSession = null;
-        _quickSessionDropInsertAfter = false;
-        _quickSessionDragStart = default;
-    }
-
-    private void UpdateQuickSessionDropTarget(Point point)
-    {
-        if (_quickSessionDragSession == null)
-        {
-            _quickSessionDropTargetSession = null;
-            _quickSessionDropInsertAfter = false;
-            HideQuickSessionDropIndicator();
-            RefreshQuickSessionDragVisuals();
-            return;
-        }
-
-        var hostPoint = this.TranslatePoint(point, QuickSessionDropIndicatorHost);
-        if (hostPoint == null ||
-            hostPoint.Value.Y < -QuickSessionDropVerticalTolerance ||
-            hostPoint.Value.Y > QuickSessionDropIndicatorHost.Bounds.Height + QuickSessionDropVerticalTolerance)
-        {
-            _quickSessionDropTargetSession = null;
-            _quickSessionDropInsertAfter = false;
-            HideQuickSessionDropIndicator();
-            RefreshQuickSessionDragVisuals();
-            return;
-        }
-
-        var dropItems = GetQuickSessionDropItems();
-        if (dropItems.Count <= 1)
-        {
-            _quickSessionDropTargetSession = null;
-            _quickSessionDropInsertAfter = false;
-            HideQuickSessionDropIndicator();
-            RefreshQuickSessionDragVisuals();
-            return;
-        }
-
-        var insertIndex = ResolveQuickSessionDropIndex(dropItems, hostPoint.Value.X);
-        if (!TryResolveQuickSessionDropTarget(
-                dropItems,
-                insertIndex,
-                _quickSessionDragSession.Id,
-                out var targetSession,
-                out var insertAfter))
-        {
-            _quickSessionDropTargetSession = null;
-            _quickSessionDropInsertAfter = false;
-            HideQuickSessionDropIndicator();
-            RefreshQuickSessionDragVisuals();
-            return;
-        }
-
-        var indicatorX = ResolveQuickSessionDropIndicatorX(dropItems, insertIndex);
-
-        _quickSessionDropTargetSession = targetSession;
-        _quickSessionDropInsertAfter = insertAfter;
-        ShowQuickSessionDropIndicatorAt(indicatorX);
-        RefreshQuickSessionDragVisuals();
-    }
-
-    private List<QuickSessionDropItem> GetQuickSessionDropItems()
-    {
-        var items = new List<QuickSessionDropItem>();
-        foreach (var control in this.GetVisualDescendants().OfType<Avalonia.Controls.Control>())
-        {
-            if (!control.Classes.Contains(QuickSessionButtonClass) ||
-                control.DataContext is not SessionInfo session ||
-                control.Bounds.Width <= 0)
-            {
-                continue;
-            }
-
-            var leftPoint = control.TranslatePoint(new Point(0, 0), QuickSessionDropIndicatorHost);
-            if (leftPoint == null)
-                continue;
-
-            items.Add(new QuickSessionDropItem(
-                session,
-                leftPoint.Value.X,
-                leftPoint.Value.X + control.Bounds.Width));
-        }
-
-        items.Sort(static (left, right) => left.Left.CompareTo(right.Left));
-        return items;
-    }
-
-    private static int ResolveQuickSessionDropIndex(IReadOnlyList<QuickSessionDropItem> items, double pointerX)
-    {
-        for (var i = 0; i < items.Count; i++)
-        {
-            var itemCenter = items[i].Left + (items[i].Right - items[i].Left) / 2;
-            if (pointerX < itemCenter)
-                return i;
-        }
-
-        return items.Count;
-    }
-
-    private static bool TryResolveQuickSessionDropTarget(
-        IReadOnlyList<QuickSessionDropItem> items,
-        int insertIndex,
-        Guid draggingSessionId,
-        out SessionInfo? targetSession,
-        out bool insertAfter)
-    {
-        targetSession = null;
-        insertAfter = false;
-
-        var dragIndex = -1;
-        for (var i = 0; i < items.Count; i++)
-        {
-            if (items[i].Session.Id == draggingSessionId)
-            {
-                dragIndex = i;
-                break;
-            }
-        }
-
-        if (dragIndex < 0 ||
-            insertIndex == dragIndex ||
-            insertIndex == dragIndex + 1)
-        {
-            return false;
-        }
-
-        if (insertIndex <= 0)
-        {
-            targetSession = items[0].Session;
-            insertAfter = false;
-        }
-        else if (insertIndex >= items.Count)
-        {
-            targetSession = items[^1].Session;
-            insertAfter = true;
+                _quickSessionActivationsPending.Remove(session.Id);
+                if (tabStrip.IsAttachedToVisualTree())
+                    ClearQuickSessionSelection(tabStrip);
+            }, DispatcherPriority.ApplicationIdle);
         }
         else
         {
-            targetSession = items[insertIndex].Session;
-            insertAfter = false;
-        }
-
-        return targetSession.Id != draggingSessionId;
-    }
-
-    private static double ResolveQuickSessionDropIndicatorX(
-        IReadOnlyList<QuickSessionDropItem> items,
-        int insertIndex)
-    {
-        if (insertIndex <= 0)
-            return items[0].Left;
-
-        if (insertIndex >= items.Count)
-            return items[^1].Right;
-
-        return (items[insertIndex - 1].Right + items[insertIndex].Left) / 2;
-    }
-
-    private void ShowQuickSessionDropIndicatorAt(double indicatorX)
-    {
-        var left = Math.Round(indicatorX - QuickSessionDropIndicatorWidth / 2);
-        QuickSessionDropIndicator.Margin = new Thickness(
-            left,
-            0,
-            0,
-            0);
-        QuickSessionDropIndicator.IsVisible = true;
-    }
-
-    private void ShowQuickSessionDragGhost(Point pointerPosition)
-    {
-        var overlayPoint = this.TranslatePoint(pointerPosition, TabDropOverlay);
-        if (overlayPoint == null)
-        {
-            HideQuickSessionDragGhost();
-            return;
-        }
-
-        Avalonia.Controls.Canvas.SetLeft(
-            QuickSessionDragGhost,
-            Math.Round(overlayPoint.Value.X + QuickSessionDragGhostOffsetX));
-        Avalonia.Controls.Canvas.SetTop(
-            QuickSessionDragGhost,
-            Math.Round(overlayPoint.Value.Y + QuickSessionDragGhostOffsetY));
-        QuickSessionDragGhost.IsVisible = true;
-    }
-
-    private void HideQuickSessionDragGhost()
-    {
-        QuickSessionDragGhost.IsVisible = false;
-    }
-
-    private readonly record struct QuickSessionDropItem(
-        SessionInfo Session,
-        double Left,
-        double Right);
-
-    private void RefreshQuickSessionDragVisuals()
-    {
-        var dragControl = _quickSessionDragSession?.Id is { } dragId
-            ? FindQuickSessionControlById(dragId) ?? _quickSessionDragControl
-            : null;
-        SetQuickSessionClassControl(ref _quickSessionDragControl, dragControl, QuickSessionDraggingClass);
-    }
-
-    private void HideQuickSessionDropIndicator()
-    {
-        QuickSessionDropIndicator.IsVisible = false;
-    }
-
-    private void SetQuickSessionDragActiveVisual(bool isActive)
-    {
-        if (isActive)
-        {
-            if (!QuickSessionDropIndicatorHost.Classes.Contains(QuickSessionDragActiveClass))
-                QuickSessionDropIndicatorHost.Classes.Add(QuickSessionDragActiveClass);
-        }
-        else
-        {
-            QuickSessionDropIndicatorHost.Classes.Remove(QuickSessionDragActiveClass);
+            _quickSessionActivationsPending.Remove(session.Id);
         }
     }
 
-    private Avalonia.Controls.Control? FindQuickSessionControlById(Guid sessionId)
+    private static void ClearQuickSessionSelection(
+        Avalonia.Controls.Primitives.SelectingItemsControl tabStrip)
     {
-        return this.GetVisualDescendants()
-            .OfType<Avalonia.Controls.Control>()
-            .FirstOrDefault(control =>
-                control.Classes.Contains(QuickSessionButtonClass) &&
-                control.DataContext is SessionInfo session &&
-                session.Id == sessionId);
+        tabStrip.SelectedItem = null;
+        tabStrip.SelectedIndex = -1;
     }
 
-    private static void SetQuickSessionClassControl(
-        ref Avalonia.Controls.Control? current,
-        Avalonia.Controls.Control? next,
-        string className)
+    private void OnQuickSessionTabReordered(object? sender, TabReorderedEventArgs e)
     {
-        if (!ReferenceEquals(current, next))
-        {
-            SetQuickSessionVisualClass(current, className, false);
-            current = next;
-        }
-
-        SetQuickSessionVisualClass(current, className, current != null);
-    }
-
-    private static void SetQuickSessionVisualClass(
-        Avalonia.Controls.Control? control,
-        string className,
-        bool isEnabled)
-    {
-        if (control == null)
-            return;
-
-        if (isEnabled)
-        {
-            if (!control.Classes.Contains(className))
-                control.Classes.Add(className);
-        }
-        else
-        {
-            control.Classes.Remove(className);
-        }
-    }
-
-    private static SessionInfo? ResolveQuickSessionContext(Avalonia.Controls.Control? source)
-    {
-        foreach (var current in EnumerateControlLineage(source))
-        {
-            if (current.DataContext is SessionInfo session)
-                return session;
-        }
-
-        return null;
-    }
-
-    private SessionInfo? ResolveQuickSessionContextAt(Point point)
-    {
-        return ResolveQuickSessionControlAt(point)?.DataContext as SessionInfo;
-    }
-
-    private Avalonia.Controls.Control? ResolveQuickSessionControlAt(Point point)
-    {
-        return this.GetVisualsAt(point)
-            .OfType<Avalonia.Controls.Control>()
-            .Select(ResolveQuickSessionControl)
-            .FirstOrDefault(control => control != null);
-    }
-
-    private static Avalonia.Controls.Control? ResolveQuickSessionControl(Avalonia.Controls.Control? source)
-    {
-        foreach (var current in EnumerateControlLineage(source))
-        {
-            if (current.Classes.Contains(QuickSessionButtonClass) &&
-                current.DataContext is SessionInfo)
-            {
-                return current;
-            }
-        }
-
-        return null;
+        if (e.Item is SessionInfo && DataContext is MainWindowViewModel vm)
+            vm.HandleQuickSessionReordered();
     }
 
     private void OnTabHeaderPointerPressed(object? sender, PointerPressedEventArgs e)
@@ -906,27 +655,65 @@ public partial class MainWindow : Window
         menu.Items.Add(item);
     }
 
-    private void OnTabArrangeButtonClick(object? sender, RoutedEventArgs e)
+    private void OnArrangeVerticalMenuItemClick(object? sender, RoutedEventArgs e) =>
+        ExecuteToolbarCommand("arrange vertical", vm => vm.ArrangeTabsVerticalCommand.Execute(null));
+
+    private void OnArrangeHorizontalMenuItemClick(object? sender, RoutedEventArgs e) =>
+        ExecuteToolbarCommand("arrange horizontal", vm => vm.ArrangeTabsHorizontalCommand.Execute(null));
+
+    private void OnArrangeTileMenuItemClick(object? sender, RoutedEventArgs e) =>
+        ExecuteToolbarCommand("arrange tile", vm => vm.ArrangeTabsTileCommand.Execute(null));
+
+    private void OnArrangeMergeMenuItemClick(object? sender, RoutedEventArgs e) =>
+        ExecuteToolbarCommand("arrange merge", vm => vm.MergeTabGroupsCommand.Execute(null));
+
+    private void OnChineseLanguageMenuItemClick(object? sender, RoutedEventArgs e) =>
+        ExecuteToolbarCommand("language zh-CN", vm => vm.SetLanguageCommand.Execute("zh-CN"));
+
+    private void OnEnglishLanguageMenuItemClick(object? sender, RoutedEventArgs e) =>
+        ExecuteToolbarCommand("language en-US", vm => vm.SetLanguageCommand.Execute("en-US"));
+
+    private void ExecuteToolbarCommand(string name, Action<MainWindowViewModel> execute)
     {
-        TabArrangePopup.PlacementTarget = TabArrangeButton;
-        TabArrangePopup.IsOpen = true;
+        if (DataContext is not MainWindowViewModel vm)
+        {
+            WriteToolbarDiagnostics($"{name} menu item Click ignored; MainWindow DataContext is unavailable.");
+            return;
+        }
+
+        try
+        {
+            execute(vm);
+            WriteToolbarDiagnostics($"{name} menu item command executed.");
+        }
+        catch (Exception ex)
+        {
+            WriteToolbarDiagnostics($"{name} menu item command failed: {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
-    private void OnTabArrangeMenuItemClick(object? sender, RoutedEventArgs e)
+    private static void WriteToolbarDiagnostics(string message)
     {
-        TabArrangePopup.Close();
+        try
+        {
+            var logDirectory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "CxShell",
+                "Logs");
+            Directory.CreateDirectory(logDirectory);
+            var path = Path.Combine(logDirectory, "toolbar-menu.log");
+            var line = $"{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff zzz} {message}{Environment.NewLine}";
+            lock (ToolbarDiagnosticsLock)
+                File.AppendAllText(path, line, System.Text.Encoding.UTF8);
+            System.Diagnostics.Debug.WriteLine(message);
+        }
+        catch
+        {
+            // UI diagnostics must never affect menu interaction.
+        }
     }
 
-    private void OnLanguageButtonClick(object? sender, RoutedEventArgs e)
-    {
-        LanguagePopup.PlacementTarget = LanguageButton;
-        LanguagePopup.IsOpen = true;
-    }
-
-    private void OnLanguageMenuItemClick(object? sender, RoutedEventArgs e)
-    {
-        LanguagePopup.Close();
-    }
+    private static readonly object ToolbarDiagnosticsLock = new();
 
     private async void OnSendRemoteClipboardClick(object? sender, RoutedEventArgs e)
     {

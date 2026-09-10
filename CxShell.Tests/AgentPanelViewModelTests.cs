@@ -1,6 +1,7 @@
 using AtomUI.Controls;
 using AtomUI.Controls.Primitives;
 using AtomUI.Desktop.Controls;
+using CxShell.Services;
 using CxShell.Services.Agent;
 using CxShell.ViewModels;
 
@@ -43,6 +44,24 @@ public sealed class AgentPanelViewModelTests
         Assert.True(tool.IsTool);
         Assert.False(tool.IsToolDetailsExpanded);
         Assert.False(string.IsNullOrWhiteSpace(tool.ToolDetailsButtonText));
+    }
+
+    [Fact]
+    public void TerminalSelectionBecomesACompactAnnotationWithModelContext()
+    {
+        using var panel = new AgentPanelViewModel(new TestRuntimeClient());
+
+        Assert.True(panel.TryAddTerminalAnnotation("  systemctl status nginx\r\n", "web-01"));
+
+        var annotation = Assert.Single(panel.PendingAnnotations);
+        Assert.Equal(1, annotation.Number);
+        Assert.Equal("  systemctl status nginx", annotation.Text);
+        Assert.Contains("web-01", annotation.TooltipText, StringComparison.Ordinal);
+        Assert.Contains(annotation.Text, annotation.ToContentPart().Text, StringComparison.Ordinal);
+
+        var message = AgentPanelMessageViewModel.User("Please explain this", annotations: [annotation]);
+        Assert.True(message.HasAnnotations);
+        Assert.Equal("  systemctl status nginx", message.Annotations[0].Text);
     }
 
     [Fact]
@@ -239,6 +258,34 @@ public sealed class AgentPanelViewModelTests
 
         Assert.True(panel.CanRunWithoutSession);
         Assert.True(panel.CanRun());
+    }
+
+    [Fact]
+    public void ReasoningEffortLabelsRefreshWhenLanguageChanges()
+    {
+        var localization = LocalizationService.Shared;
+        var previousLanguage = localization.Language;
+
+        try
+        {
+            localization.SetLanguage(LocalizationService.Chinese);
+            using var panel = new AgentPanelViewModel(new TestRuntimeClient());
+            var changedProperties = new List<string?>();
+            panel.PropertyChanged += (_, args) => changedProperties.Add(args.PropertyName);
+
+            localization.SetLanguage(LocalizationService.English);
+            panel.NotifyLocalizationChanged();
+
+            Assert.Equal("Thinking", panel.ReasoningEffortText);
+            Assert.Equal(
+                ["Default", "Low", "Medium", "High"],
+                panel.ReasoningEffortOptions.Select(option => option.Header?.ToString()).ToArray());
+            Assert.Contains(nameof(AgentPanelViewModel.ReasoningEffortText), changedProperties);
+        }
+        finally
+        {
+            localization.SetLanguage(previousLanguage);
+        }
     }
 
     [Fact]

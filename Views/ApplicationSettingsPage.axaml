@@ -59,6 +59,77 @@
             </StackPanel>
 
             <StackPanel Spacing="8">
+                <TextBlock Text="{Binding NetworkText}"
+                           FontWeight="SemiBold"
+                           Foreground="{atom:SharedTokenResource ColorText}"/>
+                <Border Background="{atom:SharedTokenResource ColorBgLayout}"
+                        BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                        BorderThickness="1"
+                        CornerRadius="5"
+                        Padding="12,10">
+                    <StackPanel Spacing="9">
+                        <TextBlock Text="{Binding GlobalProxyText}"
+                                   FontWeight="SemiBold"
+                                   Foreground="{atom:SharedTokenResource ColorText}"/>
+                        <atom:CheckBox Content="{Binding GlobalProxyEnabledText}"
+                                       IsChecked="{Binding GlobalProxyEnabled, Mode=TwoWay}"/>
+                        <Grid ColumnDefinitions="132,*"
+                              ColumnSpacing="10"
+                              IsEnabled="{Binding GlobalProxyEnabled}">
+                            <TextBlock Text="{Binding GlobalProxyTypeText}"
+                                       VerticalAlignment="Center"
+                                       Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                            <atom:Select Grid.Column="1"
+                                         OptionsSource="{Binding GlobalProxyTypeOptions}"
+                                         SelectedOption="{Binding GlobalProxyTypeOption, Mode=TwoWay}"
+                                         HorizontalAlignment="Stretch"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="132,*"
+                              ColumnSpacing="10"
+                              IsEnabled="{Binding GlobalProxyEnabled}">
+                            <TextBlock Text="{Binding GlobalProxyHostText}"
+                                       VerticalAlignment="Center"
+                                       Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                            <atom:TextBox Grid.Column="1"
+                                          Text="{Binding GlobalProxyHost, Mode=TwoWay}"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="132,Auto"
+                              ColumnSpacing="10"
+                              IsEnabled="{Binding GlobalProxyEnabled}">
+                            <TextBlock Text="{Binding GlobalProxyPortText}"
+                                       VerticalAlignment="Center"
+                                       Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                            <atom:NumericUpDown Grid.Column="1"
+                                                Width="92"
+                                                Minimum="0"
+                                                Maximum="65535"
+                                                Value="{Binding GlobalProxyPort, Mode=TwoWay}"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="132,*"
+                              ColumnSpacing="10"
+                              IsEnabled="{Binding GlobalProxyEnabled}">
+                            <TextBlock Text="{Binding GlobalProxyUsernameText}"
+                                       VerticalAlignment="Center"
+                                       Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                            <atom:TextBox Grid.Column="1"
+                                          Text="{Binding GlobalProxyUsername, Mode=TwoWay}"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="132,*"
+                              ColumnSpacing="10"
+                              IsEnabled="{Binding GlobalProxyEnabled}">
+                            <TextBlock Text="{Binding GlobalProxyPasswordText}"
+                                       VerticalAlignment="Center"
+                                       Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                            <atom:TextBox Grid.Column="1"
+                                          Text="{Binding GlobalProxyPassword, Mode=TwoWay}"
+                                          PasswordChar="*"
+                                          IsEnableRevealButton="True"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <StackPanel Spacing="8">
                 <TextBlock Text="{Binding UpdatesText}"
                            FontWeight="SemiBold"
                            Foreground="{atom:SharedTokenResource ColorText}"/>

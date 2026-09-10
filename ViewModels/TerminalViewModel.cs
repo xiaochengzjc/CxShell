@@ -28,6 +28,7 @@ public partial class TerminalViewModel : ObservableObject
     public string ConnectingText => L.Text("Terminal.Connecting");
     public string CopyText => L.Text("Terminal.Copy");
     public string PasteText => L.Text("Terminal.Paste");
+    public string AddToAgentText => L.Text("Terminal.AddToAgent");
     public string ExportText => L.Text("Terminal.Export");
     public string SearchPlaceholderText => L.Text("Terminal.SearchPlaceholder");
     public string SearchPreviousText => L.Text("Terminal.SearchPrevious");
@@ -201,6 +202,7 @@ public partial class TerminalViewModel : ObservableObject
         OnPropertyChanged(nameof(ConnectingText));
         OnPropertyChanged(nameof(CopyText));
         OnPropertyChanged(nameof(PasteText));
+        OnPropertyChanged(nameof(AddToAgentText));
         OnPropertyChanged(nameof(ExportText));
         OnPropertyChanged(nameof(SearchPlaceholderText));
         OnPropertyChanged(nameof(SearchPreviousText));

@@ -8,7 +8,7 @@ The project is still moving quickly. Windows is currently the primary developmen
 
 ## Latest Release
 
-The latest release is [CxShell v0.1.48](https://github.com/xiaochengzjc/CxShell/releases/tag/v0.1.48). It includes explicit Agent target sessions, structured read-only diagnostics, reasoning-level model requests, unified tool results, shared HTTP proxy support, and more reliable terminal and panel behavior.
+The latest release is [CxShell v0.1.55](https://github.com/xiaochengzjc/CxShell/releases/tag/v0.1.55). It includes the AtomUI title-bar action menu, local terminal profile selection, improved Agent and terminal interactions, and the latest session, SFTP, and monitoring updates.
 
 Packages are available for Windows x64, macOS x64/arm64, and Linux x64/arm64. The release page provides Windows and macOS installers or portable archives, plus Linux AppImage and tar.gz packages.
 

@@ -517,7 +517,7 @@
                                                             FontSize="10"
                                                             Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
                                         </Grid>
-                                         <ItemsControl ItemsSource="{Binding Attachments}"
+                                        <ItemsControl ItemsSource="{Binding Attachments}"
                                                        IsVisible="{Binding HasAttachments}"
                                                        IsHitTestVisible="True">
                                             <ItemsControl.ItemTemplate>
@@ -535,6 +535,31 @@
                                                                         TextWrapping="Wrap"
                                                                         Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
                                                     </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <ItemsControl ItemsSource="{Binding Annotations}"
+                                                      IsVisible="{Binding HasAnnotations}"
+                                                      IsHitTestVisible="True">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <WrapPanel Orientation="Horizontal" />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Background="{atom:SharedTokenResource ColorPrimaryBg}"
+                                                            BorderBrush="{atom:SharedTokenResource ColorPrimaryBorder}"
+                                                            BorderThickness="1"
+                                                            CornerRadius="3"
+                                                            Padding="7,3"
+                                                            Margin="0,0,5,3"
+                                                            Cursor="Hand"
+                                                            atom:ToolTip.Tip="{Binding TooltipText}">
+                                                        <atom:TextBlock Text="{Binding DisplayText}"
+                                                                        FontSize="11"
+                                                                        Foreground="{atom:SharedTokenResource ColorPrimary}"/>
+                                                    </Border>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
@@ -690,8 +715,9 @@
                         BorderThickness="1"
                         CornerRadius="5"
                         Padding="8,7">
-                    <Grid RowDefinitions="Auto,*" RowSpacing="5">
-                        <ItemsControl ItemsSource="{Binding PendingAttachments}"
+                    <Grid RowDefinitions="Auto,Auto,*" RowSpacing="5">
+                        <ItemsControl Grid.Row="0"
+                                      ItemsSource="{Binding PendingAttachments}"
                                       IsVisible="{Binding HasPendingAttachments}">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
@@ -739,8 +765,45 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
+                        <ItemsControl Grid.Row="1"
+                                      ItemsSource="{Binding PendingAnnotations}"
+                                      IsVisible="{Binding HasPendingAnnotations}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{atom:SharedTokenResource ColorPrimaryBg}"
+                                            BorderBrush="{atom:SharedTokenResource ColorPrimaryBorder}"
+                                            BorderThickness="1"
+                                            CornerRadius="3"
+                                            Padding="7,3"
+                                            Margin="0,0,5,3"
+                                            atom:ToolTip.Tip="{Binding TooltipText}">
+                                        <Grid ColumnDefinitions="Auto,Auto"
+                                              ColumnSpacing="4">
+                                            <atom:TextBlock Text="{Binding DisplayText}"
+                                                            FontSize="11"
+                                                            Foreground="{atom:SharedTokenResource ColorPrimary}"
+                                                            VerticalAlignment="Center"/>
+                                            <atom:Button Grid.Column="1"
+                                                         Width="17"
+                                                         Height="17"
+                                                         Padding="0"
+                                                         ButtonType="Text"
+                                                         Icon="{antdicons:AntDesignIconProvider Kind=CloseOutlined}"
+                                                         Command="{Binding $parent[UserControl].DataContext.RemoveAnnotationCommand, x:CompileBindings=False}"
+                                                         CommandParameter="{Binding}"
+                                                         atom:ToolTip.Tip="{Binding RemoveText}"/>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                         <atom:TextBox x:Name="PromptTextBox"
-                                      Grid.Row="1"
+                                      Grid.Row="2"
                                       Text="{Binding Prompt, Mode=TwoWay}"
                                       PlaceholderText="{Binding PromptPlaceholderText}"
                                       AcceptsReturn="True"

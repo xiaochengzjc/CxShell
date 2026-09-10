@@ -1860,7 +1860,7 @@ public class TerminalControl : Control
             : normalizedText;
     }
 
-    private string GetSelectedText()
+    public string GetSelectedText()
     {
         var buffer = TerminalBuffer;
         if (buffer == null || !TryGetOrderedSelection(out var start, out var end))

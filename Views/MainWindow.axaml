@@ -10,7 +10,7 @@
              x:Class="CxShell.Views.MainWindow"
              x:Name="MainWindowRoot"
              x:DataType="vm:MainWindowViewModel"
-             Title="CxShell"
+             Title=""
              Icon="/Assets/CxShellLogo.png"
              Width="1200"
              Height="800"
@@ -25,53 +25,275 @@
         </DataTemplate>
     </atom:Window.LogoTemplate>
 
+    <atom:Window.LeftAddOn>
+        <StackPanel Orientation="Horizontal"
+                    Spacing="4"
+                    VerticalAlignment="Center"
+                    IsVisible="{Binding IsMainChromeVisible}">
+            <atom:TextBlock Text="CxShell"
+                            FontSize="14"
+                            FontWeight="SemiBold"
+                            Margin="8,0,8,0"
+                            IsHitTestVisible="False"
+                            VerticalAlignment="Center"/>
+            <!-- The primary actions share one AtomUI title-bar menu so direct actions
+                 and actions with a secondary choice use the same interaction model. -->
+            <atom:Menu x:Name="ToolbarMenu"
+                       SizeType="Small"
+                       IsMotionEnabled="False"
+                       Background="Transparent"
+                       BorderThickness="0"
+                       VerticalAlignment="Center">
+                <atom:MenuItem Command="{Binding NewSessionCommand}"
+                               atom:ToolTip.Tip="{Binding NewSessionToolTip}"
+                               atom:ToolTip.Placement="Bottom">
+                    <atom:MenuItem.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                            <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider Kind=PlusOutlined}"
+                                                Width="14"
+                                                Height="14"/>
+                            <atom:TextBlock Text="{Binding NewSessionText}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </atom:MenuItem.Header>
+                </atom:MenuItem>
+                <atom:MenuItem Command="{Binding ShowSessionManagerCommand}"
+                               atom:ToolTip.Tip="{Binding SessionManagerToolTip}"
+                               atom:ToolTip.Placement="Bottom">
+                    <atom:MenuItem.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                            <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider Kind=UnorderedListOutlined}"
+                                                Width="14"
+                                                Height="14"/>
+                            <atom:TextBlock Text="{Binding SessionManagerText}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </atom:MenuItem.Header>
+                </atom:MenuItem>
+                <atom:MenuItem x:Name="LocalTerminalMenuItem"
+                               IsEnabled="{Binding HasLocalTerminalProfiles}"
+                               Loaded="OnLocalTerminalMenuItemLoaded"
+                               atom:ToolTip.Tip="{Binding LocalTerminalToolTip}"
+                               atom:ToolTip.Placement="Bottom">
+                    <atom:MenuItem.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                            <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider Kind=CodeOutlined}"
+                                                Width="14"
+                                                Height="14"/>
+                            <atom:TextBlock Text="{Binding LocalTerminalText}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </atom:MenuItem.Header>
+                </atom:MenuItem>
+                <atom:MenuSeparator/>
+                <atom:MenuItem Command="{Binding ToggleSftpCommand}"
+                               atom:ToolTip.Tip="{Binding SftpToolTip}"
+                               atom:ToolTip.Placement="Bottom">
+                    <atom:MenuItem.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                            <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider Kind=SwapOutlined}"
+                                                Width="14"
+                                                Height="14"/>
+                            <atom:TextBlock Text="SFTP" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </atom:MenuItem.Header>
+                </atom:MenuItem>
+                <atom:MenuItem Command="{Binding ToggleMonitorCommand}"
+                               atom:ToolTip.Tip="{Binding MonitorToolTip}"
+                               atom:ToolTip.Placement="Bottom">
+                    <atom:MenuItem.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                            <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider Kind=DashboardOutlined}"
+                                                Width="14"
+                                                Height="14"/>
+                            <atom:TextBlock Text="{Binding MonitorText}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </atom:MenuItem.Header>
+                </atom:MenuItem>
+                <atom:MenuItem Command="{Binding ShowSshTunnelCenterCommand}"
+                               atom:ToolTip.Tip="{Binding TunnelsToolTip}"
+                               atom:ToolTip.Placement="Bottom">
+                    <atom:MenuItem.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                            <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider Kind=DeploymentUnitOutlined}"
+                                                Width="14"
+                                                Height="14"/>
+                            <atom:TextBlock Text="{Binding TunnelsText}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </atom:MenuItem.Header>
+                </atom:MenuItem>
+                <atom:MenuItem Click="OnAgentPanelToggleClick"
+                               atom:ToolTip.Tip="{Binding AgentToolTip}"
+                               atom:ToolTip.Placement="Bottom">
+                    <atom:MenuItem.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                            <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider Kind=RobotOutlined}"
+                                                Width="14"
+                                                Height="14"/>
+                            <atom:TextBlock Text="{Binding AgentText}" VerticalAlignment="Center"/>
+                            <Border IsVisible="{Binding HasActiveAgentRuns}"
+                                    Background="{atom:SharedTokenResource ColorPrimaryBg}"
+                                    BorderBrush="{atom:SharedTokenResource ColorPrimary}"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="4,0"
+                                    MinWidth="18"
+                                    HorizontalAlignment="Center">
+                                <atom:TextBlock Text="{Binding AgentActivityCountText}"
+                                                Foreground="{atom:SharedTokenResource ColorPrimary}"
+                                                FontSize="10"
+                                                TextAlignment="Center"
+                                                VerticalAlignment="Center"/>
+                            </Border>
+                        </StackPanel>
+                    </atom:MenuItem.Header>
+                </atom:MenuItem>
+                <atom:MenuItem Command="{Binding ToggleTabBarCommand}"
+                               atom:ToolTip.Tip="{Binding TabBarToolTip}"
+                               atom:ToolTip.Placement="Bottom">
+                    <atom:MenuItem.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                            <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider Kind=MenuOutlined}"
+                                                Width="14"
+                                                Height="14"/>
+                            <atom:TextBlock Text="{Binding TabBarText}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </atom:MenuItem.Header>
+                </atom:MenuItem>
+                <atom:MenuSeparator/>
+                <atom:MenuItem atom:ToolTip.Tip="{Binding ArrangeToolTip}"
+                               atom:ToolTip.Placement="Bottom">
+                    <atom:MenuItem.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                            <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider Kind=LayoutOutlined}"
+                                                Width="14"
+                                                Height="14"/>
+                            <atom:TextBlock Text="{Binding ArrangeText}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </atom:MenuItem.Header>
+                    <atom:MenuItem Header="{Binding ArrangeVerticalText}"
+                                   Click="OnArrangeVerticalMenuItemClick"/>
+                    <atom:MenuItem Header="{Binding ArrangeHorizontalText}"
+                                   Click="OnArrangeHorizontalMenuItemClick"/>
+                    <atom:MenuItem Header="{Binding ArrangeTileText}"
+                                   Click="OnArrangeTileMenuItemClick"/>
+                    <atom:MenuSeparator/>
+                    <atom:MenuItem Header="{Binding ArrangeMergeText}"
+                                   Click="OnArrangeMergeMenuItemClick"/>
+                </atom:MenuItem>
+            </atom:Menu>
+        </StackPanel>
+    </atom:Window.LeftAddOn>
+
+    <atom:Window.RightAddOn>
+        <StackPanel Orientation="Horizontal"
+                    Spacing="4"
+                    VerticalAlignment="Center"
+                    IsVisible="{Binding IsMainChromeVisible}">
+            <atom:Menu x:Name="LanguageMenu"
+                       SizeType="Small"
+                       IsMotionEnabled="False"
+                       Background="Transparent"
+                       BorderThickness="0"
+                       VerticalAlignment="Center">
+                <atom:MenuItem atom:ToolTip.Tip="{Binding LanguageToolTip}"
+                               atom:ToolTip.Placement="Bottom">
+                    <atom:MenuItem.Header>
+                        <atom:TextBlock Text="{Binding LanguageIcon}"
+                                        FontSize="12"
+                                        FontWeight="Bold"
+                                        MinWidth="18"
+                                        TextAlignment="Center"/>
+                    </atom:MenuItem.Header>
+                    <atom:MenuItem Header="{Binding ChineseLanguageText}"
+                                   Click="OnChineseLanguageMenuItemClick"/>
+                    <atom:MenuItem Header="{Binding EnglishLanguageText}"
+                                   Click="OnEnglishLanguageMenuItemClick"/>
+                </atom:MenuItem>
+            </atom:Menu>
+            <atom:Button ButtonType="Default"
+                         Width="32"
+                         Height="30"
+                         Padding="0"
+                         Background="Transparent"
+                         BorderBrush="Transparent"
+                         BorderThickness="0"
+                         Command="{Binding ToggleThemeCommand}"
+                         atom:ToolTip.Tip="{Binding ThemeToolTip}"
+                         atom:ToolTip.Placement="Bottom">
+                <atom:TextBlock Text="{Binding ThemeIcon}" FontSize="14"
+                                TextAlignment="Center" VerticalAlignment="Center"/>
+            </atom:Button>
+            <atom:Button ButtonType="Default"
+                         Width="32"
+                         Height="30"
+                         Padding="0"
+                         Background="Transparent"
+                         BorderBrush="Transparent"
+                         BorderThickness="0"
+                         Command="{Binding ToggleTerminalFullScreenCommand}"
+                         atom:ToolTip.Tip="{Binding FullScreenToolTip}"
+                         atom:ToolTip.Placement="Bottom">
+                <atom:TextBlock Text="⛶"
+                                FontSize="14"
+                                Width="18"
+                                TextAlignment="Center"
+                                VerticalAlignment="Center"/>
+            </atom:Button>
+            <atom:Button x:Name="SettingsButton"
+                         Width="32"
+                         Height="30"
+                         Padding="0"
+                         ButtonType="Default"
+                         Background="Transparent"
+                         BorderBrush="Transparent"
+                         BorderThickness="0"
+                         Icon="{antdicons:AntDesignIconProvider Kind=SettingOutlined}"
+                         Command="{Binding ShowApplicationSettingsCommand}"
+                         atom:ToolTip.Tip="{Binding SettingsToolTip}"
+                         atom:ToolTip.Placement="Bottom"/>
+        </StackPanel>
+    </atom:Window.RightAddOn>
+
     <atom:Window.Styles>
-        <Style Selector="Border.quick-session-bar-button">
-            <Setter Property="Background" Value="Transparent"/>
+        <Style Selector="atom|CardTabStrip.quick-session-tab-strip">
+            <Setter Property="Background" Value="{atom:SharedTokenResource ColorBgLayout}"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Height" Value="34"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="atom|CardTabStrip.quick-session-tab-strip /template/ ItemsPresenter#PART_ItemsPresenter StackPanel">
+            <Setter Property="Spacing" Value="0"/>
+        </Style>
+        <Style Selector="atom|CardTabStrip.quick-session-tab-strip atom|TabStripItem">
+            <Setter Property="Background" Value="{atom:SharedTokenResource ColorBgContainer}"/>
+            <Setter Property="BorderBrush" Value="{atom:SharedTokenResource ColorBorderSecondary}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="6"/>
-        </Style>
-        <Style Selector="Border.quick-session-bar-button TextBlock">
+            <Setter Property="CornerRadius" Value="0"/>
             <Setter Property="Foreground" Value="{atom:SharedTokenResource ColorText}"/>
+            <Setter Property="Margin" Value="0,2,4,2"/>
+            <Setter Property="MinHeight" Value="30"/>
+            <Setter Property="Padding" Value="8,0"/>
+            <Style Selector="^ /template/ Border#Frame">
+                <Setter Property="CornerRadius" Value="0"/>
+            </Style>
         </Style>
-        <Style Selector="Border.quick-session-bar-button atom|IconPresenter">
-            <Setter Property="IconBrush" Value="{atom:SharedTokenResource ColorTextSecondary}"/>
-        </Style>
-        <Style Selector="Border.quick-session-bar-button:pointerover">
+        <Style Selector="atom|CardTabStrip.quick-session-tab-strip atom|TabStripItem:pointerover:not(:selected)">
             <Setter Property="Background" Value="{atom:SharedTokenResource ColorPrimaryBg}"/>
             <Setter Property="BorderBrush" Value="{atom:SharedTokenResource ColorPrimaryBorder}"/>
-        </Style>
-        <Style Selector="Border.quick-session-bar-button:pointerover TextBlock">
             <Setter Property="Foreground" Value="{atom:SharedTokenResource ColorPrimaryHover}"/>
         </Style>
-        <Style Selector="Border.quick-session-bar-button:pointerover atom|IconPresenter">
-            <Setter Property="IconBrush" Value="{atom:SharedTokenResource ColorPrimaryHover}"/>
-        </Style>
-        <Style Selector="Border.quick-session-bar-button:pressed">
-            <Setter Property="Background" Value="{atom:SharedTokenResource ColorPrimaryBgHover}"/>
-            <Setter Property="BorderBrush" Value="{atom:SharedTokenResource ColorPrimaryBorderHover}"/>
-        </Style>
-        <Style Selector="Grid.quick-session-drag-active Border.quick-session-bar-button:pointerover">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
-        </Style>
-        <Style Selector="Grid.quick-session-drag-active Border.quick-session-bar-button:pointerover TextBlock">
+        <Style Selector="atom|CardTabStrip.quick-session-tab-strip atom|TabStripItem:selected">
+            <Setter Property="Background" Value="{atom:SharedTokenResource ColorBgContainer}"/>
+            <Setter Property="BorderBrush" Value="{atom:SharedTokenResource ColorBorderSecondary}"/>
             <Setter Property="Foreground" Value="{atom:SharedTokenResource ColorText}"/>
         </Style>
-        <Style Selector="Grid.quick-session-drag-active Border.quick-session-bar-button:pointerover atom|IconPresenter">
+        <Style Selector="atom|CardTabStrip.quick-session-tab-strip atom|TabStripItem atom|IconPresenter">
             <Setter Property="IconBrush" Value="{atom:SharedTokenResource ColorTextSecondary}"/>
         </Style>
-        <Style Selector="Border.quick-session-bar-button.quick-session-dragging">
-            <Setter Property="Opacity" Value="0.68"/>
-            <Setter Property="Background" Value="{atom:SharedTokenResource ColorPrimaryBgHover}"/>
-            <Setter Property="BorderBrush" Value="{atom:SharedTokenResource ColorPrimary}"/>
+        <Style Selector="atom|CardTabStrip.quick-session-tab-strip atom|TabStripItem:pointerover atom|IconPresenter">
+            <Setter Property="IconBrush" Value="{atom:SharedTokenResource ColorPrimaryHover}"/>
         </Style>
-        <Style Selector="Border.quick-session-bar-button.quick-session-dragging TextBlock">
-            <Setter Property="Foreground" Value="{atom:SharedTokenResource ColorPrimaryActive}"/>
-        </Style>
-        <Style Selector="Border.quick-session-bar-button.quick-session-dragging atom|IconPresenter">
-            <Setter Property="IconBrush" Value="{atom:SharedTokenResource ColorPrimaryActive}"/>
+        <Style Selector="atom|CardTabStrip.quick-session-tab-strip atom|TabStripItem:selected atom|IconPresenter">
+            <Setter Property="IconBrush" Value="{atom:SharedTokenResource ColorTextSecondary}"/>
         </Style>
         <Style Selector="atom|TabStrip.session-tab-strip /template/ Border#PART_SelectedItemIndicator">
             <Setter Property="Opacity" Value="0"/>
@@ -119,6 +341,23 @@
     </atom:Window.Styles>
 
     <atom:Window.Resources>
+        <DataTemplate x:Key="QuickSessionTabTemplate" DataType="models:SessionInfo">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="6"
+                        PointerPressed="OnQuickSessionTagPointerPressed"
+                        PointerReleased="OnQuickSessionTagPointerReleased"
+                        VerticalAlignment="Center">
+                <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider CloudServerOutlined}"
+                                    Width="14"
+                                    Height="14"
+                                    VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding Name}"
+                           FontSize="13"
+                           TextTrimming="CharacterEllipsis"
+                           MaxWidth="160"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+        </DataTemplate>
         <DataTemplate x:Key="TabHeaderTemplate" DataType="vm:TerminalTabViewModel">
             <Border MinWidth="72"
                     MaxWidth="220"
@@ -218,10 +457,10 @@
 
 
 
-    <Grid RowDefinitions="Auto,Auto,*,Auto">
+    <Grid RowDefinitions="Auto,*,Auto">
         <!-- 工具栏 -->
         <Border Grid.Row="0" Padding="8,4"
-                IsVisible="{Binding IsMainChromeVisible}"
+                IsVisible="False"
                 Background="{atom:SharedTokenResource ColorBgContainer}">
             <StackPanel Orientation="Horizontal" Spacing="4">
                 <atom:Button Command="{Binding NewSessionCommand}"
@@ -349,123 +588,31 @@
                                     TextAlignment="Center"
                                     VerticalAlignment="Center"/>
                 </atom:Button>
-                 <atom:Button x:Name="TabArrangeButton"
-                              ButtonType="Default"
-                              Icon="{antdicons:AntDesignIconProvider Kind=LayoutOutlined}"
-                              Click="OnTabArrangeButtonClick"
-                              atom:ToolTip.Tip="{Binding ArrangeToolTip}"
-                              atom:ToolTip.Placement="Bottom">
-                    <atom:TextBlock Text="▾" FontSize="10" VerticalAlignment="Center" Opacity="0.75"/>
-                 </atom:Button>
-                <atom:Button x:Name="LanguageButton"
-                             ButtonType="Default"
-                             Click="OnLanguageButtonClick"
-                             atom:ToolTip.Tip="{Binding LanguageToolTip}"
-                             atom:ToolTip.Placement="Bottom">
-                    <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                        <atom:TextBlock Text="{Binding LanguageIcon}"
-                                        FontSize="12"
-                                        FontWeight="Bold"
-                                        MinWidth="18"
-                                        TextAlignment="Center"
-                                        VerticalAlignment="Center"/>
-                        <atom:TextBlock Text="▾" FontSize="10" VerticalAlignment="Center" Opacity="0.75"/>
-                    </StackPanel>
+                <atom:Button ButtonType="Default"
+                                     x:Name="ArrangeMenuButtonFallback"
+                                     Icon="{antdicons:AntDesignIconProvider Kind=LayoutOutlined}"
+                                     atom:ToolTip.Tip="{Binding ArrangeToolTip}"
+                                     atom:ToolTip.Placement="Bottom"/>
+                <atom:Button ButtonType="Default"
+                                     x:Name="LanguageMenuButtonFallback"
+                                     atom:ToolTip.Tip="{Binding LanguageToolTip}"
+                                     atom:ToolTip.Placement="Bottom">
+                    <atom:Button.Content>
+                        <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                            <atom:TextBlock Text="{Binding LanguageIcon}"
+                                            FontSize="12"
+                                            FontWeight="Bold"
+                                            MinWidth="18"
+                                            TextAlignment="Center"
+                                            VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </atom:Button.Content>
                 </atom:Button>
-                 <atom:Button x:Name="SettingsButton"
-                              ButtonType="Default"
-                              Icon="{antdicons:AntDesignIconProvider Kind=SettingOutlined}"
-                              Command="{Binding ShowApplicationSettingsCommand}"
-                              atom:ToolTip.Tip="{Binding SettingsToolTip}"
-                             atom:ToolTip.Placement="Bottom"/>
-                <atom:Popup x:Name="LanguagePopup"
-                            Placement="Bottom"
-                            IsLightDismissEnabled="True">
-                    <Border Background="{atom:SharedTokenResource ColorBgElevated}"
-                            BorderBrush="{atom:SharedTokenResource ColorBorder}"
-                            BorderThickness="1"
-                            CornerRadius="6"
-                            Padding="0,4"
-                            MinWidth="120">
-                        <StackPanel Spacing="0">
-                            <atom:Button Content="{Binding ChineseLanguageText}"
-                                         Command="{Binding SetLanguageCommand}"
-                                         CommandParameter="zh-CN"
-                                         Click="OnLanguageMenuItemClick"
-                                         Background="Transparent"
-                                         BorderThickness="0"
-                                         HorizontalAlignment="Stretch"
-                                         HorizontalContentAlignment="Left"
-                                         Padding="16,7"
-                                         FontSize="13"/>
-                            <atom:Button Content="{Binding EnglishLanguageText}"
-                                         Command="{Binding SetLanguageCommand}"
-                                         CommandParameter="en-US"
-                                         Click="OnLanguageMenuItemClick"
-                                         Background="Transparent"
-                                         BorderThickness="0"
-                                         HorizontalAlignment="Stretch"
-                                         HorizontalContentAlignment="Left"
-                                         Padding="16,7"
-                                         FontSize="13"/>
-                        </StackPanel>
-                    </Border>
-                </atom:Popup>
-                <atom:Popup x:Name="TabArrangePopup"
-                            Placement="Bottom"
-                            IsLightDismissEnabled="True">
-                    <Border Background="{atom:SharedTokenResource ColorBgElevated}"
-                            BorderBrush="{atom:SharedTokenResource ColorBorder}"
-                            BorderThickness="1"
-                            CornerRadius="6"
-                            Padding="0,4"
-                            MinWidth="170">
-                        <StackPanel Spacing="0">
-                            <atom:Button Content="{Binding ArrangeVerticalText}"
-                                         Command="{Binding ArrangeTabsVerticalCommand}"
-                                         Click="OnTabArrangeMenuItemClick"
-                                         Background="Transparent"
-                                         BorderThickness="0"
-                                         HorizontalAlignment="Stretch"
-                                         HorizontalContentAlignment="Left"
-                                         Padding="16,7"
-                                         FontSize="13"/>
-                            <atom:Button Content="{Binding ArrangeHorizontalText}"
-                                         Command="{Binding ArrangeTabsHorizontalCommand}"
-                                         Click="OnTabArrangeMenuItemClick"
-                                         Background="Transparent"
-                                         BorderThickness="0"
-                                         HorizontalAlignment="Stretch"
-                                         HorizontalContentAlignment="Left"
-                                         Padding="16,7"
-                                         FontSize="13"/>
-                            <atom:Button Content="{Binding ArrangeTileText}"
-                                         Command="{Binding ArrangeTabsTileCommand}"
-                                         Click="OnTabArrangeMenuItemClick"
-                                         Background="Transparent"
-                                         BorderThickness="0"
-                                         HorizontalAlignment="Stretch"
-                                         HorizontalContentAlignment="Left"
-                                         Padding="16,7"
-                                         FontSize="13"/>
-                            <Border Height="1" Background="{atom:SharedTokenResource ColorSplit}" Margin="8,4"/>
-                            <atom:Button Content="{Binding ArrangeMergeText}"
-                                         Command="{Binding MergeTabGroupsCommand}"
-                                         Click="OnTabArrangeMenuItemClick"
-                                         Background="Transparent"
-                                         BorderThickness="0"
-                                         HorizontalAlignment="Stretch"
-                                         HorizontalContentAlignment="Left"
-                                         Padding="16,7"
-                                         FontSize="13"/>
-                        </StackPanel>
-                    </Border>
-                </atom:Popup>
             </StackPanel>
         </Border>
 
         <!-- 状态栏 -->
-        <Border Grid.Row="1"
+        <Border Grid.Row="0"
                 Height="44"
                 Padding="8,5"
                 ClipToBounds="False"
@@ -477,7 +624,6 @@
                        ClipToBounds="False"
                        VerticalAlignment="Center">
                 <atom:Button DockPanel.Dock="Left"
-                             Classes="quick-session-bar-button"
                                Width="28"
                                Height="28"
                               Padding="0"
@@ -492,68 +638,24 @@
                              Command="{Binding AddCurrentSessionToQuickBarCommand}"
                              atom:ToolTip.Tip="{Binding AddQuickSessionToolTip}"
                              atom:ToolTip.Placement="Bottom"/>
-                <Grid x:Name="QuickSessionDropIndicatorHost"
-                      Height="34"
-                      Margin="6,0,0,0"
-                      ClipToBounds="False"
-                      VerticalAlignment="Center">
-                    <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                                  VerticalScrollBarVisibility="Disabled"
-                                  Height="34"
-                                  ClipToBounds="False"
-                                  VerticalAlignment="Center">
-                        <ItemsControl ItemsSource="{Binding QuickSessions}"
-                                      Height="34"
-                                      ClipToBounds="False"
-                                      VerticalAlignment="Center">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <StackPanel Orientation="Horizontal"
-                                                VerticalAlignment="Center"/>
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate DataType="models:SessionInfo">
-                                    <Border Classes="quick-session-bar-button"
-                                            Height="30"
-                                            MinHeight="30"
-                                            Padding="8,0"
-                                            Margin="0,2,4,2"
-                                            Cursor="Hand"
-                                            VerticalAlignment="Center"
-                                            PointerPressed="OnQuickSessionTagPointerPressed">
-                                        <StackPanel Orientation="Horizontal"
-                                                    Spacing="6"
-                                                    VerticalAlignment="Center">
-                                            <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider CloudServerOutlined}"
-                                                                Width="14"
-                                                                Height="14"
-                                                                VerticalAlignment="Center"/>
-                                            <TextBlock Text="{Binding Name}"
-                                                       FontSize="14"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       MaxWidth="160"
-                                                       VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
-                    <Border x:Name="QuickSessionDropIndicator"
-                            Width="2"
-                            Height="24"
-                            CornerRadius="1"
-                            Background="{atom:SharedTokenResource ColorPrimary}"
-                            HorizontalAlignment="Left"
-                            VerticalAlignment="Center"
-                            IsHitTestVisible="False"
-                            IsVisible="False"/>
-                </Grid>
+                <atom:CardTabStrip x:Name="QuickSessionTabStrip"
+                                   ItemsSource="{Binding QuickSessions}"
+                                   Classes="quick-session-tab-strip"
+                                   ItemTemplate="{StaticResource QuickSessionTabTemplate}"
+                                   IsTabReorderEnabled="True"
+                                   TabActivationTrigger="PointerReleased"
+                                   IsTabClosable="False"
+                                   IsTabAutoHideCloseButton="False"
+                                   IsMotionEnabled="False"
+                                   IsShowAddTabButton="False"
+                                   HeaderStartEdgePadding="0"
+                                   HeaderEndEdgePadding="0"
+                                   BorderThickness="0"
+                                   SelectionChanged="OnQuickSessionSelectionChanged"/>
             </DockPanel>
         </Border>
 
-        <Border Grid.Row="3" Padding="8,4"
+        <Border Grid.Row="2" Padding="8,4"
                 MinHeight="40"
                 IsVisible="{Binding IsMainChromeVisible}"
                 Background="{atom:SharedTokenResource ColorBgContainer}"
@@ -606,7 +708,7 @@
             </DockPanel>
         </Border>
 
-        <Grid Grid.Row="2">
+        <Grid Grid.Row="1">
             <Grid x:Name="MainContentGrid"
                   Background="{atom:SharedTokenResource ColorBgLayout}">
                 <Grid.ColumnDefinitions>
@@ -942,35 +1044,6 @@
             </Grid>
 
         </Grid>
-        <Canvas x:Name="TabDropOverlay"
-                Grid.RowSpan="4"
-                ClipToBounds="False"
-                IsHitTestVisible="False">
-            <Border x:Name="QuickSessionDragGhost"
-                    Width="44"
-                    Height="14"
-                    CornerRadius="7"
-                    Background="{atom:SharedTokenResource ColorPrimaryBgHover}"
-                    BorderBrush="{atom:SharedTokenResource ColorPrimary}"
-                    BorderThickness="1"
-                    Opacity="0.9"
-                    IsVisible="False">
-                <StackPanel Orientation="Horizontal"
-                            Spacing="4"
-                            HorizontalAlignment="Center"
-                            VerticalAlignment="Center">
-                    <Border Width="12"
-                            Height="3"
-                            CornerRadius="1.5"
-                            Background="{atom:SharedTokenResource ColorPrimary}"/>
-                    <Border Width="12"
-                            Height="3"
-                            CornerRadius="1.5"
-                            Background="{atom:SharedTokenResource ColorPrimary}"/>
-                </StackPanel>
-            </Border>
-        </Canvas>
-
         <Grid Grid.RowSpan="4"
               ZIndex="300"
               IsVisible="{Binding CommandPalette.IsOpen}">

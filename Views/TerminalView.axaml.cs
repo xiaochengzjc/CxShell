@@ -442,6 +442,23 @@ public partial class TerminalView : UserControl
 
         menu.Items.Add(copyItem);
         menu.Items.Add(pasteItem);
+        var addToAgentItem = new AtomMenuItem
+        {
+            Header = _boundVm?.AddToAgentText ?? "Add to Agent session",
+            IsEnabled = terminal.HasSelection
+        };
+        addToAgentItem.Click += (_, _) =>
+        {
+            menu.Close();
+            if (_boundVm != null && terminal.HasSelection)
+            {
+                var mainVm = GetMainWindowViewModel();
+                mainVm?.AddTerminalSelectionToAgent(_boundVm, terminal.GetSelectedText());
+            }
+
+            terminal.Focus();
+        };
+        menu.Items.Add(addToAgentItem);
         var exportItem = new AtomMenuItem
         {
             Header = _boundVm?.ExportText ?? "Export terminal output",

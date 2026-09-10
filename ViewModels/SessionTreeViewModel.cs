@@ -971,28 +971,24 @@ public partial class SessionTreeViewModel : ObservableObject
         RefreshQuickSessions();
     }
 
-    public void MoveQuickSession(SessionInfo source, SessionInfo target, bool insertAfter)
+    public void CommitQuickSessionOrder(IEnumerable<Guid> orderedIds)
     {
-        if (source.Id == target.Id)
+        var orderedList = orderedIds.ToList();
+        var currentIds = _data.QuickSessionIds.ToHashSet();
+        if (orderedList.Count != currentIds.Count ||
+            orderedList.Count != orderedList.Distinct().Count() ||
+            orderedList.Any(id => !currentIds.Contains(id)))
+        {
+            RefreshQuickSessions();
+            return;
+        }
+
+        if (_data.QuickSessionIds.SequenceEqual(orderedList))
             return;
 
-        var sourceIndex = _data.QuickSessionIds.IndexOf(source.Id);
-        var targetIndex = _data.QuickSessionIds.IndexOf(target.Id);
-        if (sourceIndex < 0 || targetIndex < 0)
-            return;
-
-        _data.QuickSessionIds.RemoveAt(sourceIndex);
-        var insertIndex = _data.QuickSessionIds.IndexOf(target.Id);
-        if (insertIndex < 0)
-            return;
-
-        if (insertAfter)
-            insertIndex++;
-
-        insertIndex = Math.Clamp(insertIndex, 0, _data.QuickSessionIds.Count);
-        _data.QuickSessionIds.Insert(insertIndex, source.Id);
+        _data.QuickSessionIds.Clear();
+        _data.QuickSessionIds.AddRange(orderedList);
         _storage.Save(_data);
-        RefreshQuickSessions();
     }
 
     private void RefreshQuickSessions()
