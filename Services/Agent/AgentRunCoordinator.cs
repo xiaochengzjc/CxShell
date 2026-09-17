@@ -779,7 +779,8 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
             provider.BuiltinId,
             AgentProviderConfiguration.GetEffectiveModelId(provider, request.Model),
             BuildPromptPreview(request.Messages),
-            request.Mode);
+            request.Mode,
+            AgentPermissionPolicy.NormalizePermissionMode(request.PermissionMode));
         if (!_activeRuns.TryAdd(runId, activeRun))
             return new(false, runId, $"Agent run already exists: {runId}");
         if (!_activeSessionRuns.TryAdd(request.SessionId, runId))
@@ -960,6 +961,7 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
             Temperature = recovery.Temperature,
             MaxTokens = recovery.MaxTokens,
             ReasoningEffort = recovery.ReasoningEffort,
+            PermissionMode = recovery.PermissionMode,
             Mode = recovery.Snapshot.Mode,
             Timeout = timeout
         });
@@ -1624,6 +1626,10 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
         CancellationToken cancellationToken,
         IReadOnlyCollection<string>? sensitiveInputs = null)
     {
+        request = request with
+        {
+            PermissionModeOverride = activeRun.PermissionMode
+        };
         var outputGate = new object();
         var outputCharacters = 0;
         var outputTruncated = false;
@@ -4567,7 +4573,8 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
             snapshot.Checkpoint)
         {
             Context = AgentContextEstimator.Estimate(request.Messages),
-            ReasoningEffort = request.ReasoningEffort
+            ReasoningEffort = request.ReasoningEffort,
+            PermissionMode = activeRun.PermissionMode
         };
     }
 
@@ -4835,7 +4842,8 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
             string provider,
             string model,
             string? promptPreview,
-            AgentChatMode mode = AgentChatMode.Agent)
+            AgentChatMode mode = AgentChatMode.Agent,
+            string? permissionMode = null)
         {
             RunId = runId;
             SessionId = sessionId;
@@ -4849,11 +4857,13 @@ public sealed class AgentRunCoordinator : IAgentRunCoordinator, IDisposable
                 promptPreview,
                 canResume: true);
             Mode = mode;
+            PermissionMode = AgentPermissionPolicy.NormalizePermissionMode(permissionMode);
         }
 
         public string RunId { get; }
         public Guid SessionId { get; private set; }
         public AgentChatMode Mode { get; }
+        public string PermissionMode { get; }
         public DateTimeOffset StartedAtUtc { get; }
         public CancellationTokenSource Cancellation { get; } = new();
         public TaskCompletionSource<object?> Completion { get; } =

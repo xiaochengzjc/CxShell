@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="CxShell is a cross-platform remote workspace built with Avalonia and AtomUI.">
+    <meta name="theme-color" content="#0b0a0d">
+    <title>CxShell · A clear remote workspace</title>
+    <link rel="icon" href="./assets/brand/CxShellLogo.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+    <header class="site-header" id="site-header">
+        <a class="brand" href="#top" data-i18n-aria="brandHome">
+            <img src="./assets/brand/CxShellLogo.svg" alt="">
+            <span>CxShell</span>
+        </a>
+        <nav class="main-nav" id="main-nav" data-i18n-aria="mainNav">
+            <a href="#product" data-i18n="navCapabilities">Capabilities</a>
+            <a href="#stack" data-i18n="navTechnology">Technology</a>
+            <a href="#story" data-i18n="navPrinciples">Principles</a>
+            <a href="#support" data-i18n="navSupport">Support</a>
+        </nav>
+        <div class="header-actions">
+            <a class="text-link" href="https://github.com/xiaochengzjc/CxShell" target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+            <button class="language-toggle" type="button" data-language-toggle aria-label="Switch to Chinese">
+                <span data-language-option="en" class="is-active">EN</span>
+                <span class="language-divider" aria-hidden="true">/</span>
+                <span data-language-option="zh">中</span>
+            </button>
+            <button class="menu-toggle" type="button" data-i18n="menu" data-i18n-aria="openMenu" aria-expanded="false" aria-controls="main-nav">Menu</button>
+        </div>
+    </header>
+
+    <main id="top">
+        <section class="hero" aria-labelledby="hero-title">
+            <div class="hero-content page-width">
+                <p class="eyebrow reveal" data-i18n-html="heroEyebrow">Cross-platform remote workspace <span class="eyebrow-mark">/</span> Open source project</p>
+                <h1 id="hero-title" class="reveal reveal-delay-1">CxShell</h1>
+                <p class="hero-lede reveal reveal-delay-2" data-i18n="heroLede">Put terminals, sessions, files, and Agent into one clear desktop.</p>
+                <p class="hero-copy reveal reveal-delay-3" data-i18n="heroCopy">A cross-platform remote connection tool for developers and operators. Less switching, more awareness of the work in front of you.</p>
+                <div class="hero-actions reveal reveal-delay-4">
+                    <a class="button button-primary" href="https://github.com/xiaochengzjc/CxShell/releases/latest" target="_blank" rel="noreferrer"><span data-i18n="downloadLatest">Download latest</span> <span aria-hidden="true">↗</span></a>
+                    <a class="button button-quiet" href="https://github.com/xiaochengzjc/CxShell" target="_blank" rel="noreferrer"><span data-i18n="viewSource">View source</span> <span aria-hidden="true">↗</span></a>
+                </div>
+                <div class="hero-meta reveal reveal-delay-4">
+                    <span class="status-dot" aria-hidden="true"></span>
+                    <span>.NET 10</span><span class="meta-separator">·</span><span>Avalonia 12</span><span class="meta-separator">·</span><span>AtomUI 6</span>
+                </div>
+            </div>
+            <a class="scroll-cue" href="#product" data-i18n-aria="scrollCue"><span class="scroll-cue-arrow" aria-hidden="true">↓</span><span class="scroll-cue-label" data-i18n="explore">Explore</span></a>
+        </section>
+
+        <section class="intro section section-dark" id="product">
+            <div class="page-width intro-grid">
+                <p class="section-index reveal" data-i18n-html="introIndex">01 <span>/</span> Capabilities</p>
+                <div class="section-copy reveal reveal-delay-1">
+                    <h2 data-i18n-html="introTitle">Everything you need for daily connections, <em>in one workspace.</em></h2>
+                    <p data-i18n="introCopy">CxShell brings connections, operations, observation, and assistance together so your desktop serves the task at hand instead of making the task chase windows.</p>
+                </div>
+                <div class="capability-list reveal reveal-delay-2">
+                    <div class="capability-row">
+                        <span class="capability-number">01</span>
+                        <div><h3 data-i18n="capabilityTerminalTitle">Terminal first</h3><p data-i18n="capabilityTerminalCopy">SSH, TELNET, RLOGIN, serial, and local Terminal sessions, all in one tabbed workspace.</p></div>
+                    </div>
+                    <div class="capability-row">
+                        <span class="capability-number">02</span>
+                        <div><h3 data-i18n="capabilityFilesTitle">Files and state</h3><p data-i18n="capabilityFilesCopy">SFTP file management, transfer queues, server monitoring, and remote desktop in one session experience.</p></div>
+                    </div>
+                    <div class="capability-row">
+                        <span class="capability-number">03</span>
+                        <div><h3 data-i18n="capabilityAgentTitle">Agent assistance</h3><p data-i18n="capabilityAgentCopy">Access open SSH sessions within clear permission boundaries, with diagnostics, long tasks, approvals, and run summaries.</p></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="product-view section section-ink" aria-labelledby="workspace-title">
+            <div class="page-width">
+                <div class="section-heading reveal">
+                    <p class="section-index" data-i18n-html="workspaceIndex">02 <span>/</span> Workspace</p>
+                    <h2 id="workspace-title" data-i18n-html="workspaceTitle">One window,<br><em>many remote contexts.</em></h2>
+                </div>
+                <div class="workspace-carousel reveal reveal-delay-1" data-carousel>
+                    <div class="carousel-stage">
+                        <div class="carousel-viewport">
+                            <div class="carousel-track">
+                                <div class="carousel-slide is-active" data-caption-title="SSH / SFTP / Monitor / Agent" data-caption-title-zh="SSH / SFTP / 监控 / Agent">
+                                    <div class="image-frame"><img src="./assets/screenshots/cxshell-ssh-sftp-monitor.png" data-i18n-alt="sshWorkspaceAlt" alt="CxShell SSH, SFTP, monitoring, and Agent workspace"></div>
+                                </div>
+                                <div class="carousel-slide" aria-hidden="true" data-caption-title="RDP">
+                                    <div class="image-frame"><img src="./assets/screenshots/cxshell-rdp-session.png" data-i18n-alt="rdpWorkspaceAlt" alt="CxShell RDP session workspace"></div>
+                                </div>
+                            </div>
+                            <div class="carousel-pagination" role="tablist" data-i18n-aria="workspaceScreenshots">
+                                <button class="carousel-dot is-active" type="button" role="tab" data-i18n-aria="viewSshWorkspace" aria-selected="true" data-carousel-to="0"></button>
+                                <button class="carousel-dot" type="button" role="tab" data-i18n-aria="viewRdpWorkspace" aria-selected="false" data-carousel-to="1"></button>
+                            </div>
+                        </div>
+                        <button class="carousel-button carousel-button-prev" type="button" data-i18n-aria="previousSlide" data-carousel-prev><span aria-hidden="true">‹</span></button>
+                        <button class="carousel-button carousel-button-next" type="button" data-i18n-aria="nextSlide" data-carousel-next><span aria-hidden="true">›</span></button>
+                    </div>
+                    <div class="carousel-caption" aria-live="polite">
+                        <span>01</span>
+                        <strong data-carousel-title>SSH / SFTP / Monitor / Agent</strong>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="stack section section-paper" id="stack" aria-labelledby="stack-title">
+            <div class="page-width stack-grid">
+                <div class="stack-intro reveal">
+                    <p class="section-index" data-i18n-html="stackIndex">03 <span>/</span> Technology</p>
+                    <h2 id="stack-title" data-i18n-html="stackTitle">A native desktop experience,<br><em>an open technical foundation.</em></h2>
+                    <p data-i18n="stackCopy">CxShell is built with .NET, Avalonia, and AtomUI. It is not a remote tool wrapped in a browser, but an open-source project refined for desktop workflows.</p>
+                </div>
+                <div class="stack-details reveal reveal-delay-1">
+                    <div class="stack-line"><span>UI</span><strong>AtomUI</strong><p data-i18n="stackUiCopy">Unified desktop controls, themes, and interaction foundations that keep Avalonia pages restrained, clear, and extensible.</p></div>
+                    <div class="stack-line"><span>APP</span><strong>Avalonia</strong><p data-i18n="stackAppCopy">A cross-platform desktop framework for Windows, macOS, and Linux, preserving the responsiveness a desktop app should have.</p></div>
+                    <div class="stack-line"><span>CORE</span><strong>.NET 10</strong><p data-i18n="stackCoreCopy">Protocols, transfers, monitoring, Agent Runtime, and native bridges organized through MVVM and clear service boundaries.</p></div>
+                    <div class="stack-line"><span>OPEN</span><strong>Open source</strong><p data-i18n="stackOpenCopy">Code, documentation, and iteration stay public on GitHub. Feedback, suggestions, and contributions are welcome.</p></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="story section section-dark" id="story" aria-labelledby="story-title">
+            <div class="page-width story-grid">
+                <p class="section-index reveal" data-i18n-html="storyIndex">04 <span>/</span> Principles</p>
+                <div class="story-quote reveal reveal-delay-1">
+                    <h2 id="story-title" data-i18n-html="storyTitle">Tools should make complex work <em>feel more orderly.</em></h2>
+                    <p data-i18n="storyCopy">CxShell grows from real terminal, file transfer, and remote troubleshooting scenarios. AI collaboration has helped explore, build, and iterate on the project, but every boundary, permission model, and interaction choice is guided by real use.</p>
+                    <a class="inline-link" href="https://github.com/xiaochengzjc/CxShell/issues" target="_blank" rel="noreferrer"><span data-i18n="suggestIdea">Suggest an idea on GitHub</span> <span aria-hidden="true">↗</span></a>
+                </div>
+            </div>
+        </section>
+
+        <section class="support section section-paper" id="support" aria-labelledby="support-title">
+            <div class="page-width support-grid">
+                <div class="support-intro reveal">
+                    <p class="section-index" data-i18n-html="supportIndex">05 <span>/</span> Support</p>
+                    <h2 id="support-title" data-i18n-html="supportTitle">Open source is the start,<br><em>let's make it better together.</em></h2>
+                    <p data-i18n="supportCopy">CxShell is free and open source. If it saves you a little time, give the project a Star or support continued development in whatever way works for you.</p>
+                    <div class="support-links">
+                        <a class="button button-dark" href="https://github.com/xiaochengzjc/CxShell" target="_blank" rel="noreferrer"><span data-i18n="starOnGithub">Star on GitHub</span> <span aria-hidden="true">↗</span></a>
+                        <a class="text-link text-link-dark kofi-link" href="https://ko-fi.com/xiaochengzjc" target="_blank" rel="noreferrer">Ko-fi <span aria-hidden="true">↗</span></a>
+                    </div>
+                </div>
+                <div class="donation-grid reveal reveal-delay-1">
+                    <div class="donation-item"><img src="./assets/donation/wechat-pay-donation.jpg" data-i18n-alt="wechatQrAlt" alt="WeChat Pay donation QR code"><span data-i18n="wechatPay">WeChat Pay</span></div>
+                    <div class="donation-item"><img src="./assets/donation/alipay-donation.jpg" data-i18n-alt="alipayQrAlt" alt="Alipay donation QR code"><span data-i18n="alipay">Alipay</span></div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="site-footer">
+        <div class="page-width footer-inner">
+            <a class="brand footer-brand" href="#top"><img src="./assets/brand/CxShellLogo.svg" alt=""><span>CxShell</span></a>
+            <p data-i18n="footerDescription">Cross-platform remote workspace · Apache License 2.0</p>
+            <a class="text-link" href="https://github.com/xiaochengzjc/CxShell" target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+        </div>
+    </footer>
+
+    <script src="./script.js"></script>
+</body>
+</html>

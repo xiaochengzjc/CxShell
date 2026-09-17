@@ -911,6 +911,8 @@ public sealed class AgentRuntimeSessionAdapter :
             Temperature = GetDouble(parameters, "temperature"),
             MaxTokens = GetIntNullable(parameters, "maxTokens"),
             ReasoningEffort = ParseReasoningEffort(parameters),
+            PermissionMode = AgentPermissionPolicy.NormalizePermissionMode(
+                GetString(parameters, "permissionMode")),
             Mode = mode,
             Timeout = TimeSpan.FromMilliseconds(timeoutMs)
         });

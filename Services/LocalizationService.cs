@@ -772,6 +772,8 @@ public sealed class LocalizationService : INotifyPropertyChanged
         EnglishTexts["Agent.Description"] = "Ask for help with the selected SSH session.";
         EnglishTexts["Agent.Session"] = "SSH session";
         EnglishTexts["Agent.Mode"] = "Mode";
+        EnglishTexts["Agent.Model"] = "Model";
+        EnglishTexts["Agent.AccessPermission"] = "Access";
         EnglishTexts["Agent.ModeChat"] = "Chat";
         EnglishTexts["Agent.ModePlan"] = "Plan";
         EnglishTexts["Agent.ModeAgent"] = "Agent";
@@ -812,6 +814,7 @@ public sealed class LocalizationService : INotifyPropertyChanged
         EnglishTexts["Agent.Close"] = "Hide Agent panel";
         EnglishTexts["Agent.EmptySessions"] = "Open and connect an SSH terminal session to use Agent.";
         EnglishTexts["Agent.NoSession"] = "No SSH session";
+        EnglishTexts["Agent.NoModel"] = "No model configured";
         EnglishTexts["Agent.Connected"] = "Connected";
         EnglishTexts["Agent.Disconnected"] = "Disconnected";
         EnglishTexts["Agent.ProviderReady"] = "Provider ready";
@@ -844,6 +847,9 @@ public sealed class LocalizationService : INotifyPropertyChanged
         EnglishTexts["Agent.ToolMessage"] = "Remote command";
         EnglishTexts["Agent.ToolShowDetails"] = "Show details";
         EnglishTexts["Agent.ToolHideDetails"] = "Hide details";
+        EnglishTexts["Agent.ToolGroup"] = "Remote commands";
+        EnglishTexts["Agent.ToolGroupShowDetails"] = "Show commands";
+        EnglishTexts["Agent.ToolGroupHideDetails"] = "Hide commands";
         EnglishTexts["Agent.ToolStatusRunning"] = "Running";
         EnglishTexts["Agent.ToolStatusCompleted"] = "Completed";
         EnglishTexts["Agent.ToolStatusFailed"] = "Failed";
@@ -1018,9 +1024,6 @@ public sealed class LocalizationService : INotifyPropertyChanged
         EnglishTexts["ApplicationSettings.AgentModel"] = "Model";
         EnglishTexts["ApplicationSettings.AgentPlanKey"] = "Plan Key / API key";
         EnglishTexts["ApplicationSettings.AgentPlanKeyDescription"] = "Stored encrypted on this device and never included in Agent session snapshots.";
-        EnglishTexts["ApplicationSettings.AgentRoutinRegistration"] = "Routin.ai Plan";
-        EnglishTexts["ApplicationSettings.AgentRoutinRegistrationDescription"] = "Register for Routin.ai with this invitation link, then use the Plan Key in the provider settings.";
-        EnglishTexts["ApplicationSettings.AgentOpenRoutinRegistration"] = "Open invitation link";
         EnglishTexts["ApplicationSettings.AgentRequestTimeout"] = "Request timeout";
         EnglishTexts["ApplicationSettings.AgentRefreshModels"] = "Refresh models";
         EnglishTexts["ApplicationSettings.AgentModelCatalogLoading"] = "Loading models...";
@@ -1045,7 +1048,6 @@ public sealed class LocalizationService : INotifyPropertyChanged
         EnglishTexts["ApplicationSettings.GlobalProxyPassword"] = "Proxy password";
         EnglishTexts["ApplicationSettings.Seconds"] = "seconds";
         EnglishTexts["ApplicationSettings.AgentReady"] = "Configuration is ready.";
-        EnglishTexts["ApplicationSettings.AgentUseRoutinPreset"] = "Use Routin AI Plan";
         EnglishTexts["ApplicationSettings.AgentStatusDisabled"] = "Agent is disabled.";
         EnglishTexts["ApplicationSettings.AgentStatusMissingBaseUrl"] = "Base URL is required.";
         EnglishTexts["ApplicationSettings.AgentStatusInvalidBaseUrl"] = "Base URL must be a valid HTTP(S) URL without credentials.";
@@ -1312,6 +1314,8 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ChineseTexts["Agent.Description"] = "\u534f\u52a9\u68c0\u67e5\u548c\u6392\u67e5\u5f53\u524d SSH \u4f1a\u8bdd\u3002";
         ChineseTexts["Agent.Session"] = "SSH \u4f1a\u8bdd";
         ChineseTexts["Agent.Mode"] = "\u6a21\u5f0f";
+        ChineseTexts["Agent.Model"] = "\u6a21\u578b";
+        ChineseTexts["Agent.AccessPermission"] = "\u8bbf\u95ee\u6743\u9650";
         ChineseTexts["Agent.ModeChat"] = "\u5bf9\u8bdd";
         ChineseTexts["Agent.ModePlan"] = "\u8ba1\u5212";
         ChineseTexts["Agent.ModeAgent"] = "Agent \u6267\u884c";
@@ -1352,6 +1356,7 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ChineseTexts["Agent.Close"] = "\u9690\u85cf Agent \u9762\u677f";
         ChineseTexts["Agent.EmptySessions"] = "\u8bf7\u5148\u6253\u5f00\u5e76\u8fde\u63a5 SSH Terminal \u4f1a\u8bdd\u3002";
         ChineseTexts["Agent.NoSession"] = "\u65e0 SSH \u4f1a\u8bdd";
+        ChineseTexts["Agent.NoModel"] = "\u672a\u914d\u7f6e\u6a21\u578b";
         ChineseTexts["Agent.Connected"] = "\u5df2\u8fde\u63a5";
         ChineseTexts["Agent.Disconnected"] = "\u5df2\u65ad\u5f00";
         ChineseTexts["Agent.ProviderReady"] = "Provider \u5df2\u5c31\u7eea";
@@ -1384,6 +1389,9 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ChineseTexts["Agent.ToolMessage"] = "\u8fdc\u7a0b\u547d\u4ee4";
         ChineseTexts["Agent.ToolShowDetails"] = "\u663e\u793a\u8be6\u60c5";
         ChineseTexts["Agent.ToolHideDetails"] = "\u6536\u8d77\u8be6\u60c5";
+        ChineseTexts["Agent.ToolGroup"] = "\u8fdc\u7a0b\u547d\u4ee4";
+        ChineseTexts["Agent.ToolGroupShowDetails"] = "\u5c55\u5f00\u547d\u4ee4";
+        ChineseTexts["Agent.ToolGroupHideDetails"] = "\u6536\u8d77\u547d\u4ee4";
         ChineseTexts["Agent.ToolStatusRunning"] = "\u8fd0\u884c\u4e2d";
         ChineseTexts["Agent.ToolStatusCompleted"] = "\u5df2\u5b8c\u6210";
         ChineseTexts["Agent.ToolStatusFailed"] = "\u5931\u8d25";
@@ -1537,9 +1545,6 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ChineseTexts["ApplicationSettings.AgentModel"] = "\u6a21\u578b";
         ChineseTexts["ApplicationSettings.AgentPlanKey"] = "Plan Key / API Key";
         ChineseTexts["ApplicationSettings.AgentPlanKeyDescription"] = "\u4ec5\u52a0\u5bc6\u4fdd\u5b58\u5728\u672c\u673a\uff0c\u4e0d\u4f1a\u5199\u5165 Agent \u4f1a\u8bdd\u5feb\u7167\u3002";
-        ChineseTexts["ApplicationSettings.AgentRoutinRegistration"] = "Routin.ai Plan";
-        ChineseTexts["ApplicationSettings.AgentRoutinRegistrationDescription"] = "\u901a\u8fc7\u6b64\u9080\u8bf7\u94fe\u63a5\u6ce8\u518c Routin.ai\uff0c\u7136\u540e\u5728\u670d\u52a1\u5546\u914d\u7f6e\u4e2d\u586b\u5199 Plan Key\u3002";
-        ChineseTexts["ApplicationSettings.AgentOpenRoutinRegistration"] = "\u6253\u5f00\u9080\u8bf7\u94fe\u63a5";
         ChineseTexts["ApplicationSettings.AgentRequestTimeout"] = "\u8bf7\u6c42\u8d85\u65f6";
         ChineseTexts["ApplicationSettings.AgentRefreshModels"] = "\u5237\u65b0\u6a21\u578b";
         ChineseTexts["ApplicationSettings.AgentModelCatalogLoading"] = "\u6b63\u5728\u52a0\u8f7d\u6a21\u578b...";
@@ -1564,7 +1569,6 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ChineseTexts["ApplicationSettings.GlobalProxyPassword"] = "\u4ee3\u7406\u5bc6\u7801";
         ChineseTexts["ApplicationSettings.Seconds"] = "\u79d2";
         ChineseTexts["ApplicationSettings.AgentReady"] = "\u914d\u7f6e\u5df2\u5c31\u7eea\u3002";
-        ChineseTexts["ApplicationSettings.AgentUseRoutinPreset"] = "\u4f7f\u7528 Routin AI Plan";
         ChineseTexts["ApplicationSettings.AgentStatusDisabled"] = "Agent \u5c1a\u672a\u542f\u7528\u3002";
         ChineseTexts["ApplicationSettings.AgentStatusMissingBaseUrl"] = "\u8bf7\u586b\u5199 Base URL\u3002";
         ChineseTexts["ApplicationSettings.AgentStatusInvalidBaseUrl"] = "Base URL \u5fc5\u987b\u662f\u4e0d\u542b\u51ed\u636e\u7684\u6709\u6548 HTTP(S) \u5730\u5740\u3002";

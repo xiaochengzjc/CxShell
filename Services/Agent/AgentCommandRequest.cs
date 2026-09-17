@@ -13,6 +13,13 @@ public sealed record AgentCommandRequest
     public string? ApprovalToken { get; init; }
 
     /// <summary>
+    /// Per-run permission mode selected in the Agent panel. It is process-local
+    /// and never accepted from a raw command request or persisted with secrets.
+    /// </summary>
+    [JsonIgnore]
+    internal string? PermissionModeOverride { get; init; }
+
+    /// <summary>
     /// Sends input through the visible terminal channel instead of an SSH exec
     /// channel. This is process-local and is never accepted from JSON.
     /// </summary>

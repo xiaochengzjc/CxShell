@@ -303,7 +303,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         AgentRuntimeStreamSession = new AgentRuntimeStreamSession(AgentRuntimeFrameEndpoint, AgentRuntimeHost);
         AgentPanel = new AgentPanelViewModel(
             AgentRuntimeClient,
-            () => _sessionTreeVm.Settings.AgentProvider);
+            () => _sessionTreeVm.Settings.AgentProvider,
+            () => _sessionTreeVm.Settings.AgentPermissionMode);
         AgentPanel.PropertyChanged += OnAgentPanelPropertyChanged;
         _localization.SetLanguage(_sessionTreeVm.Settings.UiLanguage);
         SshHostKeyTrustService.Shared.Configure(_sessionTreeVm.Settings);
@@ -887,6 +888,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _agentPermissionPolicy.ReadOnlyMode = settings.AgentReadOnlyMode;
         _agentPermissionPolicy.AllowedCommandPrefixes = settings.AgentAllowedCommandPrefixes;
         _agentPermissionPolicy.BlockedCommandPrefixes = settings.AgentBlockedCommandPrefixes;
+        AgentPanel.RefreshPermissionModeFromSettings(settings.AgentPermissionMode);
         AgentPanel.RefreshProviderStatus();
         SshHostKeyTrustService.Shared.Configure(settings);
         SessionRecordingService.Shared.Configure(settings);

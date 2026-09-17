@@ -312,7 +312,11 @@ public partial class TerminalView : UserControl
             return true;
         }
 
-        return _boundVm?.TryHandleCommandHistoryKey(key) == true;
+        // Direction keys are intentionally never handled here. The active
+        // shell or full-screen TUI owns Up/Down history and cursor behavior;
+        // intercepting them locally makes the local tracker fight remote
+        // readline/TUI redraws and can duplicate the displayed command.
+        return false;
     }
 
     private void OnCommandLineChanged()

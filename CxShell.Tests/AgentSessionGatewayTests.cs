@@ -523,6 +523,39 @@ public sealed class AgentSessionGatewayTests
     }
 
     [Fact]
+    public async Task PerRunPermissionOverrideUsesTheSelectedAccessMode()
+    {
+        var snapshot = CreateSnapshot(SessionProtocol.SSH, isConnected: true);
+        var called = false;
+        using var gateway = new AgentSessionGateway(
+            new DelegateAgentSessionHost(() =>
+            [
+                new AgentSessionEndpoint(
+                    () => snapshot,
+                    (_, _) =>
+                    {
+                        called = true;
+                        return Task.CompletedTask;
+                    })
+            ]),
+            new AgentPermissionPolicy
+            {
+                PermissionMode = AgentPermissionPolicy.AskBeforeEachCommandMode
+            });
+
+        var result = await gateway.ExecuteCommandAsync(new AgentCommandRequest
+        {
+            SessionId = snapshot.SessionId,
+            Command = "apt-get update",
+            PermissionModeOverride = AgentPermissionPolicy.FullAccessMode
+        });
+
+        Assert.Equal(AgentCommandStatus.Sent, result.Status);
+        Assert.False(result.ApprovalRequired);
+        Assert.True(called);
+    }
+
+    [Fact]
     public async Task DangerousCommandRunsOnlyAfterOneTimeApproval()
     {
         var snapshot = CreateSnapshot(SessionProtocol.SSH, isConnected: true);

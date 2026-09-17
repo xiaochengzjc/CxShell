@@ -19,6 +19,7 @@ public sealed record AgentRunRequest
     public double? Temperature { get; init; }
     public int? MaxTokens { get; init; }
     public AgentReasoningEffort ReasoningEffort { get; init; }
+    public string? PermissionMode { get; init; }
     public AgentChatMode Mode { get; init; } = AgentChatMode.Agent;
     public TimeSpan Timeout { get; init; } = AgentRunCoordinator.DefaultRunTimeout;
 }
@@ -101,6 +102,9 @@ public sealed record AgentRunRecoveryState(
 {
     [JsonPropertyName("reasoningEffort")]
     public AgentReasoningEffort ReasoningEffort { get; init; }
+
+    [JsonPropertyName("permissionMode")]
+    public string? PermissionMode { get; init; }
 
     [JsonPropertyName("context")]
     public AgentContextEstimate? Context { get; init; }

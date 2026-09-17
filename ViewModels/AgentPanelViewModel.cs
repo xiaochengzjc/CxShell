@@ -50,12 +50,14 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     private readonly IAgentRuntimeClient _runtimeClient;
     private readonly IAgentRuntimeStatusSource? _runtimeStatusSource;
     private readonly Func<AgentProviderSettings?> _providerSettings;
+    private readonly Func<string?> _permissionMode;
     private readonly List<AgentChatMessage> _conversation = [];
     private readonly Dictionary<string, AgentPanelMessageViewModel> _toolMessages = new(StringComparer.Ordinal);
     private readonly Dictionary<Guid, SessionAgentState> _sessionStates = new();
     private readonly IDisposable _runtimeSubscription;
     private Dictionary<Guid, AgentSessionSnapshot> _sessionsById = new();
     private AgentPanelMessageViewModel? _currentAssistantMessage;
+    private AgentPanelMessageViewModel? _activeToolGroup;
     private string? _activeRunId;
     private long _lastRunSequence;
     private bool _isRecoveringRun;
@@ -81,7 +83,9 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
 
     [ObservableProperty] private ISelectOption? _selectedSessionOption;
     [ObservableProperty] private ISelectOption? _selectedChatModeOption;
+    [ObservableProperty] private ISelectOption? _selectedModelOption;
     [ObservableProperty] private ISelectOption? _selectedReasoningEffortOption;
+    [ObservableProperty] private ISelectOption? _selectedPermissionModeOption;
     [ObservableProperty] private string _prompt = string.Empty;
     [ObservableProperty] private bool _isRunning;
     [ObservableProperty] private bool _isStopping;
@@ -110,7 +114,9 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<ISelectOption> SessionOptions { get; } = new();
     public ObservableCollection<ISelectOption> ChatModeOptions { get; } = new();
+    public ObservableCollection<ISelectOption> ModelOptions { get; } = new();
     public ObservableCollection<ISelectOption> ReasoningEffortOptions { get; } = new();
+    public ObservableCollection<ISelectOption> PermissionModeOptions { get; } = new();
     public ObservableCollection<AgentPanelMessageViewModel> Messages { get; } = new();
     public ObservableCollection<AgentAttachmentViewModel> PendingAttachments { get; } = new();
     public ObservableCollection<AgentTerminalAnnotationViewModel> PendingAnnotations { get; } = new();
@@ -121,13 +127,17 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
 
     public AgentPanelViewModel(
         IAgentRuntimeClient runtimeClient,
-        Func<AgentProviderSettings?>? providerSettings = null)
+        Func<AgentProviderSettings?>? providerSettings = null,
+        Func<string?>? permissionMode = null)
     {
         _runtimeClient = runtimeClient ?? throw new ArgumentNullException(nameof(runtimeClient));
         _runtimeStatusSource = runtimeClient as IAgentRuntimeStatusSource;
         _providerSettings = providerSettings ?? (() => null);
+        _permissionMode = permissionMode ?? (() => AgentPermissionPolicy.RiskBasedApprovalMode);
         RebuildChatModeOptions();
+        RebuildModelOptions();
         RebuildReasoningEffortOptions();
+        RebuildPermissionModeOptions();
         RebuildRunHistoryFilterOptions();
         _runtimeSubscription = _runtimeClient.SubscribeEvents(OnRuntimeEvent);
         if (_runtimeStatusSource != null)
@@ -156,6 +166,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     public string DescriptionText => Text("Agent.Description");
     public string SessionText => Text("Agent.Session");
     public string ModeText => Text("Agent.Mode");
+    public string ModelText => Text("Agent.Model");
     public string ChatModeChatText => Text("Agent.ModeChat");
     public string ChatModePlanText => Text("Agent.ModePlan");
     public string ChatModeAgentText => Text("Agent.ModeAgent");
@@ -164,6 +175,26 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     public string ReasoningEffortLowText => Text("Agent.ReasoningEffortLow");
     public string ReasoningEffortMediumText => Text("Agent.ReasoningEffortMedium");
     public string ReasoningEffortHighText => Text("Agent.ReasoningEffortHigh");
+    public string AccessPermissionText => Text("Agent.AccessPermission");
+    public string PermissionModeSummaryText
+        => SelectedPermissionModeOption?.Header?.ToString()
+           ?? Text("ApplicationSettings.AgentPermissionModeRisk");
+    public string PermissionModeDescriptionText
+        => SelectedPermissionMode switch
+        {
+            AgentPermissionPolicy.AskBeforeEachCommandMode => Text("ApplicationSettings.AgentPermissionModeAskDescription"),
+            AgentPermissionPolicy.FullAccessMode => Text("ApplicationSettings.AgentPermissionModeFullDescription"),
+            _ => Text("ApplicationSettings.AgentPermissionModeRiskDescription")
+        };
+    public string AgentOptionsSummaryText
+    {
+        get
+        {
+            var model = string.IsNullOrWhiteSpace(SelectedModel) ? NoModelText : SelectedModel;
+            var effort = SelectedReasoningEffortOption?.Header?.ToString() ?? ReasoningEffortNoneText;
+            return $"{model} · {effort}";
+        }
+    }
     public string PromptText => Text("Agent.Prompt");
     public string PromptPlaceholderText => Text("Agent.PromptPlaceholder");
     public string AttachFileText => Text("Agent.AttachFile");
@@ -182,6 +213,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     public string CloseText => Text("Agent.Close");
     public string EmptySessionsText => Text("Agent.EmptySessions");
     public string NoSessionText => Text("Agent.NoSession");
+    public string NoModelText => Text("Agent.NoModel");
     public string ConnectedText => Text("Agent.Connected");
     public string DisconnectedText => Text("Agent.Disconnected");
     public string ProviderReadyText => Text("Agent.ProviderReady");
@@ -244,6 +276,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
 
     public bool HasSessions => SessionOptions.Count > 0;
     public bool HasMessages => Messages.Count > 0;
+    public bool IsEmptyStateVisible => !HasSessions && !HasMessages;
     public bool HasPendingAttachments => PendingAttachments.Count > 0;
     public bool HasPendingAnnotations => PendingAnnotations.Count > 0;
     public bool HasRunHistory => RunHistory.Count > 0;
@@ -258,12 +291,24 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     public bool HasSelectedSession => SelectedSession != null;
     public bool IsSelectedSessionConnected => SelectedSession?.IsConnected == true;
     public bool IsSessionSelectionEnabled => HasSessions && !IsRunning;
+    public bool IsModelSelectionEnabled => ModelOptions.Count > 0 && !IsRunning;
+    public string? SelectedModel => SelectedModelOption?.Content?.ToString();
+    public string SelectedPermissionMode
+        => AgentPermissionPolicy.NormalizePermissionMode(
+               SelectedPermissionModeOption?.Content?.ToString())
+           is { Length: > 0 } mode
+            ? mode
+            : AgentPermissionPolicy.RiskBasedApprovalMode;
     public bool CanRunWithoutSession
         => SelectedChatMode is AgentChatMode.Chat or AgentChatMode.Plan;
     public bool CanStartSessionManagementRun
         => SelectedChatMode == AgentChatMode.Agent && !IsSelectedSessionConnected;
     public bool IsRuntimeRetryVisible => RuntimeState == AgentRuntimeSessionState.Failed && !IsRunning;
     public bool IsPromptInputEnabled => !IsStopping && !IsCanceling;
+    public bool HasPendingPromptInput
+        => !string.IsNullOrWhiteSpace(Prompt) || HasPendingAttachments || HasPendingAnnotations;
+    public bool IsRunActionSendVisible => IsRunning && HasPendingPromptInput;
+    public bool IsRunActionStopVisible => IsRunning && !HasPendingPromptInput;
     public string SelectedSessionStatusText => SelectedSession switch
     {
         { IsConnected: true } => ConnectedText,
@@ -305,6 +350,9 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
 
     private void NotifyRunCommands()
     {
+        OnPropertyChanged(nameof(HasPendingPromptInput));
+        OnPropertyChanged(nameof(IsRunActionSendVisible));
+        OnPropertyChanged(nameof(IsRunActionStopVisible));
         RunCommand.NotifyCanExecuteChanged();
         AppendCommand.NotifyCanExecuteChanged();
         StopCommand.NotifyCanExecuteChanged();
@@ -539,6 +587,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         }
 
         OnPropertyChanged(nameof(HasSessions));
+        OnPropertyChanged(nameof(IsEmptyStateVisible));
         OnPropertyChanged(nameof(HasSelectedSession));
         OnPropertyChanged(nameof(IsSelectedSessionConnected));
         OnPropertyChanged(nameof(CanStartSessionManagementRun));
@@ -603,6 +652,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
             return;
         }
 
+        RebuildModelOptions(SelectedModel);
         var validation = AgentProviderConfiguration.Validate(_providerSettings());
         IsProviderReady = validation.IsValid;
         ProviderStatusText = validation.IsValid ? ProviderReadyText : ProviderUnavailableText;
@@ -760,6 +810,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         _runRecoveryRequested = false;
         _currentAssistantMessage = null;
         _toolMessages.Clear();
+        _activeToolGroup = null;
         RestoreRunSteps(activeRun.Steps);
         IsStopping = false;
         IsCanceling = false;
@@ -976,8 +1027,9 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         RebuildReasoningEffortOptions();
         OnPropertyChanged(nameof(TitleText));
         OnPropertyChanged(nameof(DescriptionText));
-        OnPropertyChanged(nameof(SessionText));
-        OnPropertyChanged(nameof(ModeText));
+         OnPropertyChanged(nameof(SessionText));
+         OnPropertyChanged(nameof(ModeText));
+         OnPropertyChanged(nameof(ModelText));
         OnPropertyChanged(nameof(ChatModeChatText));
         OnPropertyChanged(nameof(ChatModePlanText));
         OnPropertyChanged(nameof(ChatModeAgentText));
@@ -986,6 +1038,11 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(ReasoningEffortLowText));
         OnPropertyChanged(nameof(ReasoningEffortMediumText));
         OnPropertyChanged(nameof(ReasoningEffortHighText));
+        RebuildPermissionModeOptions(SelectedPermissionMode);
+        OnPropertyChanged(nameof(AccessPermissionText));
+        OnPropertyChanged(nameof(PermissionModeSummaryText));
+        OnPropertyChanged(nameof(PermissionModeDescriptionText));
+        OnPropertyChanged(nameof(AgentOptionsSummaryText));
         OnPropertyChanged(nameof(PromptText));
         OnPropertyChanged(nameof(PromptPlaceholderText));
         OnPropertyChanged(nameof(RemoveAnnotationText));
@@ -1000,7 +1057,8 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(RefreshText));
         OnPropertyChanged(nameof(CloseText));
         OnPropertyChanged(nameof(EmptySessionsText));
-        OnPropertyChanged(nameof(NoSessionText));
+         OnPropertyChanged(nameof(NoSessionText));
+         OnPropertyChanged(nameof(NoModelText));
         OnPropertyChanged(nameof(ConnectedText));
         OnPropertyChanged(nameof(DisconnectedText));
         OnPropertyChanged(nameof(ProviderReadyText));
@@ -1194,6 +1252,13 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
+    private void ToggleToolGroup(AgentPanelMessageViewModel? message)
+    {
+        if (message?.IsToolGroup == true)
+            message.IsToolGroupExpanded = !message.IsToolGroupExpanded;
+    }
+
+    [RelayCommand]
     private async Task RetryRun(AgentPanelRunViewModel? run)
     {
         if (run == null || IsRunning || !_runPrompts.TryGetValue(run.RunId, out var prompt))
@@ -1252,6 +1317,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
             _runRecoveryRequested = false;
             _currentAssistantMessage = null;
             _toolMessages.Clear();
+            _activeToolGroup = null;
             IsStopping = false;
             IsCanceling = false;
             IsAppending = false;
@@ -1433,6 +1499,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         _runRecoveryRequested = false;
         _currentAssistantMessage = null;
         _toolMessages.Clear();
+        _activeToolGroup = null;
         RestoreRunSteps(null);
         IsStopping = false;
         IsCanceling = false;
@@ -1456,7 +1523,9 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
                         runId,
                         sessionId = runSessionId.ToString("D"),
                         mode = SelectedChatMode.ToString().ToLowerInvariant(),
+                        model = SelectedModel,
                         reasoningEffort = SelectedReasoningEffort.ToString().ToLowerInvariant(),
+                        permissionMode = SelectedPermissionMode,
                         messages = requestMessages,
                         timeoutMs = (int)timeout.TotalMilliseconds
                     },
@@ -2050,16 +2119,11 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     private void UpdateToolCall(AgentRuntimeStreamEvent @event)
     {
         var toolCallId = @event.ToolCallId ?? Guid.NewGuid().ToString("N");
-        if (!_toolMessages.TryGetValue(toolCallId, out var message))
-        {
-            message = AgentPanelMessageViewModel.Tool(string.Empty);
-            message.ToolCallId = toolCallId;
-            _toolMessages[toolCallId] = AddMessage(message);
-        }
+        var message = GetOrCreateToolMessage(toolCallId);
 
         message.ToolCallId = toolCallId;
         message.ToolName = @event.ToolName ?? string.Empty;
-        message.ToolInput = @event.Input ?? string.Empty;
+        message.ToolInput = FormatToolInput(@event.Input ?? string.Empty);
         message.RiskText = @event.Risk ?? string.Empty;
         message.ApprovalSessionText = @event.SessionName ?? string.Empty;
         message.ApprovalTimeoutText = @event.TimeoutMs is { } timeout
@@ -2078,13 +2142,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     private void UpdateToolResult(AgentRuntimeStreamEvent @event)
     {
         var toolCallId = @event.ToolCallId ?? string.Empty;
-        if (!_toolMessages.TryGetValue(toolCallId, out var message))
-        {
-            message = AddMessage(AgentPanelMessageViewModel.Tool(
-                @event.Result ?? string.Empty));
-            if (toolCallId.Length > 0)
-                _toolMessages[toolCallId] = message;
-        }
+        var message = GetOrCreateToolMessage(toolCallId, @event.Result ?? string.Empty);
 
         message.ToolName = @event.ToolName ?? message.ToolName;
         message.Content = LimitTranscript(FormatToolResult(@event.Result ?? string.Empty));
@@ -2099,12 +2157,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     private void UpdateToolVerification(AgentRuntimeStreamEvent @event)
     {
         var toolCallId = @event.ToolCallId ?? string.Empty;
-        if (!_toolMessages.TryGetValue(toolCallId, out var message))
-        {
-            message = AgentPanelMessageViewModel.Tool(string.Empty);
-            message.ToolCallId = toolCallId;
-            _toolMessages[toolCallId] = AddMessage(message);
-        }
+        var message = GetOrCreateToolMessage(toolCallId);
 
         message.VerificationStatus = @event.Status ?? "unknown";
         var statusText = FormatVerificationStatus(@event.Status);
@@ -2130,13 +2183,9 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     private void UpdateToolOutput(AgentRuntimeStreamEvent @event)
     {
         var toolCallId = @event.ToolCallId ?? string.Empty;
-        if (!_toolMessages.TryGetValue(toolCallId, out var message))
-        {
-            message = AgentPanelMessageViewModel.Tool(string.Empty);
-            message.ToolCallId = toolCallId;
+        var message = GetOrCreateToolMessage(toolCallId);
+        if (string.IsNullOrWhiteSpace(message.ToolName))
             message.ToolName = @event.ToolName ?? string.Empty;
-            _toolMessages[toolCallId] = AddMessage(message);
-        }
 
         message.AppendToolOutput(@event.Text ?? @event.Message ?? string.Empty, MaximumTranscriptCharacters);
         message.StatusText = @event.Stream == "stderr" ? "stderr" : RunningText;
@@ -2150,12 +2199,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     private void UpdateCredentialRequest(AgentRuntimeStreamEvent @event)
     {
         var toolCallId = @event.ToolCallId ?? string.Empty;
-        if (!_toolMessages.TryGetValue(toolCallId, out var message))
-        {
-            message = AgentPanelMessageViewModel.Tool(string.Empty);
-            message.ToolCallId = toolCallId;
-            _toolMessages[toolCallId] = AddMessage(message);
-        }
+        var message = GetOrCreateToolMessage(toolCallId);
 
         message.ToolName = @event.ToolName ?? message.ToolName;
         message.CredentialRequestId = @event.CredentialRequestId ?? string.Empty;
@@ -2169,6 +2213,32 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         message.StatusText = message.IsCredentialPending
             ? CredentialRequiredText
             : @event.Status ?? RunningText;
+    }
+
+    private AgentPanelMessageViewModel GetOrCreateToolMessage(
+        string toolCallId,
+        string initialContent = "")
+    {
+        if (toolCallId.Length > 0 && _toolMessages.TryGetValue(toolCallId, out var existing))
+            return existing;
+
+        var message = AgentPanelMessageViewModel.Tool(initialContent);
+        message.ToolCallId = toolCallId.Length > 0 ? toolCallId : null;
+        message.RunId = _activeRunId ?? string.Empty;
+        GetOrCreateActiveToolGroup().AddToolMessage(message);
+        if (toolCallId.Length > 0)
+            _toolMessages[toolCallId] = message;
+        return message;
+    }
+
+    private AgentPanelMessageViewModel GetOrCreateActiveToolGroup()
+    {
+        if (_activeToolGroup?.IsToolGroup == true)
+            return _activeToolGroup;
+
+        var group = AgentPanelMessageViewModel.ToolGroup(_activeRunId ?? string.Empty);
+        _activeToolGroup = AddMessage(group);
+        return group;
     }
 
     internal static string FormatToolResult(string value)
@@ -2209,6 +2279,53 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
 
         return value;
     }
+
+    internal static string FormatToolInput(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        try
+        {
+            using var document = JsonDocument.Parse(value);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+                return value;
+
+            if (root.TryGetProperty("command", out var command))
+                return FormatToolValue(command);
+
+            var lines = root.EnumerateObject()
+                .Where(property => !string.Equals(
+                    property.Name,
+                    "sessionId",
+                    StringComparison.OrdinalIgnoreCase))
+                .Select(property => $"{property.Name}: {FormatToolValue(property.Value)}")
+                .ToArray();
+            return lines.Length == 0 ? string.Empty : string.Join(Environment.NewLine, lines);
+        }
+        catch (JsonException)
+        {
+            return value;
+        }
+    }
+
+    private static string FormatToolValue(JsonElement value)
+        => value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString() ?? string.Empty,
+            JsonValueKind.Number => value.ToString(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            JsonValueKind.Array => string.Join(", ", value.EnumerateArray().Select(FormatToolValue)),
+            JsonValueKind.Object => string.Join(", ", value.EnumerateObject()
+                .Where(property => !string.Equals(
+                    property.Name,
+                    "sessionId",
+                    StringComparison.OrdinalIgnoreCase))
+                .Select(property => $"{property.Name}: {FormatToolValue(property.Value)}")),
+            _ => string.Empty
+        };
 
     private static string FormatFleetInspection(JsonElement root)
     {
@@ -2387,6 +2504,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         _lastRunSequence = 0;
         _isRecoveringRun = false;
         _runRecoveryRequested = false;
+        _activeToolGroup = null;
         ApplyRunCheckpoint(null);
         IsRunning = false;
         StatusText = string.IsNullOrWhiteSpace(message) ? ErrorText : message;
@@ -2435,6 +2553,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         _runRecoveryRequested = false;
         _currentAssistantMessage = null;
         _toolMessages.Clear();
+        _activeToolGroup = null;
         ApplyRunCheckpoint(null);
         foreach (var message in Messages.Where(message => message.IsCredentialPending))
         {
@@ -2449,6 +2568,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     {
         Messages.Add(message);
         OnPropertyChanged(nameof(HasMessages));
+        OnPropertyChanged(nameof(IsEmptyStateVisible));
         return message;
     }
 
@@ -2523,6 +2643,44 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         NotifyRunCommands();
     }
 
+    private void RebuildModelOptions(string? preferred = null)
+    {
+        var provider = _providerSettings();
+        var effectiveModel = provider == null
+            ? string.Empty
+            : AgentProviderConfiguration.GetEffectiveModelId(provider);
+        var selectedModel = preferred ?? effectiveModel;
+
+        ModelOptions.Clear();
+        if (provider != null)
+        {
+            foreach (var model in (provider.Models ?? new List<AgentModelSettings>())
+                         .Where(model => model.Enabled && !string.IsNullOrWhiteSpace(model.ModelId))
+                         .Select(model => model.ModelId.Trim())
+                         .Concat(provider.AvailableModels ?? new List<string>())
+                         .Concat(new[] { provider.Model })
+                         .Where(model => !string.IsNullOrWhiteSpace(model))
+                         .Distinct(StringComparer.OrdinalIgnoreCase)
+                         .Take(100))
+            {
+                ModelOptions.Add(new SelectOption { Header = model, Content = model });
+            }
+        }
+
+        SelectedModelOption = ModelOptions.FirstOrDefault(option =>
+            string.Equals(option.Content?.ToString(), selectedModel, StringComparison.OrdinalIgnoreCase));
+        OnPropertyChanged(nameof(SelectedModel));
+        OnPropertyChanged(nameof(AgentOptionsSummaryText));
+        OnPropertyChanged(nameof(IsModelSelectionEnabled));
+    }
+
+    partial void OnSelectedModelOptionChanged(ISelectOption? value)
+    {
+        OnPropertyChanged(nameof(SelectedModel));
+        OnPropertyChanged(nameof(AgentOptionsSummaryText));
+        NotifyRunCommands();
+    }
+
     public AgentReasoningEffort SelectedReasoningEffort
         => Enum.TryParse<AgentReasoningEffort>(
                 SelectedReasoningEffortOption?.Content?.ToString(),
@@ -2547,7 +2705,58 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     partial void OnSelectedReasoningEffortOptionChanged(ISelectOption? value)
     {
         OnPropertyChanged(nameof(SelectedReasoningEffort));
+        OnPropertyChanged(nameof(AgentOptionsSummaryText));
         NotifyRunCommands();
+    }
+
+    partial void OnSelectedPermissionModeOptionChanged(ISelectOption? value)
+    {
+        OnPropertyChanged(nameof(SelectedPermissionMode));
+        OnPropertyChanged(nameof(PermissionModeSummaryText));
+        OnPropertyChanged(nameof(PermissionModeDescriptionText));
+        NotifyRunCommands();
+    }
+
+    public void RefreshPermissionModeFromSettings(string? permissionMode)
+    {
+        if (IsRunning)
+            return;
+
+        RebuildPermissionModeOptions(permissionMode);
+    }
+
+    private void RebuildPermissionModeOptions(string? preferred = null)
+    {
+        var selected = AgentPermissionPolicy.NormalizePermissionMode(
+            preferred ?? _permissionMode());
+        if (string.IsNullOrWhiteSpace(selected))
+            selected = AgentPermissionPolicy.RiskBasedApprovalMode;
+
+        PermissionModeOptions.Clear();
+        PermissionModeOptions.Add(new SelectOption
+        {
+            Header = Text("ApplicationSettings.AgentPermissionModeAsk"),
+            Content = AgentPermissionPolicy.AskBeforeEachCommandMode
+        });
+        PermissionModeOptions.Add(new SelectOption
+        {
+            Header = Text("ApplicationSettings.AgentPermissionModeRisk"),
+            Content = AgentPermissionPolicy.RiskBasedApprovalMode
+        });
+        PermissionModeOptions.Add(new SelectOption
+        {
+            Header = Text("ApplicationSettings.AgentPermissionModeFull"),
+            Content = AgentPermissionPolicy.FullAccessMode
+        });
+        SelectedPermissionModeOption = PermissionModeOptions.FirstOrDefault(option =>
+            string.Equals(
+                option.Content?.ToString(),
+                selected,
+                StringComparison.OrdinalIgnoreCase))
+            ?? PermissionModeOptions[1];
+        OnPropertyChanged(nameof(SelectedPermissionMode));
+        OnPropertyChanged(nameof(PermissionModeSummaryText));
+        OnPropertyChanged(nameof(PermissionModeDescriptionText));
     }
 
     private string GetRunSessionLabel(string sessionId)
@@ -2625,6 +2834,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     partial void OnIsRunningChanged(bool value)
     {
         OnPropertyChanged(nameof(IsSessionSelectionEnabled));
+        OnPropertyChanged(nameof(IsModelSelectionEnabled));
         OnPropertyChanged(nameof(IsRuntimeRetryVisible));
         OnPropertyChanged(nameof(IsRunElapsedVisible));
         if (!value)
@@ -2681,6 +2891,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         _conversation.Clear();
         Messages.Clear();
         _toolMessages.Clear();
+        _activeToolGroup = null;
         _currentAssistantMessage = null;
         _nextAnnotationNumber = 1;
 
@@ -2690,11 +2901,13 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
             foreach (var message in state.Messages)
             {
                 Messages.Add(message);
-                if (message.IsTool &&
-                    message.ToolCallId is { Length: > 0 } toolCallId &&
-                    message.IsApprovalPending)
+                foreach (var toolMessage in message.EnumerateToolMessages())
                 {
-                    _toolMessages[toolCallId] = message;
+                    if (toolMessage.ToolCallId is { Length: > 0 } toolCallId &&
+                        (toolMessage.IsApprovalPending || toolMessage.IsCredentialPending))
+                    {
+                        _toolMessages[toolCallId] = toolMessage;
+                    }
                 }
             }
 
@@ -2702,6 +2915,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         }
 
         OnPropertyChanged(nameof(HasMessages));
+        OnPropertyChanged(nameof(IsEmptyStateVisible));
     }
 
     private void UpdateRunStep(AgentRuntimeStreamEvent @event)
@@ -2848,6 +3062,7 @@ public enum AgentPanelMessageKind
     User,
     Assistant,
     Tool,
+    ToolGroup,
     Error,
     Summary
 }
@@ -2871,6 +3086,7 @@ public sealed partial class AgentPanelMessageViewModel : ObservableObject
     [ObservableProperty] private string _credentialValue = string.Empty;
     [ObservableProperty] private bool _rememberCredential;
     [ObservableProperty] private bool _isToolDetailsExpanded;
+    [ObservableProperty] private bool _isToolGroupExpanded = true;
     [ObservableProperty] private string _runId = string.Empty;
     [ObservableProperty] private string _summarySessionName = string.Empty;
     [ObservableProperty] private string _summaryStatusText = string.Empty;
@@ -2904,14 +3120,17 @@ public sealed partial class AgentPanelMessageViewModel : ObservableObject
     public bool IsUser => Kind == AgentPanelMessageKind.User;
     public bool IsAssistant => Kind == AgentPanelMessageKind.Assistant;
     public bool IsTool => Kind == AgentPanelMessageKind.Tool;
+    public bool IsToolGroup => Kind == AgentPanelMessageKind.ToolGroup;
     public bool IsError => Kind == AgentPanelMessageKind.Error;
     public bool IsSummary => Kind == AgentPanelMessageKind.Summary;
+    public bool IsConversationMessage => !IsSummary && !IsToolGroup;
     public IReadOnlyList<AgentAttachmentViewModel> Attachments { get; } = [];
     public bool HasAttachments => Attachments.Count > 0;
     public IReadOnlyList<AgentTerminalAnnotationViewModel> Annotations { get; } = [];
     public bool HasAnnotations => Annotations.Count > 0;
     public ObservableStringBuilder? MarkdownBuilder { get; }
     public ObservableStringBuilder? SummaryMarkdownBuilder { get; }
+    public ObservableCollection<AgentPanelMessageViewModel> ToolMessages { get; } = new();
     public string ApprovalRequiredText => Text("Agent.ApprovalRequired");
     public string CredentialRequiredText => Text("Agent.CredentialRequired");
     public string CredentialPlaceholderText => string.Equals(
@@ -2934,6 +3153,11 @@ public sealed partial class AgentPanelMessageViewModel : ObservableObject
     public string ToolDetailsButtonText => IsToolDetailsExpanded
         ? Text("Agent.ToolHideDetails")
         : Text("Agent.ToolShowDetails");
+    public string ToolGroupDetailsButtonText => IsToolGroupExpanded
+        ? Text("Agent.ToolGroupHideDetails")
+        : Text("Agent.ToolGroupShowDetails");
+    public string ToolGroupSummaryText
+        => $"{Text("Agent.ToolGroup")} · {ToolMessages.Count}";
     public bool HasVerification => !string.IsNullOrWhiteSpace(VerificationText);
     public bool IsVerificationVerified => string.Equals(
         VerificationStatus,
@@ -2968,6 +3192,7 @@ public sealed partial class AgentPanelMessageViewModel : ObservableObject
         AgentPanelMessageKind.User => Text("Agent.UserMessage"),
         AgentPanelMessageKind.Assistant => Text("Agent.AssistantMessage"),
         AgentPanelMessageKind.Tool => Text("Agent.ToolMessage"),
+        AgentPanelMessageKind.ToolGroup => Text("Agent.ToolGroup"),
         AgentPanelMessageKind.Summary => Text("Agent.RunSummary"),
         _ => Text("Agent.Error")
     };
@@ -2979,7 +3204,39 @@ public sealed partial class AgentPanelMessageViewModel : ObservableObject
         => new(AgentPanelMessageKind.User, content, attachments, annotations);
     public static AgentPanelMessageViewModel Assistant(string content) => new(AgentPanelMessageKind.Assistant, content);
     public static AgentPanelMessageViewModel Tool(string content) => new(AgentPanelMessageKind.Tool, content);
+    public static AgentPanelMessageViewModel ToolGroup(string runId)
+        => new(AgentPanelMessageKind.ToolGroup, string.Empty) { RunId = runId };
     public static AgentPanelMessageViewModel Error(string content) => new(AgentPanelMessageKind.Error, content);
+
+    public IEnumerable<AgentPanelMessageViewModel> EnumerateToolMessages()
+    {
+        if (IsTool)
+        {
+            yield return this;
+            yield break;
+        }
+
+        if (!IsToolGroup)
+            yield break;
+
+        foreach (var message in ToolMessages)
+        {
+            if (message.IsTool)
+                yield return message;
+        }
+    }
+
+    partial void OnIsToolGroupExpandedChanged(bool value)
+        => OnPropertyChanged(nameof(ToolGroupDetailsButtonText));
+
+    public void AddToolMessage(AgentPanelMessageViewModel message)
+    {
+        if (!IsToolGroup || !message.IsTool)
+            return;
+
+        ToolMessages.Add(message);
+        OnPropertyChanged(nameof(ToolGroupSummaryText));
+    }
 
     public static AgentPanelMessageViewModel Summary(
         string runId,
@@ -3042,6 +3299,8 @@ public sealed partial class AgentPanelMessageViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(Label));
         OnPropertyChanged(nameof(ToolDetailsButtonText));
+        OnPropertyChanged(nameof(ToolGroupDetailsButtonText));
+        OnPropertyChanged(nameof(ToolGroupSummaryText));
         OnPropertyChanged(nameof(ToolSummaryText));
         OnPropertyChanged(nameof(ApprovalRequiredText));
         OnPropertyChanged(nameof(CredentialRequiredText));
@@ -3061,6 +3320,8 @@ public sealed partial class AgentPanelMessageViewModel : ObservableObject
         OnPropertyChanged(nameof(SummaryMetricsText));
         OnPropertyChanged(nameof(SummaryDurationLabelText));
         OnPropertyChanged(nameof(SummaryResultLabelText));
+        foreach (var toolMessage in ToolMessages)
+            toolMessage.NotifyLocalizationChanged();
         foreach (var annotation in Annotations)
             annotation.NotifyLocalizationChanged();
     }

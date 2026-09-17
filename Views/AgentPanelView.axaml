@@ -23,6 +23,10 @@
         <Style Selector="Border.agent-panel-message.tool">
             <Setter Property="Background" Value="{atom:SharedTokenResource ColorFillQuaternary}"/>
         </Style>
+        <Style Selector="Border.agent-panel-message.tool-group">
+            <Setter Property="Background" Value="{atom:SharedTokenResource ColorFillQuaternary}"/>
+            <Setter Property="Padding" Value="8,7"/>
+        </Style>
         <Style Selector="Border.agent-panel-message.error">
             <Setter Property="Background" Value="{atom:SharedTokenResource ColorErrorBg}"/>
             <Setter Property="BorderBrush" Value="{atom:SharedTokenResource ColorErrorBorder}"/>
@@ -30,15 +34,6 @@
         <Style Selector="Border.agent-panel-message.summary">
             <Setter Property="Background" Value="{atom:SharedTokenResource ColorPrimaryBg}"/>
             <Setter Property="BorderBrush" Value="{atom:SharedTokenResource ColorPrimaryBorder}"/>
-        </Style>
-        <Style Selector="TextBlock.agent-provider-status.ready">
-            <Setter Property="Foreground" Value="{atom:SharedTokenResource ColorSuccess}"/>
-        </Style>
-        <Style Selector="TextBlock.agent-provider-status.unavailable">
-            <Setter Property="Foreground" Value="{atom:SharedTokenResource ColorError}"/>
-        </Style>
-        <Style Selector="TextBlock.agent-provider-test">
-            <Setter Property="Foreground" Value="{atom:SharedTokenResource ColorTextTertiary}"/>
         </Style>
         <Style Selector="TextBlock.agent-verification.verified">
             <Setter Property="Foreground" Value="{atom:SharedTokenResource ColorSuccess}"/>
@@ -128,8 +123,8 @@
                     Padding="0,0,0,10"
                     BorderBrush="{atom:SharedTokenResource ColorSplit}"
                     BorderThickness="0,0,0,1">
-                    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto"
-                          RowSpacing="5">
+                           <Grid RowDefinitions="Auto,Auto,Auto"
+                            RowSpacing="5">
                     <Grid ColumnDefinitions="*,Auto">
                         <atom:TextBlock Text="{Binding SessionText}"
                                         FontSize="11"
@@ -153,68 +148,14 @@
                                      SelectedOption="{Binding SelectedChatModeOption, Mode=TwoWay}"
                                      Width="130"
                                      HorizontalAlignment="Left"/>
-                        <atom:TextBlock Grid.Column="2"
-                                        Text="{Binding ReasoningEffortText}"
-                                        FontSize="11"
-                                        Foreground="{atom:SharedTokenResource ColorTextSecondary}"
-                                        VerticalAlignment="Center"/>
-                        <atom:Select Grid.Column="3"
-                                     OptionsSource="{Binding ReasoningEffortOptions}"
-                                     SelectedOption="{Binding SelectedReasoningEffortOption, Mode=TwoWay}"
-                                     Width="130"
-                                     HorizontalAlignment="Left"/>
-                    </Grid>
-                    <atom:Select Grid.Row="2"
-                                 OptionsSource="{Binding SessionOptions}"
-                                 SelectedOption="{Binding SelectedSessionOption, Mode=TwoWay}"
-                                 PlaceholderText="{Binding NoSessionText}"
-                                 IsEnabled="{Binding IsSessionSelectionEnabled}"
-                                 HorizontalAlignment="Stretch"/>
-                    <Grid Grid.Row="3" ColumnDefinitions="*,Auto" ColumnSpacing="4">
-                        <TextBlock Text="{Binding ProviderStatusText}"
-                                   Classes="agent-provider-status"
-                                   Classes.ready="{Binding IsProviderReady}"
-                                   Classes.unavailable="{Binding !IsProviderReady}"
-                                   FontSize="11"
-                                   VerticalAlignment="Center"/>
-                        <atom:Button Grid.Column="1"
-                                     Width="24"
-                                     Height="24"
-                                     Padding="0"
-                                     ButtonType="Text"
-                                     Icon="{antdicons:AntDesignIconProvider Kind=CheckCircleOutlined}"
-                                     Command="{Binding TestProviderCommand}"
-                                     atom:ToolTip.Tip="{Binding ProviderTestText}"
-                                     VerticalAlignment="Center"/>
-                    </Grid>
-                    <atom:TextBlock Grid.Row="4"
-                                    Text="{Binding ProviderTestStatusText}"
-                                    Classes="agent-provider-test"
-                                    FontSize="10"
-                                    TextWrapping="Wrap"
-                                    IsVisible="{Binding HasProviderTestStatus}"
-                                    VerticalAlignment="Center"/>
-                    <Grid Grid.Row="5" ColumnDefinitions="*,Auto" ColumnSpacing="4">
-                        <TextBlock Text="{Binding RuntimeStatusText}"
-                                   Classes="agent-provider-status"
-                                   Classes.ready="{Binding IsRuntimeReady}"
-                                   Classes.unavailable="{Binding !IsRuntimeReady}"
-                                   FontSize="11"
-                                   TextTrimming="CharacterEllipsis"
-                                   atom:ToolTip.Tip="{Binding RuntimeStatusDetails}"
-                                   VerticalAlignment="Center"/>
-                        <atom:Button Grid.Column="1"
-                                     Width="24"
-                                     Height="24"
-                                     Padding="0"
-                                     ButtonType="Text"
-                                     Icon="{antdicons:AntDesignIconProvider Kind=ReloadOutlined}"
-                                     IsVisible="{Binding IsRuntimeRetryVisible}"
-                                     Command="{Binding RetryRuntimeCommand}"
-                                     atom:ToolTip.Tip="{Binding RuntimeRetryText}"
-                                     VerticalAlignment="Center"/>
-                    </Grid>
-                </Grid>
+                     </Grid>
+                     <atom:Select Grid.Row="2"
+                                  OptionsSource="{Binding SessionOptions}"
+                                  SelectedOption="{Binding SelectedSessionOption, Mode=TwoWay}"
+                                  PlaceholderText="{Binding NoSessionText}"
+                                   IsEnabled="{Binding IsSessionSelectionEnabled}"
+                                  HorizontalAlignment="Stretch"/>
+                 </Grid>
             </Border>
 
             <Border Grid.Row="2"
@@ -433,11 +374,168 @@
                                 <Border Classes="agent-panel-message"
                                         Classes.user="{Binding IsUser}"
                                         Classes.tool="{Binding IsTool}"
+                                        Classes.tool-group="{Binding IsToolGroup}"
                                         Classes.error="{Binding IsError}"
                                         Classes.summary="{Binding IsSummary}"
                                         HorizontalAlignment="{Binding Alignment}">
                                     <Grid>
-                                    <StackPanel Spacing="4" IsVisible="{Binding !IsSummary}">
+                                    <StackPanel Spacing="5" IsVisible="{Binding IsToolGroup}">
+                                        <Grid ColumnDefinitions="*,Auto"
+                                              ColumnSpacing="6">
+                                            <atom:TextBlock Text="{Binding ToolGroupSummaryText}"
+                                                            FontSize="11"
+                                                            FontWeight="SemiBold"
+                                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"
+                                                            VerticalAlignment="Center"/>
+                                            <atom:Button Grid.Column="1"
+                                                         Content="{Binding ToolGroupDetailsButtonText}"
+                                                         ButtonType="Text"
+                                                         Padding="5,1"
+                                                         Command="{Binding $parent[UserControl].DataContext.ToggleToolGroupCommand, x:CompileBindings=False}"
+                                                         CommandParameter="{Binding}"/>
+                                        </Grid>
+                                        <Border IsVisible="{Binding IsToolGroupExpanded}"
+                                                Background="{atom:SharedTokenResource ColorBgLayout}"
+                                                BorderBrush="{atom:SharedTokenResource ColorBorderSecondary}"
+                                                BorderThickness="1"
+                                                CornerRadius="3"
+                                                Padding="6,5">
+                                            <ItemsControl ItemsSource="{Binding ToolMessages}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate DataType="vm:AgentPanelMessageViewModel">
+                                                        <StackPanel Spacing="4">
+                                                            <Grid ColumnDefinitions="*,Auto,Auto"
+                                                                  ColumnSpacing="8">
+                                                                <atom:TextBlock Text="{Binding Label}"
+                                                                                FontSize="10"
+                                                                                FontWeight="SemiBold"
+                                                                                Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
+                                                                <atom:TextBlock Grid.Column="1"
+                                                                                Text="{Binding StatusText}"
+                                                                                FontSize="10"
+                                                                                Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+                                                                <atom:TextBlock Grid.Column="2"
+                                                                                Text="{Binding DurationText}"
+                                                                                FontSize="10"
+                                                                                Foreground="{atom:SharedTokenResource ColorTextTertiary}"
+                                                                                IsVisible="{Binding DurationText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                                            </Grid>
+                                                            <Grid ColumnDefinitions="*,Auto"
+                                                                  ColumnSpacing="5">
+                                                                <atom:TextBlock Text="{Binding ToolSummaryText}"
+                                                                                FontSize="11"
+                                                                                FontWeight="SemiBold"
+                                                                                TextTrimming="CharacterEllipsis"
+                                                                                Foreground="{atom:SharedTokenResource ColorTextSecondary}"
+                                                                                VerticalAlignment="Center"/>
+                                                                <atom:Button Grid.Column="1"
+                                                                             Content="{Binding ToolDetailsButtonText}"
+                                                                             ButtonType="Text"
+                                                                             Padding="5,1"
+                                                                             Command="{Binding $parent[UserControl].DataContext.ToggleToolDetailsCommand, x:CompileBindings=False}"
+                                                                             CommandParameter="{Binding}"/>
+                                                            </Grid>
+                                                            <Border IsVisible="{Binding IsToolDetailsExpanded}"
+                                                                    Background="{atom:SharedTokenResource ColorBgContainer}"
+                                                                    BorderBrush="{atom:SharedTokenResource ColorBorderSecondary}"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="3"
+                                                                    Padding="6,5">
+                                                                <StackPanel Spacing="4">
+                                                                    <atom:TextBlock Text="{Binding ToolInput}"
+                                                                                    FontSize="10"
+                                                                                    TextWrapping="Wrap"
+                                                                                    Foreground="{atom:SharedTokenResource ColorTextTertiary}"
+                                                                                    IsVisible="{Binding ToolInput, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                                                    <atom:TextBlock Text="{Binding Content}"
+                                                                                    FontSize="11"
+                                                                                    TextWrapping="Wrap"
+                                                                                    Foreground="{atom:SharedTokenResource ColorText}"
+                                                                                    IsVisible="{Binding Content, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                                                </StackPanel>
+                                                            </Border>
+                                                            <atom:TextBlock Text="{Binding VerificationText}"
+                                                                            Classes="agent-verification"
+                                                                            Classes.verified="{Binding IsVerificationVerified}"
+                                                                            Classes.failed="{Binding IsVerificationFailed}"
+                                                                            Classes.unknown="{Binding IsVerificationUnknown}"
+                                                                            FontSize="10"
+                                                                            TextWrapping="Wrap"
+                                                                            IsVisible="{Binding HasVerification}"/>
+                                                            <Grid IsVisible="{Binding IsApprovalPending}"
+                                                                  ColumnDefinitions="Auto,*,Auto"
+                                                                  ColumnSpacing="8">
+                                                                <atom:TextBlock Text="{Binding RiskText}"
+                                                                                FontSize="10"
+                                                                                Foreground="{atom:SharedTokenResource ColorWarning}"/>
+                                                                <atom:TextBlock Grid.Column="1"
+                                                                                Text="{Binding ApprovalSessionText}"
+                                                                                FontSize="10"
+                                                                                TextTrimming="CharacterEllipsis"
+                                                                                Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+                                                                <atom:TextBlock Grid.Column="2"
+                                                                                Text="{Binding ApprovalTimeoutText}"
+                                                                                FontSize="10"
+                                                                                Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+                                                            </Grid>
+                                                            <StackPanel IsVisible="{Binding IsApprovalPending}"
+                                                                        Spacing="5">
+                                                                <atom:TextBlock Text="{Binding ApprovalRequiredText}"
+                                                                                FontSize="11"
+                                                                                TextWrapping="Wrap"
+                                                                                Foreground="{atom:SharedTokenResource ColorWarning}"/>
+                                                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                                                    <atom:Button Content="{Binding ApproveText}"
+                                                                                 ButtonType="Primary"
+                                                                                 Padding="9,3"
+                                                                                 Command="{Binding $parent[UserControl].DataContext.ApproveToolCommand, x:CompileBindings=False}"
+                                                                                 CommandParameter="{Binding ToolCallId}"/>
+                                                                    <atom:Button Content="{Binding DenyText}"
+                                                                                 ButtonType="Default"
+                                                                                 Padding="9,3"
+                                                                                 Command="{Binding $parent[UserControl].DataContext.DenyToolCommand, x:CompileBindings=False}"
+                                                                                 CommandParameter="{Binding ToolCallId}"/>
+                                                                </StackPanel>
+                                                            </StackPanel>
+                                                            <StackPanel IsVisible="{Binding IsCredentialPending}"
+                                                                        Spacing="5">
+                                                                <atom:TextBlock Text="{Binding CredentialPrompt}"
+                                                                                FontSize="11"
+                                                                                TextWrapping="Wrap"
+                                                                                Foreground="{atom:SharedTokenResource ColorWarning}"/>
+                                                                <atom:TextBox Text="{Binding CredentialValue, Mode=TwoWay}"
+                                                                              PasswordChar="*"
+                                                                              PlaceholderText="{Binding CredentialPlaceholderText}"
+                                                                              MinHeight="30"
+                                                                              HorizontalAlignment="Stretch"
+                                                                              IsVisible="{Binding IsCredentialSecret}"/>
+                                                                <atom:TextBox Text="{Binding CredentialValue, Mode=TwoWay}"
+                                                                              PlaceholderText="{Binding CredentialPlaceholderText}"
+                                                                              MinHeight="30"
+                                                                              HorizontalAlignment="Stretch"
+                                                                              IsVisible="{Binding IsCredentialPlainText}"/>
+                                                                <atom:CheckBox Content="{Binding RememberCredentialText}"
+                                                                               IsChecked="{Binding RememberCredential, Mode=TwoWay}"/>
+                                                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                                                    <atom:Button Content="{Binding SubmitCredentialText}"
+                                                                                 ButtonType="Primary"
+                                                                                 Padding="9,3"
+                                                                                 Command="{Binding $parent[UserControl].DataContext.SubmitCredentialCommand, x:CompileBindings=False}"
+                                                                                 CommandParameter="{Binding}"/>
+                                                                    <atom:Button Content="{Binding DenyText}"
+                                                                                 ButtonType="Default"
+                                                                                 Padding="9,3"
+                                                                                 Command="{Binding $parent[UserControl].DataContext.DenyCredentialCommand, x:CompileBindings=False}"
+                                                                                 CommandParameter="{Binding}"/>
+                                                                </StackPanel>
+                                                            </StackPanel>
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </Border>
+                                    </StackPanel>
+                                    <StackPanel Spacing="4" IsVisible="{Binding IsConversationMessage}">
                                         <Grid ColumnDefinitions="*,Auto,Auto"
                                               ColumnSpacing="8"
                                               IsVisible="{Binding IsTool}">
@@ -681,7 +779,7 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                     <atom:TextBlock Text="{Binding EmptySessionsText}"
-                                    IsVisible="{Binding !HasSessions}"
+                                    IsVisible="{Binding IsEmptyStateVisible}"
                                     HorizontalAlignment="Center"
                                     VerticalAlignment="Center"
                                     TextWrapping="Wrap"
@@ -705,17 +803,14 @@
                              atom:ToolTip.Tip="{Binding ScrollToLatestText}"/>
             </Grid>
 
-            <Grid Grid.Row="4" RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
-                <atom:TextBlock Text="{Binding PromptText}"
-                                FontSize="11"
-                                Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
-                <Border Grid.Row="1"
+            <Grid Grid.Row="4" RowDefinitions="Auto,Auto" RowSpacing="8">
+                <Border
                         Background="{atom:SharedTokenResource ColorBgContainer}"
                         BorderBrush="{atom:SharedTokenResource ColorBorder}"
                         BorderThickness="1"
                         CornerRadius="5"
                         Padding="8,7">
-                    <Grid RowDefinitions="Auto,Auto,*" RowSpacing="5">
+                    <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="5">
                         <ItemsControl Grid.Row="0"
                                       ItemsSource="{Binding PendingAttachments}"
                                       IsVisible="{Binding HasPendingAttachments}">
@@ -802,59 +897,167 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                        <atom:TextBox x:Name="PromptTextBox"
-                                      Grid.Row="2"
-                                      Text="{Binding Prompt, Mode=TwoWay}"
-                                      PlaceholderText="{Binding PromptPlaceholderText}"
-                                      AcceptsReturn="True"
-                                      TextWrapping="Wrap"
-                                      MinHeight="58"
-                                      MaxHeight="135"
-                                      Background="Transparent"
-                                      BorderThickness="0"
-                                      Padding="0"
-                                      IsEnabled="{Binding IsPromptInputEnabled}"
-                                      VerticalContentAlignment="Top"/>
+                        <atom:TextArea x:Name="PromptTextBox"
+                                       Grid.Row="2"
+                                       Text="{Binding Prompt, Mode=TwoWay}"
+                                       PlaceholderText="{Binding PromptPlaceholderText}"
+                                       AcceptsReturn="True"
+                                       TextWrapping="Wrap"
+                                       MinHeight="58"
+                                       MaxHeight="135"
+                                       Background="Transparent"
+                                       BorderThickness="0"
+                                       Padding="0"
+                                       StyleVariant="Borderless"
+                                       IsResizable="False"
+                                       IsEnabled="{Binding IsPromptInputEnabled}"
+                                       VerticalContentAlignment="Top"/>
+                        <Border Grid.Row="3"
+                                BorderBrush="{atom:SharedTokenResource ColorSplit}"
+                                BorderThickness="0,1,0,0"
+                                Padding="0,5,0,0">
+                            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto"
+                                  ColumnSpacing="6">
+                                <atom:Button Width="28"
+                                             Height="28"
+                                             Padding="0"
+                                             ButtonType="Text"
+                                             Icon="{antdicons:AntDesignIconProvider Kind=PaperClipOutlined}"
+                                             VerticalAlignment="Center"
+                                             VerticalContentAlignment="Center"
+                                             Click="OnAttachFileClick"
+                                             IsEnabled="{Binding IsPromptInputEnabled}"
+                                             atom:ToolTip.Tip="{Binding AttachFileTipText}"/>
+                                <atom:TextBlock Text="{Binding StatusText}"
+                                                Grid.Column="2"
+                                                FontSize="11"
+                                                TextTrimming="CharacterEllipsis"
+                                                Foreground="{atom:SharedTokenResource ColorTextTertiary}"
+                                                VerticalAlignment="Center"/>
+                                <atom:Button x:Name="PermissionModeButton"
+                                             Grid.Column="1"
+                                             Content="{Binding PermissionModeSummaryText}"
+                                             ButtonType="Text"
+                                             MaxWidth="150"
+                                             Padding="6,2"
+                                             VerticalAlignment="Center"
+                                             VerticalContentAlignment="Center"
+                                             Click="OnPermissionModeClick"
+                                             IsEnabled="{Binding !IsRunning}"
+                                             atom:ToolTip.Tip="{Binding PermissionModeDescriptionText}"/>
+                                <Popup x:Name="PermissionModePopup"
+                                       IsOpen="False"
+                                       PlacementTarget="{Binding ElementName=PermissionModeButton}"
+                                       Placement="Top"
+                                       VerticalOffset="-6"
+                                       IsLightDismissEnabled="True">
+                                    <Border Width="300"
+                                            Background="{atom:SharedTokenResource ColorBgElevated}"
+                                            BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                            BorderThickness="1"
+                                            CornerRadius="6"
+                                            BoxShadow="0 6 18 0 #26000000"
+                                            Padding="10">
+                                        <Grid ColumnDefinitions="Auto,*"
+                                              ColumnSpacing="8">
+                                            <atom:TextBlock Text="{Binding AccessPermissionText}"
+                                                            Foreground="{atom:SharedTokenResource ColorTextSecondary}"
+                                                            VerticalAlignment="Center"/>
+                                            <atom:Select Grid.Column="1"
+                                                         OptionsSource="{Binding PermissionModeOptions}"
+                                                         SelectedOption="{Binding SelectedPermissionModeOption, Mode=TwoWay}"
+                                                         IsEnabled="{Binding !IsRunning}"
+                                                         ShouldUseOverlayPopup="False"
+                                                         HorizontalAlignment="Stretch"/>
+                                        </Grid>
+                                    </Border>
+                                </Popup>
+                                <atom:Button x:Name="ModelOptionsButton"
+                                             Grid.Column="3"
+                                             Content="{Binding AgentOptionsSummaryText}"
+                                             ButtonType="Text"
+                                             MaxWidth="220"
+                                             Padding="6,2"
+                                             VerticalAlignment="Center"
+                                             VerticalContentAlignment="Center"
+                                             Click="OnAgentOptionsClick"
+                                             IsEnabled="{Binding !IsRunning}"
+                                             atom:ToolTip.Tip="{Binding AgentOptionsSummaryText}"/>
+                                <Popup x:Name="AgentOptionsPopup"
+                                       IsOpen="False"
+                                       PlacementTarget="{Binding ElementName=ModelOptionsButton}"
+                                       Placement="Top"
+                                       VerticalOffset="-6"
+                                       IsLightDismissEnabled="True">
+                                    <Border Width="300"
+                                            Background="{atom:SharedTokenResource ColorBgElevated}"
+                                            BorderBrush="{atom:SharedTokenResource ColorBorder}"
+                                            BorderThickness="1"
+                                            CornerRadius="6"
+                                            BoxShadow="0 6 18 0 #26000000"
+                                            Padding="10">
+                                        <StackPanel Spacing="8">
+                                            <Grid ColumnDefinitions="Auto,*"
+                                                  ColumnSpacing="8">
+                                                <atom:TextBlock Text="{Binding ModelText}"
+                                                                Foreground="{atom:SharedTokenResource ColorTextSecondary}"
+                                                                VerticalAlignment="Center"/>
+                                                <atom:Select Grid.Column="1"
+                                                             OptionsSource="{Binding ModelOptions}"
+                                                             SelectedOption="{Binding SelectedModelOption, Mode=TwoWay}"
+                                                             PlaceholderText="{Binding NoModelText}"
+                                                             IsEnabled="{Binding IsModelSelectionEnabled}"
+                                                             ShouldUseOverlayPopup="False"
+                                                             HorizontalAlignment="Stretch"/>
+                                            </Grid>
+                                            <Grid ColumnDefinitions="Auto,*"
+                                                  ColumnSpacing="8">
+                                                <atom:TextBlock Text="{Binding ReasoningEffortText}"
+                                                                Foreground="{atom:SharedTokenResource ColorTextSecondary}"
+                                                                VerticalAlignment="Center"/>
+                                                <atom:Select Grid.Column="1"
+                                                             OptionsSource="{Binding ReasoningEffortOptions}"
+                                                             SelectedOption="{Binding SelectedReasoningEffortOption, Mode=TwoWay}"
+                                                             ShouldUseOverlayPopup="False"
+                                                             HorizontalAlignment="Stretch"/>
+                                            </Grid>
+                                        </StackPanel>
+                                    </Border>
+                                </Popup>
+                                <atom:Button Grid.Column="4"
+                                             Width="36"
+                                             Height="36"
+                                             Padding="0"
+                                             ButtonType="Primary"
+                                             IsVisible="{Binding !IsRunning}"
+                                             Icon="{antdicons:AntDesignIconProvider Kind=ArrowUpOutlined}"
+                                             Shape="Circle"
+                                             Command="{Binding RunCommand}"
+                                             atom:ToolTip.Tip="{Binding RunText}"/>
+                                <atom:Button Grid.Column="4"
+                                             Width="36"
+                                             Height="36"
+                                             Padding="0"
+                                             ButtonType="Primary"
+                                             IsVisible="{Binding IsRunActionSendVisible}"
+                                             Icon="{antdicons:AntDesignIconProvider Kind=ArrowUpOutlined}"
+                                             Shape="Circle"
+                                             Command="{Binding AppendCommand}"
+                                             atom:ToolTip.Tip="{Binding AppendText}"/>
+                                <atom:Button Grid.Column="4"
+                                             Width="36"
+                                             Height="36"
+                                             Padding="0"
+                                             ButtonType="Primary"
+                                             IsVisible="{Binding IsRunActionStopVisible}"
+                                             Icon="{antdicons:AntDesignIconProvider Kind=StopOutlined}"
+                                             Shape="Circle"
+                                             Command="{Binding StopCommand}"
+                                             atom:ToolTip.Tip="{Binding StopText}"/>
+                            </Grid>
+                        </Border>
                     </Grid>
                 </Border>
-                <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="6" Margin="0,2,0,0">
-                    <atom:Button Width="28"
-                                 Height="28"
-                                 Padding="0"
-                                 ButtonType="Text"
-                                 Icon="{antdicons:AntDesignIconProvider Kind=PaperClipOutlined}"
-                                 Click="OnAttachFileClick"
-                                 IsEnabled="{Binding IsPromptInputEnabled}"
-                                 atom:ToolTip.Tip="{Binding AttachFileTipText}"/>
-                    <atom:TextBlock Text="{Binding StatusText}"
-                                    Grid.Column="1"
-                                    FontSize="11"
-                                    TextTrimming="CharacterEllipsis"
-                                     Foreground="{atom:SharedTokenResource ColorTextTertiary}"
-                                     VerticalAlignment="Center"/>
-                    <atom:Button Grid.Column="2"
-                                  Content="{Binding StopText}"
-                                  ButtonType="Default"
-                                  IsVisible="{Binding IsRunning}"
-                                  Command="{Binding StopCommand}"
-                                  atom:ToolTip.Tip="{Binding StoppingText}"/>
-                    <atom:Button Grid.Column="3"
-                                  Content="{Binding CancelText}"
-                                  ButtonType="Default"
-                                  IsVisible="{Binding IsRunning}"
-                                  Command="{Binding CancelCommand}"
-                                  atom:ToolTip.Tip="{Binding CancellingText}"/>
-                    <atom:Button Grid.Column="4"
-                                  Content="{Binding AppendText}"
-                                  ButtonType="Primary"
-                                  IsVisible="{Binding IsRunning}"
-                                  Command="{Binding AppendCommand}"/>
-                    <atom:Button Grid.Column="4"
-                                  Content="{Binding RunText}"
-                                  ButtonType="Primary"
-                                  IsVisible="{Binding !IsRunning}"
-                                  Command="{Binding RunCommand}"/>
-                </Grid>
             </Grid>
         </Grid>
     </Border>

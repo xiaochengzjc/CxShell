@@ -47,6 +47,25 @@ public sealed class AgentPanelViewModelTests
     }
 
     [Fact]
+    public void ToolGroupKeepsCommandsIndividuallyCollapsible()
+    {
+        var group = AgentPanelMessageViewModel.ToolGroup("run-1");
+        var first = AgentPanelMessageViewModel.Tool("first output");
+        var second = AgentPanelMessageViewModel.Tool("second output");
+
+        group.AddToolMessage(first);
+        group.AddToolMessage(second);
+
+        Assert.True(group.IsToolGroup);
+        Assert.True(group.IsToolGroupExpanded);
+        Assert.Equal(2, group.ToolMessages.Count);
+        Assert.Equal(2, group.EnumerateToolMessages().Count());
+        Assert.False(first.IsToolDetailsExpanded);
+        Assert.False(second.IsToolDetailsExpanded);
+        Assert.Contains("2", group.ToolGroupSummaryText, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TerminalSelectionBecomesACompactAnnotationWithModelContext()
     {
         using var panel = new AgentPanelViewModel(new TestRuntimeClient());
@@ -203,6 +222,28 @@ public sealed class AgentPanelViewModelTests
         Assert.Contains("server-b (10.0.0.2) | Windows | Failed", formatted, StringComparison.Ordinal);
         Assert.Contains("Detailed output is available in each target Terminal.", formatted, StringComparison.Ordinal);
         Assert.DoesNotContain("large output", formatted, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ToolInputShowsCommandWithoutSessionIdOrJsonEnvelope()
+    {
+        var formatted = AgentPanelViewModel.FormatToolInput(
+            "{\"sessionId\":\"session-1\",\"command\":\"apt update\",\"timeoutMs\":10000}");
+
+        Assert.Equal("apt update", formatted);
+        Assert.DoesNotContain("sessionId", formatted, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("timeoutMs", formatted, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ToolInputKeepsNonCommandArgumentsReadableWithoutSessionId()
+    {
+        var formatted = AgentPanelViewModel.FormatToolInput(
+            "{\"sessionId\":\"session-1\",\"path\":\"/etc/os-release\",\"maxBytes\":1024}");
+
+        Assert.Contains("path: /etc/os-release", formatted, StringComparison.Ordinal);
+        Assert.Contains("maxBytes: 1024", formatted, StringComparison.Ordinal);
+        Assert.DoesNotContain("session-1", formatted, StringComparison.Ordinal);
     }
 
     [Fact]

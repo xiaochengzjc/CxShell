@@ -173,10 +173,6 @@ public partial class ApplicationSettingsViewModel : ObservableObject
     public string AgentModelText => Text("ApplicationSettings.AgentModel");
     public string AgentPlanKeyText => Text("ApplicationSettings.AgentPlanKey");
     public string AgentPlanKeyDescriptionText => Text("ApplicationSettings.AgentPlanKeyDescription");
-    public string AgentRoutinRegistrationText => Text("ApplicationSettings.AgentRoutinRegistration");
-    public string AgentRoutinRegistrationDescriptionText => Text("ApplicationSettings.AgentRoutinRegistrationDescription");
-    public string AgentRoutinRegistrationUrlText => "https://routin.ai/register?planInviteCode=PE32VR2X";
-    public string AgentOpenRoutinRegistrationText => Text("ApplicationSettings.AgentOpenRoutinRegistration");
     public string AgentRequestTimeoutText => Text("ApplicationSettings.AgentRequestTimeout");
     public string AgentRefreshModelsText => Text("ApplicationSettings.AgentRefreshModels");
     public string AgentModelCatalogStatusText => AgentModelCatalogStatus;
@@ -199,7 +195,6 @@ public partial class ApplicationSettingsViewModel : ObservableObject
     public string GlobalProxyPasswordText => Text("ApplicationSettings.GlobalProxyPassword");
     public string AgentSecondsText => Text("ApplicationSettings.Seconds");
     public string AgentReadyText => Text("ApplicationSettings.AgentReady");
-    public string AgentUseRoutinPresetText => Text("ApplicationSettings.AgentUseRoutinPreset");
     public string ChineseText => Text("Language.Chinese");
     public string EnglishText => Text("Language.English");
     public string CloseText => Text("ApplicationSettings.Close");
@@ -681,24 +676,6 @@ public partial class ApplicationSettingsViewModel : ObservableObject
         IsAgentModelPickerOpen = !IsAgentModelPickerOpen;
     }
 
-    [RelayCommand]
-    private void UseRoutinPreset()
-    {
-        var preset = AgentProviderPresets.CreateRoutinPlan();
-        var provider = EnsureAgentProvider();
-        provider.Type = preset.Type;
-        provider.BuiltinId = preset.BuiltinId;
-        AgentProviderTypeOption = AgentProviderTypeOptions.FirstOrDefault(option =>
-            option.Content is AgentProviderType type && type == provider.Type);
-        AgentEnabled = true;
-        AgentProviderName = preset.Name;
-        AgentBaseUrl = preset.BaseUrl;
-        AgentModel = preset.Model;
-        AgentRequestTimeoutSeconds = preset.RequestTimeoutSeconds;
-        RefreshAgentProviderStatus();
-        OnPropertyChanged(nameof(AgentProviderTypeText));
-    }
-
     private void PersistAgentProvider()
     {
         RefreshAgentProviderStatus();
@@ -944,9 +921,6 @@ public partial class ApplicationSettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(AgentModelText));
         OnPropertyChanged(nameof(AgentPlanKeyText));
         OnPropertyChanged(nameof(AgentPlanKeyDescriptionText));
-        OnPropertyChanged(nameof(AgentRoutinRegistrationText));
-        OnPropertyChanged(nameof(AgentRoutinRegistrationDescriptionText));
-        OnPropertyChanged(nameof(AgentOpenRoutinRegistrationText));
         OnPropertyChanged(nameof(AgentRequestTimeoutText));
         OnPropertyChanged(nameof(AgentRefreshModelsText));
         OnPropertyChanged(nameof(AgentModelCatalogStatusText));
@@ -960,7 +934,6 @@ public partial class ApplicationSettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(AgentWebMaxFetchCharactersText));
         OnPropertyChanged(nameof(AgentSecondsText));
         OnPropertyChanged(nameof(AgentReadyText));
-        OnPropertyChanged(nameof(AgentUseRoutinPresetText));
         OnPropertyChanged(nameof(GlobalProxyText));
         OnPropertyChanged(nameof(GlobalProxyEnabledText));
         OnPropertyChanged(nameof(GlobalProxyTypeText));

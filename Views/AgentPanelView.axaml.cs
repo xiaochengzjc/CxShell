@@ -24,6 +24,7 @@ public partial class AgentPanelView : UserControl
     private INotifyCollectionChanged? _messages;
     private bool _followMessages = true;
     private bool _scrollQueued;
+    private int _scrollPassesRemaining;
     private bool _isAutoScrolling;
     private readonly AtomContextMenu _promptContextMenu;
     private readonly AtomMenuItem _promptCutMenuItem;
@@ -38,6 +39,7 @@ public partial class AgentPanelView : UserControl
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
         MessagesScrollViewer.ScrollChanged += OnMessagesScrollChanged;
+        LayoutUpdated += OnLayoutUpdated;
         _promptContextMenu = new AtomContextMenu();
         _promptCutMenuItem = CreatePromptMenuItem("Agent.Cut", "Ctrl+X", new ScissorOutlined(), OnPromptCutClick);
         _promptCopyMenuItem = CreatePromptMenuItem("Agent.Copy", "Ctrl+C", new CopyOutlined(), OnPromptCopyClick);
@@ -83,6 +85,7 @@ public partial class AgentPanelView : UserControl
         if (viewModel == null)
             return;
 
+        viewModel.PropertyChanged += OnViewModelPropertyChanged;
         _messages = viewModel.Messages;
         _messages.CollectionChanged += OnMessagesCollectionChanged;
         foreach (var message in viewModel.Messages)
@@ -99,6 +102,7 @@ public partial class AgentPanelView : UserControl
             _messages.CollectionChanged -= OnMessagesCollectionChanged;
             if (_viewModel != null)
             {
+                _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
                 foreach (var message in _viewModel.Messages)
                     message.PropertyChanged -= OnMessagePropertyChanged;
             }
@@ -107,7 +111,21 @@ public partial class AgentPanelView : UserControl
         _messages = null;
         _viewModel = null;
         _scrollQueued = false;
+        _scrollPassesRemaining = 0;
         SetFollowMessages(true);
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        // These properties change the height of the area above the messages
+        // when a run starts/finishes. Re-arm tail-following after the final
+        // summary changes the available viewport.
+        if (e.PropertyName is nameof(AgentPanelViewModel.IsRunning)
+            or nameof(AgentPanelViewModel.HasActiveRunSteps)
+            or nameof(AgentPanelViewModel.IsRunElapsedVisible))
+        {
+            QueueScrollToEnd();
+        }
     }
 
     private void OnMessagesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -143,10 +161,13 @@ public partial class AgentPanelView : UserControl
         if (_isAutoScrolling)
             return;
 
-        // Markdown streaming can increase the extent after the initial scroll pass.
-        // Re-queue while following the conversation so the newest content remains visible.
-        if (Math.Abs(e.ExtentDelta.Y) > 0.1 && _followMessages)
-            QueueScrollToEnd();
+        // A growing/shrinking message layout is not user scrolling. In
+        // particular, the running-step strip disappears when the final
+        // summary is added and changes the viewport/extent. Treating that
+        // layout change as a manual scroll would disable tail-following just
+        // before the summary becomes visible.
+        if (Math.Abs(e.ExtentDelta.Y) > 0.1)
+            return;
 
         if (Math.Abs(e.OffsetDelta.Y) < 0.1)
             return;
@@ -155,6 +176,15 @@ public partial class AgentPanelView : UserControl
             0,
             MessagesScrollViewer.Extent.Height - MessagesScrollViewer.Viewport.Height);
         SetFollowMessages(MessagesScrollViewer.Offset.Y >= maximumOffset - 8);
+    }
+
+    private void OnLayoutUpdated(object? sender, EventArgs e)
+    {
+        // Markdown and streamed tool output can trigger another measure after
+        // the collection/property notification has already been handled.
+        // Keep the settling loop alive until that layout pass is consumed.
+        if (_followMessages && _scrollPassesRemaining > 0)
+            QueueScrollToEnd();
     }
 
     private void SetFollowMessages(bool follow)
@@ -168,44 +198,48 @@ public partial class AgentPanelView : UserControl
         if (!_followMessages || _scrollQueued || !this.IsAttachedToVisualTree())
             return;
 
-        _scrollQueued = true;
-        Dispatcher.UIThread.Post(() =>
+        // A single ScrollToEnd call can run before ItemsControl/MarkdownRenderer
+        // has reported its final height. Several render passes make the tail
+        // follow deterministic without spinning forever.
+        _scrollPassesRemaining = Math.Max(_scrollPassesRemaining, 8);
+        ScheduleScrollPass();
+    }
+
+    private void ScheduleScrollPass()
+    {
+        if (!_followMessages || !this.IsAttachedToVisualTree())
         {
-            if (!_followMessages || !this.IsAttachedToVisualTree())
-            {
-                _scrollQueued = false;
-                return;
-            }
+            _scrollQueued = false;
+            _scrollPassesRemaining = 0;
+            return;
+        }
 
-            _isAutoScrolling = true;
-            try
-            {
-                MessagesScrollViewer.ScrollToEnd();
-            }
-            finally
-            {
-                _isAutoScrolling = false;
-            }
+        _scrollQueued = true;
+        Dispatcher.UIThread.Post(ExecuteScrollPass, DispatcherPriority.Render);
+    }
 
-            // Streaming content can finish measuring after the first render pass.
-            // Run one more pass so the viewport reaches the actual end of the list.
-            Dispatcher.UIThread.Post(() =>
-            {
-                _scrollQueued = false;
-                if (!_followMessages || !this.IsAttachedToVisualTree())
-                    return;
+    private void ExecuteScrollPass()
+    {
+        _scrollQueued = false;
+        if (!_followMessages || !this.IsAttachedToVisualTree())
+        {
+            _scrollPassesRemaining = 0;
+            return;
+        }
 
-                _isAutoScrolling = true;
-                try
-                {
-                    MessagesScrollViewer.ScrollToEnd();
-                }
-                finally
-                {
-                    _isAutoScrolling = false;
-                }
-            }, DispatcherPriority.Render);
-        }, DispatcherPriority.Render);
+        _scrollPassesRemaining = Math.Max(_scrollPassesRemaining - 1, 0);
+        _isAutoScrolling = true;
+        try
+        {
+            MessagesScrollViewer.ScrollToEnd();
+        }
+        finally
+        {
+            _isAutoScrolling = false;
+        }
+
+        if (_scrollPassesRemaining > 0)
+            ScheduleScrollPass();
     }
 
     private void OnScrollToLatestClick(object? sender, RoutedEventArgs e)
@@ -270,6 +304,20 @@ public partial class AgentPanelView : UserControl
     {
         _promptContextMenu.Close();
         PromptTextBox.SelectAll();
+        e.Handled = true;
+    }
+
+    private void OnAgentOptionsClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Control target)
+            AgentOptionsPopup.PlacementTarget = target;
+        AgentOptionsPopup.IsOpen = !AgentOptionsPopup.IsOpen;
+        e.Handled = true;
+    }
+
+    private void OnPermissionModeClick(object? sender, RoutedEventArgs e)
+    {
+        PermissionModePopup.IsOpen = !PermissionModePopup.IsOpen;
         e.Handled = true;
     }
 

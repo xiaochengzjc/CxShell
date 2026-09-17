@@ -260,35 +260,6 @@ public partial class TerminalViewModel : ObservableObject
         SendInput(command.CommandText.TrimEnd() + "\r");
     }
 
-    /// <summary>
-    /// Handles shell history while a locally tracked command line or a
-    /// conventional shell prompt is visible. This keeps arrow keys available
-    /// to most full-screen remote applications.
-    /// </summary>
-    public bool TryHandleCommandHistoryKey(Key key)
-    {
-        if (!IsConnected || key is not (Key.Up or Key.Down) || _commandHistory.Count == 0)
-            return false;
-
-        var currentLine = _outgoingCommandLine.ToString();
-        if (key == Key.Up)
-        {
-            if (currentLine.Length == 0 &&
-                !_commandHistory.IsNavigating &&
-                !IsLikelyShellPromptVisible())
-                return false;
-
-            var previous = _commandHistory.MovePrevious(currentLine);
-            return previous != null && ReplaceCurrentCommandLine(previous);
-        }
-
-        if (!_commandHistory.IsNavigating)
-            return false;
-
-        var next = _commandHistory.MoveNext();
-        return next != null && ReplaceCurrentCommandLine(next);
-    }
-
     public string? GetCommandSuggestion()
     {
         if (!IsConnected ||
@@ -916,12 +887,12 @@ public partial class TerminalViewModel : ObservableObject
         if (string.IsNullOrWhiteSpace(visibleLine))
             return false;
 
-        var cursorIndex = Math.Clamp(Buffer.CursorCol, 0, visibleLine.Length);
-        if (cursorIndex == 0)
-            return false;
-
-        var textBeforeCursor = visibleLine[..cursorIndex];
-        return LastPromptMarkerIndex(textBeforeCursor) >= 0;
+        // The parser can briefly report column zero while the prompt is being
+        // repainted. The current terminal row is already the strongest local
+        // signal, so inspect the complete row instead of requiring a reliable
+        // cursor column. Otherwise the first Up press falls through to the
+        // remote shell and local history starts one key late.
+        return LastPromptMarkerIndex(visibleLine) >= 0;
     }
 
     private static bool LooksLikePasswordPrompt(string text)
@@ -2884,33 +2855,58 @@ public partial class TerminalViewModel : ObservableObject
         }
     }
 
-    private bool ReplaceCurrentCommandLine(string replacement)
+    private void CommitTrackedCommandLine()
     {
-        var currentLine = _outgoingCommandLine.ToString();
-        var eraseMode = _session?.TerminalAdvancedDestructiveBackspace == true
-            ? _session.TerminalDeleteKeySequence
-            : _session?.TerminalBackspaceKeySequence;
-        var eraseSequence = ResolveBackspaceSequence(eraseMode);
-        var payload = string.Concat(Enumerable.Repeat(eraseSequence, currentLine.Length)) + replacement;
-
-        // Keep the history cursor active while replacing the visible line so
-        // repeated Up/Down presses can continue through the history.
-        SendInputCore(payload, observeCommandLine: false);
-
+        var typedCommandLine = _outgoingCommandLine.ToString();
+        var visibleCommandLine = GetVisibleXymodemCommandLine();
+        var commandLine = visibleCommandLine ?? typedCommandLine;
         _outgoingCommandLine.Clear();
-        _outgoingCommandLine.Append(replacement);
-        CommandLineChanged?.Invoke();
-        return true;
+        if (!_suppressNextCommandHistoryEntry)
+            _commandHistory.Add(typedCommandLine);
+
+        _suppressNextCommandHistoryEntry = false;
+        HandlePotentialXymodemCommand(commandLine);
+        HandlePotentialDirectoryChangeCommand(typedCommandLine, visibleCommandLine);
     }
 
-    private static string ResolveBackspaceSequence(string? mode)
+    private static bool TryGetKittyEnterSequenceLength(
+        string data,
+        int start,
+        out int sequenceLength)
     {
-        return mode?.Trim().ToUpperInvariant() switch
+        sequenceLength = 0;
+        if (start < 0 || start + 4 >= data.Length ||
+            data[start] != '\x1B' || data[start + 1] != '[')
         {
-            "ASCII127" => "\x7F",
-            "VT220" => "\x1B[3~",
-            _ => "\x08"
-        };
+            return false;
+        }
+
+        var index = start + 2;
+        var firstNumberStart = index;
+        while (index < data.Length && char.IsDigit(data[index]))
+            index++;
+
+        if (index == firstNumberStart ||
+            !int.TryParse(data[firstNumberStart..index], out var keyCode) ||
+            keyCode != 13)
+        {
+            return false;
+        }
+
+        while (index < data.Length && data[index] != 'u')
+        {
+            var current = data[index];
+            if (!char.IsDigit(current) && current is not (':' or ';'))
+                return false;
+
+            index++;
+        }
+
+        if (index >= data.Length || data[index] != 'u')
+            return false;
+
+        sequenceLength = index - start + 1;
+        return true;
     }
 
     private void ObservePotentialXymodemCommand(string data)
@@ -2919,20 +2915,20 @@ public partial class TerminalViewModel : ObservableObject
             return;
 
         var changed = false;
-        foreach (var ch in data)
+        for (var index = 0; index < data.Length; index++)
         {
+            if (TryGetKittyEnterSequenceLength(data, index, out var kittyEnterLength))
+            {
+                CommitTrackedCommandLine();
+                changed = true;
+                index += kittyEnterLength - 1;
+                continue;
+            }
+
+            var ch = data[index];
             if (ch is '\r' or '\n')
             {
-                var typedCommandLine = _outgoingCommandLine.ToString();
-                var visibleCommandLine = GetVisibleXymodemCommandLine();
-                var commandLine = visibleCommandLine ?? typedCommandLine;
-                _outgoingCommandLine.Clear();
-                if (!_suppressNextCommandHistoryEntry)
-                    _commandHistory.Add(typedCommandLine);
-
-                _suppressNextCommandHistoryEntry = false;
-                HandlePotentialXymodemCommand(commandLine);
-                HandlePotentialDirectoryChangeCommand(typedCommandLine, visibleCommandLine);
+                CommitTrackedCommandLine();
                 changed = true;
                 continue;
             }
@@ -2983,7 +2979,6 @@ public partial class TerminalViewModel : ObservableObject
                     _outgoingCommandLine.Length--;
                     changed = true;
                 }
-                _commandHistory.ResetNavigation();
                 continue;
             }
 
@@ -2991,7 +2986,6 @@ public partial class TerminalViewModel : ObservableObject
             {
                 changed = _outgoingCommandLine.Length > 0;
                 _outgoingCommandLine.Clear();
-                _commandHistory.ResetNavigation();
                 continue;
             }
 
@@ -3003,7 +2997,6 @@ public partial class TerminalViewModel : ObservableObject
                 while (_outgoingCommandLine.Length > 0 && !char.IsWhiteSpace(_outgoingCommandLine[^1]))
                     _outgoingCommandLine.Length--;
                 changed |= beforeLength != _outgoingCommandLine.Length;
-                _commandHistory.ResetNavigation();
                 continue;
             }
 
@@ -3014,7 +3007,6 @@ public partial class TerminalViewModel : ObservableObject
                     _outgoingCommandLine.Append(ch);
                     changed = true;
                 }
-                _commandHistory.ResetNavigation();
             }
         }
 

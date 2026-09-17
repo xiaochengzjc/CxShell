@@ -35,6 +35,7 @@ public class TerminalControl : Control
     private bool _lastRemoteCursorStyleSet;
     private int _lastRemoteCursorStyle;
     private int _lastScrollbackCount;
+    private bool _isResizingTerminal;
     private bool _isDraggingScrollbar;
     private double _scrollbarDragOffsetY;
     private bool _isPointerOverScrollbar;
@@ -61,6 +62,7 @@ public class TerminalControl : Control
     private Key _pendingTextInputKey = Key.None;
     private KeyModifiers _pendingTextInputModifiers;
     private TerminalKeyEventType _pendingTextInputEventType = TerminalKeyEventType.Press;
+    private readonly HashSet<Key> _locallyHandledKeys = new();
     private const double ScrollbarWidth = 16;
     private const double ScrollbarMinThumbHeight = 28;
 
@@ -683,7 +685,7 @@ public class TerminalControl : Control
         var changed = newCols != _columns || newRows != _rows;
         _columns = newCols;
         _rows = newRows;
-        TerminalBuffer?.Resize(_columns, _rows);
+        ResizeTerminalBuffer(_columns, _rows);
         ClampScrollOffset();
 
         if (notify && changed)
@@ -697,7 +699,7 @@ public class TerminalControl : Control
         var changed = newCols != _columns || newRows != _rows;
         _columns = newCols;
         _rows = newRows;
-        TerminalBuffer?.Resize(_columns, _rows);
+        ResizeTerminalBuffer(_columns, _rows);
         ClampScrollOffset();
 
         if (notify && changed)
@@ -978,12 +980,17 @@ public class TerminalControl : Control
         var delta = count - _lastScrollbackCount;
         if (_scrollOffset > 0 && delta > 0)
         {
-            if (ScrollToBottomOnInputOutput && !(SuspendScrollToBottomOnScrollLock && _scrollLockActive))
+            if (!_isResizingTerminal &&
+                ScrollToBottomOnInputOutput &&
+                !(SuspendScrollToBottomOnScrollLock && _scrollLockActive))
             {
                 _scrollOffset = 0;
             }
-            else
+            else if (!_isResizingTerminal)
             {
+                // New output adds rows above the historical viewport. A
+                // terminal resize is different: reflow may also change the
+                // scrollback count, but the current viewport must stay put.
                 _scrollOffset += delta;
                 ClampScrollOffset();
             }
@@ -1982,6 +1989,10 @@ public class TerminalControl : Control
 
         if (LocalKeyHandler?.Invoke(e.Key) == true)
         {
+            // A locally handled key must also suppress its Kitty/CSI release
+            // event. Otherwise the key-up can still reach the remote shell
+            // after the local history/suggestion action has completed.
+            _locallyHandledKeys.Add(e.Key);
             e.Handled = true;
             return;
         }
@@ -2051,6 +2062,12 @@ public class TerminalControl : Control
     protected override void OnKeyUp(KeyEventArgs e)
     {
         base.OnKeyUp(e);
+
+        if (_locallyHandledKeys.Remove(e.Key))
+        {
+            e.Handled = true;
+            return;
+        }
 
         if (TerminalKeyboardEncoder.TryEncode(
                 e.Key,
@@ -2381,6 +2398,33 @@ public class TerminalControl : Control
         _selectionAnchor = null;
         _selectionEnd = null;
         InvalidateVisual();
+    }
+
+    private void ResizeTerminalBuffer(int columns, int rows)
+    {
+        if (TerminalBuffer == null)
+            return;
+
+        // A splitter drag changes the terminal width repeatedly. Primary-screen
+        // reflow can change the scrollback count and raise Changed, but that is
+        // a layout update rather than new remote output. Keep a history viewport
+        // visible instead of applying the normal auto-follow-to-bottom policy.
+        var preserveHistoryViewport = _scrollOffset > 0;
+        if (!preserveHistoryViewport)
+        {
+            TerminalBuffer.Resize(columns, rows);
+            return;
+        }
+
+        _isResizingTerminal = true;
+        try
+        {
+            TerminalBuffer.Resize(columns, rows);
+        }
+        finally
+        {
+            _isResizingTerminal = false;
+        }
     }
 
     private void ClampScrollOffset()

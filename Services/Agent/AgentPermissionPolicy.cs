@@ -61,7 +61,10 @@ public sealed class AgentPermissionPolicy
     public string AllowedCommandPrefixes { get; set; } = string.Empty;
     public string BlockedCommandPrefixes { get; set; } = string.Empty;
 
-    public AgentPermissionResult Evaluate(AgentSessionSnapshot session, string? command)
+    public AgentPermissionResult Evaluate(
+        AgentSessionSnapshot session,
+        string? command,
+        string? permissionModeOverride = null)
     {
         ArgumentNullException.ThrowIfNull(session);
 
@@ -102,8 +105,12 @@ public sealed class AgentPermissionPolicy
                 risk);
         }
 
+        var effectivePermissionMode = NormalizePermissionMode(permissionModeOverride);
+        if (string.IsNullOrWhiteSpace(effectivePermissionMode))
+            effectivePermissionMode = NormalizePermissionMode(PermissionMode);
+
         if (string.Equals(
-                NormalizePermissionMode(PermissionMode),
+                effectivePermissionMode,
                 AskBeforeEachCommandMode,
                 StringComparison.Ordinal))
         {
@@ -115,7 +122,7 @@ public sealed class AgentPermissionPolicy
         }
 
         if (string.Equals(
-                NormalizePermissionMode(PermissionMode),
+                effectivePermissionMode,
                 FullAccessMode,
                 StringComparison.Ordinal))
         {
@@ -126,7 +133,7 @@ public sealed class AgentPermissionPolicy
         }
 
         if (string.Equals(
-                NormalizePermissionMode(PermissionMode),
+                effectivePermissionMode,
                 RiskBasedApprovalMode,
                 StringComparison.Ordinal))
         {

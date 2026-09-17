@@ -52,7 +52,9 @@
                             <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider Kind=PlusOutlined}"
                                                 Width="14"
                                                 Height="14"/>
-                            <atom:TextBlock Text="{Binding NewSessionText}" VerticalAlignment="Center"/>
+                            <atom:TextBlock Classes="toolbar-menu-label"
+                                            Text="{Binding NewSessionText}"
+                                            VerticalAlignment="Center"/>
                         </StackPanel>
                     </atom:MenuItem.Header>
                 </atom:MenuItem>
@@ -64,7 +66,9 @@
                             <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider Kind=UnorderedListOutlined}"
                                                 Width="14"
                                                 Height="14"/>
-                            <atom:TextBlock Text="{Binding SessionManagerText}" VerticalAlignment="Center"/>
+                            <atom:TextBlock Classes="toolbar-menu-label"
+                                            Text="{Binding SessionManagerText}"
+                                            VerticalAlignment="Center"/>
                         </StackPanel>
                     </atom:MenuItem.Header>
                 </atom:MenuItem>
@@ -78,7 +82,9 @@
                             <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider Kind=CodeOutlined}"
                                                 Width="14"
                                                 Height="14"/>
-                            <atom:TextBlock Text="{Binding LocalTerminalText}" VerticalAlignment="Center"/>
+                            <atom:TextBlock Classes="toolbar-menu-label"
+                                            Text="{Binding LocalTerminalText}"
+                                            VerticalAlignment="Center"/>
                         </StackPanel>
                     </atom:MenuItem.Header>
                 </atom:MenuItem>
@@ -91,7 +97,9 @@
                             <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider Kind=SwapOutlined}"
                                                 Width="14"
                                                 Height="14"/>
-                            <atom:TextBlock Text="SFTP" VerticalAlignment="Center"/>
+                            <atom:TextBlock Classes="toolbar-menu-label"
+                                            Text="SFTP"
+                                            VerticalAlignment="Center"/>
                         </StackPanel>
                     </atom:MenuItem.Header>
                 </atom:MenuItem>
@@ -103,7 +111,9 @@
                             <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider Kind=DashboardOutlined}"
                                                 Width="14"
                                                 Height="14"/>
-                            <atom:TextBlock Text="{Binding MonitorText}" VerticalAlignment="Center"/>
+                            <atom:TextBlock Classes="toolbar-menu-label"
+                                            Text="{Binding MonitorText}"
+                                            VerticalAlignment="Center"/>
                         </StackPanel>
                     </atom:MenuItem.Header>
                 </atom:MenuItem>
@@ -115,7 +125,9 @@
                             <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider Kind=DeploymentUnitOutlined}"
                                                 Width="14"
                                                 Height="14"/>
-                            <atom:TextBlock Text="{Binding TunnelsText}" VerticalAlignment="Center"/>
+                            <atom:TextBlock Classes="toolbar-menu-label"
+                                            Text="{Binding TunnelsText}"
+                                            VerticalAlignment="Center"/>
                         </StackPanel>
                     </atom:MenuItem.Header>
                 </atom:MenuItem>
@@ -127,7 +139,9 @@
                             <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider Kind=RobotOutlined}"
                                                 Width="14"
                                                 Height="14"/>
-                            <atom:TextBlock Text="{Binding AgentText}" VerticalAlignment="Center"/>
+                            <atom:TextBlock Classes="toolbar-menu-label"
+                                            Text="{Binding AgentText}"
+                                            VerticalAlignment="Center"/>
                             <Border IsVisible="{Binding HasActiveAgentRuns}"
                                     Background="{atom:SharedTokenResource ColorPrimaryBg}"
                                     BorderBrush="{atom:SharedTokenResource ColorPrimary}"
@@ -153,7 +167,9 @@
                             <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider Kind=MenuOutlined}"
                                                 Width="14"
                                                 Height="14"/>
-                            <atom:TextBlock Text="{Binding TabBarText}" VerticalAlignment="Center"/>
+                            <atom:TextBlock Classes="toolbar-menu-label"
+                                            Text="{Binding TabBarText}"
+                                            VerticalAlignment="Center"/>
                         </StackPanel>
                     </atom:MenuItem.Header>
                 </atom:MenuItem>
@@ -165,7 +181,9 @@
                             <atom:IconPresenter Icon="{antdicons:AntDesignIconProvider Kind=LayoutOutlined}"
                                                 Width="14"
                                                 Height="14"/>
-                            <atom:TextBlock Text="{Binding ArrangeText}" VerticalAlignment="Center"/>
+                            <atom:TextBlock Classes="toolbar-menu-label"
+                                            Text="{Binding ArrangeText}"
+                                            VerticalAlignment="Center"/>
                         </StackPanel>
                     </atom:MenuItem.Header>
                     <atom:MenuItem Header="{Binding ArrangeVerticalText}"
@@ -253,6 +271,13 @@
     </atom:Window.RightAddOn>
 
     <atom:Window.Styles>
+        <Style Selector="atom|TextBlock.toolbar-menu-label">
+            <Setter Property="FontFamily" Value="Microsoft YaHei UI,PingFang SC,Noto Sans CJK SC,sans-serif"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="Normal"/>
+            <Setter Property="Foreground" Value="{atom:SharedTokenResource ColorText}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
         <Style Selector="atom|CardTabStrip.quick-session-tab-strip">
             <Setter Property="Background" Value="{atom:SharedTokenResource ColorBgLayout}"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
@@ -264,9 +289,9 @@
             <Setter Property="Spacing" Value="0"/>
         </Style>
         <Style Selector="atom|CardTabStrip.quick-session-tab-strip atom|TabStripItem">
-            <Setter Property="Background" Value="{atom:SharedTokenResource ColorBgContainer}"/>
-            <Setter Property="BorderBrush" Value="{atom:SharedTokenResource ColorBorderSecondary}"/>
-            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Background" Value="{atom:SharedTokenResource ColorBgLayout}"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="CornerRadius" Value="0"/>
             <Setter Property="Foreground" Value="{atom:SharedTokenResource ColorText}"/>
             <Setter Property="Margin" Value="0,2,4,2"/>
@@ -274,16 +299,20 @@
             <Setter Property="Padding" Value="8,0"/>
             <Style Selector="^ /template/ Border#Frame">
                 <Setter Property="CornerRadius" Value="0"/>
+                <Setter Property="BorderBrush" Value="Transparent"/>
+                <Setter Property="BorderThickness" Value="0"/>
             </Style>
         </Style>
         <Style Selector="atom|CardTabStrip.quick-session-tab-strip atom|TabStripItem:pointerover:not(:selected)">
             <Setter Property="Background" Value="{atom:SharedTokenResource ColorPrimaryBg}"/>
-            <Setter Property="BorderBrush" Value="{atom:SharedTokenResource ColorPrimaryBorder}"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Foreground" Value="{atom:SharedTokenResource ColorPrimaryHover}"/>
         </Style>
         <Style Selector="atom|CardTabStrip.quick-session-tab-strip atom|TabStripItem:selected">
-            <Setter Property="Background" Value="{atom:SharedTokenResource ColorBgContainer}"/>
-            <Setter Property="BorderBrush" Value="{atom:SharedTokenResource ColorBorderSecondary}"/>
+            <Setter Property="Background" Value="{atom:SharedTokenResource ColorBgLayout}"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Foreground" Value="{atom:SharedTokenResource ColorText}"/>
         </Style>
         <Style Selector="atom|CardTabStrip.quick-session-tab-strip atom|TabStripItem atom|IconPresenter">

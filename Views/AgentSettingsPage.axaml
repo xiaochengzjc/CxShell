@@ -177,30 +177,6 @@
                                    FontSize="11"
                                    Foreground="{atom:SharedTokenResource ColorTextTertiary}"
                                    Margin="142,0,0,0"/>
-                        <Grid ColumnDefinitions="132,*"
-                              ColumnSpacing="10">
-                            <TextBlock Text="{Binding AgentRoutinRegistrationText}"
-                                       VerticalAlignment="Top"
-                                       Margin="0,6,0,0"
-                                       Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
-                            <StackPanel Grid.Column="1"
-                                        Spacing="5">
-                                <TextBlock Text="{Binding AgentRoutinRegistrationDescriptionText}"
-                                           TextWrapping="Wrap"
-                                           FontSize="11"
-                                           Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
-                                <TextBlock Text="{Binding AgentRoutinRegistrationUrlText}"
-                                           FontFamily="Cascadia Mono,Consolas,monospace"
-                                           FontSize="11"
-                                           TextWrapping="Wrap"
-                                           Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
-                                <atom:Button Content="{Binding AgentOpenRoutinRegistrationText}"
-                                             Icon="{antdicons:AntDesignIconProvider Kind=LinkOutlined}"
-                                             ButtonType="Default"
-                                             HorizontalAlignment="Left"
-                                             Click="OnRoutinRegistrationClick"/>
-                            </StackPanel>
-                        </Grid>
                         <Grid ColumnDefinitions="132,Auto,Auto,*"
                               ColumnSpacing="10">
                             <TextBlock Text="{Binding AgentRequestTimeoutText}"
@@ -216,17 +192,12 @@
                                        VerticalAlignment="Center"
                                        Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
                         </Grid>
-                        <Grid ColumnDefinitions="*,Auto"
-                              ColumnSpacing="10">
+                        <Grid ColumnDefinitions="*">
                             <TextBlock Text="{Binding AgentStatusText}"
                                        TextWrapping="Wrap"
                                        FontSize="11"
                                        VerticalAlignment="Center"
                                        Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
-                            <atom:Button Grid.Column="1"
-                                         Content="{Binding AgentUseRoutinPresetText}"
-                                         ButtonType="Default"
-                                         Command="{Binding UseRoutinPresetCommand}"/>
                         </Grid>
                         <Border Background="{atom:SharedTokenResource ColorBgLayout}"
                                 BorderBrush="{atom:SharedTokenResource ColorSplit}"

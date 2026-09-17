@@ -441,7 +441,10 @@ public sealed class AgentSessionGateway : IAgentSessionGateway, IDisposable
                                 !string.IsNullOrWhiteSpace(request.ApprovedCommand)
             ? request.ApprovedCommand
             : request.Command;
-        var permission = _permissionPolicy.Evaluate(snapshot, permissionCommand);
+        var permission = _permissionPolicy.Evaluate(
+            snapshot,
+            permissionCommand,
+            request.PermissionModeOverride);
         var approvalGranted = request.ApprovalGranted || approvalConsumed;
         if (!permission.IsAllowed &&
             !(approvalGranted && permission.ApprovalRequired))
