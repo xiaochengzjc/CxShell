@@ -115,6 +115,37 @@ public sealed class AgentAttachmentViewModel
                 fileName));
     }
 
+    internal static AgentAttachmentViewModel? FromContentPart(AgentContentPart part)
+    {
+        if (part == null || string.IsNullOrWhiteSpace(part.Type))
+            return null;
+
+        try
+        {
+            if (string.Equals(part.Type, "image", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(part.Data))
+            {
+                return FromImageBytes(
+                    part.FileName ?? "history-image.png",
+                    part.MediaType ?? "image/png",
+                    Convert.FromBase64String(part.Data));
+            }
+
+            if (string.Equals(part.Type, "text", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(part.Text))
+            {
+                return FromDocument(part.FileName ?? "history-document.txt", part.Text);
+            }
+        }
+        catch
+        {
+            // A damaged or old attachment must not prevent the conversation
+            // itself from loading.
+        }
+
+        return null;
+    }
+
     private static AgentAttachmentViewModel FromDocument(string fileName, string text)
     {
         var normalized = text.Replace("\0", string.Empty).Trim();

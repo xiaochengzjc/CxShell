@@ -769,7 +769,6 @@ public sealed class LocalizationService : INotifyPropertyChanged
         EnglishTexts["Help.SessionRecordings"] = "Session recordings";
         EnglishTexts["Help.ApplicationSettings"] = "Application settings";
         EnglishTexts["Agent.Title"] = "Agent";
-        EnglishTexts["Agent.Description"] = "Ask for help with the selected SSH session.";
         EnglishTexts["Agent.Session"] = "SSH session";
         EnglishTexts["Agent.Mode"] = "Mode";
         EnglishTexts["Agent.Model"] = "Model";
@@ -810,7 +809,6 @@ public sealed class LocalizationService : INotifyPropertyChanged
         EnglishTexts["Agent.Cancelling"] = "Cancelling...";
         EnglishTexts["Agent.FollowUpQueued"] = "Follow-up instruction queued.";
         EnglishTexts["Agent.Stopped"] = "Stopped";
-        EnglishTexts["Agent.Refresh"] = "Refresh sessions";
         EnglishTexts["Agent.Close"] = "Hide Agent panel";
         EnglishTexts["Agent.EmptySessions"] = "Open and connect an SSH terminal session to use Agent.";
         EnglishTexts["Agent.NoSession"] = "No SSH session";
@@ -874,9 +872,15 @@ public sealed class LocalizationService : INotifyPropertyChanged
         EnglishTexts["Agent.Approve"] = "Approve";
         EnglishTexts["Agent.Deny"] = "Deny";
         EnglishTexts["Agent.ApprovalDenied"] = "Approval denied";
-        EnglishTexts["Agent.History"] = "Run history";
-        EnglishTexts["Agent.HistoryClear"] = "Clear completed";
-        EnglishTexts["Agent.HistoryEmpty"] = "No completed Agent runs yet.";
+        EnglishTexts["Agent.History"] = "History";
+        EnglishTexts["Agent.HistoryNew"] = "New";
+        EnglishTexts["Agent.HistoryOpen"] = "Open";
+        EnglishTexts["Agent.HistoryDelete"] = "Delete";
+        EnglishTexts["Agent.HistoryClear"] = "Clear history";
+        EnglishTexts["Agent.HistoryDeleted"] = "Conversation deleted.";
+        EnglishTexts["Agent.HistoryEmpty"] = "No Agent conversations yet.";
+        EnglishTexts["Agent.HistoryNoTitle"] = "Untitled conversation";
+        EnglishTexts["Agent.HistoryMessageCount"] = "{0} messages";
         EnglishTexts["Agent.HistoryDetails"] = "Details";
         EnglishTexts["Agent.HistoryHideDetails"] = "Hide details";
         EnglishTexts["Agent.HistoryRetry"] = "Retry";
@@ -895,7 +899,7 @@ public sealed class LocalizationService : INotifyPropertyChanged
         EnglishTexts["Agent.HistoryFilterWaiting"] = "Waiting";
         EnglishTexts["Agent.HistoryFilterCompleted"] = "Completed";
         EnglishTexts["Agent.HistoryFilterFailed"] = "Failed";
-        EnglishTexts["Agent.HistorySearch"] = "Search task, session, provider, or model";
+        EnglishTexts["Agent.HistorySearch"] = "Search conversations, targets, or models";
         EnglishTexts["Agent.HistoryFilterEmpty"] = "No runs match this filter.";
         EnglishTexts["Agent.HistoryEventsGap"] = "Some older run events are no longer available.";
         EnglishTexts["Agent.HistoryTarget"] = "Target";
@@ -1311,7 +1315,6 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ChineseTexts["Help.SessionRecordings"] = "\u4f1a\u8bdd\u5f55\u5236";
         ChineseTexts["Help.ApplicationSettings"] = "\u5e94\u7528\u8bbe\u7f6e";
         ChineseTexts["Agent.Title"] = "Agent \u52a9\u624b";
-        ChineseTexts["Agent.Description"] = "\u534f\u52a9\u68c0\u67e5\u548c\u6392\u67e5\u5f53\u524d SSH \u4f1a\u8bdd\u3002";
         ChineseTexts["Agent.Session"] = "SSH \u4f1a\u8bdd";
         ChineseTexts["Agent.Mode"] = "\u6a21\u5f0f";
         ChineseTexts["Agent.Model"] = "\u6a21\u578b";
@@ -1352,7 +1355,6 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ChineseTexts["Agent.Cancelling"] = "\u6b63\u5728\u53d6\u6d88\u2026";
         ChineseTexts["Agent.FollowUpQueued"] = "\u8865\u5145\u6307\u4ee4\u5df2\u52a0\u5165\u961f\u5217\u3002";
         ChineseTexts["Agent.Stopped"] = "\u5df2\u505c\u6b62";
-        ChineseTexts["Agent.Refresh"] = "\u5237\u65b0\u4f1a\u8bdd";
         ChineseTexts["Agent.Close"] = "\u9690\u85cf Agent \u9762\u677f";
         ChineseTexts["Agent.EmptySessions"] = "\u8bf7\u5148\u6253\u5f00\u5e76\u8fde\u63a5 SSH Terminal \u4f1a\u8bdd\u3002";
         ChineseTexts["Agent.NoSession"] = "\u65e0 SSH \u4f1a\u8bdd";
@@ -1416,9 +1418,15 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ChineseTexts["Agent.Approve"] = "\u5141\u8bb8\u6267\u884c";
         ChineseTexts["Agent.Deny"] = "\u62d2\u7edd";
         ChineseTexts["Agent.ApprovalDenied"] = "\u5df2\u62d2\u7edd\u6267\u884c";
-        ChineseTexts["Agent.History"] = "\u8fd0\u884c\u8bb0\u5f55";
-        ChineseTexts["Agent.HistoryClear"] = "\u6e05\u7406\u5df2\u5b8c\u6210";
-        ChineseTexts["Agent.HistoryEmpty"] = "\u8fd8\u6ca1\u6709\u5df2\u5b8c\u6210\u7684 Agent \u8fd0\u884c\u8bb0\u5f55\u3002";
+        ChineseTexts["Agent.History"] = "\u5386\u53f2";
+        ChineseTexts["Agent.HistoryNew"] = "\u65b0\u5efa";
+        ChineseTexts["Agent.HistoryOpen"] = "\u6253\u5f00";
+        ChineseTexts["Agent.HistoryDelete"] = "\u5220\u9664";
+        ChineseTexts["Agent.HistoryClear"] = "\u6e05\u7a7a\u5386\u53f2";
+        ChineseTexts["Agent.HistoryDeleted"] = "\u5df2\u5220\u9664\u4f1a\u8bdd\u3002";
+        ChineseTexts["Agent.HistoryEmpty"] = "\u8fd8\u6ca1\u6709 Agent \u5386\u53f2\u4f1a\u8bdd\u3002";
+        ChineseTexts["Agent.HistoryNoTitle"] = "\u672a\u547d\u540d\u4f1a\u8bdd";
+        ChineseTexts["Agent.HistoryMessageCount"] = "\u6d88\u606f\u6570\uff1a{0}";
         ChineseTexts["Agent.HistoryDetails"] = "\u8be6\u60c5";
         ChineseTexts["Agent.HistoryHideDetails"] = "\u6536\u8d77\u8be6\u60c5";
         ChineseTexts["Agent.HistoryRetry"] = "\u91cd\u8bd5";
@@ -1437,7 +1445,7 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ChineseTexts["Agent.HistoryFilterWaiting"] = "\u7b49\u5f85\u5904\u7406";
         ChineseTexts["Agent.HistoryFilterCompleted"] = "\u5df2\u5b8c\u6210";
         ChineseTexts["Agent.HistoryFilterFailed"] = "\u5931\u8d25";
-        ChineseTexts["Agent.HistorySearch"] = "\u641c\u7d22\u4efb\u52a1\u3001\u4f1a\u8bdd\u3001Provider \u6216\u6a21\u578b";
+        ChineseTexts["Agent.HistorySearch"] = "\u641c\u7d22\u5386\u53f2\u4f1a\u8bdd\u3001\u76ee\u6807\u6216\u6a21\u578b";
         ChineseTexts["Agent.HistoryFilterEmpty"] = "\u6ca1\u6709\u7b26\u5408\u5f53\u524d\u7b5b\u9009\u6761\u4ef6\u7684\u8fd0\u884c\u8bb0\u5f55\u3002";
         ChineseTexts["Agent.HistoryEventsGap"] = "\u90e8\u5206\u8f83\u65e9\u7684\u8fd0\u884c\u4e8b\u4ef6\u5df2\u4e0d\u518d\u4fdd\u7559\u3002";
         ChineseTexts["Agent.HistoryTarget"] = "\u76ee\u6807";

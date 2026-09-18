@@ -52,16 +52,12 @@
             Padding="12,10">
         <Grid RowDefinitions="Auto,Auto,Auto,*,Auto"
               RowSpacing="10">
-            <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="3">
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="3">
                 <StackPanel Spacing="2" VerticalAlignment="Center">
                     <atom:TextBlock Text="{Binding TitleText}"
                                     FontSize="15"
                                     FontWeight="SemiBold"
                                     Foreground="{atom:SharedTokenResource ColorText}"/>
-                    <atom:TextBlock Text="{Binding DescriptionText}"
-                                    FontSize="11"
-                                    TextWrapping="Wrap"
-                                    Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
                     <Grid RowDefinitions="Auto,Auto"
                           RowSpacing="2"
                           IsVisible="{Binding HasActiveRuns}">
@@ -95,20 +91,18 @@
                     </Grid>
                 </StackPanel>
                 <atom:Button Grid.Column="1"
-                             Width="28"
-                             Height="28"
-                             Padding="0"
-                             ButtonType="Text"
-                             Icon="{antdicons:AntDesignIconProvider Kind=ReloadOutlined}"
-                             Command="{Binding RefreshCommand}"
-                             atom:ToolTip.Tip="{Binding RefreshText}"
-                             VerticalAlignment="Top"/>
-                <atom:Button Grid.Column="2"
                              Content="{Binding HistoryText}"
                              ButtonType="Text"
                              Command="{Binding ToggleRunHistoryCommand}"
+                             IsVisible="{Binding !IsHistoryVisible}"
                              VerticalAlignment="Top"/>
-                <atom:Button Grid.Column="3"
+                <atom:Button Grid.Column="1"
+                             Content="{Binding HistoryText}"
+                             ButtonType="Primary"
+                             Command="{Binding ToggleRunHistoryCommand}"
+                             IsVisible="{Binding IsHistoryVisible}"
+                             VerticalAlignment="Top"/>
+                <atom:Button Grid.Column="2"
                              Width="28"
                              Height="28"
                              Padding="0"
@@ -123,21 +117,7 @@
                     Padding="0,0,0,10"
                     BorderBrush="{atom:SharedTokenResource ColorSplit}"
                     BorderThickness="0,0,0,1">
-                           <Grid RowDefinitions="Auto,Auto,Auto"
-                            RowSpacing="5">
-                    <Grid ColumnDefinitions="*,Auto">
-                        <atom:TextBlock Text="{Binding SessionText}"
-                                        FontSize="11"
-                                        Foreground="{atom:SharedTokenResource ColorTextSecondary}"
-                                        VerticalAlignment="Center"/>
-                        <atom:TextBlock Grid.Column="1"
-                                        Text="{Binding SelectedSessionStatusText}"
-                                        FontSize="11"
-                                        Foreground="{atom:SharedTokenResource ColorTextTertiary}"
-                                        VerticalAlignment="Center"/>
-                    </Grid>
-                    <Grid Grid.Row="1"
-                          ColumnDefinitions="Auto,130,Auto,*"
+                    <Grid ColumnDefinitions="Auto,130,Auto,*,Auto"
                           ColumnSpacing="8">
                         <atom:TextBlock Text="{Binding ModeText}"
                                         FontSize="11"
@@ -148,14 +128,23 @@
                                      SelectedOption="{Binding SelectedChatModeOption, Mode=TwoWay}"
                                      Width="130"
                                      HorizontalAlignment="Left"/>
-                     </Grid>
-                     <atom:Select Grid.Row="2"
-                                  OptionsSource="{Binding SessionOptions}"
-                                  SelectedOption="{Binding SelectedSessionOption, Mode=TwoWay}"
-                                  PlaceholderText="{Binding NoSessionText}"
-                                   IsEnabled="{Binding IsSessionSelectionEnabled}"
-                                  HorizontalAlignment="Stretch"/>
-                 </Grid>
+                        <atom:TextBlock Grid.Column="2"
+                                        Text="{Binding SessionText}"
+                                        FontSize="11"
+                                        Foreground="{atom:SharedTokenResource ColorTextSecondary}"
+                                        VerticalAlignment="Center"/>
+                        <atom:Select Grid.Column="3"
+                                     OptionsSource="{Binding SessionOptions}"
+                                     SelectedOption="{Binding SelectedSessionOption, Mode=TwoWay}"
+                                     PlaceholderText="{Binding NoSessionText}"
+                                     IsEnabled="{Binding IsSessionSelectionEnabled}"
+                                     HorizontalAlignment="Stretch"/>
+                        <atom:TextBlock Grid.Column="4"
+                                        Text="{Binding SelectedSessionStatusText}"
+                                        FontSize="11"
+                                        Foreground="{atom:SharedTokenResource ColorTextTertiary}"
+                                        VerticalAlignment="Center"/>
+                    </Grid>
             </Border>
 
             <Border Grid.Row="2"
@@ -165,7 +154,7 @@
                     IsVisible="{Binding IsHistoryVisible}">
                 <Grid RowDefinitions="Auto,*"
                       RowSpacing="5">
-                    <Grid ColumnDefinitions="*,150,112,Auto"
+                    <Grid ColumnDefinitions="*,150,Auto"
                           ColumnSpacing="4">
                         <atom:TextBlock Text="{Binding HistoryText}"
                                         FontSize="11"
@@ -178,143 +167,78 @@
                                       Height="26"
                                       Padding="6,2"
                                       FontSize="10"
+                                      VerticalAlignment="Center"
                                       VerticalContentAlignment="Center"/>
-                        <atom:Select Grid.Column="2"
-                                      Width="112"
-                                     OptionsSource="{Binding RunHistoryFilterOptions}"
-                                     SelectedOption="{Binding SelectedRunHistoryFilterOption, Mode=TwoWay}"
-                                     PlaceholderText="{Binding HistoryFilterText}"
-                                     SizeType="Small"
-                                     VerticalAlignment="Center"/>
-                        <atom:Button Grid.Column="3"
+                        <atom:Button Grid.Column="2"
                                      Content="{Binding HistoryClearText}"
                                      ButtonType="Text"
                                      Padding="6,2"
-                                     Command="{Binding ClearRunHistoryCommand}"/>
+                                     VerticalAlignment="Center"
+                                     Command="{Binding ClearConversationHistoryCommand}"/>
                     </Grid>
                     <ScrollViewer Grid.Row="1"
                                   MaxHeight="180"
                                   VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled">
                         <Grid>
-                            <ItemsControl ItemsSource="{Binding FilteredRunHistory}"
-                                          IsVisible="{Binding HasFilteredRunHistory}">
+                            <ItemsControl ItemsSource="{Binding FilteredConversationHistory}"
+                                          IsVisible="{Binding HasFilteredConversationHistory}">
                                 <ItemsControl.ItemTemplate>
-                                    <DataTemplate DataType="vm:AgentPanelRunViewModel">
+                                    <DataTemplate DataType="vm:AgentConversationHistoryViewModel">
                                         <Border Background="{atom:SharedTokenResource ColorBgLayout}"
                                                 BorderBrush="{atom:SharedTokenResource ColorBorderSecondary}"
                                                 BorderThickness="1"
                                                 CornerRadius="4"
                                                 Padding="7,6"
                                                 Margin="0,0,0,5">
-                                            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                                            <Grid RowDefinitions="Auto,Auto,Auto"
                                                   RowSpacing="3">
                                                 <Grid ColumnDefinitions="*,Auto">
-                                                    <atom:TextBlock Text="{Binding PromptPreview}"
+                                                    <atom:TextBlock Text="{Binding Title}"
                                                                     FontSize="11"
                                                                     TextTrimming="CharacterEllipsis"
                                                                     Foreground="{atom:SharedTokenResource ColorText}"/>
                                                     <atom:TextBlock Grid.Column="1"
-                                                                    Text="{Binding StatusDisplay}"
+                                                                    Text="{Binding TimeText}"
                                                                     FontSize="10"
                                                                     Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
                                                 </Grid>
                                                 <atom:TextBlock Grid.Row="1"
-                                                                 Text="{Binding TargetText}"
+                                                                 Text="{Binding Preview}"
                                                                  FontSize="10"
+                                                                 TextWrapping="Wrap"
                                                                  Foreground="{atom:SharedTokenResource ColorTextSecondary}"
                                                                  TextTrimming="CharacterEllipsis"/>
-                                                 <atom:TextBlock Grid.Row="2"
-                                                                  Text="{Binding MetricsText}"
+                                                <Grid Grid.Row="2"
+                                                      ColumnDefinitions="*,Auto,Auto"
+                                                      ColumnSpacing="4">
+                                                    <atom:TextBlock Text="{Binding MetadataText}"
                                                                   FontSize="10"
                                                                   Foreground="{atom:SharedTokenResource ColorTextTertiary}"
                                                                   TextTrimming="CharacterEllipsis"/>
-                                                 <atom:TextBlock Grid.Row="3"
-                                                                  Text="{Binding PhaseText}"
-                                                                  IsVisible="{Binding HasPhase}"
-                                                                  FontSize="10"
-                                                                  TextWrapping="Wrap"
-                                                                  Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
-                                                 <atom:TextBlock Grid.Row="4"
-                                                                  Text="{Binding CheckpointText}"
-                                                                  IsVisible="{Binding HasCheckpoint}"
-                                                                  FontSize="10"
-                                                                  TextWrapping="Wrap"
-                                                                  Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
-                                                 <atom:TextBlock Grid.Row="5"
-                                                                  Text="{Binding ErrorText}"
-                                                                 IsVisible="{Binding HasError}"
-                                                                 FontSize="10"
-                                                                 TextWrapping="Wrap"
-                                                                 Foreground="{atom:SharedTokenResource ColorError}"/>
-                                                 <atom:TextBlock Grid.Row="6"
-                                                                  Text="{Binding PauseReasonText}"
-                                                                  IsVisible="{Binding HasPauseReason}"
-                                                                  FontSize="10"
-                                                                  TextWrapping="Wrap"
-                                                                  Foreground="{atom:SharedTokenResource ColorWarning}"/>
-                                                 <Grid Grid.Row="7"
-                                                       ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto"
-                                                      ColumnSpacing="4">
-                                                    <atom:TextBlock Text="{Binding TimeText}"
-                                                                    FontSize="10"
-                                                                    Foreground="{atom:SharedTokenResource ColorTextTertiary}"
-                                                                    VerticalAlignment="Center"/>
                                                     <atom:Button Grid.Column="1"
-                                                                 Content="{Binding DetailsButtonText}"
+                                                                 Content="{Binding $parent[UserControl].DataContext.HistoryOpenText, x:CompileBindings=False}"
                                                                  ButtonType="Text"
                                                                  Padding="5,1"
-                                                                 Command="{Binding $parent[UserControl].DataContext.ToggleRunDetailsCommand, x:CompileBindings=False}"
+                                                                 Command="{Binding $parent[UserControl].DataContext.OpenConversationCommand, x:CompileBindings=False}"
                                                                  CommandParameter="{Binding}"/>
                                                     <atom:Button Grid.Column="2"
-                                                                 Content="{Binding RetryText}"
+                                                                 Width="24"
+                                                                 Height="24"
+                                                                 Padding="0"
                                                                  ButtonType="Text"
-                                                                 Padding="5,1"
-                                                                 IsVisible="{Binding CanRetry}"
-                                                                 Command="{Binding $parent[UserControl].DataContext.RetryRunCommand, x:CompileBindings=False}"
-                                                                 CommandParameter="{Binding}"/>
-                                                <atom:Button Grid.Column="3"
-                                                                 Content="{Binding ContinueText}"
-                                                                 ButtonType="Primary"
-                                                                 Padding="5,1"
-                                                                 IsVisible="{Binding CanContinue}"
-                                                                 Command="{Binding $parent[UserControl].DataContext.ContinueRunCommand, x:CompileBindings=False}"
-                                                                 CommandParameter="{Binding}"/>
-                                                    <atom:Button Grid.Column="4"
-                                                                 Content="{Binding $parent[UserControl].DataContext.HistoryFocusText, x:CompileBindings=False}"
-                                                                 ButtonType="Text"
-                                                                 Padding="5,1"
-                                                                 IsVisible="{Binding IsActive}"
-                                                                 Command="{Binding $parent[UserControl].DataContext.FocusRunCommand, x:CompileBindings=False}"
-                                                                 CommandParameter="{Binding}"/>
-                                                    <atom:Button Grid.Column="5"
-                                                                 Content="{Binding $parent[UserControl].DataContext.HistoryStopText, x:CompileBindings=False}"
-                                                                 ButtonType="Text"
-                                                                 Padding="5,1"
-                                                                 IsVisible="{Binding IsActive}"
-                                                                 Command="{Binding $parent[UserControl].DataContext.StopBackgroundRunCommand, x:CompileBindings=False}"
-                                                                 CommandParameter="{Binding}"/>
-                                                    <atom:Button Grid.Column="6"
-                                                                 Content="{Binding $parent[UserControl].DataContext.HistoryCancelText, x:CompileBindings=False}"
-                                                                 ButtonType="Text"
-                                                                 Padding="5,1"
-                                                                 IsVisible="{Binding IsActive}"
-                                                                 Command="{Binding $parent[UserControl].DataContext.CancelBackgroundRunCommand, x:CompileBindings=False}"
+                                                                 Icon="{antdicons:AntDesignIconProvider Kind=DeleteOutlined}"
+                                                                 atom:ToolTip.Tip="{Binding $parent[UserControl].DataContext.HistoryDeleteText, x:CompileBindings=False}"
+                                                                 Command="{Binding $parent[UserControl].DataContext.DeleteConversationCommand, x:CompileBindings=False}"
                                                                  CommandParameter="{Binding}"/>
                                                 </Grid>
-                                                 <atom:TextBlock Grid.Row="8"
-                                                                  Text="{Binding DetailsText}"
-                                                                IsVisible="{Binding IsExpanded}"
-                                                                FontSize="10"
-                                                                TextWrapping="Wrap"
-                                                                Foreground="{atom:SharedTokenResource ColorTextSecondary}"/>
                                             </Grid>
                                         </Border>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                            <atom:TextBlock Text="{Binding HistoryEmptyDisplayText}"
-                                            IsVisible="{Binding !HasFilteredRunHistory}"
+                            <atom:TextBlock Text="{Binding ConversationHistoryEmptyDisplayText}"
+                                            IsVisible="{Binding !HasFilteredConversationHistory}"
                                             HorizontalAlignment="Center"
                                             Foreground="{atom:SharedTokenResource ColorTextTertiary}"
                                             FontSize="10"

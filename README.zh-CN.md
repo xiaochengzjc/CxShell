@@ -8,7 +8,7 @@ CxShell 是一个使用 .NET、Avalonia 和 AtomUI 构建的跨平台远程会�
 
 ## 最新版本
 
-当前最新版本为 [CxShell v0.1.56](https://github.com/xiaochengzjc/CxShell/releases/tag/v0.1.56)。本版本继续完善 Agent 命令展示、终端输入与历史记录，优化 AtomUI 交互，并改进会话、SFTP 和监控面板体验。
+当前最新版本为 [CxShell v0.1.57](https://github.com/xiaochengzjc/CxShell/releases/tag/v0.1.57)。本版本新增 SQLite Agent 历史会话存储，支持历史搜索、打开和单条删除，并增加历史面板选中状态提示，同时继续修复终端输入与历史记录问题，优化 AtomUI 交互。
 
 发布页提供 Windows x64、macOS x64/arm64 和 Linux x64/arm64 安装包。Windows 和 macOS 提供安装包或便携包，Linux 提供 AppImage 和 tar.gz 压缩包。
 
@@ -124,6 +124,8 @@ Agent 面板会显示 Runtime 的初始化状态和失败原因。Runtime 支持
 CxShell 内置了一个受权限策略保护的 Agent Runtime 会话边界。当前 Agent 只能通过该边界访问已打开的 SSH Terminal，不能直接操作 Avalonia 控件或底层 SSH 连接。调用方可先调用 `initialize`，并可在 `params` 中提供 `protocol` 和 `protocolVersion` 进行握手校验；省略参数时保持兼容。成功响应会返回运行时版本、协议版本、方法和当前能力清单，不匹配时返回稳定的 `protocol_mismatch` 错误。随后可调用 `agent/runtime-info` 获取完整运行时信息；会话列表、命令发送、固定只读诊断、多会话巡检、软件包/运行时检查、磁盘清理建议、运行状态、运行事件增量读取、脱敏审计和取消/审批接口都使用 JSON 请求与响应。只读工具不会删除文件，也不接受任意路径和脚本，而是由 CxShell 根据有限参数选择固定的平台命令。Runtime 请求失败时会同时返回稳定的 `errorCode` 和用于展示的 `error` 文本。`agent/run-list` 返回正在运行和最近完成的任务，`agent/run-status` 查询单个任务的状态和结束原因；`agent/run-events` 接收 `runId`、`afterSequence` 游标和有界的 `limit`，其中 `hasGap` 用于提示更早的事件是否已经被缓存淘汰，最近完成的任务会在有限的内存保留窗口内继续可读。已经接受的后台任务也会把生命周期事件发布到 Runtime 流中，使用 `type: "event"` 帧并通过运行 ID 关联。
 
 运行摘要会记录 provider/model、简短任务预览、模型/工具调用次数、耗时和安全的错误分类。已完成摘要会保存到 `%LOCALAPPDATA%\CxShell\agent-runs.json`；不会保存命令原文、命令输出、凭据或事件负载。`agent/run-clear` 可清理已完成摘要。Provider 错误会区分网络、超时、认证、限流、服务端、请求和协议错误；可重试错误使用有限的指数退避，用户主动取消不会被误判为超时。Agent 面板会展示相同的运行记录，支持查看事件详情、清理记录，以及仅对当前进程仍保留完整 Prompt 的失败任务进行重试。网关审计还会记录命令风险、权限决策和审批结果，但仍不保存命令原文。
+
+完整的 Agent 历史会话单独保存到 `%LOCALAPPDATA%\CxShell\agent-history.db` SQLite 数据库中，消息载荷加密保存。历史会话会保留完整的用户/Agent 对话、Markdown、图片和文档附件、终端注释、工具调用、命令结果以及最终总结，但不会保存密码和凭据。Agent 面板支持搜索、打开、继续、删除单条会话、清空全部历史；首次启动时会自动迁移已有的 `agent-history.json`。切换当前 SSH 连接不会改写已经建立的历史会话目标信息。
 
 Agent 命令超时会在 Session Gateway 边界统一规范：Agent 任务默认最长运行 30 分钟，普通远程命令默认 10 分钟；包管理器、安装器以及运行时安装/升级命令默认 20 分钟，即使模型建议更短的时间，也至少保留 10 分钟。全局 Agent 策略可以选择“修改类命令需要确认”；危险命令仍使用独立的确认规则，只读模式仍会阻止所有修改操作。
 

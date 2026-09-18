@@ -51,6 +51,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     private readonly IAgentRuntimeStatusSource? _runtimeStatusSource;
     private readonly Func<AgentProviderSettings?> _providerSettings;
     private readonly Func<string?> _permissionMode;
+    private readonly IAgentConversationHistoryStore _conversationHistoryStore;
     private readonly List<AgentChatMessage> _conversation = [];
     private readonly Dictionary<string, AgentPanelMessageViewModel> _toolMessages = new(StringComparer.Ordinal);
     private readonly Dictionary<Guid, SessionAgentState> _sessionStates = new();
@@ -76,6 +77,14 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     private DispatcherTimer? _runElapsedTimer;
     private DateTimeOffset? _runStartedAtUtc;
     private string _activeRunSessionName = string.Empty;
+    private string? _activeConversationId;
+    private DateTimeOffset _activeConversationCreatedAtUtc;
+    private string _activeConversationTitle = string.Empty;
+    private string? _activeConversationSessionId;
+    private string? _activeConversationSessionLabel;
+    private AgentChatMode _activeConversationMode = AgentChatMode.Agent;
+    private string? _activeConversationProvider;
+    private string? _activeConversationModel;
     private int _nextAnnotationNumber = 1;
     private int _activeRunToolCallCount;
     private int _activeRunModelRequestCount;
@@ -123,22 +132,27 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     public ObservableCollection<AgentPanelRunViewModel> RunHistory { get; } = new();
     public ObservableCollection<AgentPanelRunViewModel> FilteredRunHistory { get; } = new();
     public ObservableCollection<ISelectOption> RunHistoryFilterOptions { get; } = new();
+    public ObservableCollection<AgentConversationHistoryViewModel> ConversationHistory { get; } = new();
+    public ObservableCollection<AgentConversationHistoryViewModel> FilteredConversationHistory { get; } = new();
     public ObservableCollection<AgentPanelStepViewModel> ActiveRunSteps { get; } = new();
 
     public AgentPanelViewModel(
         IAgentRuntimeClient runtimeClient,
         Func<AgentProviderSettings?>? providerSettings = null,
-        Func<string?>? permissionMode = null)
+        Func<string?>? permissionMode = null,
+        IAgentConversationHistoryStore? conversationHistoryStore = null)
     {
         _runtimeClient = runtimeClient ?? throw new ArgumentNullException(nameof(runtimeClient));
         _runtimeStatusSource = runtimeClient as IAgentRuntimeStatusSource;
         _providerSettings = providerSettings ?? (() => null);
         _permissionMode = permissionMode ?? (() => AgentPermissionPolicy.RiskBasedApprovalMode);
+        _conversationHistoryStore = conversationHistoryStore ?? new SqliteAgentConversationHistoryStore();
         RebuildChatModeOptions();
         RebuildModelOptions();
         RebuildReasoningEffortOptions();
         RebuildPermissionModeOptions();
         RebuildRunHistoryFilterOptions();
+        LoadConversationHistory();
         _runtimeSubscription = _runtimeClient.SubscribeEvents(OnRuntimeEvent);
         if (_runtimeStatusSource != null)
         {
@@ -163,7 +177,6 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
             : null;
 
     public string TitleText => Text("Agent.Title");
-    public string DescriptionText => Text("Agent.Description");
     public string SessionText => Text("Agent.Session");
     public string ModeText => Text("Agent.Mode");
     public string ModelText => Text("Agent.Model");
@@ -209,7 +222,6 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     public string CancellingText => Text("Agent.Cancelling");
     public string FollowUpQueuedText => Text("Agent.FollowUpQueued");
     public string StoppedText => Text("Agent.Stopped");
-    public string RefreshText => Text("Agent.Refresh");
     public string CloseText => Text("Agent.Close");
     public string EmptySessionsText => Text("Agent.EmptySessions");
     public string NoSessionText => Text("Agent.NoSession");
@@ -245,8 +257,11 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     public string DenyText => Text("Agent.Deny");
     public string ApprovalDeniedText => Text("Agent.ApprovalDenied");
     public string HistoryText => Text("Agent.History");
+    public string HistoryNewText => Text("Agent.HistoryNew");
     public string HistoryClearText => Text("Agent.HistoryClear");
     public string HistoryEmptyText => Text("Agent.HistoryEmpty");
+    public string HistoryOpenText => Text("Agent.HistoryOpen");
+    public string HistoryDeleteText => Text("Agent.HistoryDelete");
     public string HistoryDetailsText => Text("Agent.HistoryDetails");
     public string HistoryRetryText => Text("Agent.HistoryRetry");
     public string HistoryContinueText => Text("Agent.HistoryContinue");
@@ -273,6 +288,10 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     public string HistoryEmptyDisplayText => HasRunHistory
         ? HistoryFilterEmptyText
         : HistoryEmptyText;
+    public string ConversationHistoryEmptyDisplayText
+        => HasConversationHistory
+            ? HistoryFilterEmptyText
+            : HistoryEmptyText;
 
     public bool HasSessions => SessionOptions.Count > 0;
     public bool HasMessages => Messages.Count > 0;
@@ -281,6 +300,8 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     public bool HasPendingAnnotations => PendingAnnotations.Count > 0;
     public bool HasRunHistory => RunHistory.Count > 0;
     public bool HasFilteredRunHistory => FilteredRunHistory.Count > 0;
+    public bool HasConversationHistory => ConversationHistory.Count > 0;
+    public bool HasFilteredConversationHistory => FilteredConversationHistory.Count > 0;
     public bool HasActiveRuns => ActiveRunCount > 0;
     public bool HasActiveRunSteps => ActiveRunSteps.Count > 0;
     public bool HasProviderTestStatus => !string.IsNullOrWhiteSpace(ProviderTestStatusText);
@@ -893,6 +914,31 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         NotifyRunCommands();
     }
 
+    private void LoadConversationHistory()
+    {
+        ConversationHistory.Clear();
+        foreach (var record in _conversationHistoryStore.Load())
+            ConversationHistory.Add(new AgentConversationHistoryViewModel(record));
+
+        RefreshFilteredConversationHistory();
+        OnPropertyChanged(nameof(HasConversationHistory));
+        OnPropertyChanged(nameof(ConversationHistoryEmptyDisplayText));
+    }
+
+    private void RefreshFilteredConversationHistory()
+    {
+        var search = RunHistorySearch.Trim();
+        FilteredConversationHistory.Clear();
+        foreach (var conversation in ConversationHistory
+                     .Where(item => item.MatchesSearch(search)))
+        {
+            FilteredConversationHistory.Add(conversation);
+        }
+
+        OnPropertyChanged(nameof(HasFilteredConversationHistory));
+        OnPropertyChanged(nameof(ConversationHistoryEmptyDisplayText));
+    }
+
     private void UpdateRunActivity(AgentRuntimeStreamEnvelope envelope)
     {
         if (string.IsNullOrWhiteSpace(envelope.RunId))
@@ -1026,7 +1072,6 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     {
         RebuildReasoningEffortOptions();
         OnPropertyChanged(nameof(TitleText));
-        OnPropertyChanged(nameof(DescriptionText));
          OnPropertyChanged(nameof(SessionText));
          OnPropertyChanged(nameof(ModeText));
          OnPropertyChanged(nameof(ModelText));
@@ -1054,7 +1099,6 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CancellingText));
         OnPropertyChanged(nameof(FollowUpQueuedText));
         OnPropertyChanged(nameof(StoppedText));
-        OnPropertyChanged(nameof(RefreshText));
         OnPropertyChanged(nameof(CloseText));
         OnPropertyChanged(nameof(EmptySessionsText));
          OnPropertyChanged(nameof(NoSessionText));
@@ -1087,8 +1131,11 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(DenyText));
         OnPropertyChanged(nameof(ApprovalDeniedText));
         OnPropertyChanged(nameof(HistoryText));
+        OnPropertyChanged(nameof(HistoryNewText));
         OnPropertyChanged(nameof(HistoryClearText));
         OnPropertyChanged(nameof(HistoryEmptyText));
+        OnPropertyChanged(nameof(HistoryOpenText));
+        OnPropertyChanged(nameof(HistoryDeleteText));
         OnPropertyChanged(nameof(HistoryDetailsText));
         OnPropertyChanged(nameof(HistoryRetryText));
         OnPropertyChanged(nameof(HistoryContinueText));
@@ -1117,8 +1164,10 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(ActivityStatusText));
         ApplyRunCheckpoint(ActiveRunCheckpoint);
         OnPropertyChanged(nameof(HistoryEmptyDisplayText));
+        OnPropertyChanged(nameof(ConversationHistoryEmptyDisplayText));
         RebuildRunHistoryFilterOptions();
         RefreshFilteredRunHistory();
+        RefreshFilteredConversationHistory();
         OnPropertyChanged(nameof(SelectedSessionStatusText));
         RebuildChatModeOptions(SelectedChatMode);
         foreach (var message in Messages)
@@ -1128,15 +1177,6 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         RefreshProviderStatus();
         foreach (var run in RunHistory)
             run.NotifyLocalizationChanged();
-    }
-
-    [RelayCommand]
-    private void Refresh()
-    {
-        RefreshSessions();
-        RefreshProviderStatus();
-        RefreshActiveRun();
-        RefreshRunHistory();
     }
 
     [RelayCommand(CanExecute = nameof(CanTestProvider))]
@@ -1175,7 +1215,108 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
     {
         IsHistoryVisible = !IsHistoryVisible;
         if (IsHistoryVisible)
+        {
+            LoadConversationHistory();
             RefreshRunHistory();
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanStartNewConversation))]
+    private void NewConversation()
+    {
+        SaveActiveConversationHistory();
+        _activeConversationId = null;
+        _activeConversationCreatedAtUtc = default;
+        _activeConversationTitle = string.Empty;
+        _activeConversationSessionId = SelectedSessionId?.ToString("D");
+        _activeConversationSessionLabel = SelectedSession is { } session
+            ? BuildSessionHeader(session)
+            : null;
+        _activeConversationMode = SelectedChatMode;
+        _activeConversationProvider = _providerSettings()?.Name;
+        _activeConversationModel = SelectedModel;
+        _sessionStates.Clear();
+        _conversation.Clear();
+        Messages.Clear();
+        _toolMessages.Clear();
+        _activeToolGroup = null;
+        _currentAssistantMessage = null;
+        ApplyRunCheckpoint(null);
+        OnPropertyChanged(nameof(HasMessages));
+        OnPropertyChanged(nameof(IsEmptyStateVisible));
+        StatusText = ReadyText;
+    }
+
+    private bool CanStartNewConversation() => !IsRunning;
+
+    [RelayCommand(CanExecute = nameof(CanOpenConversation))]
+    private void OpenConversation(AgentConversationHistoryViewModel? conversation)
+    {
+        if (conversation == null || IsRunning)
+            return;
+
+        SaveActiveConversationHistory();
+        RestoreConversationHistory(conversation.Record);
+        IsHistoryVisible = false;
+        StatusText = ReadyText;
+    }
+
+    private bool CanOpenConversation(AgentConversationHistoryViewModel? conversation)
+        => conversation != null && !IsRunning;
+
+    [RelayCommand(CanExecute = nameof(CanDeleteConversation))]
+    private void DeleteConversation(AgentConversationHistoryViewModel? conversation)
+    {
+        if (conversation == null || IsRunning)
+            return;
+
+        _conversationHistoryStore.Delete(conversation.ConversationId);
+        RemoveConversationFromLists(conversation.ConversationId);
+
+        // Keep the current transcript usable, but make the next save create a
+        // new history entry instead of silently recreating the deleted one.
+        if (string.Equals(_activeConversationId, conversation.ConversationId, StringComparison.Ordinal))
+            _activeConversationId = null;
+
+        StatusText = Text("Agent.HistoryDeleted");
+    }
+
+    private bool CanDeleteConversation(AgentConversationHistoryViewModel? conversation)
+        => conversation != null && !IsRunning;
+
+    private void RemoveConversationFromLists(string conversationId)
+    {
+        foreach (var item in ConversationHistory
+                     .Where(item => string.Equals(item.ConversationId, conversationId, StringComparison.Ordinal))
+                     .ToArray())
+        {
+            ConversationHistory.Remove(item);
+        }
+
+        foreach (var item in FilteredConversationHistory
+                     .Where(item => string.Equals(item.ConversationId, conversationId, StringComparison.Ordinal))
+                     .ToArray())
+        {
+            FilteredConversationHistory.Remove(item);
+        }
+
+        OnPropertyChanged(nameof(HasConversationHistory));
+        OnPropertyChanged(nameof(HasFilteredConversationHistory));
+        OnPropertyChanged(nameof(ConversationHistoryEmptyDisplayText));
+    }
+
+    [RelayCommand]
+    private void ClearConversationHistory()
+    {
+        _conversationHistoryStore.Clear();
+        ConversationHistory.Clear();
+        FilteredConversationHistory.Clear();
+        _activeConversationId = null;
+        _sessionStates.Clear();
+        OnPropertyChanged(nameof(HasConversationHistory));
+        OnPropertyChanged(nameof(HasFilteredConversationHistory));
+        OnPropertyChanged(nameof(ConversationHistoryEmptyDisplayText));
+        StatusText = HistoryClearedText;
     }
 
     [RelayCommand]
@@ -1477,6 +1618,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         var modelPrompt = promptText.Length == 0
             ? Text("Agent.AttachmentOnlyPrompt")
             : promptText;
+        EnsureActiveConversation(modelPrompt);
         var userMessage = new AgentChatMessage(
             "user",
             modelPrompt,
@@ -1513,6 +1655,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
             toolCallCount: 0,
             sessionName: selectedSession?.Name ?? string.Empty);
         AddMessage(AgentPanelMessageViewModel.User(modelPrompt, pendingAttachments, pendingAnnotations));
+        SaveActiveConversationHistory();
 
         try
         {
@@ -1538,6 +1681,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
 
             _conversation.Add(userMessage);
             TrimConversation();
+            SaveActiveConversationHistory();
             Prompt = string.Empty;
             PendingAttachments.Clear();
             OnPropertyChanged(nameof(HasPendingAttachments));
@@ -1572,6 +1716,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         var modelPrompt = promptText.Length == 0
             ? Text("Agent.AttachmentOnlyPrompt")
             : promptText;
+        EnsureActiveConversation(modelPrompt);
         var userMessage = new AgentChatMessage(
             "user",
             modelPrompt,
@@ -1601,6 +1746,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
             _conversation.Add(userMessage);
             TrimConversation();
             AddMessage(AgentPanelMessageViewModel.User(modelPrompt, pendingAttachments, pendingAnnotations));
+            SaveActiveConversationHistory();
             Prompt = string.Empty;
             PendingAttachments.Clear();
             OnPropertyChanged(nameof(HasPendingAttachments));
@@ -1937,6 +2083,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
                     break;
                 case "tool_call_result":
                     UpdateToolResult(@event);
+                    SaveActiveConversationHistory();
                     break;
                 case "tool_verification":
                     UpdateToolVerification(@event);
@@ -2509,6 +2656,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         IsRunning = false;
         StatusText = string.IsNullOrWhiteSpace(message) ? ErrorText : message;
         AddMessage(AgentPanelMessageViewModel.Error(StatusText));
+        SaveActiveConversationHistory();
         NotifyRunCommands();
         RefreshRunHistory();
     }
@@ -2546,6 +2694,7 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
                     ? Text("Agent.SummaryNoResult")
                     : LimitTranscript(finalResponse)));
         }
+        SaveActiveConversationHistory();
         IsRunning = false;
         _activeRunId = null;
         _lastRunSequence = 0;
@@ -2570,6 +2719,71 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasMessages));
         OnPropertyChanged(nameof(IsEmptyStateVisible));
         return message;
+    }
+
+    private void EnsureActiveConversation(string prompt)
+    {
+        if (!string.IsNullOrWhiteSpace(_activeConversationId))
+            return;
+
+        var now = DateTimeOffset.UtcNow;
+        _activeConversationId = Guid.NewGuid().ToString("D");
+        _activeConversationCreatedAtUtc = now;
+        _activeConversationTitle = BuildConversationTitle(prompt);
+        _activeConversationSessionId = SelectedSessionId?.ToString("D");
+        _activeConversationSessionLabel = SelectedSession is { } session
+            ? BuildSessionHeader(session)
+            : null;
+        _activeConversationMode = SelectedChatMode;
+        _activeConversationProvider = _providerSettings()?.Name;
+        _activeConversationModel = SelectedModel;
+    }
+
+    private AgentConversationHistoryRecord? BuildCurrentConversationRecord()
+    {
+        if (string.IsNullOrWhiteSpace(_activeConversationId) || Messages.Count == 0)
+            return null;
+
+        var sessionId = _activeConversationSessionId ?? SelectedSessionId?.ToString("D");
+        var sessionLabel = _activeConversationSessionId != null
+            ? _activeConversationSessionLabel
+            : SelectedSession is { } session
+                ? BuildSessionHeader(session)
+                : null;
+        return new AgentConversationHistoryRecord(
+            _activeConversationId,
+            string.IsNullOrWhiteSpace(_activeConversationTitle)
+                ? Text("Agent.HistoryNoTitle")
+                : _activeConversationTitle,
+            _activeConversationCreatedAtUtc == default
+                ? DateTimeOffset.UtcNow
+                : _activeConversationCreatedAtUtc,
+            DateTimeOffset.UtcNow,
+            sessionId,
+            sessionLabel,
+            SelectedChatMode,
+            _providerSettings()?.Name ?? _activeConversationProvider,
+            SelectedModel ?? _activeConversationModel,
+            _conversation.ToArray(),
+            Messages.Select(message => message.ToHistoryRecord()).ToArray());
+    }
+
+    private void SaveActiveConversationHistory()
+    {
+        var record = BuildCurrentConversationRecord();
+        if (record == null)
+            return;
+
+        _conversationHistoryStore.Save(record);
+        LoadConversationHistory();
+    }
+
+    private static string BuildConversationTitle(string prompt)
+    {
+        var normalized = prompt.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        if (normalized.Length == 0)
+            return Text("Agent.HistoryNoTitle");
+        return normalized.Length <= 60 ? normalized : normalized[..60] + "...";
     }
 
     private void TrimConversation()
@@ -2788,10 +3002,15 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
 
         if (_conversationSessionId != nextSessionId)
         {
-            SaveCurrentSessionState();
-            RestoreSessionState(nextSessionId);
+            var hasPersistedConversation = !string.IsNullOrWhiteSpace(_activeConversationId);
+            if (!hasPersistedConversation)
+                SaveCurrentSessionState();
+
             _conversationSessionId = nextSessionId;
             StatusText = ReadyText;
+
+            if (!hasPersistedConversation)
+                RestoreSessionState(nextSessionId);
         }
 
         _lastSelectedSessionOption = value;
@@ -2811,7 +3030,10 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
         => RefreshFilteredRunHistory();
 
     partial void OnRunHistorySearchChanged(string value)
-        => RefreshFilteredRunHistory();
+    {
+        RefreshFilteredRunHistory();
+        RefreshFilteredConversationHistory();
+    }
 
     partial void OnProviderTestStatusTextChanged(string value)
         => OnPropertyChanged(nameof(HasProviderTestStatus));
@@ -2846,6 +3068,9 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
                 EnsureSessionSelection();
         }
 
+        NewConversationCommand.NotifyCanExecuteChanged();
+        OpenConversationCommand.NotifyCanExecuteChanged();
+        DeleteConversationCommand.NotifyCanExecuteChanged();
         NotifyRunCommands();
     }
 
@@ -2913,6 +3138,55 @@ public sealed partial class AgentPanelViewModel : ObservableObject, IDisposable
 
             _nextAnnotationNumber = Math.Max(1, state.NextAnnotationNumber);
         }
+
+        OnPropertyChanged(nameof(HasMessages));
+        OnPropertyChanged(nameof(IsEmptyStateVisible));
+    }
+
+    private void RestoreConversationHistory(AgentConversationHistoryRecord record)
+    {
+        _activeConversationId = record.ConversationId;
+        _activeConversationCreatedAtUtc = record.CreatedAtUtc;
+        _activeConversationTitle = record.Title;
+        _activeConversationSessionId = record.SessionId;
+        _activeConversationSessionLabel = record.SessionLabel;
+        _activeConversationMode = record.Mode;
+        _activeConversationProvider = record.Provider;
+        _activeConversationModel = record.Model;
+        _sessionStates.Clear();
+
+        RebuildChatModeOptions(record.Mode);
+        if (!string.IsNullOrWhiteSpace(record.Model))
+        {
+            SelectedModelOption = ModelOptions.FirstOrDefault(option =>
+                string.Equals(
+                    option.Content?.ToString(),
+                    record.Model,
+                    StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (Guid.TryParse(record.SessionId, out var historySessionId) &&
+            historySessionId != Guid.Empty)
+        {
+            var sessionOption = SessionOptions.FirstOrDefault(option =>
+                string.Equals(
+                    option.Content?.ToString(),
+                    historySessionId.ToString("D"),
+                    StringComparison.OrdinalIgnoreCase));
+            if (sessionOption != null)
+                SelectedSessionOption = sessionOption;
+        }
+
+        _conversation.Clear();
+        _conversation.AddRange(record.ContextMessages ?? []);
+        TrimConversation();
+        Messages.Clear();
+        _toolMessages.Clear();
+        _activeToolGroup = null;
+        _currentAssistantMessage = null;
+
+        foreach (var message in record.Messages ?? [])
+            Messages.Add(AgentPanelMessageViewModel.FromHistoryRecord(message));
 
         OnPropertyChanged(nameof(HasMessages));
         OnPropertyChanged(nameof(IsEmptyStateVisible));
@@ -3109,6 +3383,10 @@ public sealed partial class AgentPanelMessageViewModel : ObservableObject
             Attachments = attachments.ToArray();
         if (annotations is { Count: > 0 })
             Annotations = annotations.ToArray();
+        ContentParts = (attachments ?? [])
+            .Select(item => item.ContentPart)
+            .Concat((annotations ?? []).Select(item => item.ToContentPart()))
+            .ToArray();
 
         if (kind == AgentPanelMessageKind.Assistant)
             MarkdownBuilder = new ObservableStringBuilder(content);
@@ -3128,6 +3406,7 @@ public sealed partial class AgentPanelMessageViewModel : ObservableObject
     public bool HasAttachments => Attachments.Count > 0;
     public IReadOnlyList<AgentTerminalAnnotationViewModel> Annotations { get; } = [];
     public bool HasAnnotations => Annotations.Count > 0;
+    internal IReadOnlyList<AgentContentPart> ContentParts { get; } = [];
     public ObservableStringBuilder? MarkdownBuilder { get; }
     public ObservableStringBuilder? SummaryMarkdownBuilder { get; }
     public ObservableCollection<AgentPanelMessageViewModel> ToolMessages { get; } = new();
@@ -3207,6 +3486,98 @@ public sealed partial class AgentPanelMessageViewModel : ObservableObject
     public static AgentPanelMessageViewModel ToolGroup(string runId)
         => new(AgentPanelMessageKind.ToolGroup, string.Empty) { RunId = runId };
     public static AgentPanelMessageViewModel Error(string content) => new(AgentPanelMessageKind.Error, content);
+
+    public AgentConversationMessageRecord ToHistoryRecord()
+        => new(
+            Kind.ToString().ToLowerInvariant(),
+            Content,
+            DateTimeOffset.UtcNow,
+            RunId,
+            StatusText,
+            ToolCallId,
+            ToolName,
+            ToolInput,
+            DurationText,
+            RiskText,
+            ApprovalSessionText,
+            ApprovalTimeoutText,
+            VerificationStatus,
+            VerificationText,
+            SummarySessionName,
+            SummaryStatusText,
+            SummaryDurationText,
+            SummaryToolCallCount,
+            SummaryModelRequestCount,
+            SummaryResultText,
+            ContentParts,
+            Annotations.Select(annotation => new AgentConversationAnnotationRecord(
+                    annotation.Number,
+                    annotation.Text,
+                    annotation.SourceLabel))
+                .ToArray(),
+            ToolMessages.Select(message => message.ToHistoryRecord()).ToArray());
+
+    public static AgentPanelMessageViewModel FromHistoryRecord(
+        AgentConversationMessageRecord record)
+    {
+        var kind = Enum.TryParse<AgentPanelMessageKind>(
+                       record.Kind,
+                       ignoreCase: true,
+                       out var parsedKind)
+            ? parsedKind
+            : AgentPanelMessageKind.Assistant;
+        var annotations = (record.Annotations ?? [])
+            .Select(annotation => new AgentTerminalAnnotationViewModel(
+                annotation.Number,
+                annotation.Text,
+                annotation.SourceLabel))
+            .ToArray();
+        var attachments = (record.ContentParts ?? [])
+            .Where(part => string.IsNullOrWhiteSpace(part.FileName) ||
+                           !part.FileName!.StartsWith(
+                               "terminal-annotation-",
+                               StringComparison.OrdinalIgnoreCase))
+            .Select(AgentAttachmentViewModel.FromContentPart)
+            .Where(attachment => attachment != null)
+            .Cast<AgentAttachmentViewModel>()
+            .ToArray();
+
+        var message = kind switch
+        {
+            AgentPanelMessageKind.User => User(record.Content, attachments, annotations),
+            AgentPanelMessageKind.Assistant => Assistant(record.Content),
+            AgentPanelMessageKind.Tool => Tool(record.Content),
+            AgentPanelMessageKind.ToolGroup => ToolGroup(record.RunId ?? string.Empty),
+            AgentPanelMessageKind.Error => Error(record.Content),
+            AgentPanelMessageKind.Summary => Summary(
+                record.RunId ?? string.Empty,
+                record.SummarySessionName ?? string.Empty,
+                record.SummaryStatusText ?? string.Empty,
+                record.SummaryDurationText ?? string.Empty,
+                record.SummaryToolCallCount,
+                record.SummaryModelRequestCount,
+                record.SummaryResultText ?? record.Content),
+            _ => Assistant(record.Content)
+        };
+
+        message.RunId = record.RunId ?? string.Empty;
+        message.StatusText = record.StatusText ?? string.Empty;
+        message.ToolCallId = record.ToolCallId;
+        message.ToolName = record.ToolName ?? string.Empty;
+        message.ToolInput = record.ToolInput ?? string.Empty;
+        message.DurationText = record.DurationText ?? string.Empty;
+        message.RiskText = record.RiskText ?? string.Empty;
+        message.ApprovalSessionText = record.ApprovalSessionText ?? string.Empty;
+        message.ApprovalTimeoutText = record.ApprovalTimeoutText ?? string.Empty;
+        message.VerificationStatus = record.VerificationStatus ?? string.Empty;
+        message.VerificationText = record.VerificationText ?? string.Empty;
+        message.IsToolDetailsExpanded = false;
+        message.IsToolGroupExpanded = false;
+        foreach (var child in record.Children ?? [])
+            message.AddToolMessage(FromHistoryRecord(child));
+
+        return message;
+    }
 
     public IEnumerable<AgentPanelMessageViewModel> EnumerateToolMessages()
     {
