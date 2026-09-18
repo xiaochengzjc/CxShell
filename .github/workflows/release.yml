@@ -780,8 +780,27 @@ jobs:
             exit 1
           fi
 
+          upload_asset() {
+            local asset="$1"
+            local attempt
+
+            for attempt in 1 2 3 4 5; do
+              echo "Uploading $(basename "$asset") (attempt $attempt/5)"
+              if gh release upload "$tag" "$asset" --repo "$GH_REPO" --clobber; then
+                return 0
+              fi
+
+              if [ "$attempt" -lt 5 ]; then
+                sleep $((attempt * 15))
+              fi
+            done
+
+            echo "Failed to upload $(basename "$asset") after 5 attempts." >&2
+            return 1
+          }
+
           if gh release view "$tag" --repo "$GH_REPO" >/dev/null 2>&1; then
-            gh release upload "$tag" "${assets[@]}" --repo "$GH_REPO" --clobber
+            :
           else
             create_args=(
               --title "CxShell $tag"
@@ -798,5 +817,16 @@ jobs:
               create_args+=(--prerelease)
             fi
 
-            gh release create "$tag" "${assets[@]}" --repo "$GH_REPO" "${create_args[@]}"
+            gh release create "$tag" --repo "$GH_REPO" "${create_args[@]}"
+          fi
+
+          failed=0
+          for asset in "${assets[@]}"; do
+            if ! upload_asset "$asset"; then
+              failed=1
+            fi
+          done
+
+          if [ "$failed" -ne 0 ]; then
+            exit 1
           fi
