@@ -12,7 +12,7 @@
         <PackageId>CxShell</PackageId>
         <Authors>xiaochengzjc</Authors>
         <Copyright>Copyright 2026 xiaochengzjc</Copyright>
-        <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+        <PackageLicenseFile>LICENSE</PackageLicenseFile>
         <RepositoryUrl>https://github.com/xiaochengzjc/CxShell</RepositoryUrl>
         <ApplicationManifest>app.manifest</ApplicationManifest>
         <ApplicationIcon>Assets\CxShellLogo.ico</ApplicationIcon>
@@ -21,6 +21,7 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <None Update="LICENSE" Pack="true" PackagePath="LICENSE" />
         <Compile Remove="AtomUI/**" />
         <Compile Remove="OpenCowork/**" />
         <Compile Remove="VelaShell/**" />

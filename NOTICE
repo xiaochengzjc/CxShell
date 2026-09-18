@@ -3,5 +3,18 @@ Copyright 2026 xiaochengzjc
 
 This product includes software developed by the CxShell project contributors.
 
+CxShell's original code and documentation in releases after the license change
+are provided under the PolyForm Noncommercial License 1.0.0. See LICENSE and
+COMMERCIAL-LICENSE.md. Releases published before this change remain under the
+license terms that accompanied those releases; in particular, v0.1.56 and
+earlier releases used Apache License 2.0 for CxShell's original code.
+
 CxShell uses AtomUI's Avalonia controls and theme capabilities.
 AtomUI: https://github.com/AtomUI/AtomUI
+
+The PolyForm license for CxShell's own code does not replace the licenses of
+third-party components. The OpenCoWork-derived runtime portions retain Apache
+License 2.0 as documented in Services/Agent/OpenCoworkRuntime/NOTICE.md.
+Third-party libraries, including AtomUI, Avalonia, FreeRDP, MarcusW.VncClient,
+SSH.NET, FluentFTP, and other dependencies, remain subject to their own
+licenses and notices.

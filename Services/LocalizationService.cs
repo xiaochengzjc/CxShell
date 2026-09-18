@@ -1138,11 +1138,11 @@ public sealed class LocalizationService : INotifyPropertyChanged
         EnglishTexts["About.OpenSourceDescription"] = "CxShell is built on these open-source projects.";
         EnglishTexts["About.License"] = "License";
         EnglishTexts["About.Support"] = "Support CxShell";
-        EnglishTexts["About.SupportDescription"] = "CxShell is free and open source. Your support helps keep development moving.";
+        EnglishTexts["About.SupportDescription"] = "CxShell is free for noncommercial use under the PolyForm Noncommercial License. Your support helps keep development moving.";
         EnglishTexts["About.OpenGitHub"] = "Open GitHub";
         EnglishTexts["About.KoFi"] = "Support on Ko-fi";
         EnglishTexts["Donation.Title"] = "Support & Donate";
-        EnglishTexts["Donation.Intro"] = "CxShell is free and open source. If it helps your work, your support helps us keep improving the terminal, file transfer, and remote-session experience.";
+        EnglishTexts["Donation.Intro"] = "CxShell is free for noncommercial use under the PolyForm Noncommercial License. If it helps your work, your support helps us keep improving the terminal, file transfer, and remote-session experience.";
         EnglishTexts["Donation.ContributionTitle"] = "The best support is participation";
         EnglishTexts["Donation.ContributionDescription"] = "Code, bug reports, documentation, and ideas are all valuable contributions. Every contribution helps CxShell become more useful.";
         EnglishTexts["Donation.DomesticTitle"] = "Support from China";
@@ -1680,11 +1680,11 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ChineseTexts["About.OpenSourceDescription"] = "CxShell \u57fa\u4e8e\u4ee5\u4e0b\u5f00\u6e90\u9879\u76ee\u6784\u5efa\u3002";
         ChineseTexts["About.License"] = "\u8bb8\u53ef\u8bc1";
         ChineseTexts["About.Support"] = "\u652f\u6301 CxShell";
-        ChineseTexts["About.SupportDescription"] = "CxShell \u514d\u8d39\u4e14\u5f00\u6e90\uff0c\u4f60\u7684\u652f\u6301\u5c06\u5e2e\u52a9\u9879\u76ee\u6301\u7eed\u5f00\u53d1\u3002";
+        ChineseTexts["About.SupportDescription"] = "CxShell \u4f9d\u636e PolyForm Noncommercial \u8bb8\u53ef\u534f\u8bae\u53ef\u4f9b\u975e\u5546\u4e1a\u7528\u9014\u514d\u8d39\u4f7f\u7528\uff0c\u4f60\u7684\u652f\u6301\u5c06\u5e2e\u52a9\u9879\u76ee\u6301\u7eed\u5f00\u53d1\u3002";
         ChineseTexts["About.OpenGitHub"] = "\u6253\u5f00 GitHub";
         ChineseTexts["About.KoFi"] = "\u5728 Ko-fi \u4e0a\u652f\u6301";
         ChineseTexts["Donation.Title"] = "\u652f\u6301\u4e0e\u6350\u8d60";
-        ChineseTexts["Donation.Intro"] = "CxShell \u514d\u8d39\u4e14\u5f00\u6e90\u3002\u5982\u679c\u5b83\u5bf9\u4f60\u7684\u5de5\u4f5c\u6709\u5e2e\u52a9\uff0c\u4f60\u7684\u652f\u6301\u5c06\u5e2e\u52a9\u6211\u4eec\u6301\u7eed\u6539\u8fdb\u7ec8\u7aef\u3001\u6587\u4ef6\u4f20\u8f93\u548c\u8fdc\u7a0b\u4f1a\u8bdd\u4f53\u9a8c\u3002";
+        ChineseTexts["Donation.Intro"] = "CxShell \u4f9d\u636e PolyForm Noncommercial \u8bb8\u53ef\u534f\u8bae\u53ef\u4f9b\u975e\u5546\u4e1a\u7528\u9014\u514d\u8d39\u4f7f\u7528\u3002\u5982\u679c\u5b83\u5bf9\u4f60\u7684\u5de5\u4f5c\u6709\u5e2e\u52a9\uff0c\u4f60\u7684\u652f\u6301\u5c06\u5e2e\u52a9\u6211\u4eec\u6301\u7eed\u6539\u8fdb\u7ec8\u7aef\u3001\u6587\u4ef6\u4f20\u8f93\u548c\u8fdc\u7a0b\u4f1a\u8bdd\u4f53\u9a8c\u3002";
         ChineseTexts["Donation.ContributionTitle"] = "\u6700\u597d\u7684\u652f\u6301\uff1a\u53c2\u4e0e\u8d21\u732e";
         ChineseTexts["Donation.ContributionDescription"] = "\u63d0\u4ea4\u4ee3\u7801\u3001\u53cd\u9988 Bug\u3001\u6539\u8fdb\u6587\u6863\u6216\u5206\u4eab\u5efa\u8bae\u90fd\u662f\u6709\u4ef7\u503c\u7684\u8d21\u732e\u3002\u6bcf\u4e00\u6b21\u53c2\u4e0e\u90fd\u4f1a\u8ba9 CxShell \u8d70\u5f97\u66f4\u8fdc\u3002";
         ChineseTexts["Donation.DomesticTitle"] = "\u56fd\u5185\u652f\u6301";

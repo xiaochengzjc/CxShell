@@ -382,7 +382,7 @@ These directories are generally not committed:
 - `.buildcheck*/`
 - `.tmp/`
 
-`runtimes/` is mainly used for local native runtime files, such as `CxRdpBridge.dll`, `libCxRdpBridge.dylib`, and FreeRDP/WinPR dynamic libraries. For an open-source repository, these files should normally be produced by scripts or CI instead of committed from a local build machine.
+`runtimes/` is mainly used for local native runtime files, such as `CxRdpBridge.dll`, `libCxRdpBridge.dylib`, and FreeRDP/WinPR dynamic libraries. For this source-available repository, these files should normally be produced by scripts or CI instead of committed from a local build machine.
 
 ## Project Status
 
@@ -392,7 +392,7 @@ Issues, feature requests, and pull requests are welcome. For changes related to 
 
 ## Support
 
-CxShell is open source and free to use. If it helps your work, you can support ongoing development through Ko-fi, WeChat Pay, or Alipay.
+CxShell is source-available and free for noncommercial use under the [PolyForm Noncommercial License 1.0.0](LICENSE). If it helps your work, you can support ongoing development through Ko-fi, WeChat Pay, or Alipay.
 
 For overseas users:
 
@@ -425,9 +425,9 @@ For project feedback and technical discussion, you can add the author on WeChat.
 
 ## License
 
-CxShell is licensed under the [Apache License 2.0](LICENSE). You may use it for free, including for commercial purposes.
+CxShell's original code and documentation in releases after the license change are licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE). Personal, educational, research, evaluation, hobby, and other noncommercial use is permitted under that license. Commercial production use, commercial internal business use, commercial redistribution, commercial integration, and offering CxShell as part of a paid service require a separate commercial license; see [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
 
-If you redistribute modified source code or binaries, keep the copyright, license, and NOTICE information, and make clear which files or parts were changed.
+The v0.1.56 release and earlier releases remain under the Apache License 2.0 terms that accompanied those releases. Third-party components, including the OpenCoWork-derived runtime, AtomUI, Avalonia, FreeRDP, MarcusW.VncClient, and NuGet dependencies, remain under their own licenses; see NOTICE and the relevant component notices. If you redistribute modified CxShell source code or binaries, keep the applicable copyright, license, and NOTICE information, and make clear which files or parts were changed.
 
 ## Thanks
 

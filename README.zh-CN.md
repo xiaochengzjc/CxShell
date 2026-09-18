@@ -382,7 +382,7 @@ workflow 完成后，打开 GitHub 仓库的 `Releases` 页面，下载和你的
 - `.buildcheck*/`
 - `.tmp/`
 
-`runtimes/` 主要用于本地放置原生运行时文件，例如 `CxRdpBridge.dll`、`libCxRdpBridge.dylib`、FreeRDP/WinPR 动态库。开源仓库建议通过脚本或 CI 构建这些文件，而不是把本地编译产物提交到 Git。
+`runtimes/` 主要用于本地放置原生运行时文件，例如 `CxRdpBridge.dll`、`libCxRdpBridge.dylib`、FreeRDP/WinPR 动态库。源码仓库建议通过脚本或 CI 构建这些文件，而不是把本地编译产物提交到 Git。
 
 ## 项目状态
 
@@ -392,7 +392,7 @@ CxShell 目前更接近“可用中的快速迭代版本”，不是一个完全
 
 ## 支持项目
 
-CxShell 是一个开源免费项目。如果它对你的工作有帮助，可以通过 Ko-fi、微信支付或支付宝支持项目继续开发。
+CxShell 是一个源码可见项目，依据 [PolyForm Noncommercial 1.0.0](LICENSE) 许可，非商业用途可以免费使用。如果它对你的工作有帮助，可以通过 Ko-fi、微信支付或支付宝支持项目继续开发。
 
 海外用户：
 
@@ -423,11 +423,11 @@ CxShell 是一个开源免费项目。如果它对你的工作有帮助，可以
 
 <img src="docs/images/wechat-ruochujiangzi.png" alt="CxShell 作者微信二维码" width="220">
 
-## 开源协议
+## 授权协议
 
-CxShell 使用 [Apache License 2.0](LICENSE) 开源。你可以免费使用，包括商业用途。
+CxShell 自有代码和文档在本次协议变更后的版本中使用 [PolyForm Noncommercial License 1.0.0](LICENSE)。个人、学习、研究、评估、爱好等非商业用途可以依据该协议使用。商业生产使用、企业内部业务使用、商业再分发、集成到商业产品或服务、作为付费服务的一部分提供 CxShell 等用途，需要单独的商业许可证，详见 [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)。
 
-如果分发修改后的源码或二进制文件，需要保留版权、协议和 NOTICE 信息，并清楚标注哪些文件或部分做过修改。
+v0.1.56 及更早版本仍然遵循对应版本附带的 Apache License 2.0，不会被本次变更追溯修改。OpenCoWork 衍生运行时、AtomUI、Avalonia、FreeRDP、MarcusW.VncClient 以及其他第三方依赖继续遵循各自的许可证，详见 NOTICE 和相关组件说明。分发修改后的 CxShell 源码或二进制文件时，需要保留适用的版权、协议和 NOTICE 信息，并清楚标注哪些文件或部分做过修改。
 
 ## 鸣谢
 
