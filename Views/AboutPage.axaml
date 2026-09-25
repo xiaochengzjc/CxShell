@@ -36,14 +36,6 @@
                                    FontWeight="SemiBold"
                                    Foreground="{atom:SharedTokenResource ColorPrimary}"
                                    VerticalAlignment="Center"/>
-                        <Border Background="{atom:SharedTokenResource ColorPrimaryBg}"
-                                CornerRadius="4"
-                                Padding="8,3"
-                                VerticalAlignment="Center">
-                            <TextBlock Text="{Binding AboutStatusText}"
-                                       FontSize="12"
-                                       Foreground="{atom:SharedTokenResource ColorPrimary}"/>
-                        </Border>
                     </StackPanel>
                 </StackPanel>
             </Grid>
@@ -234,10 +226,6 @@
                                  Icon="{antdicons:AntDesignIconProvider Kind=GithubOutlined}"
                                  ButtonType="Default"
                                  Click="OnGitHubClick"/>
-                    <atom:Button Content="{Binding AboutKoFiText}"
-                                 Icon="{antdicons:AntDesignIconProvider Kind=HeartOutlined}"
-                                 ButtonType="Default"
-                                 Click="OnKoFiClick"/>
                 </StackPanel>
                 <TextBlock Text="{Binding AboutGitHubUrlText}"
                            FontFamily="Cascadia Mono,Consolas,monospace"

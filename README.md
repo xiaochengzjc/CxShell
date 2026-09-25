@@ -8,7 +8,7 @@ The project is still moving quickly. Windows is currently the primary developmen
 
 ## Latest Release
 
-The latest release is [CxShell v0.1.57](https://github.com/xiaochengzjc/CxShell/releases/tag/v0.1.57). It adds SQLite-backed Agent conversation history, history search/open/delete controls, clearer history-panel selection state, terminal input/history fixes, and continued AtomUI interaction refinements.
+The latest release is [CxShell v0.1.58](https://github.com/xiaochengzjc/CxShell/releases/tag/v0.1.58). It upgrades AtomUI to 6.2.1 and Avalonia to 12.1.2, migrates the app's data grids to the current AtomUI source APIs, and improves row selection and scrolling when reordering saved sessions.
 
 Packages are available for Windows x64, macOS x64/arm64, and Linux x64/arm64. The release page provides Windows and macOS installers or portable archives, plus Linux AppImage and tar.gz packages.
 

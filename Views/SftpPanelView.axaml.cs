@@ -15,11 +15,13 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using AtomUI.Theme.Resources;
+using CxShell.Controls;
 using CxShell.Services;
 using CxShell.ViewModels;
 using AtomButton = AtomUI.Desktop.Controls.Button;
 using AtomContextMenu = AtomUI.Desktop.Controls.ContextMenu;
 using AtomDataGrid = AtomUI.Desktop.Controls.DataGrid;
+using DataGridSelectionChangedEventArgs = AtomUI.Desktop.Controls.DataGridSelectionChangedEventArgs;
 using AtomLineEdit = AtomUI.Desktop.Controls.LineEdit;
 using AtomMenuItem = AtomUI.Desktop.Controls.MenuItem;
 using AtomMenuSeparator = AtomUI.Desktop.Controls.MenuSeparator;
@@ -37,6 +39,8 @@ public partial class SftpPanelView : UserControl
         AvaloniaProperty.Register<SftpPanelView, ICommand?>(nameof(PanelCloseCommand));
 
     private SftpViewModel? _attachedViewModel;
+    private DataGridSourceAdapter<Models.SftpFileItem>? _fileGridSource;
+    private DataGridSourceAdapter<SftpTransferTaskItem>? _transferGridSource;
     private Models.SftpFileItem? _dragSourceItem;
     private Models.SftpFileItem? _selectionAnchorItem;
     private PointerPressedEventArgs? _dragStartEventArgs;
@@ -73,6 +77,7 @@ public partial class SftpPanelView : UserControl
         AddHandler(PointerPressedEvent, OnSftpPanelPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
         FileGrid.AddHandler(PointerPressedEvent, OnFileGridPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
         TransferGrid.AddHandler(PointerPressedEvent, OnTransferGridPointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
+        FileGrid.SelectionChanged += OnFileGridSelectionChanged;
         FileGrid.AddHandler(KeyDownEvent, OnFileGridKeyDown, RoutingStrategies.Tunnel, handledEventsToo: true);
         FileGrid.GetObservable(BoundsProperty).Subscribe(_ => QueueFileGridColumnWidthUpdate());
     }
@@ -131,7 +136,10 @@ public partial class SftpPanelView : UserControl
         if (_attachedViewModel == viewModel)
         {
             if (viewModel != null)
+            {
+                AttachGridSources(viewModel);
                 InjectDelegates(viewModel);
+            }
             return;
         }
 
@@ -142,13 +150,41 @@ public partial class SftpPanelView : UserControl
             _attachedViewModel.ShowRemoteFileEditorAsync = null;
         }
 
+        DetachGridSources();
+
         _attachedViewModel = viewModel;
 
         if (viewModel != null)
         {
             viewModel.PropertyChanged += OnVmPropertyChanged;
+            AttachGridSources(viewModel);
             InjectDelegates(viewModel);
         }
+    }
+
+    private void AttachGridSources(SftpViewModel viewModel)
+    {
+        DetachGridSources();
+        _fileGridSource = new DataGridSourceAdapter<Models.SftpFileItem>(viewModel.VisibleFiles);
+        _transferGridSource = new DataGridSourceAdapter<SftpTransferTaskItem>(viewModel.TransferTasks);
+        FileGrid.ItemsSource = _fileGridSource.Source;
+        TransferGrid.ItemsSource = _transferGridSource.Source;
+        _fileGridSource.ConfigureColumns(FileGrid);
+        _transferGridSource.ConfigureColumns(TransferGrid);
+    }
+
+    private void DetachGridSources()
+    {
+        FileGrid.ItemsSource = null;
+        FileGrid.Selection = AtomUI.Desktop.Controls.DataGridSelectionState.Empty;
+        FileGrid.CurrentRowKey = null;
+        TransferGrid.ItemsSource = null;
+        TransferGrid.Selection = AtomUI.Desktop.Controls.DataGridSelectionState.Empty;
+        TransferGrid.CurrentRowKey = null;
+        _fileGridSource?.Dispose();
+        _fileGridSource = null;
+        _transferGridSource?.Dispose();
+        _transferGridSource = null;
     }
 
     private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -431,7 +467,7 @@ public partial class SftpPanelView : UserControl
         }
     }
 
-    private void OnFileGridSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    private void OnFileGridSelectionChanged(object? sender, DataGridSelectionChangedEventArgs e)
     {
         if (_attachedViewModel == null || sender is not AtomDataGrid grid)
             return;
@@ -497,7 +533,7 @@ public partial class SftpPanelView : UserControl
             }
             else
             {
-                grid.SelectedItem = item;
+                _fileGridSource?.SetSelectedItems(grid, [item]);
                 _attachedViewModel.SetSelectedFiles([item]);
             }
 
@@ -531,7 +567,7 @@ public partial class SftpPanelView : UserControl
         if (task == null)
             return;
 
-        grid.SelectedItem = task;
+        _transferGridSource?.SetSelectedItems(grid, [task]);
         e.Handled = true;
         Dispatcher.UIThread.Post(
             () => ShowTransferContextMenu(grid, task, _attachedViewModel),
@@ -813,24 +849,14 @@ public partial class SftpPanelView : UserControl
         return TryGetSuggestionFromVisual(visual) != null;
     }
 
-    private static IEnumerable<Models.SftpFileItem> GetSelectedFiles(AtomDataGrid grid)
+    private IEnumerable<Models.SftpFileItem> GetSelectedFiles(AtomDataGrid grid)
     {
-        var selectedItemsProperty = grid.GetType().GetProperty("SelectedItems");
-        if (selectedItemsProperty?.GetValue(grid) is IEnumerable selectedItems)
-            return selectedItems.OfType<Models.SftpFileItem>().ToList();
-
-        return [];
+        return _fileGridSource?.GetSelectedItems(grid) ?? [];
     }
 
-    private static void SetGridSelectedItems(AtomDataGrid grid, IReadOnlyList<Models.SftpFileItem> selected)
+    private void SetGridSelectedItems(AtomDataGrid grid, IReadOnlyList<Models.SftpFileItem> selected)
     {
-        var selectedItems = grid.SelectedItems;
-        selectedItems.Clear();
-        foreach (var item in selected)
-        {
-            if (!selectedItems.Contains(item))
-                selectedItems.Add(item);
-        }
+        _fileGridSource?.SetSelectedItems(grid, selected);
     }
 
     private static async Task<Avalonia.Platform.Storage.IStorageItem?> GetStorageItemForDragAsync(

@@ -311,10 +311,9 @@
                        HorizontalAlignment="Stretch"
                        VerticalAlignment="Stretch">
                 <atom:DataGrid x:Name="FileGrid"
+                                             x:CompileBindings="False"
                                Classes="sftp-file-grid"
                                Focusable="True"
-                               ItemsSource="{Binding VisibleFiles}"
-                               SelectedItem="{Binding SelectedFile, Mode=TwoWay}"
                                AutoGenerateColumns="False"
                                IsReadOnly="True"
                                SelectionMode="Extended"
@@ -323,14 +322,11 @@
                                GridLinesVisibility="All"
                                CanUserResizeColumns="True"
                                CanUserSortColumns="True"
-                               IsHideOnSinglePage="True"
                                HeadersVisibility="Column"
-                               SelectionChanged="OnFileGridSelectionChanged"
                                PointerMoved="OnFileGridPointerMoved"
                                PointerReleased="OnFileGridPointerReleased">
                     <atom:DataGrid.Columns>
                         <atom:DataGridTemplateColumn Header="{Binding NameText}"
-                                                     SortMemberPath="Name"
                                                      Width="1*"
                                                      MinWidth="100"
                                                      CanUserResize="True">
@@ -366,13 +362,11 @@
                         </atom:DataGridTemplateColumn>
                         <atom:DataGridTextColumn Header="{Binding SizeText}"
                                                  Binding="{Binding SizeDisplay}"
-                                                 SortMemberPath="Size"
                                                  Width="0.8*"
                                                  MinWidth="82"
                                                  CanUserResize="True"/>
                         <atom:DataGridTextColumn Header="{Binding ModifiedText}"
                                                  Binding="{Binding DateDisplay}"
-                                                 SortMemberPath="LastModified"
                                                  Width="*"
                                                  MinWidth="118"
                                                  CanUserResize="True"/>
@@ -423,10 +417,10 @@
                 </Grid>
 
                 <atom:DataGrid x:Name="TransferGrid"
+                                             x:CompileBindings="False"
                                Grid.Row="1"
                                Classes="sftp-transfer-grid"
                                Height="176"
-                               ItemsSource="{Binding TransferTasks}"
                                AutoGenerateColumns="False"
                                IsReadOnly="True"
                                SelectionMode="Single"
@@ -436,7 +430,6 @@
                                CanUserResizeColumns="True"
                                CanUserSortColumns="False"
                                RightFrozenColumnCount="2"
-                               IsHideOnSinglePage="True"
                                HeadersVisibility="Column"
                                IsVisible="{Binding IsTransferPanelExpanded}">
                     <atom:DataGrid.Columns>

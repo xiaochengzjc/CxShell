@@ -91,7 +91,6 @@ public partial class SettingsCenterViewModel : ObservableObject, IDisposable
     public string AboutGitHubLabelText => Text("About.GitHub");
     public string AboutGitHubUrlText => "https://github.com/xiaochengzjc/CxShell";
     public string AboutVersionBadgeText => $"v{_appVersion}";
-    public string AboutStatusText => Text("About.Status");
     public string AboutSystemInfoText => Text("About.SystemInfo");
     public string AboutFrameworkLabelText => Text("About.Framework");
     public string AboutRuntimeLabelText => Text("About.Runtime");
@@ -111,8 +110,6 @@ public partial class SettingsCenterViewModel : ObservableObject, IDisposable
     public string AboutSupportText => Text("About.Support");
     public string AboutSupportDescriptionText => Text("About.SupportDescription");
     public string AboutOpenGitHubText => Text("About.OpenGitHub");
-    public string AboutKoFiText => Text("About.KoFi");
-    public string AboutKoFiUrlText => "https://ko-fi.com/xiaochengzjc";
     public string DonationIntroText => Text("Donation.Intro");
     public string DonationContributionTitleText => Text("Donation.ContributionTitle");
     public string DonationContributionDescriptionText => Text("Donation.ContributionDescription");
@@ -287,7 +284,6 @@ public partial class SettingsCenterViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(AboutBuiltWithText));
         OnPropertyChanged(nameof(AboutGitHubLabelText));
         OnPropertyChanged(nameof(AboutVersionBadgeText));
-        OnPropertyChanged(nameof(AboutStatusText));
         OnPropertyChanged(nameof(AboutSystemInfoText));
         OnPropertyChanged(nameof(AboutFrameworkLabelText));
         OnPropertyChanged(nameof(AboutRuntimeLabelText));
@@ -302,7 +298,6 @@ public partial class SettingsCenterViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(AboutSupportText));
         OnPropertyChanged(nameof(AboutSupportDescriptionText));
         OnPropertyChanged(nameof(AboutOpenGitHubText));
-        OnPropertyChanged(nameof(AboutKoFiText));
         OnPropertyChanged(nameof(DonationIntroText));
         OnPropertyChanged(nameof(DonationContributionTitleText));
         OnPropertyChanged(nameof(DonationContributionDescriptionText));

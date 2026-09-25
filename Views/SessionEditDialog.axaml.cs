@@ -19,6 +19,7 @@ using Avalonia.Media.TextFormatting;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using CxShell.Models;
+using CxShell.Controls;
 using CxShell.Services;
 using CxShell.ViewModels;
 
@@ -33,6 +34,8 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
     private SessionEditViewModel? _appearanceBlinkViewModel;
     private bool _appearanceBlinkState = true;
     private string _currentCategoryKey = "Connection";
+    private DataGridSourceAdapter<LoginScriptRule>? _loginScriptGridSource;
+    private DataGridSourceAdapter<SshTunnelRule>? _sshTunnelGridSource;
 
     public bool ShouldConnect { get; private set; }
     public event Action<SessionInfo>? SessionSaved;
@@ -46,6 +49,54 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
     public SessionEditDialog()
     {
         InitializeComponent();
+        DataContextChanged += OnDataContextChanged;
+        LoginScriptRulesGrid.SelectionChanged += OnLoginScriptRulesSelectionChanged;
+        SshTunnelRulesGrid.SelectionChanged += OnSshTunnelRulesSelectionChanged;
+    }
+
+    private void OnDataContextChanged(object? sender, EventArgs e)
+    {
+        AttachRuleGridSources(DataContext as SessionEditViewModel);
+    }
+
+    private void AttachRuleGridSources(SessionEditViewModel? vm)
+    {
+        LoginScriptRulesGrid.ItemsSource = null;
+        LoginScriptRulesGrid.Selection = AtomUI.Desktop.Controls.DataGridSelectionState.Empty;
+        LoginScriptRulesGrid.CurrentRowKey = null;
+        SshTunnelRulesGrid.ItemsSource = null;
+        SshTunnelRulesGrid.Selection = AtomUI.Desktop.Controls.DataGridSelectionState.Empty;
+        SshTunnelRulesGrid.CurrentRowKey = null;
+        _loginScriptGridSource?.Dispose();
+        _sshTunnelGridSource?.Dispose();
+        _loginScriptGridSource = null;
+        _sshTunnelGridSource = null;
+
+        if (vm == null)
+        {
+            LoginScriptRulesGrid.ItemsSource = null;
+            SshTunnelRulesGrid.ItemsSource = null;
+            return;
+        }
+
+        _loginScriptGridSource = new DataGridSourceAdapter<LoginScriptRule>(vm.LoginScriptRules);
+        _sshTunnelGridSource = new DataGridSourceAdapter<SshTunnelRule>(vm.SshTunnelRules);
+        LoginScriptRulesGrid.ItemsSource = _loginScriptGridSource.Source;
+        SshTunnelRulesGrid.ItemsSource = _sshTunnelGridSource.Source;
+        _loginScriptGridSource.ConfigureColumns(LoginScriptRulesGrid);
+        _sshTunnelGridSource.ConfigureColumns(SshTunnelRulesGrid);
+    }
+
+    private void OnLoginScriptRulesSelectionChanged(object? sender, DataGridSelectionChangedEventArgs e)
+    {
+        if (DataContext is SessionEditViewModel vm && _loginScriptGridSource != null)
+            vm.SelectedLoginScriptRule = _loginScriptGridSource.GetCurrentItem(LoginScriptRulesGrid);
+    }
+
+    private void OnSshTunnelRulesSelectionChanged(object? sender, DataGridSelectionChangedEventArgs e)
+    {
+        if (DataContext is SessionEditViewModel vm && _sshTunnelGridSource != null)
+            vm.SelectedSshTunnelRule = _sshTunnelGridSource.GetCurrentItem(SshTunnelRulesGrid);
     }
 
     private void OnWindowLoaded(object? sender, RoutedEventArgs e)
@@ -113,6 +164,16 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
     private void OnWindowClosed(object? sender, EventArgs e)
     {
+        LoginScriptRulesGrid.ItemsSource = null;
+        LoginScriptRulesGrid.Selection = AtomUI.Desktop.Controls.DataGridSelectionState.Empty;
+        LoginScriptRulesGrid.CurrentRowKey = null;
+        SshTunnelRulesGrid.ItemsSource = null;
+        SshTunnelRulesGrid.Selection = AtomUI.Desktop.Controls.DataGridSelectionState.Empty;
+        SshTunnelRulesGrid.CurrentRowKey = null;
+        _loginScriptGridSource?.Dispose();
+        _sshTunnelGridSource?.Dispose();
+        _loginScriptGridSource = null;
+        _sshTunnelGridSource = null;
         if (_appearanceBlinkViewModel != null)
             _appearanceBlinkViewModel.PropertyChanged -= OnAppearanceBlinkPropertyChanged;
 
@@ -509,7 +570,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         if (DataContext is not SessionEditViewModel vm)
             return;
 
-        var selectedRule = vm.SelectedLoginScriptRule ?? LoginScriptRulesGrid.SelectedItem as LoginScriptRule;
+        var selectedRule = vm.SelectedLoginScriptRule ?? _loginScriptGridSource?.GetCurrentItem(LoginScriptRulesGrid);
         if (selectedRule == null)
             return;
 
@@ -522,7 +583,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         vm.LoginScriptRules.Insert(newIndex, selectedRule);
         RenumberLoginScriptRules(vm.LoginScriptRules);
         vm.SelectedLoginScriptRule = selectedRule;
-        LoginScriptRulesGrid.SelectedItem = selectedRule;
+        _loginScriptGridSource?.SetSelectedItems(LoginScriptRulesGrid, [selectedRule]);
         LoginScriptRulesGrid.ScrollIntoView(selectedRule, null);
     }
 
@@ -911,10 +972,9 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             ShowInTaskbar = false
         };
 
-        var setGrid = new AtomUI.Desktop.Controls.DataGrid
+        var setGrid = new DataGrid
         {
             AutoGenerateColumns = false,
-            ItemsSource = vm.AppearanceHighlightSets,
             SelectionMode = DataGridSelectionMode.Single,
             GridLinesVisibility = DataGridGridLinesVisibility.Vertical,
             IsFrameBorderVisible = true,
@@ -926,7 +986,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         };
         setGrid.Columns.Add(new DataGridTextColumn { Binding = new Avalonia.Data.Binding(nameof(HighlightSet.DisplayName)), Width = new DataGridLength(620), CanUserResize = true });
 
-        var ruleGrid = new AtomUI.Desktop.Controls.DataGrid
+        var ruleGrid = new DataGrid
         {
             AutoGenerateColumns = false,
             SelectionMode = DataGridSelectionMode.Single,
@@ -942,6 +1002,11 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         ruleGrid.Columns.Add(new DataGridTextColumn { Header = T("Dialog.Highlight.Keyword"), Binding = new Avalonia.Data.Binding(nameof(HighlightRule.Keyword)), Width = new DataGridLength(250), CanUserResize = true });
         ruleGrid.Columns.Add(new DataGridTextColumn { Header = T("Dialog.Highlight.Preview"), Binding = new Avalonia.Data.Binding(nameof(HighlightRule.Preview)), Width = new DataGridLength(110), CanUserResize = true });
         ruleGrid.Columns.Add(new DataGridTextColumn { Header = T("Dialog.Highlight.Description"), Binding = new Avalonia.Data.Binding(nameof(HighlightRule.Description)), Width = new DataGridLength(360), CanUserResize = true });
+
+        using var setGridSource = new DataGridSourceAdapter<HighlightSet>(vm.AppearanceHighlightSets);
+        DataGridSourceAdapter<HighlightRule>? ruleGridSource = null;
+        setGrid.ItemsSource = setGridSource.Source;
+        setGridSource.ConfigureColumns(setGrid);
 
         var newSetButton = CreateDialogButton($"{T("SessionManager.New")}(N)", 184);
         var saveAsSetButton = CreateDialogButton($"{T("Dialog.Highlight.SaveAs")}(S)", 184);
@@ -961,10 +1026,18 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
         void RefreshRuleGrid(HighlightRule? ruleToSelect = null)
         {
-            ruleGrid.SelectedItem = null;
             ruleGrid.ItemsSource = null;
-            ruleGrid.ItemsSource = selectedSet?.Rules;
-            ruleGrid.SelectedItem = ruleToSelect;
+            ruleGrid.Selection = AtomUI.Desktop.Controls.DataGridSelectionState.Empty;
+            ruleGrid.CurrentRowKey = null;
+            ruleGridSource?.Dispose();
+            ruleGridSource = null;
+            if (selectedSet != null)
+            {
+                ruleGridSource = new DataGridSourceAdapter<HighlightRule>(selectedSet.Rules);
+                ruleGrid.ItemsSource = ruleGridSource.Source;
+                ruleGridSource.ConfigureColumns(ruleGrid);
+                ruleGridSource.SetSelectedItems(ruleGrid, ruleToSelect == null ? [] : [ruleToSelect]);
+            }
         }
 
         void ApplySelectedSet(HighlightSet? set)
@@ -985,7 +1058,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
         void RefreshState()
         {
-            selectedRule = ruleGrid.SelectedItem as HighlightRule;
+            selectedRule = ruleGridSource?.GetCurrentItem(ruleGrid);
             deleteSetButton.IsEnabled = selectedSet != null;
             saveAsSetButton.IsEnabled = selectedSet != null;
             currentSetButton.IsEnabled = selectedSet != null;
@@ -998,7 +1071,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
         setGrid.SelectionChanged += (_, _) =>
         {
-            ApplySelectedSet(setGrid.SelectedItem as HighlightSet);
+            ApplySelectedSet(setGridSource.GetCurrentItem(setGrid));
             RefreshState();
         };
         ruleGrid.SelectionChanged += (_, _) =>
@@ -1011,7 +1084,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         {
             var set = new HighlightSet { Name = Tf("Dialog.Highlight.NewSetName", vm.AppearanceHighlightSets.Count + 1) };
             vm.AppearanceHighlightSets.Add(set);
-            setGrid.SelectedItem = set;
+            setGridSource.SetSelectedItems(setGrid, [set]);
             ApplySelectedSet(set);
             RefreshState();
         };
@@ -1025,7 +1098,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             clone.Id = Guid.NewGuid();
             clone.Name = $"{selectedSet.Name} Copy";
             vm.AppearanceHighlightSets.Add(clone);
-            setGrid.SelectedItem = clone;
+            setGridSource.SetSelectedItems(setGrid, [clone]);
             ApplySelectedSet(clone);
             RefreshState();
         };
@@ -1047,7 +1120,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             var nextSet = vm.AppearanceHighlightSets.Count == 0
                 ? null
                 : vm.AppearanceHighlightSets[Math.Clamp(index, 0, vm.AppearanceHighlightSets.Count - 1)];
-            setGrid.SelectedItem = nextSet;
+            setGridSource.SetSelectedItems(setGrid, nextSet == null ? [] : [nextSet]);
             ApplySelectedSet(nextSet);
             RefreshState();
         };
@@ -1069,7 +1142,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
             rule.SortOrder = selectedSet.Rules.Count;
             selectedSet.Rules.Add(rule);
-            ruleGrid.SelectedItem = rule;
+            ruleGridSource?.SetSelectedItems(ruleGrid, [rule]);
             RefreshState();
         };
 
@@ -1085,7 +1158,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             var index = selectedSet.Rules.IndexOf(selectedRule);
             edited.SortOrder = selectedRule.SortOrder;
             selectedSet.Rules[index] = edited;
-            ruleGrid.SelectedItem = edited;
+            ruleGridSource?.SetSelectedItems(ruleGrid, [edited]);
             RefreshState();
         };
 
@@ -1097,9 +1170,10 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             var index = selectedSet.Rules.IndexOf(selectedRule);
             selectedSet.Rules.Remove(selectedRule);
             RenumberCurrentRules();
-            ruleGrid.SelectedItem = selectedSet.Rules.Count == 0
+            var nextRule = selectedSet.Rules.Count == 0
                 ? null
                 : selectedSet.Rules[Math.Clamp(index, 0, selectedSet.Rules.Count - 1)];
+            ruleGridSource?.SetSelectedItems(ruleGrid, nextRule == null ? [] : [nextRule]);
             RefreshState();
         };
 
@@ -1182,7 +1256,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         root.Children.Add(contentPanel);
         dialog.Content = root;
 
-        setGrid.SelectedItem = selectedSet;
+        setGridSource.SetSelectedItems(setGrid, selectedSet == null ? [] : [selectedSet]);
         ApplySelectedSet(selectedSet);
         RefreshState();
         await dialog.ShowDialog(this);
@@ -1563,9 +1637,8 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             ShowInTaskbar = false
         };
 
-        var grid = new AtomUI.Desktop.Controls.DataGrid
+        var grid = new DataGrid
         {
-            ItemsSource = proxies,
             AutoGenerateColumns = false,
             IsReadOnly = true,
             SelectionMode = DataGridSelectionMode.Single,
@@ -1573,7 +1646,6 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             GridLinesVisibility = DataGridGridLinesVisibility.Vertical,
             CanUserResizeColumns = true,
             CanUserSortColumns = true,
-            IsHideOnSinglePage = true,
             Margin = new Thickness(20, 16, 20, 0)
         };
         grid.Columns.Add(new DataGridTextColumn { Header = T("Dialog.Proxy.Name"), Binding = new Avalonia.Data.Binding(nameof(ProxySettings.Name)), Width = new DataGridLength(230) });
@@ -1582,6 +1654,9 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
         grid.Columns.Add(new DataGridTextColumn { Header = T("Dialog.Proxy.Port"), Binding = new Avalonia.Data.Binding(nameof(ProxySettings.PortDisplay)), Width = new DataGridLength(80) });
         grid.Columns.Add(new DataGridTextColumn { Header = T("Dialog.Proxy.Username"), Binding = new Avalonia.Data.Binding(nameof(ProxySettings.Username)), Width = new DataGridLength(110) });
         grid.Columns.Add(new DataGridTextColumn { Header = T("Dialog.Proxy.NextProxy"), Binding = new Avalonia.Data.Binding(nameof(ProxySettings.NextProxyDisplay)), Width = new DataGridLength(110) });
+        using var gridSource = new DataGridSourceAdapter<ProxySettings>(proxies);
+        grid.ItemsSource = gridSource.Source;
+        gridSource.ConfigureColumns(grid);
 
         var addButton = CreateDialogButton($"{T("Common.Add")}(A)", 118);
         var editButton = CreateDialogButton($"{T("Common.Edit")}(E)", 118);
@@ -1590,7 +1665,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
         void UpdateListButtons()
         {
-            var hasSelection = grid.SelectedItem is ProxySettings;
+            var hasSelection = gridSource.GetCurrentItem(grid) is ProxySettings;
             editButton.IsEnabled = hasSelection;
             deleteButton.IsEnabled = hasSelection;
         }
@@ -1602,14 +1677,14 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
                 return;
 
             proxies.Add(proxy);
-            grid.SelectedItem = proxy;
+            gridSource.SetSelectedItems(grid, [proxy]);
             RefreshProxyNextProxyDisplay(proxies);
             UpdateListButtons();
         };
 
         editButton.Click += async (_, _) =>
         {
-            if (grid.SelectedItem is not ProxySettings current)
+            if (gridSource.GetCurrentItem(grid) is not ProxySettings current)
                 return;
 
             var proxy = await ShowProxySettingsDialogAsync(SessionEditViewModel.CloneProxy(current), proxies);
@@ -1619,14 +1694,14 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
             var index = proxies.IndexOf(current);
             if (index >= 0)
                 proxies[index] = proxy;
-            grid.SelectedItem = proxy;
+            gridSource.SetSelectedItems(grid, [proxy]);
             RefreshProxyNextProxyDisplay(proxies);
             UpdateListButtons();
         };
 
         deleteButton.Click += async (_, _) =>
         {
-            if (grid.SelectedItem is not ProxySettings current)
+            if (gridSource.GetCurrentItem(grid) is not ProxySettings current)
                 return;
 
             if (!await ShowConfirmDialogAsync(dialog, T("Dialog.Proxy.DeleteTitle"), Tf("Dialog.Proxy.DeleteMessage", current.DisplayName)))
@@ -1670,7 +1745,7 @@ public partial class SessionEditDialog : AtomUI.Desktop.Controls.Window
 
         await dialog.ShowDialog(this);
 
-        var selectedId = grid.SelectedItem is ProxySettings selected
+        var selectedId = gridSource.GetCurrentItem(grid) is ProxySettings selected
             ? selected.Id
             : (vm.CreateProxySettings().IsEnabled ? vm.CreateProxySettings().Id : (Guid?)null);
         if (selectedId.HasValue && proxies.All(proxy => proxy.Id != selectedId.Value))

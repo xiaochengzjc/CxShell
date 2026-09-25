@@ -3,15 +3,30 @@ using System.IO;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using CxShell.Controls;
 using CxShell.ViewModels;
 
 namespace CxShell.Views;
 
 public partial class ConnectionAuditWindow : Window
 {
+    private DataGridSourceAdapter<ConnectionAuditEntryViewModel>? _gridSource;
+
     public ConnectionAuditWindow()
     {
         InitializeComponent();
+        DataContextChanged += OnDataContextChanged;
+    }
+
+    private void OnDataContextChanged(object? sender, EventArgs e)
+    {
+        DetachGridSource();
+        if (DataContext is not ConnectionAuditViewModel vm)
+            return;
+
+        _gridSource = new DataGridSourceAdapter<ConnectionAuditEntryViewModel>(vm.Entries);
+        AuditGrid.ItemsSource = _gridSource.Source;
+        _gridSource.ConfigureColumns(AuditGrid);
     }
 
     private async void OnClearClick(object? sender, RoutedEventArgs e)
@@ -57,5 +72,20 @@ public partial class ConnectionAuditWindow : Window
     private void OnCloseClick(object? sender, RoutedEventArgs e)
     {
         Close();
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        DetachGridSource();
+        base.OnClosed(e);
+    }
+
+    private void DetachGridSource()
+    {
+        AuditGrid.ItemsSource = null;
+        AuditGrid.Selection = AtomUI.Desktop.Controls.DataGridSelectionState.Empty;
+        AuditGrid.CurrentRowKey = null;
+        _gridSource?.Dispose();
+        _gridSource = null;
     }
 }

@@ -7,7 +7,6 @@ namespace CxShell.Views;
 public partial class AboutPage : UserControl
 {
     private const string GitHubUrl = "https://github.com/xiaochengzjc/CxShell";
-    private const string KoFiUrl = "https://ko-fi.com/xiaochengzjc";
 
     public AboutPage()
     {
@@ -17,11 +16,6 @@ public partial class AboutPage : UserControl
     private void OnGitHubClick(object? sender, RoutedEventArgs e)
     {
         OpenExternalLink(GitHubUrl);
-    }
-
-    private void OnKoFiClick(object? sender, RoutedEventArgs e)
-    {
-        OpenExternalLink(KoFiUrl);
     }
 
     private static void OpenExternalLink(string url)

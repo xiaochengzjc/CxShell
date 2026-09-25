@@ -42,7 +42,8 @@
         </Border>
 
         <Grid Grid.Row="1" Margin="0,14">
-            <atom:DataGrid ItemsSource="{Binding Entries}"
+            <atom:DataGrid x:Name="AuditGrid"
+                           x:CompileBindings="False"
                            Classes="connection-audit-grid"
                            AutoGenerateColumns="False"
                            IsReadOnly="True"
@@ -51,7 +52,7 @@
                            GridLinesVisibility="Horizontal"
                            CanUserResizeColumns="True"
                            CanUserSortColumns="True"
-                           IsHideOnSinglePage="True">
+                           >
                 <atom:DataGrid.Columns>
                     <atom:DataGridTextColumn Header="{Binding ColumnTimeText}" Binding="{Binding TimestampText}" Width="160"/>
                     <atom:DataGridTextColumn Header="{Binding ColumnSessionText}" Binding="{Binding SessionText}" Width="170"/>

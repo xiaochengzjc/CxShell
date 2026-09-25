@@ -700,9 +700,8 @@
                                            IsChecked="{Binding EnableLoginScriptRules, Mode=TwoWay}"/>
 
                             <atom:DataGrid x:Name="LoginScriptRulesGrid"
+                                           x:CompileBindings="False"
                                            Grid.Row="2"
-                                           ItemsSource="{Binding LoginScriptRules}"
-                                           SelectedItem="{Binding SelectedLoginScriptRule, Mode=TwoWay}"
                                            AutoGenerateColumns="False"
                                            IsReadOnly="True"
                                            SelectionMode="Single"
@@ -711,7 +710,7 @@
                                            HorizontalAlignment="Stretch"
                                            GridLinesVisibility="Vertical"
                                            CanUserResizeColumns="True"
-                                           IsHideOnSinglePage="True">
+                                           >
                                 <atom:DataGrid.Columns>
                                     <atom:DataGridTextColumn Header="Expect" Binding="{Binding Expect}" Width="160"/>
                                     <atom:DataGridTextColumn Header="Send" Binding="{Binding SendDisplay}" Width="360"/>
@@ -1054,10 +1053,9 @@
                                                ToolTip.Tip="{Binding AutoRestoreSshTunnelsDescriptionText}"/>
 
                                 <atom:DataGrid x:Name="SshTunnelRulesGrid"
+                                               x:CompileBindings="False"
                                                Grid.Row="6"
                                                Grid.ColumnSpan="5"
-                                               ItemsSource="{Binding SshTunnelRules}"
-                                               SelectedItem="{Binding SelectedSshTunnelRule, Mode=TwoWay}"
                                                AutoGenerateColumns="False"
                                                IsReadOnly="True"
                                                SelectionMode="Single"

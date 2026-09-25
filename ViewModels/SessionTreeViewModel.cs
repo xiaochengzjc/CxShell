@@ -452,6 +452,13 @@ public partial class SessionTreeViewModel : ObservableObject
 
     private void LoadSessions()
     {
+        RefreshSessionNodes();
+        RefreshQuickSessions();
+        ApplySessionFilter();
+    }
+
+    private void RefreshSessionNodes()
+    {
         SessionNodes.Clear();
 
         foreach (var group in _data.Groups.OrderBy(g => g.SortOrder))
@@ -471,20 +478,13 @@ public partial class SessionTreeViewModel : ObservableObject
             SessionNodes.Add(sessionNode);
         }
 
-        RefreshQuickSessions();
-        ApplySessionFilter();
     }
 
     private void ApplySessionFilter()
     {
         var selectedSessionId = SelectedSession?.Id;
-        var query = SessionSearchText?.Trim();
-        var rows = string.IsNullOrWhiteSpace(query)
-            ? GetOrderedSessions()
-            : GetOrderedSessions().Where(session => MatchesSessionSearch(session, query));
-
         SessionRows.Clear();
-        foreach (var session in rows)
+        foreach (var session in GetVisibleOrderedSessions())
             SessionRows.Add(new SessionNodeViewModel(session));
 
         if (selectedSessionId.HasValue)
@@ -498,6 +498,14 @@ public partial class SessionTreeViewModel : ObservableObject
 
         OnPropertyChanged(nameof(CanMoveSelectedSessionUp));
         OnPropertyChanged(nameof(CanMoveSelectedSessionDown));
+    }
+
+    private IEnumerable<SessionInfo> GetVisibleOrderedSessions()
+    {
+        var query = SessionSearchText?.Trim();
+        return string.IsNullOrWhiteSpace(query)
+            ? GetOrderedSessions()
+            : GetOrderedSessions().Where(session => MatchesSessionSearch(session, query));
     }
 
     private int GetSelectedVisibleSessionIndex()
@@ -934,8 +942,40 @@ public partial class SessionTreeViewModel : ObservableObject
             (_data.Sessions[targetIndex], _data.Sessions[selectedIndex]);
         NormalizeSessionSortOrders();
         _storage.Save(_data);
-        LoadSessions();
-        SelectedNode = SessionRows.FirstOrDefault(node => node.Session?.Id == selected.Id);
+        RefreshSessionNodes();
+        ReorderSessionRows(SessionRows, GetVisibleOrderedSessions().ToList());
+        OnPropertyChanged(nameof(CanMoveSelectedSessionUp));
+        OnPropertyChanged(nameof(CanMoveSelectedSessionDown));
+    }
+
+    internal static void ReorderSessionRows(
+        ObservableCollection<SessionNodeViewModel> rows,
+        IReadOnlyList<SessionInfo> orderedSessions)
+    {
+        for (var targetIndex = 0; targetIndex < orderedSessions.Count; targetIndex++)
+        {
+            var session = orderedSessions[targetIndex];
+            if (targetIndex < rows.Count && rows[targetIndex].Session?.Id == session.Id)
+                continue;
+
+            var existingIndex = -1;
+            for (var index = targetIndex + 1; index < rows.Count; index++)
+            {
+                if (rows[index].Session?.Id == session.Id)
+                {
+                    existingIndex = index;
+                    break;
+                }
+            }
+
+            if (existingIndex >= 0)
+                rows.Move(existingIndex, targetIndex);
+            else
+                rows.Insert(targetIndex, new SessionNodeViewModel(session));
+        }
+
+        while (rows.Count > orderedSessions.Count)
+            rows.RemoveAt(rows.Count - 1);
     }
 
     private void NormalizeSessionSortOrders()

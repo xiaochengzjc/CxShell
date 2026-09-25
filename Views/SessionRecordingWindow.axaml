@@ -63,8 +63,8 @@
                                    Foreground="{atom:SharedTokenResource ColorText}"/>
                     </Border>
                     <Grid Grid.Row="1">
-                        <atom:DataGrid ItemsSource="{Binding Recordings}"
-                                       SelectedItem="{Binding SelectedRecording, Mode=TwoWay}"
+                        <atom:DataGrid x:Name="RecordingGrid"
+                                       x:CompileBindings="False"
                                        AutoGenerateColumns="False"
                                        IsReadOnly="True"
                                        SelectionMode="Single"
@@ -72,7 +72,6 @@
                                        RowHeight="38"
                                        GridLinesVisibility="Horizontal"
                                        CanUserResizeColumns="True"
-                                       IsHideOnSinglePage="True"
                                        IsVisible="{Binding HasRecordings}">
                             <atom:DataGrid.Columns>
                                 <atom:DataGridTextColumn Header="{Binding ColumnSessionText}"

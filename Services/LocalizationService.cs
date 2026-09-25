@@ -1129,7 +1129,6 @@ public sealed class LocalizationService : INotifyPropertyChanged
         EnglishTexts["About.Description"] = "A cross-platform remote session client with support for SSH, SFTP, FTP, TELNET, RLOGIN, SERIAL, VNC, and RDP.";
         EnglishTexts["About.BuiltWith"] = "Built with Avalonia, AtomUI, SSH.NET, FluentFTP, FreeRDP, and Velopack.";
         EnglishTexts["About.GitHub"] = "GitHub:";
-        EnglishTexts["About.Status"] = "Preview";
         EnglishTexts["About.SystemInfo"] = "System information";
         EnglishTexts["About.Framework"] = "Framework";
         EnglishTexts["About.Runtime"] = "Runtime";
@@ -1141,10 +1140,9 @@ public sealed class LocalizationService : INotifyPropertyChanged
         EnglishTexts["About.OpenSource"] = "Open-source dependencies";
         EnglishTexts["About.OpenSourceDescription"] = "CxShell is built on these open-source projects.";
         EnglishTexts["About.License"] = "License";
-        EnglishTexts["About.Support"] = "Support CxShell";
+        EnglishTexts["About.Support"] = "Open-source address";
         EnglishTexts["About.SupportDescription"] = "CxShell is free for noncommercial use under the PolyForm Noncommercial License. Your support helps keep development moving.";
         EnglishTexts["About.OpenGitHub"] = "Open GitHub";
-        EnglishTexts["About.KoFi"] = "Support on Ko-fi";
         EnglishTexts["Donation.Title"] = "Support & Donate";
         EnglishTexts["Donation.Intro"] = "CxShell is free for noncommercial use under the PolyForm Noncommercial License. If it helps your work, your support helps us keep improving the terminal, file transfer, and remote-session experience.";
         EnglishTexts["Donation.ContributionTitle"] = "The best support is participation";
@@ -1675,7 +1673,6 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ChineseTexts["About.Description"] = "\u8de8\u5e73\u53f0\u8fdc\u7a0b\u4f1a\u8bdd\u5ba2\u6237\u7aef\uff0c\u652f\u6301 SSH\u3001SFTP\u3001FTP\u3001TELNET\u3001RLOGIN\u3001SERIAL\u3001VNC \u548c RDP\u3002";
         ChineseTexts["About.BuiltWith"] = "\u57fa\u4e8e Avalonia\u3001AtomUI\u3001SSH.NET\u3001FluentFTP\u3001FreeRDP \u548c Velopack \u6784\u5efa\u3002";
         ChineseTexts["About.GitHub"] = "GitHub\uff1a";
-        ChineseTexts["About.Status"] = "\u9884\u89c8\u7248";
         ChineseTexts["About.SystemInfo"] = "\u7cfb\u7edf\u4fe1\u606f";
         ChineseTexts["About.Framework"] = "\u6846\u67b6";
         ChineseTexts["About.Runtime"] = "\u8fd0\u884c\u65f6";
@@ -1687,10 +1684,9 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ChineseTexts["About.OpenSource"] = "\u5f00\u6e90\u4f9d\u8d56";
         ChineseTexts["About.OpenSourceDescription"] = "CxShell \u57fa\u4e8e\u4ee5\u4e0b\u5f00\u6e90\u9879\u76ee\u6784\u5efa\u3002";
         ChineseTexts["About.License"] = "\u8bb8\u53ef\u8bc1";
-        ChineseTexts["About.Support"] = "\u652f\u6301 CxShell";
+        ChineseTexts["About.Support"] = "\u5f00\u6e90\u5730\u5740";
         ChineseTexts["About.SupportDescription"] = "CxShell \u4f9d\u636e PolyForm Noncommercial \u8bb8\u53ef\u534f\u8bae\u53ef\u4f9b\u975e\u5546\u4e1a\u7528\u9014\u514d\u8d39\u4f7f\u7528\uff0c\u4f60\u7684\u652f\u6301\u5c06\u5e2e\u52a9\u9879\u76ee\u6301\u7eed\u5f00\u53d1\u3002";
         ChineseTexts["About.OpenGitHub"] = "\u6253\u5f00 GitHub";
-        ChineseTexts["About.KoFi"] = "\u5728 Ko-fi \u4e0a\u652f\u6301";
         ChineseTexts["Donation.Title"] = "\u652f\u6301\u4e0e\u6350\u8d60";
         ChineseTexts["Donation.Intro"] = "CxShell \u4f9d\u636e PolyForm Noncommercial \u8bb8\u53ef\u534f\u8bae\u53ef\u4f9b\u975e\u5546\u4e1a\u7528\u9014\u514d\u8d39\u4f7f\u7528\u3002\u5982\u679c\u5b83\u5bf9\u4f60\u7684\u5de5\u4f5c\u6709\u5e2e\u52a9\uff0c\u4f60\u7684\u652f\u6301\u5c06\u5e2e\u52a9\u6211\u4eec\u6301\u7eed\u6539\u8fdb\u7ec8\u7aef\u3001\u6587\u4ef6\u4f20\u8f93\u548c\u8fdc\u7a0b\u4f1a\u8bdd\u4f53\u9a8c\u3002";
         ChineseTexts["Donation.ContributionTitle"] = "\u6700\u597d\u7684\u652f\u6301\uff1a\u53c2\u4e0e\u8d21\u732e";
