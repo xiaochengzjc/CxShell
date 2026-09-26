@@ -11,12 +11,16 @@ public sealed class AgentAuditLog
     private readonly object _gate = new();
     private readonly List<AgentAuditEntry> _entries = [];
     private readonly string? _filePath;
+    private readonly SqliteAppDataStore? _store;
 
     public AgentAuditLog(string? filePath = null)
     {
         _filePath = string.IsNullOrWhiteSpace(filePath) ? null : Path.GetFullPath(filePath);
         if (_filePath != null)
-            LoadFromDisk();
+        {
+            _store = new SqliteAppDataStore(Path.GetDirectoryName(_filePath));
+            LoadFromStore();
+        }
     }
 
     public void Record(
@@ -53,7 +57,7 @@ public sealed class AgentAuditLog
             _entries.Insert(0, entry);
             if (_entries.Count > MaximumEntries)
                 _entries.RemoveRange(MaximumEntries, _entries.Count - MaximumEntries);
-            SaveToDiskLocked();
+            SaveToStoreLocked();
         }
     }
 
@@ -70,18 +74,27 @@ public sealed class AgentAuditLog
         lock (_gate)
         {
             _entries.Clear();
-            SaveToDiskLocked();
+            SaveToStoreLocked();
         }
     }
 
-    private void LoadFromDisk()
+    private void LoadFromStore()
     {
         try
         {
-            if (!File.Exists(_filePath))
+            var stored = _store!.Read("agent_audit", "entries");
+            if (stored == null)
+            {
+                _store.ImportLegacyFile(
+                    "agent_audit",
+                    "entries",
+                    _filePath!,
+                    static payload => DeserializeEntries(payload) != null);
+                stored = _store.Read("agent_audit", "entries");
+            }
+            if (stored == null)
                 return;
 
-            var stored = File.ReadAllText(_filePath, Encoding.UTF8);
             var json = PasswordEncryptionService.DecryptEncrypted(stored.Trim());
             if (string.IsNullOrWhiteSpace(json))
                 return;
@@ -102,35 +115,35 @@ public sealed class AgentAuditLog
         }
     }
 
-    private void SaveToDiskLocked()
+    private void SaveToStoreLocked()
     {
-        if (_filePath == null)
+        if (_store == null)
             return;
-
-        var temporaryPath = _filePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
-            var directory = Path.GetDirectoryName(_filePath);
-            if (string.IsNullOrWhiteSpace(directory))
-                return;
-
-            Directory.CreateDirectory(directory);
             var json = JsonSerializer.Serialize(_entries.Take(MaximumEntries).ToArray());
             var encrypted = PasswordEncryptionService.Encrypt(json);
-            File.WriteAllText(temporaryPath, encrypted, new UTF8Encoding(false));
-            File.Move(temporaryPath, _filePath, overwrite: true);
+            _store.Write("agent_audit", "entries", encrypted);
         }
         catch
         {
             // Observability must never break a live command.
-            try
-            {
-                if (File.Exists(temporaryPath))
-                    File.Delete(temporaryPath);
-            }
-            catch
-            {
-            }
+        }
+    }
+
+    private static List<AgentAuditEntry>? DeserializeEntries(string stored)
+    {
+        var json = PasswordEncryptionService.DecryptEncrypted(stored.Trim());
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<AgentAuditEntry>>(json);
+        }
+        catch (JsonException)
+        {
+            return null;
         }
     }
 

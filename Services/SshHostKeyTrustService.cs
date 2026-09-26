@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Text;
 using System.Text.Json;
 using CxShell.Models;
 using Renci.SshNet;
@@ -22,7 +21,8 @@ public sealed class SshHostKeyTrustService
 
     private static readonly TimeSpan LastSeenWriteInterval = TimeSpan.FromHours(1);
     private readonly object _storageLock = new();
-    private readonly string _storagePath;
+    private readonly string _legacyPath;
+    private readonly SqliteAppDataStore _store;
     private readonly ISshHostKeyPrompt _prompt;
     private readonly ConcurrentDictionary<string, byte> _temporaryTrust = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _endpointLocks = new(StringComparer.OrdinalIgnoreCase);
@@ -34,7 +34,8 @@ public sealed class SshHostKeyTrustService
 
     public SshHostKeyTrustService(string storagePath, ISshHostKeyPrompt prompt)
     {
-        _storagePath = storagePath ?? throw new ArgumentNullException(nameof(storagePath));
+        _legacyPath = Path.GetFullPath(storagePath ?? throw new ArgumentNullException(nameof(storagePath)));
+        _store = new SqliteAppDataStore(Path.GetDirectoryName(_legacyPath));
         _prompt = prompt ?? throw new ArgumentNullException(nameof(prompt));
     }
 
@@ -212,13 +213,20 @@ public sealed class SshHostKeyTrustService
     {
         try
         {
-            if (!File.Exists(_storagePath))
-                return new KnownHostsFile();
+            var payload = _store.Read("ssh_host_keys", "trusted_hosts");
+            if (payload == null)
+            {
+                _store.ImportLegacyFile(
+                    "ssh_host_keys",
+                    "trusted_hosts",
+                    _legacyPath,
+                    static json => TryDeserializeKnownHosts(json) != null);
+                payload = _store.Read("ssh_host_keys", "trusted_hosts");
+            }
 
-            var json = File.ReadAllText(_storagePath, Encoding.UTF8);
-            var file = JsonSerializer.Deserialize<KnownHostsFile>(json) ?? new KnownHostsFile();
-            file.Hosts ??= [];
-            return file;
+            return payload == null
+                ? new KnownHostsFile()
+                : TryDeserializeKnownHosts(payload) ?? new KnownHostsFile();
         }
         catch
         {
@@ -228,14 +236,26 @@ public sealed class SshHostKeyTrustService
 
     private void SaveFile(KnownHostsFile file)
     {
-        var directory = Path.GetDirectoryName(_storagePath);
-        if (!string.IsNullOrWhiteSpace(directory))
-            Directory.CreateDirectory(directory);
+        _store.Write(
+            "ssh_host_keys",
+            "trusted_hosts",
+            JsonSerializer.Serialize(file));
+    }
 
-        var json = JsonSerializer.Serialize(file, new JsonSerializerOptions { WriteIndented = true });
-        var temporaryPath = _storagePath + ".tmp";
-        File.WriteAllText(temporaryPath, json, new UTF8Encoding(false));
-        File.Move(temporaryPath, _storagePath, true);
+    private static KnownHostsFile? TryDeserializeKnownHosts(string json)
+    {
+        try
+        {
+            var file = JsonSerializer.Deserialize<KnownHostsFile>(json);
+            if (file == null)
+                return null;
+            file.Hosts ??= [];
+            return file;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static bool EndpointMatches(KnownSshHostKey item, string host, int port)

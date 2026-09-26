@@ -3100,7 +3100,7 @@
                                 Margin="0,0,18,0"
                                 Padding="18">
                             <Grid ColumnDefinitions="150,*,48"
-                                  RowDefinitions="Auto,14,Auto,12,Auto,12,Auto,12,Auto,12,Auto,12,Auto,12,Auto"
+                                  RowDefinitions="Auto,14,Auto,12,Auto,12,Auto,12,Auto,12,Auto,12,Auto,12,Auto,12,Auto,8,Auto"
                                   ColumnSpacing="8">
                                 <TextBlock Grid.ColumnSpan="3"
                                            Text="{Binding [UiText.215], Source={x:Static services:LocalizationService.Shared}}"
@@ -3150,6 +3150,31 @@
                                              HorizontalAlignment="Left"
                                              OptionsSource="{Binding LogEncodingOptions}"
                                              Mode="Single"/>
+                                <TextBlock Grid.Row="16"
+                                           Text="{Binding [UiText.262], Source={x:Static services:LocalizationService.Shared}}"
+                                           VerticalAlignment="Center"/>
+                                <Grid Grid.Row="16"
+                                      Grid.Column="1"
+                                      Grid.ColumnSpan="2"
+                                      ColumnDefinitions="120,Auto"
+                                      ColumnSpacing="8"
+                                      VerticalAlignment="Center">
+                                    <atom:NumericUpDown Width="120"
+                                                        HorizontalAlignment="Left"
+                                                        Minimum="0"
+                                                        Maximum="3650"
+                                                        Value="{Binding AdvancedLogRetentionDays, Mode=TwoWay}"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding [UiText.264], Source={x:Static services:LocalizationService.Shared}}"
+                                               VerticalAlignment="Center"
+                                               Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
+                                </Grid>
+                                <TextBlock Grid.Row="18"
+                                           Grid.Column="1"
+                                           Grid.ColumnSpan="2"
+                                           Text="{Binding [UiText.263], Source={x:Static services:LocalizationService.Shared}}"
+                                           TextWrapping="Wrap"
+                                           Foreground="{atom:SharedTokenResource ColorTextTertiary}"/>
                             </Grid>
                         </Border>
 

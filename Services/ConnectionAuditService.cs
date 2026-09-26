@@ -15,6 +15,7 @@ public sealed class ConnectionAuditService
 
     private readonly object _gate = new();
     private readonly string _path;
+    private readonly SqliteAppDataStore _store;
     private List<ConnectionAuditEntry>? _entries;
 
     public ConnectionAuditService(string? storagePath = null)
@@ -22,9 +23,10 @@ public sealed class ConnectionAuditService
         _path = string.IsNullOrWhiteSpace(storagePath)
             ? Path.Combine(ResolveStorageDirectory(), "connection-audit.json")
             : Path.GetFullPath(storagePath);
+        _store = new SqliteAppDataStore(Path.GetDirectoryName(_path));
     }
 
-    public string StoragePath => _path;
+    public string StoragePath => _store.DatabasePath;
 
     public IReadOnlyList<ConnectionAuditEntry> ReadRecent(int limit = MaximumEntries)
     {
@@ -153,8 +155,7 @@ public sealed class ConnectionAuditService
             _entries = [];
             try
             {
-                if (File.Exists(_path))
-                    File.Delete(_path);
+                _store.Delete("connection_audit", "entries");
             }
             catch (Exception ex)
             {
@@ -174,11 +175,18 @@ public sealed class ConnectionAuditService
 
     private List<ConnectionAuditEntry> LoadUnsafe()
     {
-        if (!File.Exists(_path))
-            return [];
+        var payload = _store.Read("connection_audit", "entries");
+        if (payload == null)
+        {
+            _store.ImportLegacyFile(
+                "connection_audit",
+                "entries",
+                _path,
+                static json => TryDeserialize(json) != null);
+            payload = _store.Read("connection_audit", "entries");
+        }
 
-        var json = File.ReadAllText(_path, Encoding.UTF8);
-        return JsonSerializer.Deserialize<List<ConnectionAuditEntry>>(json) ?? [];
+        return payload == null ? [] : TryDeserialize(payload) ?? [];
     }
 
     private List<ConnectionAuditEntry> GetEntriesUnsafe()
@@ -190,15 +198,19 @@ public sealed class ConnectionAuditService
 
     private void SaveUnsafe(IReadOnlyList<ConnectionAuditEntry> entries)
     {
-        var directory = Path.GetDirectoryName(_path);
-        if (!string.IsNullOrWhiteSpace(directory))
-            Directory.CreateDirectory(directory);
+        _store.Write("connection_audit", "entries", JsonSerializer.Serialize(entries));
+    }
 
-        var options = new JsonSerializerOptions { WriteIndented = true };
-        var json = JsonSerializer.Serialize(entries, options);
-        var temporaryPath = _path + ".tmp";
-        File.WriteAllText(temporaryPath, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
-        File.Move(temporaryPath, _path, overwrite: true);
+    private static List<ConnectionAuditEntry>? TryDeserialize(string json)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<List<ConnectionAuditEntry>>(json);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static string TrimDetail(string? detail)

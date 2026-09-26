@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Text;
 using System.Text.Json.Serialization;
 using CxShell.Models;
 
@@ -25,6 +24,7 @@ public class SessionStorageService
 
     private readonly string _storageDir;
     private readonly string _storagePath;
+    private readonly SqliteAppDataStore _store;
 
     public SessionStorageService(string? directory = null)
     {
@@ -32,6 +32,7 @@ public class SessionStorageService
             ? GetStorageDirectory()
             : Path.GetFullPath(directory);
         _storagePath = Path.Combine(_storageDir, "sessions.json");
+        _store = new SqliteAppDataStore(_storageDir);
     }
 
     public static string GetStorageDirectory()
@@ -41,52 +42,49 @@ public class SessionStorageService
 
     public SessionData Load()
     {
-        if (!File.Exists(_storagePath))
+        var payload = _store.Read("sessions");
+        if (payload == null)
         {
-            return new SessionData();
+            _store.ImportLegacyFile(
+                "sessions",
+                "default",
+                _storagePath,
+                static json => TryDeserialize(json) != null);
+            payload = _store.Read("sessions");
         }
 
-        var json = File.ReadAllText(_storagePath, Encoding.UTF8);
-        return System.Text.Json.JsonSerializer.Deserialize<SessionData>(json)
-               ?? new SessionData();
+        return string.IsNullOrWhiteSpace(payload)
+            ? new SessionData()
+            : TryDeserialize(payload) ?? new SessionData();
     }
 
     public void Save(SessionData data)
     {
-        if (!Directory.Exists(_storageDir))
-        {
-            Directory.CreateDirectory(_storageDir);
-        }
-
         var persisted = new SessionData
         {
             Format = data.Format,
             Version = data.Version,
-            // Application settings have their own file. Keep loading this field
-            // above for migration, but do not duplicate it in new session files.
+            // Settings are stored separately in SQLite; keep loading this field
+            // only to migrate values embedded in older session files.
             Settings = null,
             Groups = data.Groups,
             Sessions = data.Sessions,
             QuickSessionIds = data.QuickSessionIds,
             ExportedAt = data.ExportedAt
         };
-        var options = new System.Text.Json.JsonSerializerOptions
-        {
-            WriteIndented = true
-        };
-        var json = System.Text.Json.JsonSerializer.Serialize(persisted, options);
-        var temporaryPath = Path.Combine(
-            _storageDir,
-            $".sessions.json.{Guid.NewGuid():N}.tmp");
+        var json = System.Text.Json.JsonSerializer.Serialize(persisted);
+        _store.Write("sessions", "default", json);
+    }
+
+    private static SessionData? TryDeserialize(string json)
+    {
         try
         {
-            File.WriteAllText(temporaryPath, json, Encoding.UTF8);
-            File.Move(temporaryPath, _storagePath, overwrite: true);
+            return System.Text.Json.JsonSerializer.Deserialize<SessionData>(json);
         }
-        finally
+        catch (System.Text.Json.JsonException)
         {
-            if (File.Exists(temporaryPath))
-                File.Delete(temporaryPath);
+            return null;
         }
     }
 

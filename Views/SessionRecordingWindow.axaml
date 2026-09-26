@@ -38,7 +38,7 @@
                 <atom:Button Grid.Column="2"
                              Content="{Binding ExportText}"
                              Icon="{antdicons:AntDesignIconProvider Kind=ExportOutlined}"
-                             IsEnabled="{Binding HasSelection}"
+                             IsEnabled="{Binding CanExportSelection}"
                              Click="OnExportClick"
                              VerticalAlignment="Center"/>
             </Grid>
@@ -67,13 +67,14 @@
                                        x:CompileBindings="False"
                                        AutoGenerateColumns="False"
                                        IsReadOnly="True"
-                                       SelectionMode="Single"
+                                       SelectionMode="Extended"
                                        SizeType="Small"
                                        RowHeight="38"
                                        GridLinesVisibility="Horizontal"
                                        CanUserResizeColumns="True"
                                        IsVisible="{Binding HasRecordings}">
                             <atom:DataGrid.Columns>
+                                <atom:DataGridSelectionColumn Width="36"/>
                                 <atom:DataGridTextColumn Header="{Binding ColumnSessionText}"
                                                          Binding="{Binding Label}"
                                                          Width="130"/>
@@ -159,7 +160,7 @@
                         <atom:Button Content="{Binding PlayText}"
                                      ButtonType="Primary"
                                      Width="74"
-                                     IsEnabled="{Binding HasSelection}"
+                                     IsEnabled="{Binding CanPlaySelection}"
                                      Command="{Binding TogglePlaybackCommand}"/>
                         <atom:Button Grid.Column="2"
                                      Content="{Binding SpeedText}"

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using CxShell.Models;
 using CxShell.Services;
 
@@ -98,6 +99,26 @@ public sealed class SessionRecordingStoreTests : IDisposable
 
         var remaining = Assert.Single(await store.ListAsync());
         Assert.Equal(current.Id, remaining.Id);
+    }
+
+    [Fact]
+    public async Task List_MigratesLegacyMetadataAndReadsDatabaseWhenRecordingDirectoryIsMissing()
+    {
+        var recordingDirectory = Path.Combine(_directory, "recordings");
+        Directory.CreateDirectory(recordingDirectory);
+        var recording = CreateRecording();
+        var legacyMetadataPath = Path.Combine(recordingDirectory, $"{recording.Id:N}.meta.json");
+        await File.WriteAllTextAsync(legacyMetadataPath, JsonSerializer.Serialize(recording));
+
+        var store = new SessionRecordingStore(recordingDirectory, _directory);
+        var migrated = Assert.Single(await store.ListAsync());
+        Assert.Equal(recording.Id, migrated.Id);
+        Assert.False(File.Exists(legacyMetadataPath));
+        Assert.True(File.Exists(legacyMetadataPath + ".migrated.bak"));
+
+        Directory.Delete(recordingDirectory, recursive: true);
+        var listedWithoutRecordingFiles = Assert.Single(await store.ListAsync());
+        Assert.Equal(recording.Id, listedWithoutRecordingFiles.Id);
     }
 
     public void Dispose()

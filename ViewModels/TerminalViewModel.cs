@@ -1326,6 +1326,10 @@ public partial class TerminalViewModel : ObservableObject
 
         try
         {
+            SessionLogRetentionService.CleanupExpiredFiles(
+                session,
+                session.AdvancedLogRetentionDays,
+                chosenPath);
             _sessionLogWriter = SessionLogWriter.Start(session, chosenPath);
         }
         catch (Exception ex)

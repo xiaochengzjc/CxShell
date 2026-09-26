@@ -43,11 +43,13 @@ public sealed partial class SessionRecordingViewModel : ObservableObject, IDispo
     [ObservableProperty] private SessionRecordingItemViewModel? _selectedRecording;
     [ObservableProperty] private TerminalBuffer _playbackBuffer;
     [ObservableProperty] private bool _isPlaying;
+    [ObservableProperty] private bool _isLoadingSelection;
     [ObservableProperty] private bool _skipIdle = true;
     [ObservableProperty] private double _positionMilliseconds;
     [ObservableProperty] private double _durationMilliseconds;
     [ObservableProperty] private int _speedIndex;
     [ObservableProperty] private string _statusText = string.Empty;
+    [ObservableProperty] private IReadOnlyList<SessionRecordingItemViewModel> _selectedRecordings = [];
 
     public SessionRecordingViewModel(SessionRecordingStore store)
     {
@@ -60,9 +62,12 @@ public sealed partial class SessionRecordingViewModel : ObservableObject, IDispo
 
     public ObservableCollection<SessionRecordingItemViewModel> Recordings { get; } = new();
     public bool HasRecordings => Recordings.Count > 0;
-    public bool CanDeleteSelection => SelectedRecording != null &&
-                                      !SessionRecordingService.Shared.IsActive(SelectedRecording.Recording.Id);
+    public int DeletableSelectedRecordingCount => SelectedRecordings.Count(item =>
+        !SessionRecordingService.Shared.IsActive(item.Recording.Id));
+    public bool CanDeleteSelection => DeletableSelectedRecordingCount > 0;
     public bool HasSelection => SelectedRecording != null && _chunks.Count > 0;
+    public bool CanPlaySelection => SelectedRecordings.Count == 1 && HasSelection && !IsLoadingSelection;
+    public bool CanExportSelection => SelectedRecordings.Count == 1 && HasSelection && !IsLoadingSelection;
     public string TitleText => Text("Recording.Title");
     public string DescriptionText => Text("Recording.Description");
     public string ListText => Text("Recording.List");
@@ -95,6 +100,7 @@ public sealed partial class SessionRecordingViewModel : ObservableObject, IDispo
     private async Task RefreshAsync()
     {
         var selectedId = SelectedRecording?.Recording.Id;
+        var selectedIds = SelectedRecordings.Select(item => item.Recording.Id).ToHashSet();
         try
         {
             var recordings = await _store.ListAsync();
@@ -104,9 +110,15 @@ public sealed partial class SessionRecordingViewModel : ObservableObject, IDispo
                 foreach (var recording in recordings)
                     Recordings.Add(new SessionRecordingItemViewModel(recording));
                 OnPropertyChanged(nameof(HasRecordings));
-                SelectedRecording = Recordings.FirstOrDefault(item => item.Recording.Id == selectedId)
-                    ?? Recordings.FirstOrDefault();
                 StatusText = Recordings.Count == 0 ? EmptyText : string.Empty;
+                var selectedItems = Recordings
+                    .Where(item => selectedIds.Contains(item.Recording.Id))
+                    .ToArray();
+                if (selectedItems.Length == 0 && Recordings.FirstOrDefault() is { } first)
+                    selectedItems = [first];
+                var current = selectedItems.FirstOrDefault(item => item.Recording.Id == selectedId)
+                              ?? selectedItems.FirstOrDefault();
+                SetGridSelection(selectedItems, current);
             });
         }
         catch (Exception ex)
@@ -115,7 +127,7 @@ public sealed partial class SessionRecordingViewModel : ObservableObject, IDispo
         }
     }
 
-    [RelayCommand(CanExecute = nameof(HasSelection))]
+    [RelayCommand(CanExecute = nameof(CanPlaySelection))]
     private void TogglePlayback()
     {
         if (IsPlaying)
@@ -124,7 +136,7 @@ public sealed partial class SessionRecordingViewModel : ObservableObject, IDispo
             return;
         }
 
-        if (!HasSelection)
+        if (!CanPlaySelection)
             return;
         if (PositionMilliseconds >= DurationMilliseconds && DurationMilliseconds > 0)
         {
@@ -145,29 +157,96 @@ public sealed partial class SessionRecordingViewModel : ObservableObject, IDispo
     [RelayCommand(CanExecute = nameof(CanDeleteSelected))]
     private async Task DeleteSelectedAsync()
     {
-        var selected = SelectedRecording;
-        if (selected == null)
+        var selected = SelectedRecordings.ToArray();
+        var deletable = selected
+            .Where(item => !SessionRecordingService.Shared.IsActive(item.Recording.Id))
+            .ToArray();
+        if (deletable.Length == 0)
             return;
 
-        Pause();
-        try
+        var currentId = SelectedRecording?.Recording.Id;
+        if (deletable.Any(item => item.Recording.Id == currentId))
+            Pause();
+
+        var deletedIds = new HashSet<Guid>();
+        Exception? deleteError = null;
+        foreach (var item in deletable)
         {
-            if (SessionRecordingService.Shared.IsActive(selected.Recording.Id))
-                return;
-            await _store.DeleteAsync(selected.Recording.Id);
-            await Dispatcher.UIThread.InvokeAsync(() =>
+            if (SessionRecordingService.Shared.IsActive(item.Recording.Id))
+                continue;
+
+            try
             {
-                Recordings.Remove(selected);
-                SelectedRecording = Recordings.FirstOrDefault();
-                OnPropertyChanged(nameof(HasRecordings));
-                StatusText = Recordings.Count == 0 ? EmptyText : string.Empty;
-            });
+                await _store.DeleteAsync(item.Recording.Id);
+                deletedIds.Add(item.Recording.Id);
+            }
+            catch (Exception ex)
+            {
+                deleteError ??= ex;
+            }
         }
-        catch (Exception ex)
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            StatusText = string.Format(Text("Recording.DeleteFailed"), ex.Message);
-        }
+            foreach (var item in Recordings
+                         .Where(item => deletedIds.Contains(item.Recording.Id))
+                         .ToArray())
+                Recordings.Remove(item);
+
+            OnPropertyChanged(nameof(HasRecordings));
+            var remainingSelection = selected
+                .Where(item => !deletedIds.Contains(item.Recording.Id))
+                .Select(item => Recordings.FirstOrDefault(recording =>
+                    recording.Recording.Id == item.Recording.Id))
+                .Where(item => item != null)
+                .Cast<SessionRecordingItemViewModel>()
+                .ToArray();
+            var current = remainingSelection.FirstOrDefault(item => item.Recording.Id == currentId)
+                          ?? remainingSelection.FirstOrDefault();
+            SetGridSelection(remainingSelection, current);
+
+            if (deleteError != null)
+                StatusText = string.Format(Text("Recording.DeleteFailed"), deleteError.Message);
+            else if (selected.Any(item => SessionRecordingService.Shared.IsActive(item.Recording.Id)))
+                StatusText = Text("Recording.ActiveNotDeleted");
+            else
+                StatusText = Recordings.Count == 0 ? EmptyText : string.Empty;
+        });
     }
+
+    public void SetGridSelection(
+        IEnumerable<SessionRecordingItemViewModel> selectedItems,
+        SessionRecordingItemViewModel? currentItem)
+    {
+        var availableIds = Recordings.Select(item => item.Recording.Id).ToHashSet();
+        var selected = selectedItems
+            .Where(item => availableIds.Contains(item.Recording.Id))
+            .DistinctBy(item => item.Recording.Id)
+            .ToArray();
+        SelectedRecordings = selected;
+
+        SelectedRecording = selected.FirstOrDefault(item => item.Recording.Id == currentItem?.Recording.Id)
+                            ?? selected.FirstOrDefault();
+    }
+
+    public string BuildDeleteConfirmationText()
+    {
+        var deletable = SelectedRecordings
+            .Where(item => !SessionRecordingService.Shared.IsActive(item.Recording.Id))
+            .ToArray();
+        if (deletable.Length == 1)
+            return string.Format(Text("Recording.DeleteConfirm"), deletable[0].Label);
+        return string.Format(Text("Recording.DeleteMultipleConfirm"), deletable.Length);
+    }
+
+    public void NotifyGridSelectionChanged()
+    {
+        OnPropertyChanged(nameof(DeletableSelectedRecordingCount));
+        OnPropertyChanged(nameof(CanDeleteSelection));
+        DeleteSelectedCommand.NotifyCanExecuteChanged();
+    }
+
+    private bool CanDeleteSelected() => CanDeleteSelection;
 
     public string BuildAsciicast()
     {
@@ -203,13 +282,22 @@ public sealed partial class SessionRecordingViewModel : ObservableObject, IDispo
         _localization.LanguageChanged -= OnLanguageChanged;
     }
 
+    partial void OnSelectedRecordingsChanged(IReadOnlyList<SessionRecordingItemViewModel> value)
+    {
+        if (value.Count != 1)
+            Pause();
+
+        OnPropertyChanged(nameof(CanPlaySelection));
+        OnPropertyChanged(nameof(CanExportSelection));
+        TogglePlaybackCommand.NotifyCanExecuteChanged();
+        NotifyGridSelectionChanged();
+    }
+
     partial void OnSelectedRecordingChanged(SessionRecordingItemViewModel? value)
     {
         OnPropertyChanged(nameof(PlayerText));
-        OnPropertyChanged(nameof(HasSelection));
-        OnPropertyChanged(nameof(CanDeleteSelection));
-        DeleteSelectedCommand.NotifyCanExecuteChanged();
-        TogglePlaybackCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanPlaySelection));
+        OnPropertyChanged(nameof(CanExportSelection));
         _ = LoadSelectedAsync(value, ++_loadVersion);
     }
 
@@ -240,21 +328,26 @@ public sealed partial class SessionRecordingViewModel : ObservableObject, IDispo
         OnPropertyChanged(nameof(SpeedText));
     }
 
-    private bool CanDeleteSelected() => SelectedRecording != null;
-
     private async Task LoadSelectedAsync(SessionRecordingItemViewModel? item, int version)
     {
         Pause();
         _chunks = [];
         _nextChunkIndex = 0;
         SetPositionInternal(0);
+        IsLoadingSelection = item != null;
+        OnPropertyChanged(nameof(HasSelection));
+        OnPropertyChanged(nameof(CanPlaySelection));
+        OnPropertyChanged(nameof(CanExportSelection));
+        TogglePlaybackCommand.NotifyCanExecuteChanged();
         if (item == null)
         {
             DurationMilliseconds = 0;
             ResetBuffer(80, 24);
+            StatusText = Recordings.Count == 0 ? EmptyText : string.Empty;
             return;
         }
 
+        StatusText = Text("Recording.Loading");
         try
         {
             var chunks = await _store.GetChunksAsync(item.Recording.Id);
@@ -263,19 +356,36 @@ public sealed partial class SessionRecordingViewModel : ObservableObject, IDispo
 
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
+                if (version != _loadVersion)
+                    return;
+
                 _chunks = chunks;
+                IsLoadingSelection = false;
                 DurationMilliseconds = Math.Max(
                     item.Recording.DurationMilliseconds,
                     chunks.Count > 0 ? chunks[^1].OffsetMilliseconds : 0);
                 ResetBuffer(item.Recording.Columns, item.Recording.Rows);
                 StatusText = chunks.Count == 0 ? Text("Recording.NoOutput") : string.Empty;
                 OnPropertyChanged(nameof(HasSelection));
+                OnPropertyChanged(nameof(CanPlaySelection));
+                OnPropertyChanged(nameof(CanExportSelection));
                 TogglePlaybackCommand.NotifyCanExecuteChanged();
             });
         }
         catch (Exception ex)
         {
-            StatusText = string.Format(Text("Recording.LoadFailed"), ex.Message);
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (version != _loadVersion)
+                    return;
+
+                IsLoadingSelection = false;
+                StatusText = string.Format(Text("Recording.LoadFailed"), ex.Message);
+                OnPropertyChanged(nameof(HasSelection));
+                OnPropertyChanged(nameof(CanPlaySelection));
+                OnPropertyChanged(nameof(CanExportSelection));
+                TogglePlaybackCommand.NotifyCanExecuteChanged();
+            });
         }
     }
 

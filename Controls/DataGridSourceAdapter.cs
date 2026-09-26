@@ -59,10 +59,32 @@ public sealed class DataGridSourceAdapter<T> : IDisposable
     public IReadOnlyList<T> GetSelectedItems(DataGrid grid)
     {
         RebuildKeyMap();
-        return grid.Selection.ExplicitKeys
-            .Where(key => _itemsByKey.ContainsKey(key))
-            .Select(key => _itemsByKey[key])
-            .ToList();
+        var selection = grid.Selection;
+        var scopes = selection.IndexIntervals
+            .Select(interval => interval.Scope)
+            .Append(selection.AllMatchingQuery)
+            .Where(scope => scope != null && ReferenceEquals(scope.Source, _source))
+            .Cast<DataGridSelectionScope>()
+            .Distinct()
+            .ToArray();
+        var selected = new List<T>();
+
+        for (var index = 0; index < _items.Count; index++)
+        {
+            var item = _items[index];
+            var key = GetKeyForItem(item);
+            var isSelected = selection.ExplicitKeys.Contains(key) &&
+                             !selection.ExcludedKeys.Contains(key);
+            if (!isSelected)
+            {
+                isSelected = scopes.Any(scope => selection.Contains(key, index, scope));
+            }
+
+            if (isSelected)
+                selected.Add(item);
+        }
+
+        return selected;
     }
 
     public void SetSelectedItems(DataGrid grid, IEnumerable<T> items)

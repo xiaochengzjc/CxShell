@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 using CxShell.Services;
 
@@ -15,29 +14,36 @@ public interface IAgentRunHistoryStore
 }
 
 /// <summary>
-/// Persists completed run summaries and a separate, bounded recovery file.
-/// Tool output and provider credentials are deliberately excluded from both.
+/// Persists completed Agent runs and resumable checkpoints in the shared
+/// application database. Sensitive recovery state remains encrypted.
 /// </summary>
-public sealed class JsonAgentRunHistoryStore : IAgentRunHistoryStore
+public sealed class SqliteAgentRunHistoryStore : IAgentRunHistoryStore
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true
     };
 
+    private const string Collection = "agent_runs";
     private readonly object _gate = new();
-    private readonly string _filePath;
-    private readonly string _recoveryFilePath;
+    private readonly string _legacyHistoryPath;
+    private readonly string _legacyRecoveryPath;
+    private readonly SqliteAppDataStore _store;
 
-    public JsonAgentRunHistoryStore(string? filePath = null)
+    public SqliteAgentRunHistoryStore(string? legacyHistoryPath = null)
     {
-        _filePath = string.IsNullOrWhiteSpace(filePath)
+        var isDefaultPath = string.IsNullOrWhiteSpace(legacyHistoryPath);
+        _legacyHistoryPath = isDefaultPath
             ? Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "CxShell",
                 "agent-runs.json")
-            : Path.GetFullPath(filePath);
-        _recoveryFilePath = _filePath + ".recovery";
+            : Path.GetFullPath(legacyHistoryPath!);
+        _legacyRecoveryPath = _legacyHistoryPath + ".recovery";
+        var storageDirectory = isDefaultPath
+            ? SessionStorageService.GetStorageDirectory()
+            : Path.GetDirectoryName(_legacyHistoryPath)!;
+        _store = new SqliteAppDataStore(storageDirectory);
     }
 
     public IReadOnlyList<AgentRuntimeRunSnapshot> Load()
@@ -46,11 +52,16 @@ public sealed class JsonAgentRunHistoryStore : IAgentRunHistoryStore
         {
             try
             {
-                if (!File.Exists(_filePath))
+                var payload = _store.Read(Collection, "completed");
+                if (payload == null)
+                {
+                    _store.ImportLegacyFile(Collection, "completed", _legacyHistoryPath, IsValidLegacyHistory);
+                    payload = _store.Read(Collection, "completed");
+                }
+                if (payload == null)
                     return [];
 
-                var json = File.ReadAllText(_filePath, Encoding.UTF8);
-                return JsonSerializer.Deserialize<List<AgentRuntimeRunSnapshot>>(json, JsonOptions)
+                return JsonSerializer.Deserialize<List<AgentRuntimeRunSnapshot>>(payload, JsonOptions)
                     ?.Where(IsCompleted)
                     .ToList()
                     ?? [];
@@ -73,22 +84,14 @@ public sealed class JsonAgentRunHistoryStore : IAgentRunHistoryStore
                 .OrderByDescending(run => run.StartedAtUtc)
                 .Take(AgentRunCoordinator.MaximumRetainedRuns)
                 .ToArray();
-            var directory = Path.GetDirectoryName(_filePath);
-            if (string.IsNullOrWhiteSpace(directory))
-                return;
-
-            var temporaryPath = _filePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {
-                Directory.CreateDirectory(directory);
                 var json = JsonSerializer.Serialize(completed, JsonOptions);
-                File.WriteAllText(temporaryPath, json, new UTF8Encoding(false));
-                File.Move(temporaryPath, _filePath, overwrite: true);
+                _store.Write(Collection, "completed", json);
             }
             catch
             {
                 // Observability must never fail a live Agent run.
-                TryDelete(temporaryPath);
             }
         }
     }
@@ -99,10 +102,15 @@ public sealed class JsonAgentRunHistoryStore : IAgentRunHistoryStore
         {
             try
             {
-                if (!File.Exists(_recoveryFilePath))
+                var stored = _store.Read(Collection, "recovery");
+                if (stored == null)
+                {
+                    _store.ImportLegacyFile(Collection, "recovery", _legacyRecoveryPath, IsValidLegacyRecoveryPayload);
+                    stored = _store.Read(Collection, "recovery");
+                }
+                if (stored == null)
                     return [];
 
-                var stored = File.ReadAllText(_recoveryFilePath, Encoding.UTF8);
                 var json = DecryptRecoveryPayload(stored);
                 if (json == null)
                     return [];
@@ -137,22 +145,15 @@ public sealed class JsonAgentRunHistoryStore : IAgentRunHistoryStore
                 .OrderByDescending(run => run.Snapshot.StartedAtUtc)
                 .Take(AgentRunCoordinator.MaximumRetainedRuns)
                 .ToArray();
-            var directory = Path.GetDirectoryName(_recoveryFilePath);
-            if (string.IsNullOrWhiteSpace(directory))
-                return;
-
-            var temporaryPath = _recoveryFilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {
-                Directory.CreateDirectory(directory);
                 var json = JsonSerializer.Serialize(recoverable, JsonOptions);
                 var encrypted = PasswordEncryptionService.Encrypt(json);
-                File.WriteAllText(temporaryPath, encrypted, new UTF8Encoding(false));
-                File.Move(temporaryPath, _recoveryFilePath, overwrite: true);
+                _store.Write(Collection, "recovery", encrypted);
             }
             catch
             {
-                TryDelete(temporaryPath);
+                // Recovery persistence must not interrupt a live Agent run.
             }
         }
     }
@@ -214,15 +215,31 @@ public sealed class JsonAgentRunHistoryStore : IAgentRunHistoryStore
             : decrypted;
     }
 
-    private static void TryDelete(string path)
+    private static bool IsValidLegacyHistory(string json)
     {
         try
         {
-            if (File.Exists(path))
-                File.Delete(path);
+            return JsonSerializer.Deserialize<List<AgentRuntimeRunSnapshot>>(json, JsonOptions) != null;
         }
-        catch
+        catch (JsonException)
         {
+            return false;
+        }
+    }
+
+    private static bool IsValidLegacyRecoveryPayload(string stored)
+    {
+        var json = DecryptRecoveryPayload(stored);
+        if (json == null)
+            return false;
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<AgentRunRecoveryState>>(json, JsonOptions) != null;
+        }
+        catch (JsonException)
+        {
+            return false;
         }
     }
 }

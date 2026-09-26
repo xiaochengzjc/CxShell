@@ -20,10 +20,11 @@ public sealed class SessionStorageServiceTests
             ]
         });
 
-        var json = File.ReadAllText(Path.Combine(directory.Path, "sessions.json"));
+        var json = new SqliteAppDataStore(directory.Path).Read("sessions")!;
         using var document = JsonDocument.Parse(json);
         Assert.False(document.RootElement.TryGetProperty("Settings", out _));
         Assert.Contains("server", json);
+        Assert.False(File.Exists(Path.Combine(directory.Path, "sessions.json")));
     }
 
     [Fact]
@@ -46,6 +47,8 @@ public sealed class SessionStorageServiceTests
         Assert.NotNull(data.Settings);
         Assert.Equal(ApplicationSettings.LightThemeMode, data.Settings!.ThemeMode);
         Assert.True(data.Settings.ShowTabBar);
+        Assert.True(File.Exists(path + ".migrated.bak"));
+        Assert.Contains("CxShell.Session", new SqliteAppDataStore(directory.Path).Read("sessions")!);
     }
 
     private sealed class TemporaryDirectory : IDisposable

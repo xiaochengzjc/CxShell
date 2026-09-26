@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using CxShell.Services;
@@ -68,11 +67,10 @@ public interface IAgentConversationHistoryStore
 }
 
 /// <summary>
-/// Encrypted, bounded local history. The store is deliberately independent
-/// from the runtime run store so the UI can restore full conversations even
-/// after the runtime has pruned its event stream.
+/// Reads the encrypted conversation file used by older versions. New history
+/// is always written through <see cref="SqliteAgentConversationHistoryStore"/>.
 /// </summary>
-public sealed class JsonAgentConversationHistoryStore : IAgentConversationHistoryStore
+internal static class LegacyAgentConversationHistoryReader
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -81,195 +79,34 @@ public sealed class JsonAgentConversationHistoryStore : IAgentConversationHistor
         Converters = { new JsonStringEnumConverter() }
     };
 
-    private readonly object _gate = new();
-    private readonly string _filePath;
-
-    public JsonAgentConversationHistoryStore(string? filePath = null)
+    public static bool TryLoad(
+        string filePath,
+        out IReadOnlyList<AgentConversationHistoryRecord> conversations)
     {
-        var useDefaultPath = string.IsNullOrWhiteSpace(filePath);
-        _filePath = string.IsNullOrWhiteSpace(filePath)
-            ? Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "CxShell",
-                "agent-history.json")
-            : Path.GetFullPath(filePath);
-        if (useDefaultPath)
-            MigrateLegacyRunHistory();
-    }
-
-    public IReadOnlyList<AgentConversationHistoryRecord> Load()
-    {
-        lock (_gate)
+        conversations = [];
+        try
         {
-            try
-            {
-                if (!File.Exists(_filePath))
-                    return [];
+            if (!File.Exists(filePath))
+                return false;
+            var stored = File.ReadAllText(filePath);
+            var json = PasswordEncryptionService.Decrypt(stored);
+            if (string.IsNullOrWhiteSpace(json))
+                return false;
 
-                var stored = File.ReadAllText(_filePath, Encoding.UTF8);
-                var json = PasswordEncryptionService.Decrypt(stored);
-                if (string.IsNullOrWhiteSpace(json))
-                    return [];
+            var parsed = JsonSerializer.Deserialize<List<AgentConversationHistoryRecord>>(json, JsonOptions);
+            if (parsed == null)
+                return false;
 
-                return JsonSerializer.Deserialize<List<AgentConversationHistoryRecord>>(json, JsonOptions)
-                           ?.Where(IsValid)
-                           .OrderByDescending(item => item.IsPinned)
-                           .ThenByDescending(item => item.UpdatedAtUtc)
-                           .ToArray()
-                       ?? [];
-            }
-            catch
-            {
-                return [];
-            }
-        }
-    }
-
-    public void Save(AgentConversationHistoryRecord conversation)
-    {
-        ArgumentNullException.ThrowIfNull(conversation);
-        if (!IsValid(conversation))
-            return;
-
-        lock (_gate)
-        {
-            var conversations = LoadUnsafe()
-                .Where(item => !string.Equals(item.ConversationId, conversation.ConversationId, StringComparison.Ordinal))
-                .Append(conversation)
+            conversations = parsed
+                .Where(IsValid)
                 .OrderByDescending(item => item.IsPinned)
                 .ThenByDescending(item => item.UpdatedAtUtc)
                 .ToArray();
-            WriteUnsafe(conversations);
-        }
-    }
-
-    public void Delete(string conversationId)
-    {
-        if (string.IsNullOrWhiteSpace(conversationId))
-            return;
-
-        lock (_gate)
-        {
-            var conversations = LoadUnsafe()
-                .Where(item => !string.Equals(item.ConversationId, conversationId, StringComparison.Ordinal))
-                .ToArray();
-            WriteUnsafe(conversations);
-        }
-    }
-
-    public void Clear()
-    {
-        lock (_gate)
-            WriteUnsafe([]);
-    }
-
-    private AgentConversationHistoryRecord[] LoadUnsafe()
-    {
-        try
-        {
-            if (!File.Exists(_filePath))
-                return [];
-
-            var stored = File.ReadAllText(_filePath, Encoding.UTF8);
-            var json = PasswordEncryptionService.Decrypt(stored);
-            return string.IsNullOrWhiteSpace(json)
-                ? []
-                : JsonSerializer.Deserialize<List<AgentConversationHistoryRecord>>(json, JsonOptions)
-                      ?.Where(IsValid)
-                      .ToArray()
-                  ?? [];
+            return true;
         }
         catch
         {
-            return [];
-        }
-    }
-
-    private void WriteUnsafe(IReadOnlyCollection<AgentConversationHistoryRecord> conversations)
-    {
-        var directory = Path.GetDirectoryName(_filePath);
-        if (string.IsNullOrWhiteSpace(directory))
-            return;
-
-        var temporaryPath = _filePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        try
-        {
-            Directory.CreateDirectory(directory);
-            var json = JsonSerializer.Serialize(conversations, JsonOptions);
-            var encrypted = PasswordEncryptionService.Encrypt(json);
-            File.WriteAllText(temporaryPath, encrypted, new UTF8Encoding(false));
-            File.Move(temporaryPath, _filePath, overwrite: true);
-        }
-        catch
-        {
-            try
-            {
-                if (File.Exists(temporaryPath))
-                    File.Delete(temporaryPath);
-            }
-            catch
-            {
-            }
-        }
-    }
-
-    private void MigrateLegacyRunHistory()
-    {
-        if (File.Exists(_filePath))
-            return;
-
-        try
-        {
-            var legacyPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "CxShell",
-                "agent-runs.json");
-            var legacyRuns = new JsonAgentRunHistoryStore(legacyPath).Load();
-            if (legacyRuns.Count == 0)
-                return;
-
-            var migrated = legacyRuns.Select(run =>
-            {
-                var prompt = string.IsNullOrWhiteSpace(run.PromptPreview)
-                    ? "Agent run"
-                    : run.PromptPreview!;
-                var updatedAt = run.CompletedAtUtc ?? run.StartedAtUtc;
-                var userMessage = new AgentConversationMessageRecord(
-                    "user",
-                    prompt,
-                    run.StartedAtUtc,
-                    RunId: run.RunId);
-                var summaryMessage = new AgentConversationMessageRecord(
-                    "summary",
-                    string.Empty,
-                    updatedAt,
-                    RunId: run.RunId,
-                    SummarySessionName: run.SessionId,
-                    SummaryStatusText: run.Status,
-                    SummaryDurationText: run.DurationMs is { } duration
-                        ? $"{duration} ms"
-                        : string.Empty,
-                    SummaryToolCallCount: run.ToolCallCount,
-                    SummaryModelRequestCount: run.ModelRequestCount,
-                    SummaryResultText: run.Error ?? run.EndReason ?? run.Status);
-                return new AgentConversationHistoryRecord(
-                    Guid.NewGuid().ToString("D"),
-                    prompt.Length <= 160 ? prompt : prompt[..160],
-                    run.StartedAtUtc,
-                    updatedAt,
-                    run.SessionId,
-                    run.SessionId,
-                    run.Mode,
-                    run.Provider,
-                    run.Model,
-                    [new AgentChatMessage("user", prompt)],
-                    [userMessage, summaryMessage]);
-            }).ToArray();
-            WriteUnsafe(migrated);
-        }
-        catch
-        {
-            // A legacy history file is optional and must not block startup.
+            return false;
         }
     }
 

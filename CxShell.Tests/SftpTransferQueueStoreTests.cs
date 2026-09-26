@@ -40,7 +40,9 @@ public sealed class SftpTransferQueueStoreTests
             Assert.Single(records);
             Assert.Equal(taskId, records[0].TaskId);
             Assert.Equal(400, records[0].TransferredBytes);
-            Assert.DoesNotContain("password", File.ReadAllText(path), StringComparison.OrdinalIgnoreCase);
+            var payload = new SqliteAppDataStore(directory).Read("sftp_transfer_queue", "queue")!;
+            Assert.DoesNotContain("password", payload, StringComparison.OrdinalIgnoreCase);
+            Assert.False(File.Exists(path));
 
             store.Remove(taskId);
             Assert.Empty(store.Load());
@@ -117,6 +119,7 @@ public sealed class SftpTransferQueueStoreTests
 
             Assert.Single(records);
             Assert.Equal(80, records[0].TransferredBytes);
+            Assert.True(File.Exists(path + ".migrated.bak"));
         }
         finally
         {

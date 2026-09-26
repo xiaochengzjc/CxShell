@@ -1085,9 +1085,12 @@ public sealed class LocalizationService : INotifyPropertyChanged
         EnglishTexts["Recording.ColumnDuration"] = "Duration";
         EnglishTexts["Recording.ColumnSize"] = "Size";
         EnglishTexts["Recording.LoadFailed"] = "Unable to load recordings: {0}";
-        EnglishTexts["Recording.DeleteFailed"] = "Unable to delete the recording: {0}";
+        EnglishTexts["Recording.DeleteFailed"] = "Unable to delete one or more recordings: {0}";
         EnglishTexts["Recording.NoOutput"] = "This recording contains no terminal output.";
+        EnglishTexts["Recording.Loading"] = "Loading recording...";
+        EnglishTexts["Recording.ActiveNotDeleted"] = "Active recordings cannot be deleted and were kept.";
         EnglishTexts["Recording.DeleteConfirm"] = "Delete the recording for {0}?";
+        EnglishTexts["Recording.DeleteMultipleConfirm"] = "Delete {0} selected recordings? Active recordings will be kept.";
         EnglishTexts["SshHostKey.Title"] = "Verify SSH Server Fingerprint";
         EnglishTexts["SshHostKey.UnknownWarning"] = "This server has not been seen before. Verify the fingerprint before trusting it.";
         EnglishTexts["SshHostKey.ChangedWarning"] = "The saved server fingerprint has changed. This may indicate a rebuilt server or a man-in-the-middle attack.";
@@ -1629,9 +1632,12 @@ public sealed class LocalizationService : INotifyPropertyChanged
         ChineseTexts["Recording.ColumnDuration"] = "\u65f6\u957f";
         ChineseTexts["Recording.ColumnSize"] = "\u5927\u5c0f";
         ChineseTexts["Recording.LoadFailed"] = "\u65e0\u6cd5\u52a0\u8f7d\u5f55\u5236\uff1a{0}";
-        ChineseTexts["Recording.DeleteFailed"] = "\u65e0\u6cd5\u5220\u9664\u5f55\u5236\uff1a{0}";
+        ChineseTexts["Recording.DeleteFailed"] = "\u65e0\u6cd5\u5220\u9664\u4e00\u6761\u6216\u591a\u6761\u5f55\u5236\uff1a{0}";
         ChineseTexts["Recording.NoOutput"] = "\u8be5\u5f55\u5236\u4e2d\u6ca1\u6709\u7ec8\u7aef\u8f93\u51fa\u3002";
+        ChineseTexts["Recording.Loading"] = "\u6b63\u5728\u52a0\u8f7d\u5f55\u5236...";
+        ChineseTexts["Recording.ActiveNotDeleted"] = "\u6b63\u5728\u5f55\u5236\u7684\u4f1a\u8bdd\u4e0d\u4f1a\u88ab\u5220\u9664\uff0c\u5df2\u4fdd\u7559\u3002";
         ChineseTexts["Recording.DeleteConfirm"] = "\u786e\u5b9a\u5220\u9664 {0} \u7684\u5f55\u5236\u5417\uff1f";
+        ChineseTexts["Recording.DeleteMultipleConfirm"] = "\u786e\u5b9a\u5220\u9664\u6240\u9009\u7684 {0} \u6761\u5f55\u5236\u5417\uff1f\u6b63\u5728\u5f55\u5236\u7684\u4f1a\u8bdd\u4f1a\u4fdd\u7559\u3002";
         ChineseTexts["SshHostKey.Title"] = "\u9a8c\u8bc1 SSH \u670d\u52a1\u5668\u6307\u7eb9";
         ChineseTexts["SshHostKey.UnknownWarning"] = "\u8fd9\u662f\u9996\u6b21\u8fde\u63a5\u8be5\u670d\u52a1\u5668\u3002\u4fe1\u4efb\u524d\u8bf7\u6838\u5bf9\u670d\u52a1\u5668\u6307\u7eb9\u3002";
         ChineseTexts["SshHostKey.ChangedWarning"] = "\u5df2\u4fdd\u5b58\u7684\u670d\u52a1\u5668\u6307\u7eb9\u5df2\u53d1\u751f\u53d8\u5316\u3002\u8fd9\u53ef\u80fd\u662f\u670d\u52a1\u5668\u91cd\u88c5\uff0c\u4e5f\u53ef\u80fd\u5b58\u5728\u4e2d\u95f4\u4eba\u653b\u51fb\u3002";
@@ -2218,6 +2224,9 @@ public sealed class LocalizationService : INotifyPropertyChanged
         english["UiText.259"] = "Send Clipboard";
         english["UiText.260"] = "Open monitor panel after SSH connection (M)";
         english["UiText.261"] = "Follow terminal current directory (F)";
+        english["UiText.262"] = "Log retention (days):";
+        english["UiText.263"] = "On connect, matching log files older than this are deleted.";
+        english["UiText.264"] = "(0 = unlimited)";
 
         chinese["UiText.001"] = "服务器监控";
         chinese["UiText.002"] = "内存";
@@ -2480,6 +2489,9 @@ public sealed class LocalizationService : INotifyPropertyChanged
         chinese["UiText.259"] = "发送剪贴板";
         chinese["UiText.260"] = "连接 SSH 后自动打开监控面板(M)";
         chinese["UiText.261"] = "跟随终端当前目录(F)";
+        chinese["UiText.262"] = "日志保留天数:";
+        chinese["UiText.263"] = "连接并开始记录时，会删除匹配模板且超过保留期的日志。";
+        chinese["UiText.264"] = "（0 表示不限）";
     }
 
     public string Language { get; private set; } = Chinese;

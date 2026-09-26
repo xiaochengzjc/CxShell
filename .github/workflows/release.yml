@@ -772,7 +772,16 @@ jobs:
         run: |
           set -euo pipefail
           tag="$RELEASE_TAG"
-          notes="Automated CxShell packages for Windows, macOS, and Linux."
+          notes="$(cat <<'EOF'
+          ## What's Changed
+
+          - Consolidate application data in SQLite and migrate legacy JSON data safely.
+          - Add configurable retention for session debug logs.
+          - Improve session recording selection and bulk deletion behavior.
+          - Fix a crash when refreshing recent connections.
+          - Publish self-contained packages for Windows, macOS, and Linux.
+          EOF
+          )"
 
           mapfile -d '' assets < <(find release-assets -type f -print0 | sort -z)
           if [ "${#assets[@]}" -eq 0 ]; then

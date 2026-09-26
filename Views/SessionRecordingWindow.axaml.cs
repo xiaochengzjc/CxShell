@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
@@ -15,12 +16,14 @@ public partial class SessionRecordingWindow : Window
     private DataGridSourceAdapter<SessionRecordingItemViewModel>? _gridSource;
     private bool _initialized;
     private bool _gridRefreshQueued;
+    private bool _selectionSyncQueued;
 
     public SessionRecordingWindow()
     {
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
         RecordingGrid.SelectionChanged += OnGridSelectionChanged;
+        RecordingGrid.PropertyChanged += OnGridPropertyChanged;
     }
 
     protected override async void OnOpened(EventArgs e)
@@ -88,6 +91,12 @@ public partial class SessionRecordingWindow : Window
             snapshot: true);
         RecordingGrid.ItemsSource = _gridSource.Source;
         _gridSource.ConfigureColumns(RecordingGrid);
+        var selected = _viewModel.SelectedRecordings
+            .Where(_viewModel.Recordings.Contains)
+            .ToArray();
+        _gridSource.SetSelectedItems(RecordingGrid, selected);
+        if (_viewModel.SelectedRecording is { } current && selected.Contains(current))
+            RecordingGrid.CurrentRowKey = _gridSource.GetKey(current);
     }
 
     private void DetachGridSource()
@@ -101,8 +110,33 @@ public partial class SessionRecordingWindow : Window
 
     private void OnGridSelectionChanged(object? sender, AtomDataGridSelectionChangedEventArgs e)
     {
-        if (_viewModel != null && _gridSource != null)
-            _viewModel.SelectedRecording = _gridSource.GetCurrentItem(RecordingGrid);
+        QueueSelectionSync();
+    }
+
+    private void OnGridPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property == AtomUI.Desktop.Controls.DataGrid.CurrentRowKeyProperty)
+            QueueSelectionSync();
+    }
+
+    private void QueueSelectionSync()
+    {
+        if (_selectionSyncQueued)
+            return;
+
+        _selectionSyncQueued = true;
+        Dispatcher.UIThread.Post(SynchronizeGridSelection, DispatcherPriority.Render);
+    }
+
+    private void SynchronizeGridSelection()
+    {
+        _selectionSyncQueued = false;
+        if (_viewModel == null || _gridSource == null)
+            return;
+
+        _viewModel.SetGridSelection(
+            _gridSource.GetSelectedItems(RecordingGrid),
+            _gridSource.GetCurrentItem(RecordingGrid));
     }
 
     private void OnPlaybackUpdated()
@@ -112,21 +146,21 @@ public partial class SessionRecordingWindow : Window
 
     private async void OnDeleteClick(object? sender, RoutedEventArgs e)
     {
-        if (_viewModel?.SelectedRecording == null)
+        SynchronizeGridSelection();
+        if (_viewModel is not { CanDeleteSelection: true } viewModel)
             return;
         var confirmed = await AtomUiDialogService.ShowConfirmAsync(
             this,
-            _viewModel.TitleText,
-            string.Format(
-                Services.LocalizationService.Shared.Text("Recording.DeleteConfirm"),
-                _viewModel.SelectedRecording.Label));
+            viewModel.TitleText,
+            viewModel.BuildDeleteConfirmationText());
         if (confirmed)
-            _viewModel.DeleteSelectedCommand.Execute(null);
+            viewModel.DeleteSelectedCommand.Execute(null);
     }
 
     private async void OnExportClick(object? sender, RoutedEventArgs e)
     {
-        if (_viewModel is not { HasSelection: true } viewModel)
+        SynchronizeGridSelection();
+        if (_viewModel is not { CanExportSelection: true } viewModel)
             return;
 
         try

@@ -21,11 +21,12 @@ public sealed class ApplicationSettingsStoreTests
 
         Assert.Same(fallback, loaded);
         var saved = JsonSerializer.Deserialize<ApplicationSettings>(
-            File.ReadAllText(Path.Combine(directory.Path, "application-settings.json")));
+            new SqliteAppDataStore(directory.Path).Read("application_settings")!);
         Assert.NotNull(saved);
         Assert.Equal(ApplicationSettings.LightThemeMode, saved.ThemeMode);
         Assert.True(saved.ShowTabBar);
         Assert.Equal(420, saved.SftpPanelWidth);
+        Assert.False(File.Exists(Path.Combine(directory.Path, "application-settings.json")));
     }
 
     [Fact]
@@ -114,7 +115,7 @@ public sealed class ApplicationSettingsStoreTests
         new ApplicationSettingsStore(directory.Path).Save(settings);
 
         Assert.Equal(ApplicationSettings.CurrentSchemaVersion, settings.SchemaVersion);
-        var json = File.ReadAllText(Path.Combine(directory.Path, "application-settings.json"));
+        var json = new SqliteAppDataStore(directory.Path).Read("application_settings")!;
         Assert.Contains($"\"SchemaVersion\": {ApplicationSettings.CurrentSchemaVersion}", json);
     }
 
@@ -137,9 +138,11 @@ public sealed class ApplicationSettingsStoreTests
 
         Assert.Equal(ApplicationSettings.CurrentSchemaVersion, loaded.SchemaVersion);
         Assert.Equal(300, loaded.AgentProvider.RequestTimeoutSeconds);
-        var saved = JsonSerializer.Deserialize<ApplicationSettings>(File.ReadAllText(path));
+        var saved = JsonSerializer.Deserialize<ApplicationSettings>(
+            new SqliteAppDataStore(directory.Path).Read("application_settings"));
         Assert.NotNull(saved);
         Assert.Equal(300, saved.AgentProvider.RequestTimeoutSeconds);
+        Assert.True(File.Exists(path + ".migrated.bak"));
     }
 
     private sealed class TemporaryDirectory : IDisposable

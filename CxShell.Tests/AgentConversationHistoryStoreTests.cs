@@ -1,3 +1,5 @@
+using System.Text.Json;
+using CxShell.Services;
 using CxShell.Services.Agent;
 
 namespace CxShell.Tests;
@@ -45,13 +47,18 @@ public sealed class AgentConversationHistoryStoreTests
         try
         {
             var conversation = CreateConversation(DateTimeOffset.UtcNow, "Migrated conversation");
-            var legacyStore = new JsonAgentConversationHistoryStore(legacyPath);
-            legacyStore.Save(conversation);
+            var legacyJson = JsonSerializer.Serialize(new[] { conversation });
+            File.WriteAllText(legacyPath, PasswordEncryptionService.Encrypt(legacyJson));
 
             var store = new SqliteAgentConversationHistoryStore(databasePath, legacyPath);
             var loaded = Assert.Single(store.Load());
             Assert.Equal(conversation.ConversationId, loaded.ConversationId);
             Assert.Equal("The host is healthy.", loaded.Messages![1].Content);
+            Assert.False(File.Exists(legacyPath));
+            Assert.True(File.Exists(legacyPath + ".migrated.bak"));
+
+            store.Clear();
+            Assert.Empty(new SqliteAgentConversationHistoryStore(databasePath, legacyPath).Load());
         }
         finally
         {

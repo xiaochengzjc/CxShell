@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 using CxShell.Models;
 using CxShell.Services.Agent;
@@ -6,27 +5,40 @@ using CxShell.Services.Agent;
 namespace CxShell.Services;
 
 /// <summary>
-/// Persists settings that belong to the application rather than to a session.
-/// The optional fallback is used once to migrate settings from sessions.json.
+/// Persists application settings in the shared SQLite database. The optional
+/// fallback migrates settings embedded in the legacy sessions file.
 /// </summary>
 public sealed class ApplicationSettingsStore
 {
-    private const string FileName = "application-settings.json";
+    private const string LegacyFileName = "application-settings.json";
     private static readonly JsonSerializerOptions ComparisonJsonOptions = new();
     private readonly string _directory;
     private readonly string _path;
+    private readonly SqliteAppDataStore _store;
 
     public ApplicationSettingsStore(string? directory = null)
     {
         _directory = string.IsNullOrWhiteSpace(directory)
             ? SessionStorageService.GetStorageDirectory()
             : Path.GetFullPath(directory);
-        _path = Path.Combine(_directory, FileName);
+        _path = Path.Combine(_directory, LegacyFileName);
+        _store = new SqliteAppDataStore(_directory);
     }
 
     public ApplicationSettings Load(ApplicationSettings? fallback = null)
     {
-        if (!File.Exists(_path))
+        var payload = _store.Read("application_settings");
+        if (payload == null)
+        {
+            _store.ImportLegacyFile(
+                "application_settings",
+                "default",
+                _path,
+                static json => TryDeserialize(json) != null);
+            payload = _store.Read("application_settings");
+        }
+
+        if (payload == null)
         {
             var migrated = fallback ?? new ApplicationSettings();
             Normalize(migrated);
@@ -36,12 +48,11 @@ public sealed class ApplicationSettingsStore
 
         try
         {
-            var json = File.ReadAllText(_path, Encoding.UTF8);
-            var loaded = JsonSerializer.Deserialize<ApplicationSettings>(json);
+            var loaded = JsonSerializer.Deserialize<ApplicationSettings>(payload);
             if (loaded == null)
                 return Recover(fallback);
 
-            using var document = JsonDocument.Parse(json);
+            using var document = JsonDocument.Parse(payload);
             var hasSchemaVersion = document.RootElement
                 .TryGetProperty(nameof(ApplicationSettings.SchemaVersion), out _);
             var beforeNormalization = JsonSerializer.Serialize(loaded, ComparisonJsonOptions);
@@ -69,24 +80,10 @@ public sealed class ApplicationSettingsStore
     {
         ArgumentNullException.ThrowIfNull(settings);
 
-        Directory.CreateDirectory(_directory);
         Normalize(settings);
         var options = new JsonSerializerOptions { WriteIndented = true };
         var json = JsonSerializer.Serialize(settings, options);
-        var temporaryPath = Path.Combine(
-            _directory,
-            $".{FileName}.{Guid.NewGuid():N}.tmp");
-
-        try
-        {
-            File.WriteAllText(temporaryPath, json, Encoding.UTF8);
-            File.Move(temporaryPath, _path, overwrite: true);
-        }
-        finally
-        {
-            if (File.Exists(temporaryPath))
-                File.Delete(temporaryPath);
-        }
+        _store.Write("application_settings", "default", json);
     }
 
     private ApplicationSettings Recover(ApplicationSettings? fallback)
@@ -194,5 +191,17 @@ public sealed class ApplicationSettingsStore
 
         if (proxy.Port is < 1 or > 65535)
             proxy.Port = 0;
+    }
+
+    private static ApplicationSettings? TryDeserialize(string json)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<ApplicationSettings>(json);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 }

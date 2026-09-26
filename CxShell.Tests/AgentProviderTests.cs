@@ -59,9 +59,10 @@ public sealed class AgentProviderTests
             var store = new ApplicationSettingsStore(directory);
             store.Save(settings);
 
-            var json = File.ReadAllText(Path.Combine(directory, "application-settings.json"));
+            var json = new SqliteAppDataStore(directory).Read("application_settings")!;
             Assert.Contains("cxaes:", json, StringComparison.Ordinal);
             Assert.DoesNotContain("plan-secret-key", json, StringComparison.Ordinal);
+            Assert.False(File.Exists(Path.Combine(directory, "application-settings.json")));
 
             var loaded = store.Load();
             Assert.Equal("plan-secret-key", AgentProviderConfiguration.GetApiKey(loaded.AgentProvider));

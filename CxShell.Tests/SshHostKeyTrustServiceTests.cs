@@ -1,3 +1,4 @@
+using System.Text.Json;
 using CxShell.Models;
 using CxShell.Services;
 
@@ -130,6 +131,39 @@ public sealed class SshHostKeyTrustServiceTests
             var nextService = CreateService(path, prompt);
             Assert.False(nextService.IsTrusted(CreateObservation("SHA256:saved")));
             Assert.Equal(1, prompt.CallCount);
+        }
+        finally
+        {
+            DeleteTempPath(path);
+        }
+    }
+
+    [Fact]
+    public void LegacyKnownHosts_AreImportedToSqliteAndArchived()
+    {
+        var path = CreateTempPath();
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var knownHost = new KnownSshHostKey
+            {
+                Host = "example.test",
+                Port = 22,
+                KeyType = "ssh-ed25519",
+                Fingerprint = "SHA256:legacy",
+                FirstSeenUtc = DateTimeOffset.UtcNow.AddDays(-1),
+                LastSeenUtc = DateTimeOffset.UtcNow
+            };
+            File.WriteAllText(path, JsonSerializer.Serialize(new { Version = 1, Hosts = new[] { knownHost } }));
+
+            var hosts = Assert.Single(CreateService(path, new StubPrompt(SshHostKeyDecision.Reject)).GetKnownHosts());
+
+            Assert.Equal(knownHost.Host, hosts.Host);
+            Assert.Equal(knownHost.Fingerprint, hosts.Fingerprint);
+            Assert.False(File.Exists(path));
+            Assert.True(File.Exists(path + ".migrated.bak"));
+            Assert.NotNull(new SqliteAppDataStore(Path.GetDirectoryName(path))
+                .Read("ssh_host_keys", "trusted_hosts"));
         }
         finally
         {

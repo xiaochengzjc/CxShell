@@ -245,6 +245,7 @@ public partial class SessionEditViewModel : ObservableObject
     [ObservableProperty] private bool _advancedLogOverwriteExisting = true;
     [ObservableProperty] private bool _advancedLogStartOnConnect;
     [ObservableProperty] private bool _advancedLogPromptFileOnStart;
+    [ObservableProperty] private decimal _advancedLogRetentionDays;
     [ObservableProperty] private bool _advancedLogUseRtf;
     [ObservableProperty] private bool _advancedLogIncludeTerminalCodes;
     [ObservableProperty] private string _advancedLogEncoding = "Utf16Le";
@@ -1400,6 +1401,7 @@ public partial class SessionEditViewModel : ObservableObject
         AdvancedLogOverwriteExisting = session.AdvancedLogOverwriteExisting;
         AdvancedLogStartOnConnect = session.AdvancedLogStartOnConnect;
         AdvancedLogPromptFileOnStart = session.AdvancedLogPromptFileOnStart;
+        AdvancedLogRetentionDays = Math.Clamp(session.AdvancedLogRetentionDays, 0, 3650);
         AdvancedLogUseRtf = session.AdvancedLogUseRtf;
         AdvancedLogIncludeTerminalCodes = session.AdvancedLogIncludeTerminalCodes;
         AdvancedLogEncoding = string.IsNullOrWhiteSpace(session.AdvancedLogEncoding) ? "Utf16Le" : session.AdvancedLogEncoding;
@@ -1851,6 +1853,7 @@ public partial class SessionEditViewModel : ObservableObject
         session.AdvancedLogOverwriteExisting = AdvancedLogOverwriteExisting;
         session.AdvancedLogStartOnConnect = AdvancedLogStartOnConnect;
         session.AdvancedLogPromptFileOnStart = AdvancedLogPromptFileOnStart;
+        session.AdvancedLogRetentionDays = Math.Clamp((int)AdvancedLogRetentionDays, 0, 3650);
         session.AdvancedLogUseRtf = AdvancedLogUseRtf;
         session.AdvancedLogIncludeTerminalCodes = AdvancedLogIncludeTerminalCodes;
         session.AdvancedLogEncoding = string.IsNullOrWhiteSpace(AdvancedLogEncoding) ? "Utf16Le" : AdvancedLogEncoding;

@@ -282,7 +282,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             AgentSessionGateway,
             () => _sessionTreeVm.Settings.AgentProvider,
             agentModelClient,
-            new JsonAgentRunHistoryStore(),
+            new SqliteAgentRunHistoryStore(),
             webSettings: () => _sessionTreeVm.Settings.AgentWeb,
             webAccess: agentWebAccess);
         AgentRuntimeSessionAdapter = new AgentRuntimeSessionAdapter(

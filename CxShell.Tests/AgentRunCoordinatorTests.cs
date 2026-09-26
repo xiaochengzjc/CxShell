@@ -2095,7 +2095,7 @@ public sealed class AgentRunCoordinatorTests
         try
         {
             var snapshot = CreateSnapshot(isConnected: true);
-            var store = new JsonAgentRunHistoryStore(path);
+            var store = new SqliteAgentRunHistoryStore(path);
             var previousRunId = "interrupted-for-resume";
             store.SaveRecoverable(
             [
@@ -2181,7 +2181,7 @@ public sealed class AgentRunCoordinatorTests
         try
         {
             var snapshot = CreateSnapshot(isConnected: true);
-            var store = new JsonAgentRunHistoryStore(path);
+            var store = new SqliteAgentRunHistoryStore(path);
             store.SaveRecoverable([CreateRecoveryState("closed-session", snapshot)]);
 
             using var gateway = CreateGateway();
@@ -2210,7 +2210,7 @@ public sealed class AgentRunCoordinatorTests
         try
         {
             var snapshot = CreateSnapshot(isConnected: false);
-            var store = new JsonAgentRunHistoryStore(path);
+            var store = new SqliteAgentRunHistoryStore(path);
             store.SaveRecoverable([CreateRecoveryState("disconnected-session", snapshot)]);
 
             using var gateway = CreateGateway(snapshot);
@@ -2239,7 +2239,7 @@ public sealed class AgentRunCoordinatorTests
         try
         {
             var snapshot = CreateSnapshot(isConnected: true);
-            var store = new JsonAgentRunHistoryStore(path);
+            var store = new SqliteAgentRunHistoryStore(path);
             var provider = CreateProvider();
             var modelStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             using var gateway = CreateGateway(snapshot);

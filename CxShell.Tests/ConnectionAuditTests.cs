@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using CxShell.Models;
 using CxShell.Services;
 using CxShell.ViewModels;
@@ -130,7 +131,42 @@ public sealed class ConnectionAuditTests
             Assert.Equal("external", entry.Source);
             Assert.Equal(nameof(ExternalLaunchOrigin.UrlProtocol), entry.ExternalOrigin);
             Assert.True(entry.CredentialSupplied);
-            Assert.DoesNotContain("one-time-secret", File.ReadAllText(path));
+            var stored = new SqliteAppDataStore(Path.GetDirectoryName(path))
+                .Read("connection_audit", "entries")!;
+            Assert.DoesNotContain("one-time-secret", stored);
+            Assert.False(File.Exists(path));
+        }
+        finally
+        {
+            DeleteTempPath(path);
+        }
+    }
+
+    [Fact]
+    public void ReadRecent_MigratesLegacyAuditJsonAndArchivesIt()
+    {
+        var path = CreateTempPath();
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var legacyEntry = new ConnectionAuditEntry
+            {
+                SessionId = Guid.NewGuid(),
+                SessionName = "legacy server",
+                Protocol = SessionProtocol.SSH,
+                Host = "example.test",
+                Port = 22,
+                Username = "operator",
+                EventType = ConnectionAuditEventType.Connected
+            };
+            File.WriteAllText(path, JsonSerializer.Serialize(new[] { legacyEntry }));
+
+            var loaded = Assert.Single(new ConnectionAuditService(path).ReadRecent());
+
+            Assert.Equal(legacyEntry.SessionId, loaded.SessionId);
+            Assert.Equal(legacyEntry.Host, loaded.Host);
+            Assert.False(File.Exists(path));
+            Assert.True(File.Exists(path + ".migrated.bak"));
         }
         finally
         {

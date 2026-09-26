@@ -1,4 +1,5 @@
 using System.Text.Json;
+using CxShell.Services;
 using CxShell.Services.Agent;
 
 namespace CxShell.Tests;
@@ -14,7 +15,7 @@ public sealed class AgentRunHistoryStoreTests
         {
             var sessionId = Guid.NewGuid();
             var started = DateTimeOffset.UtcNow.AddSeconds(-3);
-            var store = new JsonAgentRunHistoryStore(path);
+            var store = new SqliteAgentRunHistoryStore(path);
             store.Save(
             [
                 new AgentRuntimeRunSnapshot(
@@ -59,13 +60,42 @@ public sealed class AgentRunHistoryStoreTests
     }
 
     [Fact]
+    public void StoreMigratesLegacyCompletedHistoryIntoSharedDatabase()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "CxShellTests", Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(directory, "agent-runs.json");
+        try
+        {
+            Directory.CreateDirectory(directory);
+            var legacy = new AgentRuntimeRunSnapshot(
+                "legacy-run",
+                Guid.NewGuid().ToString("D"),
+                DateTimeOffset.UtcNow,
+                "completed");
+            File.WriteAllText(path, JsonSerializer.Serialize(new[] { legacy }));
+
+            var store = new SqliteAgentRunHistoryStore(path);
+
+            Assert.Equal("legacy-run", Assert.Single(store.Load()).RunId);
+            Assert.False(File.Exists(path));
+            Assert.True(File.Exists(path + ".migrated.bak"));
+            Assert.True(File.Exists(Path.Combine(directory, "cxshell.db")));
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void ClearCompletedSummariesWritesAnEmptyHistory()
     {
         var directory = Path.Combine(Path.GetTempPath(), "CxShellTests", Guid.NewGuid().ToString("N"));
         var path = Path.Combine(directory, "agent-runs.json");
         try
         {
-            var store = new JsonAgentRunHistoryStore(path);
+            var store = new SqliteAgentRunHistoryStore(path);
             store.Save(
             [
                 new AgentRuntimeRunSnapshot(
@@ -116,7 +146,7 @@ public sealed class AgentRunHistoryStoreTests
                 EndReason: "application_restart",
                 CanResume: true,
                 Checkpoint: checkpoint);
-            var store = new JsonAgentRunHistoryStore(path);
+            var store = new SqliteAgentRunHistoryStore(path);
             store.SaveRecoverable(
             [
                 new AgentRunRecoveryState(
@@ -136,7 +166,9 @@ public sealed class AgentRunHistoryStoreTests
             Assert.True(loaded.ExpiresAtUtc > DateTimeOffset.UtcNow);
             Assert.Equal(checkpoint, loaded.Checkpoint);
             Assert.Equal(checkpoint, loaded.Snapshot.Checkpoint);
-            Assert.DoesNotContain("inspect the host", File.ReadAllText(path + ".recovery"));
+            var persisted = new SqliteAppDataStore(directory).Read("agent_runs", "recovery")!;
+            Assert.StartsWith("cxaes:", persisted, StringComparison.Ordinal);
+            Assert.DoesNotContain("inspect the host", persisted, StringComparison.Ordinal);
         }
         finally
         {
@@ -177,16 +209,17 @@ public sealed class AgentRunHistoryStoreTests
                 recoveryPath,
                 JsonSerializer.Serialize(new[] { valid, expired }));
 
-            var store = new JsonAgentRunHistoryStore(path);
+            var store = new SqliteAgentRunHistoryStore(path);
             var loaded = Assert.Single(store.LoadRecoverable());
 
             Assert.Equal("legacy-valid", loaded.Snapshot.RunId);
             Assert.DoesNotContain("legacy-expired", store.LoadRecoverable().Select(item => item.Snapshot.RunId));
 
             store.SaveRecoverable([loaded]);
-            var persisted = File.ReadAllText(recoveryPath);
+            var persisted = new SqliteAppDataStore(directory).Read("agent_runs", "recovery")!;
             Assert.StartsWith("cxaes:", persisted, StringComparison.Ordinal);
             Assert.DoesNotContain("legacy prompt", persisted, StringComparison.Ordinal);
+            Assert.True(File.Exists(recoveryPath + ".migrated.bak"));
         }
         finally
         {

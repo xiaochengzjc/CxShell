@@ -9,15 +9,18 @@ public sealed class SessionRecordingStore
     private const int ChunkHeaderSize = sizeof(long) + sizeof(int);
     private const int MaximumChunkSize = 4 * 1024 * 1024;
     private readonly string _storageDirectory;
+    private readonly SqliteAppDataStore _metadataStore;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
 
     public static SessionRecordingStore Shared { get; } = new(
-        Path.Combine(SessionStorageService.GetStorageDirectory(), "recordings"));
+        Path.Combine(SessionStorageService.GetStorageDirectory(), "recordings"),
+        SessionStorageService.GetStorageDirectory());
 
-    public SessionRecordingStore(string storageDirectory)
+    public SessionRecordingStore(string storageDirectory, string? databaseDirectory = null)
     {
         _storageDirectory = storageDirectory ?? throw new ArgumentNullException(nameof(storageDirectory));
+        _metadataStore = new SqliteAppDataStore(databaseDirectory ?? storageDirectory);
     }
 
     public async Task SaveAsync(SessionRecording recording, CancellationToken cancellationToken = default)
@@ -27,11 +30,9 @@ public sealed class SessionRecordingStore
         try
         {
             Directory.CreateDirectory(_storageDirectory);
-            var path = GetMetadataPath(recording.Id);
-            var temporaryPath = path + ".tmp";
             var json = JsonSerializer.Serialize(recording, _jsonOptions);
-            await File.WriteAllTextAsync(temporaryPath, json, cancellationToken).ConfigureAwait(false);
-            File.Move(temporaryPath, path, true);
+            _metadataStore.Write("session_recordings", recording.Id.ToString("N"), json);
+            SqliteAppDataStore.ArchiveLegacyFile(GetMetadataPath(recording.Id));
         }
         finally
         {
@@ -79,29 +80,12 @@ public sealed class SessionRecordingStore
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (!Directory.Exists(_storageDirectory))
-                return [];
-
-            var recordings = new List<SessionRecording>();
-            foreach (var path in Directory.EnumerateFiles(_storageDirectory, "*.meta.json"))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                try
-                {
-                    var json = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
-                    var recording = JsonSerializer.Deserialize<SessionRecording>(json);
-                    if (recording != null)
-                        recordings.Add(recording);
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch
-                {
-                    // Keep one damaged entry from hiding valid recordings.
-                }
-            }
+            MigrateLegacyMetadataFiles(cancellationToken);
+            var recordings = _metadataStore.ReadCollection("session_recordings")
+                .Select(item => TryDeserialize(item.Payload))
+                .Where(recording => recording != null)
+                .Cast<SessionRecording>()
+                .ToList();
 
             return recordings
                 .OrderByDescending(item => item.StartedAtUtc)
@@ -159,7 +143,7 @@ public sealed class SessionRecordingStore
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            File.Delete(GetMetadataPath(recordingId));
+            _metadataStore.Delete("session_recordings", recordingId.ToString("N"));
             File.Delete(GetDataPath(recordingId));
         }
         finally
@@ -179,6 +163,53 @@ public sealed class SessionRecordingStore
     private string GetMetadataPath(Guid id) => Path.Combine(_storageDirectory, $"{id:N}.meta.json");
 
     private string GetDataPath(Guid id) => Path.Combine(_storageDirectory, $"{id:N}.data");
+
+    private void MigrateLegacyMetadataFiles(CancellationToken cancellationToken)
+    {
+        if (!Directory.Exists(_storageDirectory))
+            return;
+
+        foreach (var path in Directory.EnumerateFiles(_storageDirectory, "*.meta.json"))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var payload = File.ReadAllText(path);
+                var recording = TryDeserialize(payload);
+                if (recording == null || recording.Id == Guid.Empty)
+                    continue;
+
+                var key = recording.Id.ToString("N");
+                var existingPayload = _metadataStore.Read("session_recordings", key);
+                if (TryDeserialize(existingPayload ?? string.Empty)?.Id != recording.Id)
+                    _metadataStore.Write("session_recordings", key, payload);
+
+                var persisted = _metadataStore.Read("session_recordings", key);
+                if (TryDeserialize(persisted ?? string.Empty)?.Id == recording.Id)
+                    SqliteAppDataStore.ArchiveLegacyFile(path);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+                // Keep a damaged metadata file in place for manual recovery.
+            }
+        }
+    }
+
+    private static SessionRecording? TryDeserialize(string json)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<SessionRecording>(json);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     private static async Task<bool> ReadExactlyOrEndAsync(
         Stream stream,

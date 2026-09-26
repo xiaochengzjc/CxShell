@@ -499,6 +499,7 @@ public class SessionInfo
     public bool AdvancedLogOverwriteExisting { get; set; } = true;
     public bool AdvancedLogStartOnConnect { get; set; }
     public bool AdvancedLogPromptFileOnStart { get; set; }
+    public int AdvancedLogRetentionDays { get; set; }
     public bool AdvancedLogUseRtf { get; set; }
     public bool AdvancedLogIncludeTerminalCodes { get; set; }
     public string AdvancedLogEncoding { get; set; } = "Utf16Le";

@@ -1,7 +1,9 @@
 using System.Globalization;
+using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Data.Sqlite;
+using CxShell.Services;
 
 namespace CxShell.Services.Agent;
 
@@ -12,6 +14,8 @@ namespace CxShell.Services.Agent;
 /// </summary>
 public sealed class SqliteAgentConversationHistoryStore : IAgentConversationHistoryStore
 {
+    private const string LegacyHistoryMigrationKey = "legacy_agent_conversations_v1";
+
     private sealed record ConversationPayload(
         IReadOnlyList<AgentChatMessage>? ContextMessages,
         IReadOnlyList<AgentConversationMessageRecord>? Messages);
@@ -26,6 +30,7 @@ public sealed class SqliteAgentConversationHistoryStore : IAgentConversationHist
     private readonly object _gate = new();
     private readonly string _filePath;
     private readonly string _legacyFilePath;
+    private readonly string _legacyDatabasePath;
 
     static SqliteAgentConversationHistoryStore()
     {
@@ -34,18 +39,22 @@ public sealed class SqliteAgentConversationHistoryStore : IAgentConversationHist
 
     public SqliteAgentConversationHistoryStore(string? filePath = null, string? legacyFilePath = null)
     {
-        _filePath = string.IsNullOrWhiteSpace(filePath)
-            ? Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "CxShell",
-                "agent-history.db")
-            : Path.GetFullPath(filePath);
+        var isDefaultPath = string.IsNullOrWhiteSpace(filePath);
+        _filePath = isDefaultPath
+            ? Path.Combine(SessionStorageService.GetStorageDirectory(), "cxshell.db")
+            : Path.GetFullPath(filePath!);
         _legacyFilePath = string.IsNullOrWhiteSpace(legacyFilePath)
             ? Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "CxShell",
                 "agent-history.json")
             : Path.GetFullPath(legacyFilePath);
+        _legacyDatabasePath = isDefaultPath
+            ? Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "CxShell",
+                "agent-history.db")
+            : string.Empty;
 
         lock (_gate)
         {
@@ -187,6 +196,10 @@ public sealed class SqliteAgentConversationHistoryStore : IAgentConversationHist
             );
             CREATE INDEX IF NOT EXISTS ix_conversations_updated
                 ON conversations(is_pinned DESC, updated_at_utc DESC);
+            CREATE TABLE IF NOT EXISTS conversation_migrations (
+                migration_key TEXT NOT NULL PRIMARY KEY,
+                completed_at_utc TEXT NOT NULL
+            );
             """;
         command.ExecuteNonQuery();
     }
@@ -194,17 +207,83 @@ public sealed class SqliteAgentConversationHistoryStore : IAgentConversationHist
     private void MigrateLegacyHistoryIfNeeded()
     {
         using var connection = OpenConnection();
-        using var countCommand = connection.CreateCommand();
-        countCommand.CommandText = "SELECT COUNT(*) FROM conversations;";
-        if (Convert.ToInt64(countCommand.ExecuteScalar(), CultureInfo.InvariantCulture) > 0)
+        using var migrationCommand = connection.CreateCommand();
+        migrationCommand.CommandText = "SELECT 1 FROM conversation_migrations WHERE migration_key = $key;";
+        migrationCommand.Parameters.AddWithValue("$key", LegacyHistoryMigrationKey);
+        if (migrationCommand.ExecuteScalar() != null)
             return;
 
-        if (!File.Exists(_legacyFilePath))
-            return;
+        var imported = new Dictionary<string, AgentConversationHistoryRecord>(StringComparer.Ordinal);
+        var legacyDatabaseLoaded = false;
+        var legacyDatabaseFailed = false;
+        if (!string.IsNullOrWhiteSpace(_legacyDatabasePath) &&
+            !string.Equals(_filePath, _legacyDatabasePath, StringComparison.OrdinalIgnoreCase) &&
+            File.Exists(_legacyDatabasePath))
+        {
+            try
+            {
+                var oldDatabase = new SqliteAgentConversationHistoryStore(
+                    _legacyDatabasePath,
+                    _legacyFilePath);
+                AddLegacyConversations(imported, oldDatabase.Load());
+                legacyDatabaseLoaded = true;
+            }
+            catch
+            {
+                // A damaged old database should not prevent importing a valid JSON history.
+                legacyDatabaseFailed = true;
+            }
+        }
 
-        var legacyStore = new JsonAgentConversationHistoryStore(_legacyFilePath);
-        foreach (var conversation in legacyStore.Load())
-            Save(conversation);
+        var legacyJsonLoaded = false;
+        if (File.Exists(_legacyFilePath) &&
+            LegacyAgentConversationHistoryReader.TryLoad(_legacyFilePath, out var legacyJson))
+        {
+            AddLegacyConversations(imported, legacyJson);
+            legacyJsonLoaded = true;
+        }
+
+        foreach (var conversation in imported.Values)
+        {
+            using var existsConnection = OpenConnection();
+            using var existsCommand = existsConnection.CreateCommand();
+            existsCommand.CommandText = "SELECT 1 FROM conversations WHERE conversation_id = $id;";
+            existsCommand.Parameters.AddWithValue("$id", conversation.ConversationId);
+            if (existsCommand.ExecuteScalar() == null)
+                Save(conversation);
+        }
+
+        if (legacyJsonLoaded)
+            SqliteAppDataStore.ArchiveLegacyFile(_legacyFilePath);
+
+        var legacyJsonFailed = File.Exists(_legacyFilePath) && !legacyJsonLoaded;
+        if (!legacyDatabaseFailed && !legacyJsonFailed &&
+            (legacyDatabaseLoaded || legacyJsonLoaded ||
+             (!File.Exists(_legacyDatabasePath) && !File.Exists(_legacyFilePath))))
+        {
+            using var markCommand = connection.CreateCommand();
+            markCommand.CommandText = """
+                INSERT OR IGNORE INTO conversation_migrations(migration_key, completed_at_utc)
+                VALUES ($key, $completed_at);
+                """;
+            markCommand.Parameters.AddWithValue("$key", LegacyHistoryMigrationKey);
+            markCommand.Parameters.AddWithValue("$completed_at", DateTimeOffset.UtcNow.ToString("O"));
+            markCommand.ExecuteNonQuery();
+        }
+    }
+
+    private static void AddLegacyConversations(
+        IDictionary<string, AgentConversationHistoryRecord> target,
+        IEnumerable<AgentConversationHistoryRecord> source)
+    {
+        foreach (var conversation in source)
+        {
+            if (!target.TryGetValue(conversation.ConversationId, out var existing) ||
+                conversation.UpdatedAtUtc > existing.UpdatedAtUtc)
+            {
+                target[conversation.ConversationId] = conversation;
+            }
+        }
     }
 
     private static void AddRecordParameters(

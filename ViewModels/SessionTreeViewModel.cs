@@ -405,6 +405,7 @@ public partial class SessionTreeViewModel : ObservableObject
         target.AdvancedLogOverwriteExisting = source.AdvancedLogOverwriteExisting;
         target.AdvancedLogStartOnConnect = source.AdvancedLogStartOnConnect;
         target.AdvancedLogPromptFileOnStart = source.AdvancedLogPromptFileOnStart;
+        target.AdvancedLogRetentionDays = source.AdvancedLogRetentionDays;
         target.AdvancedLogUseRtf = source.AdvancedLogUseRtf;
         target.AdvancedLogIncludeTerminalCodes = source.AdvancedLogIncludeTerminalCodes;
         target.AdvancedLogEncoding = source.AdvancedLogEncoding;
@@ -1304,6 +1305,7 @@ public partial class SessionTreeViewModel : ObservableObject
             AdvancedLogOverwriteExisting = source.AdvancedLogOverwriteExisting,
             AdvancedLogStartOnConnect = source.AdvancedLogStartOnConnect,
             AdvancedLogPromptFileOnStart = source.AdvancedLogPromptFileOnStart,
+            AdvancedLogRetentionDays = source.AdvancedLogRetentionDays,
             AdvancedLogUseRtf = source.AdvancedLogUseRtf,
             AdvancedLogIncludeTerminalCodes = source.AdvancedLogIncludeTerminalCodes,
             AdvancedLogEncoding = source.AdvancedLogEncoding,

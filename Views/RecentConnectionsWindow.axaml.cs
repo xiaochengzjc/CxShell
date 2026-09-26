@@ -1,6 +1,8 @@
+using System.Collections.Specialized;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using CxShell.Controls;
 using CxShell.ViewModels;
 using AtomDataGridSelectionChangedEventArgs = AtomUI.Desktop.Controls.DataGridSelectionChangedEventArgs;
@@ -10,6 +12,8 @@ namespace CxShell.Views;
 public partial class RecentConnectionsWindow : Window
 {
     private DataGridSourceAdapter<RecentSessionItemViewModel>? _gridSource;
+    private RecentConnectionsViewModel? _viewModel;
+    private bool _gridRefreshQueued;
 
     public RecentConnectionsWindow()
     {
@@ -20,13 +24,53 @@ public partial class RecentConnectionsWindow : Window
 
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
+        if (_viewModel != null)
+            _viewModel.Entries.CollectionChanged -= OnEntriesChanged;
+
         DetachGridSource();
-        if (DataContext is not RecentConnectionsViewModel vm)
+        _viewModel = DataContext as RecentConnectionsViewModel;
+        if (_viewModel == null)
             return;
 
-        _gridSource = new DataGridSourceAdapter<RecentSessionItemViewModel>(vm.Entries);
+        _viewModel.Entries.CollectionChanged += OnEntriesChanged;
+        AttachGridSource();
+    }
+
+    private void OnEntriesChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (_gridRefreshQueued)
+            return;
+
+        _gridRefreshQueued = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _gridRefreshQueued = false;
+            if (_viewModel != null)
+                AttachGridSource();
+        }, DispatcherPriority.Render);
+    }
+
+    private void AttachGridSource()
+    {
+        var selectedSessionId = _viewModel?.SelectedEntry?.Session.Id;
+        DetachGridSource();
+        if (_viewModel == null)
+            return;
+
+        _gridSource = new DataGridSourceAdapter<RecentSessionItemViewModel>(
+            _viewModel.Entries,
+            snapshot: true);
         RecentConnectionsGrid.ItemsSource = _gridSource.Source;
         _gridSource.ConfigureColumns(RecentConnectionsGrid);
+
+        var selected = selectedSessionId is { } id
+            ? _viewModel.Entries.FirstOrDefault(item => item.Session.Id == id)
+            : null;
+        if (selected == null)
+            return;
+
+        _gridSource.SetSelectedItems(RecentConnectionsGrid, [selected]);
+        RecentConnectionsGrid.CurrentRowKey = _gridSource.GetKey(selected);
     }
 
     private void OnGridSelectionChanged(object? sender, AtomDataGridSelectionChangedEventArgs e)
@@ -37,9 +81,11 @@ public partial class RecentConnectionsWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        if (_viewModel != null)
+            _viewModel.Entries.CollectionChanged -= OnEntriesChanged;
         DetachGridSource();
-        if (DataContext is IDisposable disposable)
-            disposable.Dispose();
+        _viewModel?.Dispose();
+        _viewModel = null;
         base.OnClosed(e);
     }
 

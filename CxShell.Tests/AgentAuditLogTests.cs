@@ -1,4 +1,5 @@
 using CxShell.Services.Agent;
+using CxShell.Services;
 
 namespace CxShell.Tests;
 
@@ -27,9 +28,10 @@ public sealed class AgentAuditLogTests
         var log = new AgentAuditLog(path);
         log.Record(request, result);
 
-        var stored = File.ReadAllText(path);
+        var stored = new SqliteAppDataStore(directory.Path).Read("agent_audit", "entries")!;
         Assert.StartsWith("cxaes:", stored, StringComparison.Ordinal);
         Assert.DoesNotContain("operator-password", stored, StringComparison.Ordinal);
+        Assert.False(File.Exists(path));
 
         var loaded = new AgentAuditLog(path).ReadRecent();
         var entry = Assert.Single(loaded);
@@ -77,6 +79,7 @@ public sealed class AgentAuditLogTests
         var log = new AgentAuditLog(path);
 
         Assert.Empty(log.ReadRecent());
+        Assert.True(File.Exists(path));
     }
 
     private sealed class TemporaryDirectory : IDisposable
